@@ -63,13 +63,16 @@ func (s *Session) HelmDefaults(ctx context.Context, options *DefaultsOptions) er
 }
 
 func (s *Session) installDefaultsCertManager(ctx context.Context, options *DefaultsOptions) error {
-	if err := s.applyRemoteManifest(ctx, "https://github.com/cert-manager/cert-manager/releases/download/"+options.CertManagerVersion+"/cert-manager.yaml"); err != nil {
+	if err := s.applyCertManager(ctx, options.CertManagerVersion); err != nil {
 		return err
 	}
 	for _, name := range []string{certManagerNamespace, certManagerCAInjector, certManagerWebhook} {
 		if _, err := s.Kube(ctx, nil, "-n", certManagerNamespace, "wait", "--for=condition=Available", "deployment/"+name, "--timeout="+options.Timeout.String()); err != nil {
 			return err
 		}
+	}
+	if err := s.requireCertManagerHTTP2(ctx); err != nil {
+		return err
 	}
 	err := poll(ctx, 60*time.Second, 2*time.Second, "cert-manager webhook endpoints", func(ctx context.Context) (testutil.PollResult, error) {
 		result, err := s.Kube(ctx, nil, "-n", certManagerNamespace, "get", "endpoints", certManagerWebhook, "-o", "jsonpath={.subsets[*].addresses[*].ip}")

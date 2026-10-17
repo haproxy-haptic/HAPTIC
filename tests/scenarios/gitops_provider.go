@@ -23,7 +23,7 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/tests/testutil"
 )
 
-func (g *gitops) installManifest(ctx context.Context, name, url, namespace string, deployments []string) error {
+func (g *gitops) installManifest(ctx context.Context, name, url, namespace string, transform func([]byte) ([]byte, error)) error {
 	content, err := fetchManifest(ctx, url)
 	if err != nil {
 		return err
@@ -31,8 +31,8 @@ func (g *gitops) installManifest(ctx context.Context, name, url, namespace strin
 	if err := g.session.Save(name+"-source.json", map[string]string{"url": url, "sha256": fmt.Sprintf("%x", sha256.Sum256(content))}); err != nil {
 		return err
 	}
-	if deployments != nil {
-		content, err = filterDeployments(content, deployments)
+	if transform != nil {
+		content, err = transform(content)
 		if err != nil {
 			return err
 		}
@@ -56,7 +56,7 @@ func filterDeployments(content []byte, names []string) ([]byte, error) {
 			}
 			return nil, err
 		}
-		if len(object.Object) == 0 || (object.GetKind() == "Deployment" && !slices.Contains(names, object.GetName())) {
+		if len(object.Object) == 0 || (object.GetKind() == kindDeployment && !slices.Contains(names, object.GetName())) {
 			continue
 		}
 		content, err := json.Marshal(object.Object)
@@ -83,10 +83,12 @@ func (g *gitops) installProvider(ctx context.Context) error {
 		project["spec"] = map[string]any{"sourceRepos": []string{gitopsRepository}, "destinations": []any{map[string]string{"namespace": g.session.Namespace, "server": "https://kubernetes.default.svc"}}, "clusterResourceWhitelist": []any{map[string]string{"group": "*", fieldKind: "*"}}}
 		return g.session.Apply(ctx, project)
 	}
-	if err := g.installManifest(ctx, "flux", "https://github.com/fluxcd/flux2/releases/download/"+fluxVersion+"/install.yaml", "", []string{"source-controller", "helm-controller"}); err != nil {
+	controllers := []string{"source-controller", "helm-controller"}
+	onlyControllers := func(content []byte) ([]byte, error) { return filterDeployments(content, controllers) }
+	if err := g.installManifest(ctx, "flux", "https://github.com/fluxcd/flux2/releases/download/"+fluxVersion+"/install.yaml", "", onlyControllers); err != nil {
 		return err
 	}
-	for _, name := range []string{"source-controller", "helm-controller"} {
+	for _, name := range controllers {
 		if err := g.rollout(ctx, fluxNamespace, "deployment/"+name); err != nil {
 			return err
 		}

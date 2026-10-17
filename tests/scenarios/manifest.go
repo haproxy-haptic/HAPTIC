@@ -4,7 +4,6 @@
 package scenarios
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -48,13 +47,4 @@ func fetchManifest(ctx context.Context, url string) ([]byte, error) {
 		return testutil.PollSucceeded, nil
 	})
 	return content, err
-}
-
-func (s *Session) applyRemoteManifest(ctx context.Context, url string) error {
-	content, err := fetchManifest(ctx, url)
-	if err != nil {
-		return err
-	}
-	_, err = s.KubeUnscoped(ctx, bytes.NewReader(content), "apply", "-f", "-")
-	return err
 }
