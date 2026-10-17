@@ -108,11 +108,11 @@ func (s *snapshottingRoundTripper) captureNetwork(testName string, ip netip.Addr
 			Namespace: snapshotNamespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/component": "conformance-snapshot",
-				"haptic.io/test-name":         sanitizeForLabel(testName),
+				testNameKey:                   sanitizeForLabel(testName),
 				"haptic.io/snapshot-kind":     "network",
 			},
 			Annotations: map[string]string{
-				"haptic.io/test-name": testName,
+				testNameKey:           testName,
 				"haptic.io/timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 				"haptic.io/reason":    reason,
 				"haptic.io/dialed-ip": ip.String(),

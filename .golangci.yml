@@ -254,6 +254,12 @@ linters:
           - gocritic
         text: 'hugeParam: record is heavy'
 
+      # The upstream roundtripper.RoundTripper interface requires its Request argument by value.
+      - path: ^tests/conformance/snapshotter\.go$
+        linters:
+          - gocritic
+        text: 'hugeParam: req is heavy'
+
       # The always-nil error is mandated by the interface this benchmark
       # forwarder implements; dropping it fails the type assertion.
       - path: cmd/haptic/benchmark_incremental_test\.go$

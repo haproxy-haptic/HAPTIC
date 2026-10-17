@@ -48,7 +48,7 @@ import (
 // Notes:
 // - Each test creates and cleans up its own namespace
 // - Cluster-scoped resources (ClusterRole, ClusterRoleBinding) use namespace-prefixed names
-// - Tests are independent and should not rely on any shared state
+// - Tests are independent and should not rely on any shared state.
 func TestAllAcceptanceParallel(t *testing.T) {
 	// Skip when running in CI sharding mode - individual tests run via matrix
 	if os.Getenv("SKIP_PARALLEL_RUNNER") == "true" {
@@ -125,6 +125,7 @@ func TestAllAcceptanceParallel(t *testing.T) {
 // runFeaturesWithLimit executes features in parallel with a concurrency limit.
 // It uses a semaphore (buffered channel) to control the number of concurrent goroutines.
 func runFeaturesWithLimit(t *testing.T, features []types.Feature, limit int) {
+	t.Helper()
 	sem := make(chan struct{}, limit)
 	var wg sync.WaitGroup
 

@@ -28,6 +28,13 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/types"
 )
 
+// metricsClientKey and metricsKey carry the Setup's client and the first scrape
+// to the assessments.
+const (
+	metricsClientKey ctxKey = "metrics.client"
+	metricsKey       ctxKey = "metrics.body"
+)
+
 // buildMetricsFeature builds a feature that verifies the controller exposes
 // Prometheus metrics correctly.
 //
@@ -46,231 +53,12 @@ import (
 //  6. Verify metrics are updated with correct values
 func buildMetricsFeature() types.Feature {
 	return features.New("Metrics Endpoint").
-		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			t.Helper()
-			t.Log("Setting up metrics test")
-
-			// Generate unique namespace for this test
-			namespace := envconf.RandomName("test-metrics", 16)
-			t.Logf("Using test namespace: %s", namespace)
-
-			ctx = StoreNamespaceInContext(ctx, namespace)
-
-			client, err := cfg.NewClient()
-			if err != nil {
-				t.Fatal("Failed to create client:", err)
-			}
-
-			// Create controller environment (namespace, RBAC, secrets, CRD, deployment, services)
-			opts := DefaultControllerEnvironmentOptions()
-			if err := CreateControllerEnvironment(ctx, t, client, namespace, opts); err != nil {
-				t.Fatal("Failed to create controller environment:", err)
-			}
-
-			// Wait for controller pod to be ready AND reconciliation to complete
-			// This ensures metrics will have non-zero values when we check them
-			t.Log("Waiting for controller to complete startup reconciliation...")
-			metricsClient, err := SetupMetricsAccess(ctx, client, Clientset(), namespace, DefaultClientSetupTimeout)
-			if err != nil {
-				t.Fatal("Failed to setup metrics access:", err)
-			}
-
-			pod, err := WaitForControllerReadyWithMetrics(ctx, client, namespace, metricsClient, DefaultPodReadyTimeout)
-			if err != nil {
-				t.Fatal("Controller did not become ready:", err)
-			}
-			t.Logf("Controller pod %s is ready with reconciliation completed", pod.Name)
-
-			// Store metrics client in context for use in Assess phases
-			ctx = context.WithValue(ctx, "metricsClient", metricsClient)
-
-			return ctx
-		}).
-		Assess("Metrics endpoint accessible", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			t.Helper()
-			t.Log("Verifying metrics endpoint is accessible")
-
-			// Get metrics client from context (set in Setup phase)
-			metricsClient, ok := ctx.Value("metricsClient").(*MetricsClient)
-			if !ok {
-				t.Fatal("metricsClient not found in context")
-			}
-
-			// Fetch metrics via API proxy
-			t.Log("Fetching metrics from /metrics endpoint via API proxy")
-			metrics, err := metricsClient.GetMetrics(ctx)
-			if err != nil {
-				t.Fatal("Failed to fetch metrics:", err)
-			}
-
-			t.Logf("Received %d bytes of metrics", len(metrics))
-
-			// Store metrics in context for next assessment
-			ctx = context.WithValue(ctx, "metrics", metrics)
-
-			return ctx
-		}).
-		Assess("All expected metrics exist", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			t.Helper()
-			t.Log("Verifying all expected metrics are present")
-
-			metrics, ok := ctx.Value("metrics").(string)
-			if !ok {
-				t.Fatal("Metrics not found in context")
-			}
-
-			// Define expected metrics
-			expectedMetrics := []string{
-				"haptic_reconciliation_total",
-				"haptic_reconciliation_errors_total",
-				"haptic_reconciliation_duration_seconds",
-				"haptic_deployment_total",
-				"haptic_deployment_errors_total",
-				"haptic_deployment_duration_seconds",
-				"haptic_validation_total",
-				"haptic_validation_errors_total",
-				"haptic_resource_count",
-				"haptic_event_subscribers",
-				"haptic_events_published_total",
-			}
-
-			// Verify each metric exists
-			for _, metric := range expectedMetrics {
-				if !strings.Contains(metrics, metric) {
-					t.Errorf("Expected metric %s not found in metrics output", metric)
-				} else {
-					t.Logf("✓ Found metric: %s", metric)
-				}
-			}
-
-			return ctx
-		}).
-		Assess("Metrics have non-zero values", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			t.Helper()
-			t.Log("Verifying metrics have been updated")
-
-			metrics, ok := ctx.Value("metrics").(string)
-			if !ok {
-				t.Fatal("Metrics not found in context")
-			}
-
-			// Parse metrics and check for non-zero values
-			metricValues := parsePrometheusMetrics(metrics)
-
-			// Check reconciliation metrics (should have occurred at startup)
-			if val, ok := metricValues["haptic_reconciliation_total"]; ok && val > 0 {
-				t.Logf("✓ haptic_reconciliation_total = %.0f (operations occurred)", val)
-			} else {
-				t.Error("haptic_reconciliation_total should be > 0")
-			}
-
-			// Check validation metrics (should have occurred during startup)
-			if val, ok := metricValues["haptic_validation_total"]; ok && val > 0 {
-				t.Logf("✓ haptic_validation_total = %.0f (validations occurred)", val)
-			} else {
-				t.Error("haptic_validation_total should be > 0")
-			}
-
-			// Check events published (controller publishes many events)
-			if val, ok := metricValues["haptic_events_published_total"]; ok && val > 0 {
-				t.Logf("✓ haptic_events_published_total = %.0f (events flowing)", val)
-			} else {
-				t.Error("haptic_events_published_total should be > 0")
-			}
-
-			// Check error counters (should be 0 with valid configuration)
-			hasErrors := false
-			if val, ok := metricValues["haptic_reconciliation_errors_total"]; ok && val > 0 {
-				t.Errorf("haptic_reconciliation_errors_total = %.0f, expected 0", val)
-				hasErrors = true
-			} else {
-				t.Logf("✓ haptic_reconciliation_errors_total = %.0f (no errors)", val)
-			}
-
-			if val, ok := metricValues["haptic_validation_errors_total"]; ok && val > 0 {
-				t.Errorf("haptic_validation_errors_total = %.0f, expected 0", val)
-				hasErrors = true
-			} else {
-				t.Logf("✓ haptic_validation_errors_total = %.0f (no errors)", val)
-			}
-
-			// If errors detected, print controller logs for debugging
-			if hasErrors {
-				namespace, _ := GetNamespaceFromContext(ctx)
-				client, _ := cfg.NewClient()
-				DumpControllerLogsOnError(ctx, t, client, namespace)
-			}
-
-			return ctx
-		}).
-		Assess("Resource count metrics exist", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			t.Helper()
-			t.Log("Verifying resource count metrics")
-
-			metrics, ok := ctx.Value("metrics").(string)
-			if !ok {
-				t.Fatal("Metrics not found in context")
-			}
-
-			// Resource count is a gauge with labels, check for the metric with type label
-			resourceCountMetrics := []string{
-				"haptic_resource_count{type=\"haproxy-pods\"}",
-			}
-
-			foundAny := false
-			for _, metric := range resourceCountMetrics {
-				if strings.Contains(metrics, metric) {
-					t.Logf("✓ Found resource count metric: %s", metric)
-					foundAny = true
-				}
-			}
-
-			if !foundAny {
-				t.Error("No resource count metrics found")
-			}
-
-			return ctx
-		}).
-		Assess("Histogram metrics have buckets", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			t.Helper()
-			t.Log("Verifying histogram metrics have buckets")
-
-			metrics, ok := ctx.Value("metrics").(string)
-			if !ok {
-				t.Fatal("Metrics not found in context")
-			}
-
-			// Histograms should have bucket, sum, and count
-			histogramMetrics := []string{
-				"haptic_reconciliation_duration_seconds",
-				"haptic_deployment_duration_seconds",
-			}
-
-			for _, metric := range histogramMetrics {
-				// Check for bucket
-				if strings.Contains(metrics, metric+"_bucket") {
-					t.Logf("✓ Found histogram buckets for %s", metric)
-				} else {
-					t.Errorf("Missing histogram buckets for %s", metric)
-				}
-
-				// Check for sum
-				if strings.Contains(metrics, metric+"_sum") {
-					t.Logf("✓ Found histogram sum for %s", metric)
-				} else {
-					t.Errorf("Missing histogram sum for %s", metric)
-				}
-
-				// Check for count
-				if strings.Contains(metrics, metric+"_count") {
-					t.Logf("✓ Found histogram count for %s", metric)
-				} else {
-					t.Errorf("Missing histogram count for %s", metric)
-				}
-			}
-
-			return ctx
-		}).
+		Setup(setupMetrics).
+		Assess("Metrics endpoint accessible", assessMetricsEndpointAccessible).
+		Assess("All expected metrics exist", assessExpectedMetricsExist).
+		Assess("Metrics have non-zero values", assessMetricsNonZero).
+		Assess("Resource count metrics exist", assessResourceCountMetrics).
+		Assess("Histogram metrics have buckets", assessHistogramMetricsBuckets).
 		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
 			t.Log("Cleaning up metrics test resources")
@@ -284,6 +72,237 @@ func buildMetricsFeature() types.Feature {
 			return CleanupControllerEnvironment(ctx, t, client)
 		}).
 		Feature()
+}
+
+func setupMetrics(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
+	t.Log("Setting up metrics test")
+
+	// Generate unique namespace for this test
+	namespace := envconf.RandomName("test-metrics", 16)
+	t.Logf("Using test namespace: %s", namespace)
+
+	ctx = StoreNamespaceInContext(ctx, namespace)
+
+	client, err := cfg.NewClient()
+	if err != nil {
+		t.Fatal("Failed to create client:", err)
+	}
+
+	// Create controller environment (namespace, RBAC, secrets, CRD, deployment, services)
+	opts := DefaultControllerEnvironmentOptions()
+	if err := CreateControllerEnvironment(ctx, t, client, namespace, opts); err != nil {
+		t.Fatal("Failed to create controller environment:", err)
+	}
+
+	// Wait for controller pod to be ready AND reconciliation to complete
+	// This ensures metrics will have non-zero values when we check them
+	t.Log("Waiting for controller to complete startup reconciliation...")
+	metricsClient, err := SetupMetricsAccess(ctx, client, Clientset(), namespace, DefaultClientSetupTimeout)
+	if err != nil {
+		t.Fatal("Failed to setup metrics access:", err)
+	}
+
+	pod, err := WaitForControllerReadyWithMetrics(ctx, client, namespace, metricsClient, DefaultPodReadyTimeout)
+	if err != nil {
+		t.Fatal("Controller did not become ready:", err)
+	}
+	t.Logf("Controller pod %s is ready with reconciliation completed", pod.Name)
+
+	// Store metrics client in context for use in Assess phases
+	ctx = context.WithValue(ctx, metricsClientKey, metricsClient)
+
+	return ctx
+}
+
+func assessMetricsEndpointAccessible(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
+	t.Log("Verifying metrics endpoint is accessible")
+
+	// Get metrics client from context (set in Setup phase)
+	metricsClient, ok := ctx.Value(metricsClientKey).(*MetricsClient)
+	if !ok {
+		t.Fatal("metricsClient not found in context")
+	}
+
+	// Fetch metrics via API proxy
+	t.Log("Fetching metrics from /metrics endpoint via API proxy")
+	metrics, err := metricsClient.GetMetrics(ctx)
+	if err != nil {
+		t.Fatal("Failed to fetch metrics:", err)
+	}
+
+	t.Logf("Received %d bytes of metrics", len(metrics))
+
+	// Store metrics in context for next assessment
+	ctx = context.WithValue(ctx, metricsKey, metrics)
+
+	return ctx
+}
+
+func assessExpectedMetricsExist(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
+	t.Log("Verifying all expected metrics are present")
+
+	metrics, ok := ctx.Value(metricsKey).(string)
+	if !ok {
+		t.Fatal("Metrics not found in context")
+	}
+
+	// Define expected metrics
+	expectedMetrics := []string{
+		"haptic_reconciliation_total",
+		"haptic_reconciliation_errors_total",
+		"haptic_reconciliation_duration_seconds",
+		"haptic_deployment_total",
+		"haptic_deployment_errors_total",
+		"haptic_deployment_duration_seconds",
+		"haptic_validation_total",
+		"haptic_validation_errors_total",
+		"haptic_resource_count",
+		"haptic_event_subscribers",
+		"haptic_events_published_total",
+	}
+
+	// Verify each metric exists
+	for _, metric := range expectedMetrics {
+		if !strings.Contains(metrics, metric) {
+			t.Errorf("Expected metric %s not found in metrics output", metric)
+		} else {
+			t.Logf("✓ Found metric: %s", metric)
+		}
+	}
+
+	return ctx
+}
+
+func assessMetricsNonZero(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
+	t.Log("Verifying metrics have been updated")
+
+	metrics, ok := ctx.Value(metricsKey).(string)
+	if !ok {
+		t.Fatal("Metrics not found in context")
+	}
+
+	// Parse metrics and check for non-zero values
+	metricValues := parsePrometheusMetrics(metrics)
+
+	// Check reconciliation metrics (should have occurred at startup)
+	if val, ok := metricValues["haptic_reconciliation_total"]; ok && val > 0 {
+		t.Logf("✓ haptic_reconciliation_total = %.0f (operations occurred)", val)
+	} else {
+		t.Error("haptic_reconciliation_total should be > 0")
+	}
+
+	// Check validation metrics (should have occurred during startup)
+	if val, ok := metricValues["haptic_validation_total"]; ok && val > 0 {
+		t.Logf("✓ haptic_validation_total = %.0f (validations occurred)", val)
+	} else {
+		t.Error("haptic_validation_total should be > 0")
+	}
+
+	// Check events published (controller publishes many events)
+	if val, ok := metricValues["haptic_events_published_total"]; ok && val > 0 {
+		t.Logf("✓ haptic_events_published_total = %.0f (events flowing)", val)
+	} else {
+		t.Error("haptic_events_published_total should be > 0")
+	}
+
+	// Check error counters (should be 0 with valid configuration)
+	hasErrors := false
+	if val, ok := metricValues["haptic_reconciliation_errors_total"]; ok && val > 0 {
+		t.Errorf("haptic_reconciliation_errors_total = %.0f, expected 0", val)
+		hasErrors = true
+	} else {
+		t.Logf("✓ haptic_reconciliation_errors_total = %.0f (no errors)", val)
+	}
+
+	if val, ok := metricValues["haptic_validation_errors_total"]; ok && val > 0 {
+		t.Errorf("haptic_validation_errors_total = %.0f, expected 0", val)
+		hasErrors = true
+	} else {
+		t.Logf("✓ haptic_validation_errors_total = %.0f (no errors)", val)
+	}
+
+	// If errors detected, print controller logs for debugging
+	if hasErrors {
+		namespace, _ := GetNamespaceFromContext(ctx)
+		client, _ := cfg.NewClient()
+		DumpControllerLogsOnError(ctx, t, client, namespace)
+	}
+
+	return ctx
+}
+
+func assessResourceCountMetrics(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
+	t.Log("Verifying resource count metrics")
+
+	metrics, ok := ctx.Value(metricsKey).(string)
+	if !ok {
+		t.Fatal("Metrics not found in context")
+	}
+
+	// Resource count is a gauge with labels, check for the metric with type label
+	resourceCountMetrics := []string{
+		"haptic_resource_count{type=\"haproxy-pods\"}",
+	}
+
+	foundAny := false
+	for _, metric := range resourceCountMetrics {
+		if strings.Contains(metrics, metric) {
+			t.Logf("✓ Found resource count metric: %s", metric)
+			foundAny = true
+		}
+	}
+
+	if !foundAny {
+		t.Error("No resource count metrics found")
+	}
+
+	return ctx
+}
+
+func assessHistogramMetricsBuckets(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
+	t.Log("Verifying histogram metrics have buckets")
+
+	metrics, ok := ctx.Value(metricsKey).(string)
+	if !ok {
+		t.Fatal("Metrics not found in context")
+	}
+
+	// Histograms should have bucket, sum, and count
+	histogramMetrics := []string{
+		"haptic_reconciliation_duration_seconds",
+		"haptic_deployment_duration_seconds",
+	}
+
+	for _, metric := range histogramMetrics {
+		// Check for bucket
+		if strings.Contains(metrics, metric+"_bucket") {
+			t.Logf("✓ Found histogram buckets for %s", metric)
+		} else {
+			t.Errorf("Missing histogram buckets for %s", metric)
+		}
+
+		// Check for sum
+		if strings.Contains(metrics, metric+"_sum") {
+			t.Logf("✓ Found histogram sum for %s", metric)
+		} else {
+			t.Errorf("Missing histogram sum for %s", metric)
+		}
+
+		// Check for count
+		if strings.Contains(metrics, metric+"_count") {
+			t.Logf("✓ Found histogram count for %s", metric)
+		} else {
+			t.Errorf("Missing histogram count for %s", metric)
+		}
+	}
+
+	return ctx
 }
 
 // TestMetrics runs the metrics endpoint test.

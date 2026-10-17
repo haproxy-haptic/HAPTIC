@@ -44,6 +44,9 @@ import (
 // the CI after_script already has it in its working set.
 const snapshotNamespace = "haptic"
 
+// testNameKey labels and annotates every snapshot ConfigMap with the test that captured it.
+const testNameKey = "haptic.io/test-name"
+
 // haproxyCfgGVR identifies the chart-published HAProxyCfg CRD —
 // the controller's RENDERED config (what the chart produced before
 // the dataplane API translated it into incremental ops). Capturing
@@ -283,10 +286,10 @@ func (s *snapshottingRoundTripper) snapshot(testName, host, urlHost, sni, reason
 			Namespace: snapshotNamespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/component": "conformance-snapshot",
-				"haptic.io/test-name":         sanitizeForLabel(testName),
+				testNameKey:                   sanitizeForLabel(testName),
 			},
 			Annotations: map[string]string{
-				"haptic.io/test-name":        testName,
+				testNameKey:                  testName,
 				"haptic.io/timestamp":        time.Now().UTC().Format(time.RFC3339Nano),
 				"haptic.io/reason":           reason,
 				"haptic.io/request-host":     host,
@@ -444,9 +447,9 @@ var labelValuePattern = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 func sanitizeForLabel(s string) string {
 	s = labelValuePattern.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-._")
-	const max = 63
-	if len(s) > max {
-		s = s[:max]
+	const maxLabelValueLength = 63
+	if len(s) > maxLabelValueLength {
+		s = s[:maxLabelValueLength]
 		s = strings.TrimRight(s, "-._")
 	}
 	return s

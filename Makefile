@@ -122,7 +122,7 @@ else
 endif
 	@echo "Running golangci-lint over the playground-tagged files..."
 	$(GOLANGCI_LINT) run --build-tags=playground ./pkg/dataplane/... ./pkg/generated/validators/...
-	@$(MAKE) lint-e2e lint-integration lint-testinfra
+	@$(MAKE) lint-e2e lint-integration lint-testinfra lint-acceptance lint-conformance lint-agent
 	@echo "Checking no production binary links a HAProxy config parser..."
 	./scripts/check-client-native-free.sh
 	@echo "Running arch-go..."
@@ -152,6 +152,19 @@ lint-e2e-fix: ## Apply supported automatic fixes to the full-stack e2e suite
 .PHONY: lint-integration
 lint-integration: ## Lint the integration suite without creating a cluster
 	$(GOLANGCI_LINT) run --build-tags=integration ./tests/integration/...
+
+.PHONY: lint-acceptance
+lint-acceptance: ## Lint the acceptance suite without creating a cluster
+	$(GOLANGCI_LINT) run --build-tags=acceptance ./tests/acceptance/...
+
+.PHONY: lint-conformance
+lint-conformance: ## Lint the Gateway API and Ingress conformance suites without creating a cluster
+	$(GOLANGCI_LINT) run --build-tags=gateway_conformance ./tests/conformance/...
+	$(GOLANGCI_LINT) run --build-tags=ingress_conformance ./tests/conformance/...
+
+.PHONY: lint-agent
+lint-agent: ## Lint the Docker-backed agent suite without starting containers
+	$(GOLANGCI_LINT) run --build-tags=agentdocker ./tests/agent/...
 
 ## Chart linting
 

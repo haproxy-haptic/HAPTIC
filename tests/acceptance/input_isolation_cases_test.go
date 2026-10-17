@@ -50,12 +50,14 @@ func buildIngressInputIsolationFeature(name, annotation, invalid string) types.F
 	return features.New("Invalid Ingress "+name+" isolation").
 		Setup(setupControllerEnv("test-isolate-"+name, func(o *ControllerEnvironmentOptions) { o.SkipCRDAndDeployment = true })).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
 			// Existing invalid inputs must be isolated when the controller and webhook first start.
 			return setupIsolationInputs(ctx, t, cfg, func(ingress *networkingv1.Ingress) {
 				ingress.Annotations[annotation] = invalid
 			}, false)
 		}).
 		Assess("rejected Ingress permits independent changes and recovers after repair", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
 			namespace, client, clientset := readyControllerEnv(ctx, t, cfg)
 			logIsolationFailure(ctx, t, client, clientset, namespace)
 			debug, err := SetupDebugClient(ctx, client, clientset, namespace, 30*time.Second)
@@ -147,7 +149,8 @@ func waitRejectedIngress(ctx context.Context, t *testing.T, debug *DebugClient, 
 		if err := json.Unmarshal(body, &state); err != nil || !state.Ready {
 			return false, err
 		}
-		for _, resource := range state.Resources {
+		for i := range state.Resources {
+			resource := &state.Resources[i]
 			if resource.Store == "ingresses" && resource.Namespace == ingress.Namespace && resource.Name == ingress.Name {
 				return rejected, nil
 			}
@@ -163,7 +166,8 @@ func waitIsolationWarning(ctx context.Context, t *testing.T, clientset kubernete
 		if err != nil {
 			return false, err
 		}
-		for _, event := range list.Items {
+		for i := range list.Items {
+			event := &list.Items[i]
 			if event.LastTimestamp.Time.Before(since) && event.EventTime.Time.Before(since) {
 				continue
 			}
@@ -185,6 +189,7 @@ func buildFetchedListInputIsolationFeature() types.Feature {
 	return features.New("Invalid fetched list isolation").
 		Setup(setupControllerEnv("test-isolate-http", func(o *ControllerEnvironmentOptions) { o.SkipCRDAndDeployment = true })).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
 			return setupIsolationInputs(ctx, t, cfg, nil, true)
 		}).
 		Assess("invalid list retains accepted content while independent updates advance", assessFetchedListIsolation).
@@ -254,7 +259,8 @@ func waitRestartedHashRejection(ctx context.Context, t *testing.T, clientset kub
 		if err := json.Unmarshal(body, &state); err != nil || !state.Ready {
 			return false, err
 		}
-		for _, resource := range state.Resources {
+		for i := range state.Resources {
+			resource := &state.Resources[i]
 			// On a cold start, the on-demand Secret may first be read while admitting its Ingress.
 			affected := (resource.Store == "secrets" && resource.Name == "basic-auth") || (resource.Store == "ingresses" && resource.Name == "protected")
 			if affected && resource.Namespace == namespace && strings.Contains(resource.Reason, "password hash") {
@@ -284,15 +290,17 @@ func waitFetchedListRejection(ctx context.Context, t *testing.T, client klient.C
 		if err != nil {
 			return false, err
 		}
-		for _, event := range list.Items {
-			if event.Type == corev1.EventTypeWarning && event.Reason == "HTTPContentRejected" {
-				require.Equal(t, "HAProxyTemplateConfig", event.InvolvedObject.Kind)
-				require.Equal(t, config.Name, event.InvolvedObject.Name)
-				require.NotEmpty(t, event.InvolvedObject.ResourceVersion)
-				require.Contains(t, event.Message, "previously accepted content remains active")
-				require.Contains(t, event.Message, "Fix the fetched content or its template")
-				return true, nil
+		for i := range list.Items {
+			event := &list.Items[i]
+			if event.Type != corev1.EventTypeWarning || event.Reason != "HTTPContentRejected" {
+				continue
 			}
+			require.Equal(t, "HAProxyTemplateConfig", event.InvolvedObject.Kind)
+			require.Equal(t, config.Name, event.InvolvedObject.Name)
+			require.NotEmpty(t, event.InvolvedObject.ResourceVersion)
+			require.Contains(t, event.Message, "previously accepted content remains active")
+			require.Contains(t, event.Message, "Fix the fetched content or its template")
+			return true, nil
 		}
 		return false, nil
 	}))

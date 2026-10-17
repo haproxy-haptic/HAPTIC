@@ -484,7 +484,7 @@ func (dc *DebugClient) WaitForAuxFileContains(ctx context.Context, fileName, exp
 //
 // Note: This function uses a fixed 500ms polling interval to ensure frequent stability checks.
 // Exponential backoff would be counter-productive here as we need to verify content hasn't changed.
-func (dc *DebugClient) WaitForAuxFileContentStable(ctx context.Context, fileName string, expectedContent string, stableDuration time.Duration) error {
+func (dc *DebugClient) WaitForAuxFileContentStable(ctx context.Context, fileName, expectedContent string, stableDuration time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, stableDuration+5*time.Second)
 	defer cancel()
 

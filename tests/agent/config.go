@@ -199,7 +199,6 @@ func makeCertificate(t *testing.T, commonName string, serial int64) certificate 
 		t.Fatalf("create certificate for %s: %v", commonName, err)
 	}
 	// Keep the blank PEM separator: runtime certificate updates must preserve it.
-	bundle := append(cert.PEM, '\n')
-	bundle = append(bundle, cert.KeyPEM...)
-	return certificate{pem: string(bundle), serial: big.NewInt(serial), common: commonName}
+	bundle := string(cert.PEM) + "\n" + string(cert.KeyPEM)
+	return certificate{pem: bundle, serial: big.NewInt(serial), common: commonName}
 }

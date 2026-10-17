@@ -19,6 +19,7 @@ package acceptance
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -145,13 +146,7 @@ func buildWebhookCertHotRotationFeature() types.Feature {
 
 			return ctx
 		}).
-		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			client, err := cfg.NewClient()
-			if err != nil {
-				return ctx
-			}
-			return CleanupControllerEnvironment(ctx, t, client)
-		}).
+		Teardown(teardownControllerEnv).
 		Feature()
 }
 
@@ -191,7 +186,7 @@ func newProberPod(namespace string) *corev1.Pod {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      proberPodName,
 			Namespace: namespace,
-			Labels:    map[string]string{"app": proberPodName},
+			Labels:    appLabels(proberPodName),
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -264,9 +259,10 @@ func servedSerial(ctx context.Context, namespace, dnsName string) (string, error
 // containerRestarts returns the restart count of the named container (native
 // sidecars included), or -1 if the container status is not present yet.
 func containerRestarts(pod *corev1.Pod, container string) int32 {
-	for _, status := range append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...) {
-		if status.Name == container {
-			return status.RestartCount
+	statuses := slices.Concat(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses)
+	for i := range statuses {
+		if statuses[i].Name == container {
+			return statuses[i].RestartCount
 		}
 	}
 	return -1

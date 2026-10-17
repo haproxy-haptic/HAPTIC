@@ -182,7 +182,7 @@ func NewHAProxyTemplateConfig(namespace, name, secretName string, leaderElection
 
 // NewControllerDeployment creates the controller Deployment. Six args including
 // a serviceAccountName and explicit replica count.
-func NewControllerDeployment(namespace, crdName, secretName, serviceAccountName string, debugPort int32, replicas int32) *appsv1.Deployment
+func NewControllerDeployment(namespace, crdName, secretName, serviceAccountName string, debugPort, replicas int32) *appsv1.Deployment
 
 // NewDebugService creates a ClusterIP Service for accessing the debug endpoint via API proxy
 func NewDebugService(namespace, deploymentName string, debugPort int32) *corev1.Service
