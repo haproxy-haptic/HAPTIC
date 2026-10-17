@@ -23,7 +23,7 @@ fail=0
 #   (no tag)             -> `make test` (go test ./...)         [CI: test]
 #   e2e                  -> `make test-e2e`                     [CI: test-e2e]
 #   integration          -> `make test-integration`             [CI: test-integration]
-#   acceptance           -> `make test-acceptance`              [CI: test-acceptance]
+#   acceptance           -> `make test-acceptance-parallel`     [CI: acceptance]
 #   gateway_conformance  -> `make test-gateway-conformance`     [CI: test-gateway-conformance]
 #   ingress_conformance  -> `make test-ingress-conformance`     [CI: test-ingress-conformance]
 #   testinfra && unix    -> `make test-process`                [CI: test]
@@ -89,9 +89,59 @@ while IFS= read -r f; do
   fi
 done < <(git ls-files --cached --others --exclude-standard '*_test.go')
 
+# CI runs tests/acceptance only through TestAllAcceptanceParallel, so every other
+# top-level test must be one testEnv.Test(t, <feature>) call whose <feature>
+# that runner lists.
+acceptance_runner=tests/acceptance/parallel_test.go
+mapfile -t acceptance_files < <(git ls-files --cached --others --exclude-standard 'tests/acceptance/*_test.go')
+if [ "${#acceptance_files[@]}" -gt 0 ]; then
+  if ! grep -qxF '    acceptance) make test-acceptance-parallel ;;' .github/scripts/run-remaining-suite.sh 2>/dev/null ||
+    ! awk '/^test-acceptance-parallel:/ { recipe = 1; next }
+      recipe && !/^\t/ { exit }
+      recipe && index($0, "-run TestAllAcceptanceParallel ./tests/acceptance/...") { found = 1 }
+      END { exit !found }' Makefile 2>/dev/null; then
+    echo "UNREACHED: tests/acceptance — CI's acceptance suite no longer runs 'make test-acceptance-parallel' (-run TestAllAcceptanceParallel), so this check can't tell which tests CI runs. Update the acceptance section of scripts/check-test-inventory.sh to the new entry point."
+    fail=1
+  elif ! awk -v runner="$acceptance_runner" '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    FILENAME == runner && /^\tfeatures := \[\]types\.Feature\{$/ { listing = 1; found = 1; next }
+    listing && /^\t\}$/ { listing = 0; next }
+    listing {
+      line = trim($0)
+      if (line != "" && line !~ /^\/\//) { sub(/,$/, "", line); listed[line] = 1 }
+      next
+    }
+    /^func Test[A-Za-z0-9_]*\(/ {
+      name = $2; sub(/\(.*/, "", name)
+      current = (name == "TestMain" || name == "TestAllAcceptanceParallel") ? "" : FILENAME ": " name
+      if (current != "") order[++count] = current
+      next
+    }
+    current != "" && /^}/ { current = ""; next }
+    current != "" {
+      line = trim($0)
+      if (line != "" && line !~ /^\/\//) { statements[current]++; body[current] = line }
+    }
+    END {
+      if (!found) {
+        print "UNREACHED: " runner " — no \"features := []types.Feature{\" list in TestAllAcceptanceParallel, so no acceptance test is known to run in CI. Restore the list."
+        exit 1
+      }
+      for (i = 1; i <= count; i++) {
+        test = order[i]; feature = body[test]
+        if (statements[test] == 1 && sub(/^testEnv\.Test\(t, /, "", feature) && sub(/\)$/, "", feature) && (feature in listed)) continue
+        print "UNREACHED: " test " — CI runs only TestAllAcceptanceParallel, which does not run this test. Make its body one testEnv.Test(t, <feature>) call and add <feature> to the features list in " runner "."
+        unreached = 1
+      }
+      exit unreached
+    }' "${acceptance_files[@]}"; then
+    fail=1
+  fi
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo ""
-  echo "check-test-inventory: FAILED — every test must be compiled by exactly the runner wired for its directory."
+  echo "check-test-inventory: FAILED — every test must be compiled and run by the runner wired for its directory."
   exit 1
 fi
 echo "check-test-inventory: OK — every *_test.go file is wired to a runner."

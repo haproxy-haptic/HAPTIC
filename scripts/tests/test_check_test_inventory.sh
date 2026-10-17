@@ -39,4 +39,48 @@ if check_inventory; then
     echo 'Inventory accepted an unwired process integration test' >&2
     exit 1
 fi
+printf '//go:build testinfra && unix\n\npackage process\n' > "$fixture/tests/process/process_integration_test.go"
+
+expect_unreached() {
+    if check_inventory; then
+        echo "Inventory accepted $1" >&2
+        exit 1
+    fi
+    grep -qF "UNREACHED: $2" "$fixture/result.log"
+}
+
+acceptance_test() {
+    printf '//go:build acceptance\n\npackage acceptance\n\nfunc %s(t *testing.T) {\n%s\n}\n' "$2" "$3" > "$fixture/tests/acceptance/$1"
+}
+
+mkdir -p "$fixture/tests/acceptance" "$fixture/.github/scripts"
+printf '    acceptance) make test-acceptance-parallel ;;\n' > "$fixture/.github/scripts/run-remaining-suite.sh"
+printf 'test-acceptance-parallel:\n\tgo test -run TestAllAcceptanceParallel ./tests/acceptance/...\n' > "$fixture/Makefile"
+cat > "$fixture/tests/acceptance/parallel_test.go" <<'EOF'
+//go:build acceptance
+
+package acceptance
+
+func TestAllAcceptanceParallel(t *testing.T) {
+	features := []types.Feature{
+		// Listed features
+		buildListedFeature("a/b", 1),
+	}
+	runFeaturesWithLimit(t, features, 2)
+}
+EOF
+acceptance_test listed_test.go TestListed $'\ttestEnv.Test(t, buildListedFeature("a/b", 1))'
+check_inventory
+
+acceptance_test unlisted_test.go TestUnlisted $'\ttestEnv.Test(t, buildUnlistedFeature())'
+expect_unreached 'an acceptance test the parallel runner does not list' 'tests/acceptance/unlisted_test.go: TestUnlisted'
+acceptance_test unlisted_test.go TestUnlisted $'\ttestEnv.Test(t, buildListedFeature("a/b", 2))'
+expect_unreached 'an acceptance test whose feature arguments differ from the listed ones' 'tests/acceptance/unlisted_test.go: TestUnlisted'
+acceptance_test unlisted_test.go TestUnlisted $'\tfeature := buildListedFeature("a/b", 1)\n\ttestEnv.Test(t, feature)'
+expect_unreached 'an acceptance test that builds its feature inline' 'tests/acceptance/unlisted_test.go: TestUnlisted'
+rm "$fixture/tests/acceptance/unlisted_test.go"
+check_inventory
+
+printf 'test-acceptance-parallel:\n\tgo test -run TestListed ./tests/acceptance/...\n' > "$fixture/Makefile"
+expect_unreached 'a changed acceptance entry point' 'tests/acceptance — '
 printf 'Test inventory regression checks passed\n'

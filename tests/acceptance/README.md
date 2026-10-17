@@ -14,7 +14,8 @@ Like `tests/integration`, every file is tagged `//go:build acceptance` — a pla
 | `input_isolation_test.go`, `input_isolation_cases_test.go` | Malformed basic-auth Secret across a controller restart; invalid annotations, Ingress snippets, and fetched lists; Warning events, independent updates, admission, and repair |
 | `leader_election_test.go` | Two-replica failover — deleting the leader pod; `haptic_leader_election_*` metrics reflect the transition |
 | `metrics_test.go` | `/metrics` exposes every name in the file's local `expectedMetrics` slice (analogous to `pkg/controller/metrics.TestMetrics_AllMetricsRegistered`) |
-| `parallel_test.go` | `test-acceptance-parallel` safety — multiple test cases share a cluster without interference |
+| `webhook_cert_rotation_test.go` | Rotating the mounted webhook TLS Secret changes the served certificate without a controller restart |
+| `parallel_test.go` | `TestAllAcceptanceParallel`, CI's acceptance entry point (`make test-acceptance-parallel`): runs every listed feature on one shared cluster |
 
 Framework-bits files (`env.go`, `fixtures.go`, `debug_client.go`, `constants.go`, `main_test.go`) are shared by every test file.
 
@@ -55,7 +56,11 @@ Kind context: `kind-haproxy-test` (shared with integration).
 
 ```go
 func TestMyFeature(t *testing.T) {
-    feat := features.New("my feature").
+    testEnv.Test(t, buildMyFeature())
+}
+
+func buildMyFeature() types.Feature {
+    return features.New("my feature").
         Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
             client, err := cfg.NewClient()
             require.NoError(t, err)
@@ -81,12 +86,12 @@ func TestMyFeature(t *testing.T) {
             return ctx
         }).
         Feature()
-
-    testEnv.Test(t, feat)
 }
 ```
 
 Keep the `WaitForControllerReady…` step — without it, a new test will race the startup reconciliation and fail intermittently.
+
+CI runs only `TestAllAcceptanceParallel`, so add `buildMyFeature()` to its `features` list in `parallel_test.go`. `make lint` fails on a top-level test whose body isn't one `testEnv.Test(t, <feature>)` call with a listed `<feature>`.
 
 ## Debugging a Failing Test
 

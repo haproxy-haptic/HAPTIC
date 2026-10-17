@@ -63,6 +63,7 @@ func TestAllAcceptanceParallel(t *testing.T) {
 		buildRetainedConfigurationFeature("Leader change right after a deployment", 1, (*retainedFleet).assessRecentDeployment),
 		buildRetainedConfigurationFeature("Tampering", 0, (*retainedFleet).assessTampering),
 		buildRetainedConfigurationFeature("Freshness", 0, (*retainedFleet).assessFreshness),
+		buildWebhookCertHotRotationFeature(),
 		// Error scenarios tests
 		buildInvalidHAProxyConfigFeature(),
 		buildBasicAuthInputIsolationFeature(),
@@ -78,6 +79,7 @@ func TestAllAcceptanceParallel(t *testing.T) {
 		buildWatchReconnectionFeature(),
 		buildTransactionConflictFeature(),
 		buildPartialDeploymentFailureFeature(),
+		buildValidationTestsGateFeature(),
 
 		// Leader election tests
 		buildLeaderElectionTwoReplicasFeature(),

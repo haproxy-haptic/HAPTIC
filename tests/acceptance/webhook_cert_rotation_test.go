@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/e2e-framework/klient"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
+	"sigs.k8s.io/e2e-framework/pkg/types"
 )
 
 const (
@@ -43,6 +44,9 @@ const (
 	// proberPodName is the in-cluster pod used to read the webhook's served
 	// certificate over TLS (it ships the openssl CLI).
 	proberPodName = "cert-prober"
+
+	webhookCertSerialA = 0x1111AA
+	webhookCertSerialB = 0x2222BB
 )
 
 // TestWebhookCertHotRotation verifies that rotating the webhook's TLS-cert
@@ -50,16 +54,12 @@ const (
 // pod restarting — i.e. the server reloads its certificate from the mounted
 // file on the fly (a tls.Config GetCertificate callback) rather than binding
 // it once at startup.
-//
-// This is RED until the webhook server reads its certificate through a
-// reloading GetCertificate callback (the "hot-rotation" feature). Against a
-// build that loads the cert once at startup, the served serial never changes
-// after rotation and the rotation poll times out.
-//
-// The controller deployment mounts the cert Secret at /etc/webhook/certs and
-// points the controller at it via WEBHOOK_CERT_DIR.
 func TestWebhookCertHotRotation(t *testing.T) {
-	feature := features.New("Webhook TLS cert hot-rotation").
+	testEnv.Test(t, buildWebhookCertHotRotationFeature())
+}
+
+func buildWebhookCertHotRotationFeature() types.Feature {
+	return features.New("Webhook TLS cert hot-rotation").
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
 
@@ -70,10 +70,7 @@ func TestWebhookCertHotRotation(t *testing.T) {
 			client, err := cfg.NewClient()
 			require.NoError(t, err, "create client")
 
-			dnsName := webhookServiceDNS(namespace)
-
-			// Initial certificate A.
-			certA, keyA, err := genSelfSignedServerCert(0x1111AA, dnsName)
+			certA, keyA, err := genSelfSignedServerCert(webhookCertSerialA, webhookServiceDNS(namespace))
 			require.NoError(t, err, "generate cert A")
 
 			// Namespace + RBAC + credentials Secret (controller needs the
@@ -86,9 +83,12 @@ func TestWebhookCertHotRotation(t *testing.T) {
 			require.NoError(t, client.Resources().Create(ctx,
 				newTLSSecret(namespace, WebhookCertSecretName, certA, keyA)), "create webhook cert secret")
 
-			// CRD + webhook-enabled controller deployment + webhook Service.
-			require.NoError(t, client.Resources().Create(ctx,
-				NewHAProxyTemplateConfig(namespace, ControllerCRDName, ControllerSecretName, false)), "create CRD")
+			// The controller serves admission only while a watched resource enables it.
+			config := NewHAProxyTemplateConfig(namespace, ControllerCRDName, ControllerSecretName, false)
+			ingresses := config.Spec.WatchedResources["ingresses"]
+			ingresses.EnableValidationWebhook = true
+			config.Spec.WatchedResources["ingresses"] = ingresses
+			require.NoError(t, client.Resources().Create(ctx, config), "create CRD")
 			require.NoError(t, client.Resources().Create(ctx,
 				webhookEnabledControllerDeployment(namespace)), "create controller deployment")
 			require.NoError(t, client.Resources().Create(ctx,
@@ -107,14 +107,18 @@ func TestWebhookCertHotRotation(t *testing.T) {
 			client, err := cfg.NewClient()
 			require.NoError(t, err)
 			dnsName := webhookServiceDNS(namespace)
+			defer func() {
+				if t.Failed() {
+					DumpControllerLogsOnError(ctx, t, client, namespace)
+				}
+			}()
 
 			// Controller and prober must be up before we probe TLS.
 			require.NoError(t, WaitForPodReady(ctx, client, namespace, "app="+ControllerDeploymentName, DefaultPodReadyTimeout), "controller pod ready")
 			require.NoError(t, WaitForPodReady(ctx, client, namespace, "app="+proberPodName, DefaultPodReadyTimeout), "prober pod ready")
 
-			// Sanity: the webhook is serving SOME certificate (cert A).
-			serialA := pollServedSerial(ctx, t, namespace, dnsName, func(string) bool { return true }, 2*time.Minute)
-			t.Logf("webhook initially serves cert serial %q", serialA)
+			pollServedSerial(ctx, t, namespace, dnsName, webhookCertSerialA, 2*time.Minute)
+			t.Log("webhook serves cert A")
 
 			// Snapshot controller-pod identity so we can prove later that the
 			// rotation did not recreate the pod or restart the container.
@@ -123,19 +127,14 @@ func TestWebhookCertHotRotation(t *testing.T) {
 			beforeUID := before.UID
 			beforeRestarts := containerRestarts(before, "controller")
 
-			// Rotate the Secret to certificate B (distinct serial).
-			certB, keyB, err := genSelfSignedServerCert(0x2222BB, dnsName)
+			certB, keyB, err := genSelfSignedServerCert(webhookCertSerialB, dnsName)
 			require.NoError(t, err, "generate cert B")
 			rotateTLSSecret(ctx, t, client, namespace, WebhookCertSecretName, certB, keyB)
 			t.Log("rotated webhook cert Secret to cert B")
 
-			// The webhook must begin serving cert B on its own. kubelet syncs
-			// mounted Secret files lazily (up to ~1 min), so allow a few
-			// minutes for the change to surface, then settle.
-			serialB := pollServedSerial(ctx, t, namespace, dnsName,
-				func(s string) bool { return s != serialA }, 4*time.Minute)
-			t.Logf("webhook now serves cert serial %q (was %q)", serialB, serialA)
-			require.NotEqual(t, serialA, serialB, "webhook must serve the rotated certificate")
+			// kubelet syncs mounted Secret files lazily (up to ~1 min).
+			pollServedSerial(ctx, t, namespace, dnsName, webhookCertSerialB, 4*time.Minute)
+			t.Log("webhook serves cert B")
 
 			// And it must have done so WITHOUT a pod/container restart — the
 			// whole point of hot-rotation.
@@ -147,16 +146,13 @@ func TestWebhookCertHotRotation(t *testing.T) {
 			return ctx
 		}).
 		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			if namespace, err := GetNamespaceFromContext(ctx); err == nil {
-				if client, cerr := cfg.NewClient(); cerr == nil {
-					_ = client.Resources().Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}})
-				}
+			client, err := cfg.NewClient()
+			if err != nil {
+				return ctx
 			}
-			return ctx
+			return CleanupControllerEnvironment(ctx, t, client)
 		}).
 		Feature()
-
-	testEnv.Test(t, feature)
 }
 
 // webhookServiceDNS returns the in-cluster DNS name of the webhook Service.
@@ -223,30 +219,28 @@ func rotateTLSSecret(ctx context.Context, t *testing.T, client klient.Client, na
 }
 
 // pollServedSerial repeatedly reads the certificate the webhook serves until
-// accept(serial) holds, returning that serial. It fails the test on timeout
-// or context cancellation.
-func pollServedSerial(ctx context.Context, t *testing.T, namespace, dnsName string, accept func(string) bool, timeout time.Duration) string {
+// it carries the wanted serial. It fails the test on timeout or context
+// cancellation.
+func pollServedSerial(ctx context.Context, t *testing.T, namespace, dnsName string, want int64, timeout time.Duration) {
 	t.Helper()
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	deadline := time.After(timeout)
 
+	wantHex := fmt.Sprintf("%X", want)
 	var last string
+	var lastErr error
 	for {
 		serial, err := servedSerial(ctx, namespace, dnsName)
-		if err == nil && serial != "" {
-			last = serial
-			if accept(serial) {
-				return serial
-			}
+		if err == nil && serial == wantHex {
+			return
 		}
+		last, lastErr = serial, err
 		select {
 		case <-deadline:
-			t.Fatalf("timed out after %s waiting for the webhook to serve an accepted cert serial; last seen=%q", timeout, last)
-			return ""
+			t.Fatalf("timed out after %s waiting for the webhook to serve cert serial %s; last seen=%q (error: %v)", timeout, wantHex, last, lastErr)
 		case <-ctx.Done():
 			t.Fatalf("context cancelled while polling served cert serial: %v (last seen=%q)", ctx.Err(), last)
-			return ""
 		case <-ticker.C:
 		}
 	}

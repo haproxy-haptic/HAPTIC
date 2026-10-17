@@ -206,13 +206,20 @@ package acceptance
 import (
     "testing"
     "sigs.k8s.io/e2e-framework/pkg/features"
+    "sigs.k8s.io/e2e-framework/pkg/types"
 )
 
 // testEnv is a package-scope env.Environment initialised in TestMain
 // (env.go:119). There is no per-test Setup(t) constructor — each test calls
 // testEnv.Test(t, feature) directly.
 func TestMyFeature(t *testing.T) {
-    feature := features.New("My Feature").
+    testEnv.Test(t, buildMyFeature())
+}
+
+// CI runs only TestAllAcceptanceParallel: list buildMyFeature() in its
+// features (parallel_test.go). scripts/check-test-inventory.sh enforces it.
+func buildMyFeature() types.Feature {
+    return features.New("My Feature").
         Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
             client, err := cfg.NewClient()
             require.NoError(t, err)
@@ -252,8 +259,6 @@ func TestMyFeature(t *testing.T) {
             return ctx
         }).
         Feature()
-
-    testEnv.Test(t, feature)
 }
 ```
 
