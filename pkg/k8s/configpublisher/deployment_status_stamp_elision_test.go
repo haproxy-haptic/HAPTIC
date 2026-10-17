@@ -169,19 +169,24 @@ func TestUpdateDeploymentStatus_RestampsOnChangedPodIdentity(t *testing.T) {
 	require.Equal(t, 3, counter.aux())
 
 	// A new deploy checksum over the same aux set leaves aux stamps unchanged.
+	req := auxPublishRequest()
+	req.Config = "global\n  maxconn 10\n"
+	req.Checksum = "def456"
+	_, err := publisher.PublishConfig(ctx, &req)
+	require.NoError(t, err)
 	require.NoError(t, publisher.UpdateDeploymentStatus(ctx, statusUpdate("haproxy-0", "uid-0", "rt-0", "def456")))
 	assert.Equal(t, 3, counter.aux(), "a new deploy checksum alone does not re-stamp aux files")
 
 	// Changed podUID re-stamps.
-	require.NoError(t, publisher.UpdateDeploymentStatus(ctx, statusUpdate("haproxy-0", "uid-1", "rt-0", "abc123")))
+	require.NoError(t, publisher.UpdateDeploymentStatus(ctx, statusUpdate("haproxy-0", "uid-1", "rt-0", "def456")))
 	assert.Equal(t, 6, counter.aux(), "changed podUID re-stamps all aux files")
 
 	// Changed podRuntimeID re-stamps.
-	require.NoError(t, publisher.UpdateDeploymentStatus(ctx, statusUpdate("haproxy-0", "uid-1", "rt-1", "abc123")))
+	require.NoError(t, publisher.UpdateDeploymentStatus(ctx, statusUpdate("haproxy-0", "uid-1", "rt-1", "def456")))
 	assert.Equal(t, 9, counter.aux(), "changed podRuntimeID re-stamps all aux files")
 
 	// A different pod re-stamps (its own keys).
-	require.NoError(t, publisher.UpdateDeploymentStatus(ctx, statusUpdate("haproxy-1", "uid-9", "rt-9", "abc123")))
+	require.NoError(t, publisher.UpdateDeploymentStatus(ctx, statusUpdate("haproxy-1", "uid-9", "rt-9", "def456")))
 	assert.Equal(t, 12, counter.aux(), "a new pod stamps its own aux entries")
 }
 

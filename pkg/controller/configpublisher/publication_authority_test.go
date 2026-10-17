@@ -241,7 +241,6 @@ func TestThrottleFlushKeepsDeployedFIFOAheadOfValidation(t *testing.T) {
 	component := New(publisher, bus, testutil.NewTestLogger(), WithPublishInterval(time.Hour))
 	t.Cleanup(component.publishThrottle.Stop)
 	t.Cleanup(component.statusThrottle.Stop)
-	t.Cleanup(component.statusRetrySignals.Stop)
 	component.mu.Lock()
 	component.publicationTerm = 1
 	component.mu.Unlock()

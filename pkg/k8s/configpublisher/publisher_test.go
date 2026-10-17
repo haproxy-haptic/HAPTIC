@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	haproxyv1alpha1 "github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/auxiliaryfiles"
 	"github.com/haproxy-haptic/HAPTIC/pkg/generated/clientset/versioned/fake"
 
@@ -766,6 +767,62 @@ func TestUpdateDeploymentStatus_UncommittedReferencesReturnSentinel(t *testing.T
 	}
 }
 
+func podsOn(t *testing.T, ctx context.Context, c *fake.Clientset, resource string, objects auxObjectNames) []string {
+	t.Helper()
+	pods, ok := podStatusesOf(statusObject(t, ctx, c, resource, objects))
+	require.True(t, ok)
+	names := make([]string, 0, len(pods))
+	for i := range pods {
+		names = append(names, pods[i].PodName)
+	}
+	return names
+}
+
+// TestUpdateDeploymentStatus_StampsOnlyThePublicationThePodRuns is issue #384:
+// an auxiliary file's entry says the pod runs that file, so a pod is stamped
+// only on the files of the publication at its own checksum.
+func TestUpdateDeploymentStatus_StampsOnlyThePublicationThePodRuns(t *testing.T) {
+	ctx, _, crdClient, publisher := newTestPublisher(t)
+	previous := auxPublishRequest()
+	_, err := publisher.PublishConfig(ctx, &previous)
+	require.NoError(t, err)
+	require.NoError(t, publisher.UpdateDeploymentStatus(ctx, statusUpdate("haproxy-0", "uid-0", "runtime-0", previous.Checksum)))
+	previousFiles := publishedAuxObjects(t, ctx, crdClient)
+
+	next := auxPublishRequest()
+	next.Checksum = "def456"
+	next.AuxiliaryFiles.MapFiles[0].Content = "example.com be_b\n"
+
+	// haproxy-1 joins on next before next's publication starts.
+	ahead := statusUpdate("haproxy-1", "uid-1", "runtime-1", next.Checksum)
+	assert.ErrorIs(t, publisher.UpdateDeploymentStatus(ctx, ahead), ErrRuntimeConfigNotPublished,
+		"the update must be retried once next is published")
+	assert.NotContains(t, podsOn(t, ctx, crdClient, resHAProxyMapFiles, previousFiles), "haproxy-1",
+		"haproxy-1 never ran the previous map file")
+	cfg, err := crdClient.HaproxyTemplateICV1alpha1().HAProxyCfgs("default").Get(ctx, "test-config-haproxycfg", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, cfg.Status.DeployedToPods, haproxyv1alpha1.PodDeploymentStatus{
+		PodName: "haproxy-1", PodUID: "uid-1", PodRuntimeID: "runtime-1", Checksum: next.Checksum,
+	}, "the HAProxyCfg entry, which carries its own checksum, is not delayed")
+
+	_, err = publisher.PublishConfig(ctx, &next)
+	require.NoError(t, err)
+	nextFiles := publishedAuxObjects(t, ctx, crdClient)
+	require.NotEqual(t, previousFiles.mapFile, nextFiles.mapFile)
+	require.NoError(t, publisher.UpdateDeploymentStatus(ctx, ahead))
+	for _, resource := range []string{resHAProxyMapFiles, resHAProxyGeneralFiles, resHAProxyCRTListFiles} {
+		assert.Contains(t, podsOn(t, ctx, crdClient, resource, nextFiles), "haproxy-1", "%s of next", resource)
+	}
+
+	// haproxy-0 still runs previous: next's map file must not name it, while
+	// the files both sets share keep its entry.
+	behind := driftStatusUpdate("haproxy-0", "uid-0", "runtime-0", previous.Checksum)
+	assert.ErrorIs(t, publisher.UpdateDeploymentStatus(ctx, behind), ErrRuntimeConfigNotPublished)
+	assert.NotContains(t, podsOn(t, ctx, crdClient, resHAProxyMapFiles, nextFiles), "haproxy-0",
+		"haproxy-0 never ran next's map file")
+	assert.Contains(t, podsOn(t, ctx, crdClient, resHAProxyGeneralFiles, nextFiles), "haproxy-0")
+}
+
 func TestUpdateDeploymentStatus_UpdateExistingPod(t *testing.T) {
 	ctx, _, crdClient, publisher := newTestPublisher(t)
 
@@ -1381,7 +1438,7 @@ func TestUpdateDeploymentStatus_AuxiliaryFilesUseOwnChecksum(t *testing.T) {
 	publisher := NewWithListers(k8sClient, crdClient, nil, testLogger())
 
 	// Create runtime config with auxiliary files
-	result, err := publisher.PublishConfig(ctx, &PublishRequest{
+	request := PublishRequest{
 		TemplateConfigName:      "test-config",
 		TemplateConfigNamespace: "default",
 		TemplateConfigUID:       types.UID("test-uid-123"),
@@ -1393,7 +1450,8 @@ func TestUpdateDeploymentStatus_AuxiliaryFilesUseOwnChecksum(t *testing.T) {
 			GeneralFiles: []auxiliaryfiles.GeneralFile{{Path: "/etc/haproxy/lua/script.lua", Content: "-- lua script\n"}},
 			CRTListFiles: []auxiliaryfiles.CRTListFile{{Path: "/etc/haproxy/ssl/crt-list.txt", Content: "default.pem\n"}},
 		},
-	})
+	}
+	result, err := publisher.PublishConfig(ctx, &request)
 	require.NoError(t, err)
 	require.Len(t, result.MapFileNames, 1)
 	require.Len(t, result.GeneralFileNames, 1)
@@ -1450,7 +1508,12 @@ func TestUpdateDeploymentStatus_AuxiliaryFilesUseOwnChecksum(t *testing.T) {
 	t.Run("main config change updates main config checksum but not auxiliary file checksums", func(t *testing.T) {
 		// Simulate main config change (new checksum). Checksum is a state field
 		// so it triggers an UpdateStatus on the main config.
-		err := publisher.UpdateDeploymentStatus(ctx, &DeploymentStatusUpdate{
+		changed := request
+		changed.Config = "global\n  daemon\n  maxconn 10\n"
+		changed.Checksum = "main-config-checksum-v2"
+		_, err := publisher.PublishConfig(ctx, &changed)
+		require.NoError(t, err)
+		err = publisher.UpdateDeploymentStatus(ctx, &DeploymentStatusUpdate{
 			RuntimeConfigName: "test-config-haproxycfg", RuntimeConfigNamespace: "default",
 			PodName: "haproxy-0", Checksum: "main-config-checksum-v2",
 		})

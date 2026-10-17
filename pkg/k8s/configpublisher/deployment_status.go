@@ -29,14 +29,9 @@ import (
 )
 
 // ErrRuntimeConfigNotPublished reports that the target HAProxyCfg does not
-// exist in the API (yet). At startup the first deployment to the HAProxy pods
-// races the initial HAProxyCfg publish: the per-pod status SSA can land a few
-// hundred milliseconds BEFORE the publisher creates the resource. Callers must
-// retry the update once the resource exists — swallowing this case silently
-// loses the pod's deployedToPods entry until the next config change or drift
-// check (up to driftPreventionInterval), which reads as a never-converging pod
-// to checksum-equality consumers. It also reports a HAProxyCfg whose
-// publication has not yet written its auxiliary references.
+// publish the pod's checksum yet: it is missing, its publication has not
+// written the auxiliary references, or it publishes other content. The update
+// is incomplete: retry it after the next publication.
 var ErrRuntimeConfigNotPublished = errors.New("HAProxyCfg not published yet")
 
 const (
@@ -75,7 +70,8 @@ func podStatusFieldManager(podName string) string {
 }
 
 // UpdateDeploymentStatus updates the per-pod deployment status entry on
-// HAProxyCfg and all child auxiliary file resources.
+// HAProxyCfg and on the auxiliary files of the publication at the pod's
+// checksum (see ErrRuntimeConfigNotPublished).
 //
 // Uses Server-Side Apply with one field manager per pod (see
 // `podStatusFieldManager`). The CRDs declare deployedToPods as
@@ -272,13 +268,14 @@ func (p *Publisher) existingPodStatus(ctx context.Context, update *DeploymentSta
 	return find(cfg)
 }
 
-// resolveAuxiliaryFileReferences finds the committed auxiliary file references
-// for the HAProxyCfg this update targets: from live when read, else lister
-// cache first and the typed client when the cache misses or predates the commit.
+// resolveAuxiliaryFileReferences finds the auxiliary file references of the
+// publication the pod runs: the committed set of a HAProxyCfg whose
+// spec.checksum is the pod's. It uses live when read, else the lister cache
+// first and the typed client when the cache misses or shows another publication.
 func (p *Publisher) resolveAuxiliaryFileReferences(ctx context.Context, update *DeploymentStatusUpdate, live *haproxyv1alpha1.HAProxyCfg) (*haproxyv1alpha1.AuxiliaryFileReferences, error) {
 	if live == nil && p.listers != nil && p.listers.HAProxyCfgs != nil {
 		if cached, err := p.listers.HAProxyCfgs.HAProxyCfgs(update.RuntimeConfigNamespace).Get(update.RuntimeConfigName); err == nil {
-			if refs, ok := committedReferences(cached); ok {
+			if refs, ok := referencesAtChecksum(cached, update.Checksum); ok {
 				return refs, nil
 			}
 		}
@@ -292,12 +289,22 @@ func (p *Publisher) resolveAuxiliaryFileReferences(ctx context.Context, update *
 		}
 		live = runtimeConfig
 	}
-	refs, ok := committedReferences(live)
+	refs, ok := referencesAtChecksum(live, update.Checksum)
 	if !ok {
-		return nil, fmt.Errorf("%w: %s/%s has no auxiliary references for its current set", ErrRuntimeConfigNotPublished,
-			update.RuntimeConfigNamespace, update.RuntimeConfigName)
+		return nil, fmt.Errorf("%w: %s/%s has not published checksum %q with its auxiliary references", ErrRuntimeConfigNotPublished,
+			update.RuntimeConfigNamespace, update.RuntimeConfigName, update.Checksum)
 	}
 	return refs, nil
+}
+
+// referencesAtChecksum returns cfg's committed references when cfg publishes
+// the content a pod reports at checksum. Another publication's set may hold
+// files the pod never ran, so an entry there would claim content it lacks.
+func referencesAtChecksum(cfg *haproxyv1alpha1.HAProxyCfg, checksum string) (*haproxyv1alpha1.AuxiliaryFileReferences, bool) {
+	if cfg.Spec.Checksum != checksum {
+		return nil, false
+	}
+	return committedReferences(cfg)
 }
 
 // applyPodStatusToRuntimeConfig SSA-applies this pod's status entry to

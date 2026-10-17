@@ -99,10 +99,6 @@ type validationFailedWorkItem struct {
 // statusWorkItem represents a pod status update task for the async worker.
 type statusWorkItem struct {
 	event *events.ConfigAppliedToPodEvent
-	// retries counts requeues of this item while its HAProxyCfg wasn't
-	// published yet (see requeueStatusWork). Only touched by the status
-	// worker goroutines after the item leaves the pending map.
-	retries int
 }
 
 type podAuthorityKey struct {
@@ -192,10 +188,14 @@ type Component struct {
 	// for the same pod. When multiple updates arrive for the same pod before the
 	// worker processes them, only the latest update is applied. This prevents
 	// channel overflow during high-frequency reconciliation cycles.
-	statusWorkPending   map[string]*statusWorkItem // Key: namespace/runtimeConfig/podName
-	statusWorkPendingMu sync.Mutex
-	statusWorkTrigger   chan struct{} // Signals worker to process pending updates
-	statusRetrySignals  *delayedSignals
+	statusWorkPending map[string]*statusWorkItem // Key: namespace/runtimeConfig/podName
+	statusWorkMu      sync.Mutex
+	statusWorkTrigger chan struct{} // Signals worker to process pending updates
+	// statusWorkParked holds the updates the HAProxyCfg could not take yet until
+	// the next publication attempt (statusPublicationAttempts counts them). No
+	// key is both parked and pending. statusWorkMu guards both maps and the count.
+	statusWorkParked          map[string]*statusWorkItem
+	statusPublicationAttempts uint64
 
 	endpointAuthorityMu    sync.RWMutex
 	endpointAuthorities    map[podAuthorityKey]podAuthority
@@ -322,8 +322,8 @@ func New(
 		deployedTrigger:      make(chan struct{}, statusWorkTriggerSize),
 		validationFailedWork: make(chan *validationFailedWorkItem, publishWorkChannelSize),
 		statusWorkPending:    make(map[string]*statusWorkItem),
+		statusWorkParked:     make(map[string]*statusWorkItem),
 		statusWorkTrigger:    make(chan struct{}, statusWorkTriggerSize),
-		statusRetrySignals:   newDelayedSignals(),
 		publishSuperseded:    make(chan struct{}),
 		invalidSuperseded:    make(chan struct{}),
 		publicationRetryWait: waitForPublicationRetry,
@@ -409,7 +409,6 @@ func (c *Component) Start(ctx context.Context) error {
 	defer func() {
 		c.publishThrottle.Stop()
 		c.statusThrottle.Stop()
-		c.statusRetrySignals.Stop()
 		workers.Wait()
 	}()
 
@@ -517,17 +516,17 @@ func (c *Component) preparePublicationTerm() {
 	c.pendingPublish = nil
 	c.pendingMu.Unlock()
 
-	c.statusWorkPendingMu.Lock()
+	c.statusWorkMu.Lock()
 	c.statusWorkPending = make(map[string]*statusWorkItem)
+	c.statusWorkParked = make(map[string]*statusWorkItem)
 	c.statusWorkTrigger = make(chan struct{}, statusWorkTriggerSize)
-	c.statusWorkPendingMu.Unlock()
+	c.statusWorkMu.Unlock()
 
 	c.verdictMu.Lock()
 	c.pendingVerdict = nil
 	c.verdictTrigger = make(chan struct{}, statusWorkTriggerSize)
 	c.verdictMu.Unlock()
 
-	c.statusRetrySignals = newDelayedSignals()
 	c.publishThrottle = throttle.New(c.publishInterval)
 	c.statusThrottle = throttle.New(c.publishInterval)
 }

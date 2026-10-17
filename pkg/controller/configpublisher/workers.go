@@ -20,7 +20,6 @@ import (
 	"maps"
 	"slices"
 	"sync"
-	"time"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/events"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/timeouts"
@@ -488,7 +487,11 @@ func (c *Component) attemptPublication(ctx context.Context, request *configpubli
 		c.activePublicationCancel = nil
 		c.mu.Unlock()
 	}()
+	cancelledBeforeStart := publishCtx.Err() != nil
 	result, err := c.publisher.PublishConfig(publishCtx, request)
+	if request.NameSuffix == "" && !cancelledBeforeStart {
+		c.wakeParkedStatusWork()
+	}
 	if err == nil {
 		err = c.publisher.PublishRetained(publishCtx, request)
 	}
@@ -563,13 +566,13 @@ func (c *Component) processAllPendingStatusWork(ctx context.Context) {
 		return
 	}
 
-	c.statusWorkPendingMu.Lock()
+	c.statusWorkMu.Lock()
 	if len(c.statusWorkPending) == 0 {
-		c.statusWorkPendingMu.Unlock()
+		c.statusWorkMu.Unlock()
 		return
 	}
 	podKeys := slices.Collect(maps.Keys(c.statusWorkPending))
-	c.statusWorkPendingMu.Unlock()
+	c.statusWorkMu.Unlock()
 
 	c.logger.Debug("Processing coalesced status updates",
 		"pending_pod_count", len(podKeys),
@@ -581,12 +584,12 @@ func (c *Component) processAllPendingStatusWork(ctx context.Context) {
 		go func(podKey string) {
 			defer wg.Done()
 
-			c.statusWorkPendingMu.Lock()
+			c.statusWorkMu.Lock()
 			work, ok := c.statusWorkPending[podKey]
 			if ok {
 				delete(c.statusWorkPending, podKey)
 			}
-			c.statusWorkPendingMu.Unlock()
+			c.statusWorkMu.Unlock()
 			if !ok {
 				// Another goroutine raced and popped first — only possible
 				// if a future change introduces a second drain path. Today
@@ -647,21 +650,17 @@ func (c *Component) processStatusWork(ctx context.Context, work *statusWorkItem)
 	updateCtx, cancel := context.WithTimeout(ctx, timeouts.KubernetesAPITimeout)
 	defer cancel()
 
+	c.statusWorkMu.Lock()
+	attempts := c.statusPublicationAttempts
+	c.statusWorkMu.Unlock()
 	if err := c.publisher.UpdateDeploymentStatus(updateCtx, &update); err != nil {
 		if errors.Is(err, configpublisher.ErrRuntimeConfigNotPublished) && ctx.Err() == nil {
-			// Startup race: the first deployment to the pods completes a few
-			// hundred milliseconds before the initial HAProxyCfg publish
-			// lands, so this pod's status SSA found no resource. Dropping the
-			// update here loses the pod's deployedToPods entry until the next
-			// config change or drift check (deduped no-op deploys never
-			// re-queue it) — observed as an e2e initial-sync timeout with one
-			// of two pods permanently missing. Requeue and retry shortly.
-			c.logger.Debug("HAProxyCfg not published yet, requeuing pod status update",
+			c.logger.Debug("HAProxyCfg does not publish the pod's checksum yet, parking pod status update",
 				"runtime_config_name", event.RuntimeConfigName,
 				"pod_name", event.PodName,
-				"retries", work.retries,
+				"checksum", event.Checksum,
 			)
-			c.requeueStatusWork(ctx, work)
+			c.parkStatusWork(work, attempts)
 			return
 		}
 		c.logger.Warn("Failed to update deployment status",
@@ -678,46 +677,55 @@ func (c *Component) processStatusWork(ctx context.Context, work *statusWorkItem)
 	)
 }
 
-// statusWorkRetryDelay paces requeued status updates whose target HAProxyCfg
-// wasn't published yet. The publish normally lands within milliseconds of the
-// first deployment, so the first retry succeeds; the delay only bounds the
-// spin when it doesn't.
-const statusWorkRetryDelay = time.Second
-
-// statusWorkMaxRetries caps requeues for one work item. 30 × 1s covers any
-// realistic publish latency; past that the HAProxyCfg is gone for good (e.g.
-// the config was deleted mid-flight) and the update is moot.
-const statusWorkMaxRetries = 30
-
-// requeueStatusWork puts a not-yet-appliable status update back into the
-// pending map — unless a newer update for the same pod arrived meanwhile —
-// and arms a short timer to wake the status worker again.
-func (c *Component) requeueStatusWork(ctx context.Context, work *statusWorkItem) {
-	if ctx.Err() != nil {
-		return
-	}
-	if work.retries >= statusWorkMaxRetries {
-		c.logger.Warn("Dropping pod status update after max retries, HAProxyCfg still not published",
-			"runtime_config_name", work.event.RuntimeConfigName,
-			"pod_name", work.event.PodName,
-			"retries", work.retries,
-		)
-		return
-	}
-	work.retries++
-
+// parkStatusWork holds an update the HAProxyCfg could not take until the next
+// publication attempt, the only writer of what it waits for. An attempt made
+// since attemptsSeen may already have written it, so the update is pending
+// again at once. A newer pending update for the pod supersedes it.
+func (c *Component) parkStatusWork(work *statusWorkItem, attemptsSeen uint64) {
 	key := statusWorkKey(work.event)
-	c.statusWorkPendingMu.Lock()
-	if _, exists := c.statusWorkPending[key]; exists {
-		// A newer update for this pod is already pending; it supersedes this one.
-		c.statusWorkPendingMu.Unlock()
+	c.statusWorkMu.Lock()
+	defer c.statusWorkMu.Unlock()
+	if _, newer := c.statusWorkPending[key]; newer {
+		return
+	}
+	if c.statusPublicationAttempts == attemptsSeen {
+		c.statusWorkParked[key] = work
 		return
 	}
 	c.statusWorkPending[key] = work
-	c.statusWorkPendingMu.Unlock()
+	signalStatusWorker(c.statusWorkTrigger)
+}
 
-	if c.statusRetrySignals != nil {
-		c.statusRetrySignals.Schedule(ctx, statusWorkRetryDelay, c.statusWorkTrigger)
+// wakeParkedStatusWork makes every parked update pending: the publication
+// attempt that calls it may have published the checksum one waits for.
+func (c *Component) wakeParkedStatusWork() {
+	c.statusWorkMu.Lock()
+	defer c.statusWorkMu.Unlock()
+	c.statusPublicationAttempts++
+	if len(c.statusWorkParked) == 0 {
+		return
+	}
+	maps.Copy(c.statusWorkPending, c.statusWorkParked)
+	clear(c.statusWorkParked)
+	signalStatusWorker(c.statusWorkTrigger)
+}
+
+// dropParkedStatusWork forgets a terminated pod's parked update, so a later
+// publication cannot re-apply the entries its cleanup removed. An empty uid
+// matches every incarnation.
+func (c *Component) dropParkedStatusWork(namespace, name, uid string) {
+	c.statusWorkMu.Lock()
+	defer c.statusWorkMu.Unlock()
+	maps.DeleteFunc(c.statusWorkParked, func(_ string, work *statusWorkItem) bool {
+		return work.event.PodNamespace == namespace && work.event.PodName == name &&
+			(uid == "" || work.event.PodUID == uid)
+	})
+}
+
+func signalStatusWorker(trigger chan<- struct{}) {
+	select {
+	case trigger <- struct{}{}:
+	default: // already signalled; the worker drains every pending update
 	}
 }
 

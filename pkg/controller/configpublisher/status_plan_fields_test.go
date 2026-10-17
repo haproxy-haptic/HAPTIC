@@ -21,14 +21,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sfake "k8s.io/client-go/kubernetes/fake"
 
 	haproxyv1alpha1 "github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/events"
-	"github.com/haproxy-haptic/HAPTIC/pkg/controller/testutil"
-	"github.com/haproxy-haptic/HAPTIC/pkg/controller/throttle"
-	"github.com/haproxy-haptic/HAPTIC/pkg/generated/clientset/versioned/fake"
-	configpublisher "github.com/haproxy-haptic/HAPTIC/pkg/k8s/configpublisher"
 )
 
 // The apply mode and the plan a pod runs are only observable through
@@ -36,17 +31,7 @@ import (
 // the deployer's event to the HAProxyCfg status.
 func TestProcessStatusWork_WritesThePlanFields(t *testing.T) {
 	ctx := context.Background()
-	crdClient := fake.NewSimpleClientset()
-	installSSAListMapMergeReactor(crdClient)
-	publisher := configpublisher.NewWithListers(k8sfake.NewClientset(), crdClient, nil, testutil.NewTestLogger())
-
-	c := &Component{
-		logger:            testutil.NewTestLogger(),
-		publisher:         publisher,
-		statusWorkPending: make(map[string]*statusWorkItem),
-		statusWorkTrigger: make(chan struct{}, 1),
-		statusThrottle:    throttle.New(0),
-	}
+	crdClient, c := newStatusWorkComponent(t)
 
 	_, err := crdClient.HaproxyTemplateICV1alpha1().HAProxyCfgs("default").Create(ctx,
 		&haproxyv1alpha1.HAProxyCfg{

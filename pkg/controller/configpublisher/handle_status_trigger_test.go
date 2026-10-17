@@ -117,17 +117,17 @@ func TestHandleStatusTrigger_InsideRefractoryDefersToTimer(t *testing.T) {
 			"", "", "checksum-abc", false, nil,
 		),
 	}
-	c.statusWorkPendingMu.Lock()
+	c.statusWorkMu.Lock()
 	c.statusWorkPending[podKey] = sentinel
-	c.statusWorkPendingMu.Unlock()
+	c.statusWorkMu.Unlock()
 
 	require.NotPanics(t, func() { c.handleStatusTrigger(t.Context()) },
 		"inside-refractory MUST take the timer-schedule branch — a "+
 			"regression that called processAllPendingStatusWork directly "+
 			"would crash on the nil publisher reachable from processStatusWork")
 
-	c.statusWorkPendingMu.Lock()
-	defer c.statusWorkPendingMu.Unlock()
+	c.statusWorkMu.Lock()
+	defer c.statusWorkMu.Unlock()
 	got, stillPresent := c.statusWorkPending[podKey]
 	require.True(t, stillPresent,
 		"the sentinel MUST remain in statusWorkPending — a regression that "+

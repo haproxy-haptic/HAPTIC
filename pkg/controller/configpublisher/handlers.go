@@ -522,17 +522,12 @@ func (c *Component) handleConfigAppliedToPod(event *events.ConfigAppliedToPodEve
 
 	// Store (or replace) the pending update for this pod.
 	// This provides natural coalescing - newer updates replace older ones.
-	c.statusWorkPendingMu.Lock()
+	c.statusWorkMu.Lock()
 	c.statusWorkPending[key] = workItem
-	c.statusWorkPendingMu.Unlock()
+	delete(c.statusWorkParked, key)
+	c.statusWorkMu.Unlock()
 
-	// Signal the worker to wake up and process pending updates.
-	// Non-blocking send - if signal is already pending, no need to add another.
-	select {
-	case c.statusWorkTrigger <- struct{}{}:
-	default:
-		// Worker already has a pending signal, no need to add another
-	}
+	signalStatusWorker(c.statusWorkTrigger)
 }
 
 // handlePodTerminated cleans up pod references when a pod is terminated.
@@ -545,6 +540,7 @@ func (c *Component) handlePodTerminated(ctx context.Context, event *events.HAPro
 	c.endpointAuthorityMu.Unlock()
 
 	c.forgetPodChecksum(event.PodNamespace, event.PodName)
+	c.dropParkedStatusWork(event.PodNamespace, event.PodName, event.PodUID)
 
 	// Get the namespace from cached templateConfig (namespace-scoped operations).
 	c.mu.RLock()

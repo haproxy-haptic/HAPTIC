@@ -29,22 +29,22 @@ func TestConfigAppliedStatusRejectsRetiredPodUID(t *testing.T) {
 	c.handleConfigAppliedToPod(events.NewConfigAppliedToPodEvent(
 		"cfg", "haptic", "haproxy-0", "haptic", "uid-old", "runtime-old", "checksum", false, nil,
 	))
-	c.statusWorkPendingMu.Lock()
+	c.statusWorkMu.Lock()
 	assert.Empty(t, c.statusWorkPending)
-	c.statusWorkPendingMu.Unlock()
+	c.statusWorkMu.Unlock()
 
 	c.handleConfigAppliedToPod(events.NewConfigAppliedToPodEvent(
 		"cfg", "haptic", "haproxy-0", "haptic", "uid-new", "runtime-old", "checksum", false, nil,
 	))
-	c.statusWorkPendingMu.Lock()
+	c.statusWorkMu.Lock()
 	assert.Empty(t, c.statusWorkPending)
-	c.statusWorkPendingMu.Unlock()
+	c.statusWorkMu.Unlock()
 
 	c.handleConfigAppliedToPod(events.NewConfigAppliedToPodEvent(
 		"cfg", "haptic", "haproxy-0", "haptic", "uid-new", "runtime-new", "checksum", false, nil,
 	))
-	c.statusWorkPendingMu.Lock()
-	defer c.statusWorkPendingMu.Unlock()
+	c.statusWorkMu.Lock()
+	defer c.statusWorkMu.Unlock()
 	require.Len(t, c.statusWorkPending, 1)
 	for _, work := range c.statusWorkPending {
 		assert.Equal(t, "uid-new", work.event.PodUID)

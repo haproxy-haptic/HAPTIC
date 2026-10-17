@@ -36,7 +36,7 @@ result, err := p.PublishConfig(ctx, &configpublisher.PublishRequest{
 
 `NewWithListers` is the production path — passing the informer-backed listers means status updates check the cache before issuing a GET, cutting API-server load on busy clusters. A changed `HAProxyCfg` is updated from the cached copy; a stale copy fails the update's resourceVersion check and the retry reads the live object. Call `SetMetadataClient` as well: the cleanup fence then re-reads only the `HAProxyCfg` metadata before each stale-child deletion and reads the whole object only when its resourceVersion has moved.
 
-`UpdateDeploymentStatus` applies each pod's `deployedToPods` entry with the pod's own field manager. It returns `ErrRuntimeConfigNotPublished` while the `HAProxyCfg` is missing or its publication has not yet written the auxiliary references; the caller retries. A drift check (`IsDriftCheck`) reads the `HAProxyCfg` and one list per auxiliary-file kind live, and skips an apply only when the object still shows that pod's last identical apply.
+`UpdateDeploymentStatus` applies each pod's `deployedToPods` entry with the pod's own field manager. The `HAProxyCfg` entry carries the pod's checksum and is applied first. Auxiliary-file entries go only to the files of the publication at that checksum: until the `HAProxyCfg` publishes it with its auxiliary references, the call returns `ErrRuntimeConfigNotPublished` and the caller retries after the next publication. A drift check (`IsDriftCheck`) reads the `HAProxyCfg` and one list per auxiliary-file kind live, and skips an apply only when the object still shows that pod's last identical apply.
 
 ## What Gets Published
 
