@@ -75,23 +75,32 @@ func newAcceptanceHarness(t *testing.T, pageURL string, critical bool, subscribe
 
 func newAcceptanceHarnessWithTemplate(t *testing.T, pageURL, template string, subscribe ...func(*busevents.EventBus)) *acceptanceHarness {
 	t.Helper()
-	cfg := &config.Config{
+	cfg := acceptanceConfig()
+	cfg.TemplateSnippets = map[string]config.TemplateSnippet{
+		"routes": {
+			Name:        "routes",
+			Requires:    []string{"routes"},
+			Incremental: &config.IncrementalTemplate{Source: "routes"},
+			Template:    template,
+		},
+	}
+	cfg.HAProxyConfig = config.HAProxyConfig{Template: `{{ render "routes" }}`}
+	return newAcceptanceHarnessWithConfig(t, pageURL, cfg, subscribe...)
+}
+
+func acceptanceConfig() *config.Config {
+	return &config.Config{
 		Dataplane: config.DataplaneConfig{
 			MapsDir: "/etc/haproxy/maps", SSLCertsDir: "/etc/haproxy/ssl", GeneralStorageDir: "/etc/haproxy/files",
 		},
 		WatchedResources: map[string]config.WatchedResource{
 			"routes": {APIVersion: "example.test/v1", Resources: "routes", IndexBy: []string{"metadata.namespace", "metadata.name"}},
 		},
-		TemplateSnippets: map[string]config.TemplateSnippet{
-			"routes": {
-				Name:        "routes",
-				Requires:    []string{"routes"},
-				Incremental: &config.IncrementalTemplate{Source: "routes"},
-				Template:    template,
-			},
-		},
-		HAProxyConfig: config.HAProxyConfig{Template: `{{ render "routes" }}`},
 	}
+}
+
+func newAcceptanceHarnessWithConfig(t *testing.T, pageURL string, cfg *config.Config, subscribe ...func(*busevents.EventBus)) *acceptanceHarness {
+	t.Helper()
 	declarations := helpers.BuildAdditionalDeclarations(cfg, &typebootstrap.Result{
 		Types: map[string]reflect.Type{}, Kinds: map[string]string{}, Errors: map[string]error{},
 	})
@@ -567,12 +576,14 @@ func TestGateVerdictsRetainEachOccurrenceOfTheSameOutput(t *testing.T) {
 	assert.False(t, accepted)
 }
 
-func TestFollowerFetchDoesNotBlockADeployAfterLeadershipChanges(t *testing.T) {
-	entered := make(chan struct{}, 1)
-	release := make(chan struct{})
-	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+// heldPage answers "page" once release is closed; entered signals a request.
+func heldPage(t *testing.T) (page *httptest.Server, entered <-chan struct{}, release chan struct{}) {
+	t.Helper()
+	requested := make(chan struct{}, 1)
+	release = make(chan struct{})
+	page = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		select {
-		case entered <- struct{}{}:
+		case requested <- struct{}{}:
 		default:
 		}
 		select {
@@ -582,6 +593,11 @@ func TestFollowerFetchDoesNotBlockADeployAfterLeadershipChanges(t *testing.T) {
 		}
 	}))
 	t.Cleanup(page.Close)
+	return page, requested, release
+}
+
+func TestFollowerFetchDoesNotBlockADeployAfterLeadershipChanges(t *testing.T) {
+	page, entered, release := heldPage(t)
 	h := newAcceptanceHarness(t, page.URL, false)
 	followerDone := make(chan error, 1)
 	followerStopped := make(chan struct{})
@@ -614,4 +630,42 @@ func TestFollowerFetchDoesNotBlockADeployAfterLeadershipChanges(t *testing.T) {
 	h.reconcile("deploy after the follower accepted content")
 	assert.Equal(t, "a=page\n", h.deployedFor("deploy after the follower accepted content").config)
 	assert.True(t, h.service.FirstGraphPublished())
+}
+
+// The follower's render accepts the content between the leader's withholding
+// render and its acceptance attempt, which then has nothing to accept (#363).
+func TestContentAcceptedBeforeTheAttemptStartsStillDeploys(t *testing.T) {
+	page, entered, release := heldPage(t)
+	var requested <-chan busevents.Event
+	cfg := acceptanceConfig()
+	cfg.HAProxyConfig = config.HAProxyConfig{Template: `{{ http.Fetch("` + page.URL + `", map[string]any{"critical": true, "retries": 1, "timeout": "1s"}) }}`}
+	h := newAcceptanceHarnessWithConfig(t, page.URL, cfg, func(bus *busevents.EventBus) {
+		requested = bus.SubscribeTypes("acceptance-requests", 4, events.EventTypeHTTPContentAcceptanceRequested)
+	})
+	followerDone := make(chan error, 1)
+	go func() {
+		_, err := h.coordinator.pipeline.Execute(t.Context(), h.coordinator.storeProvider, rendercontext.RenderModeReconcile)
+		followerDone <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(testutil.EventTimeout):
+		t.Fatal("follower did not begin its fetch")
+	}
+
+	// Holding the ledger keeps the coordinator between the withholding render
+	// and the attempt, as a busy leader is while the follower's commit lands.
+	h.coordinator.ledger.mu.Lock()
+	h.reconcile("leader withholds the unaccepted source")
+	testutil.WaitForEvent[*events.HTTPContentAcceptanceRequestedEvent](t, requested, testutil.EventTimeout)
+	close(release)
+	select {
+	case err := <-followerDone:
+		require.NoError(t, err)
+	case <-time.After(testutil.EventTimeout):
+		t.Fatal("follower render did not settle")
+	}
+	h.coordinator.ledger.mu.Unlock()
+
+	assert.Equal(t, "page\n", h.deployedFor("http_content_accepted").config)
 }

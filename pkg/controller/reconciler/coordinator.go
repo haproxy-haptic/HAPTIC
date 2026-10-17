@@ -300,6 +300,7 @@ func (c *Coordinator) handleReconciliationTriggered(ctx context.Context, event *
 		c.handlePipelineFailure(ctx, &pipeline.PipelineError{Phase: pipeline.PhaseRender, Cause: err}, event, startTime)
 		return nil
 	}
+	acceptedBefore := c.acceptanceSequence()
 	result, err := c.pipeline.Execute(pipeline.WithPendingContentWithheld(ctx), c.storeProvider,
 		rendercontext.RenderModeReconcile, renderOpts...)
 	if cause := context.Cause(ctx); cause != nil {
@@ -307,6 +308,9 @@ func (c *Coordinator) handleReconciliationTriggered(ctx context.Context, event *
 			"cause", cause,
 			"correlation_id", correlationID)
 		return nil
+	}
+	if !pipeline.RenderHeld(err) {
+		c.ledger.deployedFrom.Store(acceptedBefore)
 	}
 	if pipeline.RenderHeld(err) && c.criticalFailureReported {
 		c.logger.Debug("Reconciliation skipped while rendering is paused", "error", err, "correlation_id", correlationID)
