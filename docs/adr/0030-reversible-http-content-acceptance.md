@@ -70,8 +70,10 @@ as a narrowing. Two facts were not weighed then:
 4. **Accept off the deploy path.** The leader's reconcile renders with pending
    content withheld and deploys immediately. A withheld source asks for an
    acceptance attempt. The coordinator runs at most one at a time, beside the
-   reconcile loop, and discards its output. When it accepts something, it
-   triggers the reconcile that deploys the content. Followers' warm-up renders
+   reconcile loop, and discards its output. When content was accepted after
+   the latest deploying render read the store, by the attempt or by another
+   render on the replica, it triggers the reconcile that deploys the content
+   (#363). Followers' warm-up renders
    still accept before completing warm-up. Both accepting paths defer initial
    HTTP I/O: a render discovers missing sources and releases its graph and
    the sole cold-render slot (ADR-0029). The pipeline then fetches with at

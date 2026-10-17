@@ -55,6 +55,8 @@ type acceptanceLedger struct {
 	attempted       atomic.Uint64
 	lastRefusal     string
 	criticalFailure error
+	// deployedFrom is the acceptance sequence the latest deploying render read from.
+	deployedFrom atomic.Uint64
 }
 
 func newAcceptanceLedger() *acceptanceLedger {
@@ -201,14 +203,20 @@ func (l *acceptanceLedger) anotherAttempt(ctx context.Context) bool {
 	return false
 }
 
-// Acceptance output is discarded; a new deploying render reads the accepted content.
+// Acceptance output is discarded; a deploying render reads what was accepted
+// since the latest one read the store, by this attempt or another render (#363).
 func (c *Coordinator) attemptAcceptance(ctx context.Context, generation uint64) {
 	opts, err := c.renderOptions(generation)
 	if err != nil {
 		c.logger.Debug("HTTP content acceptance attempt skipped", "error", err)
 		return
 	}
-	before := c.acceptance.AcceptanceSequence()
+	deployed := c.ledger.deployedFrom.Load()
+	defer func() {
+		if ctx.Err() == nil && c.acceptance.AcceptanceSequence() != deployed {
+			c.eventBus.Publish(events.NewReconciliationTriggeredEvent("http_content_accepted", true, events.WithNewCorrelation()))
+		}
+	}()
 	attemptCtx := pipeline.WithRefusedOutputs(ctx, c.ledger.isRefused)
 	result, err := c.pipeline.Execute(attemptCtx, c.storeProvider, rendercontext.RenderModeReconcile, opts...)
 	if ctx.Err() == nil {
@@ -227,9 +235,6 @@ func (c *Coordinator) attemptAcceptance(ctx context.Context, generation uint64) 
 	c.ledger.lastRefusal = ""
 	c.ledger.criticalFailure = nil
 	c.ledger.mu.Unlock()
-	if c.acceptance.AcceptanceSequence() != before {
-		c.eventBus.Publish(events.NewReconciliationTriggeredEvent("http_content_accepted", true, events.WithNewCorrelation()))
-	}
 }
 
 func (l *acceptanceLedger) criticalContentFailure() error {
