@@ -148,9 +148,15 @@ func (r *releaseNamespaceSecrets) requireReleaseNamespaceTLS(ctx context.Context
 	if err != nil {
 		return err
 	}
-	manifest := scopedBackendManifest(s.Namespace) + tlsSecretManifest(s.Namespace, "scoped-tls", certificate) +
-		ingressManifest(s.Namespace, "scoped-https", scopedHost, "scoped-tls", nil)
-	if _, err := s.KubeUnscoped(ctx, strings.NewReader(manifest), "apply", "-f", "-"); err != nil {
+	setup := scopedBackendManifest(s.Namespace) + tlsSecretManifest(s.Namespace, "scoped-tls", certificate)
+	if _, err := s.KubeUnscoped(ctx, strings.NewReader(setup), "apply", "-f", "-"); err != nil {
+		return err
+	}
+	ingress := ingressManifest(s.Namespace, "scoped-https", scopedHost, "scoped-tls", nil)
+	if err := admission.Wait(ctx, s.Client, []byte(ingress), 180*time.Second); err != nil {
+		return err
+	}
+	if _, err := s.KubeUnscoped(ctx, strings.NewReader(ingress), "apply", "-f", "-"); err != nil {
 		return err
 	}
 	if _, err := s.Kube(ctx, nil, "rollout", "status", "deployment/"+scopedBackend, "--timeout=180s"); err != nil {
