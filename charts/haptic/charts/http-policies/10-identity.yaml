@@ -1,5 +1,5 @@
 templateSnippets:
   frontend-filters-005-policy-identity:
     template: |-
-      {{ "\n" }}http-request set-var(txn.policy_id) var(txn.resource_key)
-      {{ render_glob "frontend-policy-identity-*" }}
+      http-request set-var(txn.policy_id) var(txn.resource_key)
+      {{- on_own_lines(render_glob "frontend-policy-identity-*") }}

@@ -107,6 +107,7 @@ Every entry below is callable in two equivalent styles: as a plain function (`fn
 | `glob_match(items, pattern)` | Filter strings by glob pattern | <code>{{ templateSnippets &#124; glob_match("backend-*") }}</code> |
 | `map_extract(items, keyPath)` | Pluck one field (dotted key path) from each item into a flat slice | <code>{{ routes &#124; map_extract("routeId") }}</code> |
 | `indent(s, n)` | Indent lines by N spaces (first and blank lines excluded) | <code>{{ render "snippet" &#124; indent(4) }}</code> |
+| `on_own_lines(render_glob "prefix-*")` | Render the matching snippets so that each starts on a new line. A line break is added only where a snippet would otherwise continue the line before it. The text before the call counts as an unfinished line, so write the call after `{{-`. Takes only a `render_glob` expression | `{{- on_own_lines(render_glob "frontend-extra-*") }}` |
 | `debug(v, label)` | Output as JSON comment | <code>{{ routes &#124; debug("routes") }}</code> |
 | `toJSON(v)` | Convert a value to JSON; an unsupported value fails the render | <code>{{ myMap &#124; toJSON() }}</code> |
 | `basename(path)` | Filename portion of a path, like Unix `basename` | `basename("/etc/haproxy/maps/hosts.map")` |

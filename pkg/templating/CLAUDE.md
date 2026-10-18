@@ -1307,6 +1307,14 @@ This keeps compile-time path validation; the trade-off is that the dispatch is n
 {{ render_glob "backend-*" }}  {# Renders all backend-* templates #}
 ```
 
+`render_glob` concatenates the outputs verbatim. `on_own_lines(render_glob "p")`
+is the line-safe form: `distributeOnOwnLines` (`filters_lines.go`, the
+`ExpandedTransformer` of every chart build path) rewrites it into a balanced tree
+of pairwise joins over the matched renders, because a function only ever sees the
+already-joined string. `on_own_lines` itself is not declared, so a new
+`scriggo.BuildTemplate` call that compiles chart templates without the
+transformer fails with `undefined: on_own_lines` rather than joining verbatim.
+
 ### Scriggo Template Syntax
 
 Scriggo uses Go template syntax:

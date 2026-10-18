@@ -111,6 +111,12 @@ const (
 	// FuncTitle converts a string to title case.
 	FuncTitle = "title"
 
+	// FuncOnOwnLines starts each snippet a render_glob matches on a new line.
+	// distributeOnOwnLines rewrites it into the two declared functions below.
+	FuncOnOwnLines      = "on_own_lines"
+	funcOnOwnLinesStart = "on_own_lines_start"
+	funcOnOwnLinesJoin  = "on_own_lines_join"
+
 	// FuncIsNil checks if a value is nil, including typed nil pointers.
 	// In Go, a typed nil pointer stored in an any is not equal to nil.
 	// This function uses reflection to properly check for nil pointers.

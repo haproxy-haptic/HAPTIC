@@ -67,59 +67,59 @@ maps:
     template: |
       # <ns>/<name> → "ok <userlist> <realm>" | "missing" | "nosecret"
       # Populated by map-haptic-basic-auth-routes-*; read by frontend-filters-900-haptic-basic-auth.
-      {{ render_glob "map-haptic-basic-auth-routes-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-basic-auth-routes-*") -}}
   haptic-rewrite-routes.map:
     template: |
       # <ns>/<name> → 1 for every route whose path-rewrite rides the map lane.
       # Populated by map-haptic-rewrite-routes-*; read by frontend-filters-995-haptic-path-rewrite.
-      {{ render_glob "map-haptic-rewrite-routes-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-rewrite-routes-*") -}}
   haptic-rewrite-prefix.map:
     template: |
       # <ns>/<name>|<prefix> → "<offset> <new prefix>", a prefix-tree lookup (map_beg) per map-lane route.
       # Populated by map-haptic-rewrite-prefix-*; read by frontend-filters-995-haptic-path-rewrite.
-      {{ render_glob "map-haptic-rewrite-prefix-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-rewrite-prefix-*") -}}
   haptic-hmac-routes.map:
     template: |
       # <ns>/<name> → "<alg> <signature header> <body|path> <ok|missing> <base64 key|_>"
       # Populated by map-haptic-hmac-routes-*; read by frontend-filters-861-haptic-hmac.
-      {{ render_glob "map-haptic-hmac-routes-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-hmac-routes-*") -}}
   haptic-consumer-group-routes.map:
     template: |
       # <ns>/<name> → "<secret ns/name> <ok|missing|invalid>"
       # Populated by map-haptic-consumer-group-routes-*; read by frontend-filters-862-haptic-consumer-groups.
-      {{ render_glob "map-haptic-consumer-group-routes-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-consumer-group-routes-*") -}}
   haptic-consumer-group-allow.map:
     template: |
       # <ns>/<name>|<group> → 1 for every group a route allows.
       # Populated by map-haptic-consumer-group-allow-*; read by frontend-filters-862-haptic-consumer-groups.
-      {{ render_glob "map-haptic-consumer-group-allow-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-consumer-group-allow-*") -}}
   haptic-consumer-groups.map:
     template: |
       # <secret ns/name>|<consumer> → <group>, for every Secret an Ingress references.
       # Populated by map-haptic-consumer-groups-*; read by frontend-filters-862-haptic-consumer-groups.
-      {{ render_glob "map-haptic-consumer-groups-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-consumer-groups-*") -}}
   haptic-rate-limit-routes.map:
     template: |
       # <ns>/<name> → "<req|conn> <window> <threshold> <status>" for the per-pod stick-table limiter.
       # Populated by map-haptic-rate-limit-routes-*; read by frontend-filters-863-haptic-rate-limit.
-      {{ render_glob "map-haptic-rate-limit-routes-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-rate-limit-routes-*") -}}
   haptic-rate-limit-allow-partitions.map:
     ordered: false
     template: |
       # <block> <block>: the disjoint cover of every rate-limit-allowlist; src,map_ip() names the block a client falls in.
-      {{ render_glob "map-haptic-rate-limit-allow-partitions-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-rate-limit-allow-partitions-*") -}}
   haptic-rate-limit-allow-members.map:
     ordered: false
     template: |
       # <block>|<ns>/<name> 1: the route exempts that block from its rate limits. Read by frontend-filters-090-haptic-rate-limit-allowlist.
-      {{ render_glob "map-haptic-rate-limit-allow-members-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-rate-limit-allow-members-*") -}}
   haptic-bandwidth-routes.map:
     template: |
       # <ns>/<name> → "<download bytes/s|_> <upload bytes/s|_> <stream|client|service>"
       # Populated by map-haptic-bandwidth-routes-*; read by frontend-filters-864-haptic-bandwidth-limit.
-      {{ render_glob "map-haptic-bandwidth-routes-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-bandwidth-routes-*") -}}
   haptic-route-unavailable.map:
     template: |
       # <ns>/<name> → <denied_by reason> for a route whose backend TLS could not be configured.
       # Populated by map-haptic-route-unavailable-*; read by frontend-filters-899-haptic-route-unavailable.
-      {{ render_glob "map-haptic-route-unavailable-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-route-unavailable-*") -}}

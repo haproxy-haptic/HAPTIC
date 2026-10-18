@@ -1005,14 +1005,11 @@ templateSnippets:
       http-request set-var(txn.host) req.hdr(Host),field(1,:),lower
       http-request set-var(txn.dst_port) dst_port
       http-request set-var(txn.listener_port) var(txn.dst_port)
-      {# Extension point: libraries may remap txn.listener_port from bind metadata.
-          The blank line before render_glob is load-bearing (charts/CLAUDE.md → Whitespace Control). #}
-
-      {{ render_glob "frontend-routing-listener-port-*" }}
+      {#- Extension point: libraries may remap txn.listener_port from bind metadata. #}
+      {{- on_own_lines(render_glob "frontend-routing-listener-port-*") }}
       # Listener-scoped keys precede shared hostname keys.
       http-request set-var(txn.host_match) str()
-
-      {{ render_glob "frontend-routing-host-match-*" }}
+      {{- on_own_lines(render_glob "frontend-routing-host-match-*") }}
       http-request set-var(txn.host_match) var(txn.host_full),map({{ mapPath("host.map") }},'') if { var(txn.host_full) -m sub : } { var(txn.host_match) -m len 0 }
       http-request set-var(txn.host_match) var(txn.host),concat(:,txn.listener_port,),map({{ mapPath("host.map") }},'') if { var(txn.host_match) -m len 0 }
       http-request set-var(txn.host_match) var(txn.host),map({{ mapPath("host.map") }},'') if { var(txn.host_match) -m len 0 }
@@ -1094,7 +1091,7 @@ templateSnippets:
       http-request set-var(txn.path_match_qualifier) var(txn.path_match),field(1,:)
       {# Advanced matchers (method/header/query) may rewrite path_match; re-parse
           the qualifier afterwards, but only when a matcher actually emitted rules. #}
-      {%- var adv = render_glob "frontend-matchers-advanced-*" %}
+      {%- var adv = on_own_lines(render_glob "frontend-matchers-advanced-*") %}
       {{ adv }}
       {%- if strip(adv) != "" %}
       http-request set-var(txn.path_match_qualifier) var(txn.path_match),field(1,:)
@@ -1112,7 +1109,7 @@ templateSnippets:
       http-request set-var(txn.resource_name)      var(txn.backend_name),field(2,_) if { var(txn.path_match_qualifier) -m str BACKEND }
       http-request set-var(txn.resource_namespace) var(txn.route_key),field(1,_)    if { var(txn.path_match_qualifier) -m str MULTIBACKEND }
       http-request set-var(txn.resource_name)      var(txn.route_key),field(2,_)    if { var(txn.path_match_qualifier) -m str MULTIBACKEND }
-      {{ render_glob "frontend-routing-owner-*" }}
+      {{- on_own_lines(render_glob "frontend-routing-owner-*") }}
       http-request set-var(txn.resource_id) var(txn.resource_namespace),concat(/,txn.resource_name,) if { var(txn.resource_namespace) -m found }
       {#- txn.resource_key keys per-route feature maps; an owner snippet sets it when <ns>/<name> is not unique across route kinds. #}
       http-request set-var(txn.resource_key) var(txn.resource_id) if { var(txn.resource_id) -m found } !{ var(txn.resource_key) -m found }
@@ -1489,7 +1486,7 @@ templateSnippets:
   global-settings:
     template: |
       {# Renders global-settings-* snippets (global section directives) #}
-      {{- render_glob "global-settings-*" | strip() -}}
+      {{- on_own_lines(render_glob "global-settings-*") | strip() -}}
 
   global-settings-050-experimental:
     template: |
@@ -1631,7 +1628,7 @@ templateSnippets:
   defaults-settings:
     template: |
       {# Renders defaults-settings-* snippets (defaults section directives) #}
-      {{- render_glob "defaults-settings-*" | strip() -}}
+      {{- on_own_lines(render_glob "defaults-settings-*") | strip() -}}
 
   defaults-settings-100-options:
     template: |
@@ -1798,7 +1795,7 @@ templateSnippets:
       {%- macro ForwardedForModes() string -%}
       {%%
         var rules, _ = shared.ComputeIfAbsent("forwardedForModeRules", func() any {
-          return strip(render_glob "forwarded-for-mode-*")
+          return strip(on_own_lines(render_glob "forwarded-for-mode-*"))
         })
         show tostring(rules)
       %%}
@@ -1834,9 +1831,8 @@ templateSnippets:
 
   frontend-filters-100-server-header:
     template: |
-      {# Ingress conformance requires a Server header; set it for every backend.
-         A preceding snippet may omit its trailing newline. #}
-      {{ "\n" }}http-after-response set-header Server haptic
+      {# Ingress conformance requires a Server header; set it for every backend. #}
+      http-after-response set-header Server haptic
 
   frontend-filters-090-request-buffering:
     template: |
@@ -1894,7 +1890,7 @@ templateSnippets:
          than a per-backend `http-request deny` (a backend-section reload). `add(0)`
          forces the map value to a signed integer; `sub(<var>)` then does the
          dynamic comparison the literal `req.body_size gt <N>` form can't express. #}
-      {{ "\n" }}http-request set-var(txn.haptic_body_limit) var(txn.backend_name),map({{ bsMap }},0),add(0)
+      http-request set-var(txn.haptic_body_limit) var(txn.backend_name),map({{ bsMap }},0),add(0)
       {# txn.denied_by names the gate that blocked the request in the access log.
           413 is also produced by the WAF and schema-validation body caps, so the
           status code alone can't attribute it. The condition is a byte-for-byte
@@ -1912,19 +1908,19 @@ templateSnippets:
          Inert until a backend has an entry, so changing the Host is map-only.
          Values are URL-encoded by the writers, so url_dec(1) here: the runtime
          map CLI splits a value at the first space and truncates it at a `;`. #}
-      {{ "\n" }}http-request set-header Host %[var(txn.backend_name),map({{ m }}),url_dec(1)] if { var(txn.backend_name),map({{ m }}) -m found }
+      http-request set-header Host %[var(txn.backend_name),map({{ m }}),url_dec(1)] if { var(txn.backend_name),map({{ m }}) -m found }
 
   frontend-filters-261-request-set-xfwd-prefix:
     template: |
       {%- var m, _ = pathResolver.GetPath("reqhdr-xfwd-prefix.map", "map") -%}
       {# Resource-agnostic X-Forwarded-Prefix override, keyed on the resolved backend. url_dec(1): values are URL-encoded by the writers. #}
-      {{ "\n" }}http-request set-header X-Forwarded-Prefix %[var(txn.backend_name),map({{ m }}),url_dec(1)] if { var(txn.backend_name),map({{ m }}) -m found }
+      http-request set-header X-Forwarded-Prefix %[var(txn.backend_name),map({{ m }}),url_dec(1)] if { var(txn.backend_name),map({{ m }}) -m found }
 
   frontend-filters-262-request-set-connection:
     template: |
       {%- var m, _ = pathResolver.GetPath("reqhdr-connection.map", "map") -%}
       {# Resource-agnostic Connection header override, keyed on the resolved backend. url_dec(1): values are URL-encoded by the writers. #}
-      {{ "\n" }}http-request set-header Connection %[var(txn.backend_name),map({{ m }}),url_dec(1)] if { var(txn.backend_name),map({{ m }}) -m found }
+      http-request set-header Connection %[var(txn.backend_name),map({{ m }}),url_dec(1)] if { var(txn.backend_name),map({{ m }}) -m found }
 
   frontend-filters-400-path-rewrite:
     template: |
@@ -1935,7 +1931,7 @@ templateSnippets:
          map-driven). Runs after routing (path-based backend selection already
          happened), matching the old in-backend `replace-path (.*) <literal>`.
          url_dec(1): values are URL-encoded by the writers. #}
-      {{ "\n" }}http-request set-path %[var(txn.backend_name),map({{ m }}),url_dec(1)] if { var(txn.backend_name),map({{ m }}) -m found }
+      http-request set-path %[var(txn.backend_name),map({{ m }}),url_dec(1)] if { var(txn.backend_name),map({{ m }}) -m found }
 
   features-170-redirect-location-map:
     template: |
@@ -2134,7 +2130,7 @@ templateSnippets:
   util-frontend-filter-chain:
     template: |-
       {%- macro FrontendFilterChain() -%}
-      {{- render_glob "frontend-filters-*" -}}
+      {{- on_own_lines(render_glob "frontend-filters-*") -}}
       {%- end macro -%}
 
   util-register-map:
@@ -2389,7 +2385,7 @@ templateSnippets:
   util-default-backend:
     template: |
       {%- import "util-backend" for Backend -%}
-      {%- var contributed = render_glob "default-backend-*" -%}
+      {%- var contributed = on_own_lines(render_glob "default-backend-*") -%}
       {%- if trimSpace(contributed) != "" %}
       {{- contributed }}
       {%- else %}
@@ -2546,7 +2542,7 @@ templateSnippets:
   global-top:
     template: |
       {# Renders global-top-* snippets (e.g., userlist sections from haproxytech.yaml) #}
-      {{- render_glob "global-top-*" -}}
+      {{- on_own_lines(render_glob "global-top-*") -}}
 
   # A second HTTP bind requiring a PROXY header, for HAProxy behind an L4 load
   # balancer. Its own port, not `accept-proxy` on httpPort: HAProxy has no
@@ -2570,49 +2566,49 @@ maps:
     ordered: false
     template: |
       # Host to normalized host mapping (strips port, wildcards)
-      {{ render_glob "map-host-*" -}}
+      {{ on_own_lines(render_glob "map-host-*") -}}
 
   host-regex.map:
     template: |
       # Wildcard-host regex fallback: <regex pattern> <normalized host key>, tried
       # after the exact host.map + single-label regsub miss (multi-label hosts under
       # a wildcard listener). See https://haproxy-haptic.org/docs/latest/libraries/base/#frontend-routing-logic
-      {{ render_glob "map-hostregex-*" -}}
+      {{- on_own_lines(render_glob "map-hostregex-*") -}}
 
   host-alias-regex.map:
     template: |
       # Whole-hostname alias regexes: ^(?:<regex>)$ <normalized host key>, tried last.
       # Kept out of host-regex.map, which listener-scoped host-match-* lookups also read.
-      {{ render_glob "map-hostaliasregex-*" -}}
+      {{ on_own_lines(render_glob "map-hostaliasregex-*") -}}
 
   path-exact.map:
     ordered: false
     template: |
       # Exact path matches (use with map() function)
-      {{ render_glob "map-path-exact-*" -}}
+      {{ on_own_lines(render_glob "map-path-exact-*") -}}
 
   path-prefix-exact.map:
     ordered: false
     template: |
       # Prefix boundary matches without trailing slash
-      {{ render_glob "map-pfxexact-*" -}}
+      {{ on_own_lines(render_glob "map-pfxexact-*") -}}
 
   path-prefix.map:
     ordered: false
     template: |
       # Prefix matches with trailing slash (use with map_beg())
-      {{ render_glob "map-path-prefix-*" -}}
+      {{ on_own_lines(render_glob "map-path-prefix-*") -}}
 
   path-regex.map:
     template: |
       # Regex matches (use with map_reg())
-      {{ render_glob "map-path-regex-*" -}}
+      {{ on_own_lines(render_glob "map-path-regex-*") -}}
 
   weighted-multi-backend.map:
     ordered: false
     template: |
       # Weighted routing: random_weight:route_key → backend_name
-      {{ render_glob "map-weighted-backend-*" }}
+      {{- on_own_lines(render_glob "map-weighted-backend-*") }}
 
   body-size.map:
     ordered: false
@@ -2620,7 +2616,7 @@ maps:
       # Per-backend request body-size limits: backend_name → max bytes. Populated by resource
       # libraries (map-body-size-*); enforced by frontend-filters-250-request-body-size.
       # See https://haproxy-haptic.org/docs/latest/libraries/base/#map-files
-      {{ render_glob "map-body-size-*" -}}
+      {{ on_own_lines(render_glob "map-body-size-*") -}}
 
   request-buffering.map:
     ordered: false
@@ -2629,28 +2625,28 @@ maps:
       # resource libraries (map-request-buffering-*); applied by
       # frontend-filters-090-request-buffering. Backends with no entry inherit the
       # fleet-wide extraContext.requestBuffering.enabled default.
-      {{ render_glob "map-request-buffering-*" -}}
+      {{ on_own_lines(render_glob "map-request-buffering-*") -}}
 
   reqhdr-host.map:
     ordered: false
     template: |
       # Per-backend upstream Host override: backend_name → host. Populated by
       # map-reqhdr-host-*; applied by frontend-filters-260-request-set-host.
-      {{ render_glob "map-reqhdr-host-*" -}}
+      {{ on_own_lines(render_glob "map-reqhdr-host-*") -}}
 
   reqhdr-xfwd-prefix.map:
     ordered: false
     template: |
       # Per-backend X-Forwarded-Prefix override: backend_name → prefix. Populated via
       # map-reqhdr-xfwd-prefix-*; applied by frontend-filters-261-request-set-xfwd-prefix.
-      {{ render_glob "map-reqhdr-xfwd-prefix-*" -}}
+      {{ on_own_lines(render_glob "map-reqhdr-xfwd-prefix-*") -}}
 
   reqhdr-connection.map:
     ordered: false
     template: |
       # Per-backend Connection header override: backend_name → value. Populated via
       # map-reqhdr-connection-*; applied by frontend-filters-262-request-set-connection.
-      {{ render_glob "map-reqhdr-connection-*" -}}
+      {{ on_own_lines(render_glob "map-reqhdr-connection-*") -}}
 
   path-rewrite.map:
     ordered: false
@@ -2658,7 +2654,7 @@ maps:
       # Per-backend literal full-path rewrite: backend_name → replacement path (capture/regex
       # rewrites stay as http-request replace-path in the backend). Populated via
       # map-path-rewrite-*; applied by frontend-filters-400-path-rewrite.
-      {{ render_glob "map-path-rewrite-*" -}}
+      {{ on_own_lines(render_glob "map-path-rewrite-*") -}}
 
   backend-timeouts.map:
     ordered: false
@@ -2668,7 +2664,7 @@ maps:
       # set-timeout lines every ingress backend carries, so editing a timeout annotation is a
       # map-only, reload-free change. The non-settable timeouts (connect/queue/http-request/
       # http-keep-alive/check) stay as per-value backend directives.
-      {{ render_glob "map-backend-timeout-*" -}}
+      {{ on_own_lines(render_glob "map-backend-timeout-*") -}}
 
   backend-service.map:
     ordered: false
@@ -2678,7 +2674,7 @@ maps:
       # namespace/service out of the backend section (they were `set-var` lines)
       # is what lets an ingress/gateway backend be dynamic — its body stays empty.
       # Populated by resource libraries (map-backend-service-*).
-      {{ render_glob "map-backend-service-*" -}}
+      {{ on_own_lines(render_glob "map-backend-service-*") -}}
 
 files:
   400.http:
@@ -2972,13 +2968,13 @@ haproxyConfig:
         option dontlog-normal{{ render "util-http-frontend-settings" }}
         http-request return status 200 content-type text/plain string "OK" if { path /healthz }
         http-request return status 200 content-type text/plain string "READY" if { path /ready }
-        {# Extension point for status frontend directives (e.g., Prometheus exporter) #}
-        {{- render_glob "status-extra-*" | indent(2, true) }}
+        {#- Extension point for status frontend directives (e.g., Prometheus exporter) #}
+        {{- on_own_lines(render_glob "status-extra-*") | indent(2, true) }}
 
     {#- HTTP routing still needs validation when no plaintext listener exists. -#}
     {%- var gf = shared.Get("globalFeatures") -%}
     {%- if gf != nil && tostring(gf.(map[string]any) | dig("needHTTPFrontend")) == "true" %}
-    {%- var httpExtraBinds = render_glob "http-bind-extra-*" %}
+    {%- var httpExtraBinds = on_own_lines(render_glob "http-bind-extra-*") %}
     {#- Keep invalid non-comment extension output visible to HAProxy validation. -#}
     {%- if tostring(gf.(map[string]any) | dig("bindHTTPDefault")) == "true" || regex_search(httpExtraBinds, "(?m)^[\\t ]*[^\\t #\\r\\n]") %}
 
@@ -3024,9 +3020,9 @@ haproxyConfig:
         {%- if tostring(gf.(map[string]any) | dig("bindHTTPDefault")) == "true" %}
         bind *:{{ extraContext | dig("httpPort") | fallback(8080) }}
         {%- end %}
-        {# Extension point for additional bind directives (Gateway HTTP listener ports). #}
-        {# Lands on the OUTER tcp frontend so every HTTP port — chart-static and #}
-        {# Gateway-derived — goes through the same h2c-detection inspector. #}
+        {#- Extension point for additional bind directives (Gateway HTTP listener ports).
+            Lands on the OUTER tcp frontend so every HTTP port — chart-static and
+            Gateway-derived — goes through the same h2c-detection inspector. #}
         {{- httpExtraBinds | indent(2, true) }}
 
         # Wait for the first wire bytes so the h2c-preface ACL can classify the
@@ -3072,7 +3068,7 @@ haproxyConfig:
         bind unix@/etc/haproxy/http-h1-frontend.sock mode 660 accept-proxy{{ render "util-http-frontend-settings" }}
         {# Extension point for early frontend directives (options, captures, ACLs) #}
         {# Runs BEFORE routing logic; use frontend-filters-* for post-routing manipulation #}
-        {{- render_glob "frontend-extra-*" | indent(2, true) }}
+        {{- on_own_lines(render_glob "frontend-extra-*") | indent(2, true) }}
 
         {# Include frontend routing logic (can be overridden by libraries) #}
         {{ render "frontend-routing-logic" | indent(2, true) }}
@@ -3080,7 +3076,7 @@ haproxyConfig:
         {# Runs AFTER routing decisions, BEFORE backend selection #}
         {# Libraries can inject filter logic here (header modification, redirects, rewrites) #}
         {{- FrontendFilterChain() | indent(2, true) }}
-        {{- render_glob "frontend-switching-*" | indent(2, true) }}
+        {{- on_own_lines(render_glob "frontend-switching-*") | indent(2, true) }}
         use_backend %[var(txn.backend_name)] if { var(txn.backend_name) -m found }
         default_backend default_backend
 
@@ -3096,21 +3092,21 @@ haproxyConfig:
         {# routing/filter snippet lands in both protocols' frontends so #}
         {# behaviour stays in lockstep regardless of which protocol the #}
         {# client uses. #}
-        {{- render_glob "frontend-extra-*" | indent(2, true) }}
+        {{- on_own_lines(render_glob "frontend-extra-*") | indent(2, true) }}
         {{ render "frontend-routing-logic" | indent(2, true) }}
         {{- FrontendFilterChain() | indent(2, true) }}
-        {{- render_glob "frontend-switching-*" | indent(2, true) }}
+        {{- on_own_lines(render_glob "frontend-switching-*") | indent(2, true) }}
         use_backend %[var(txn.backend_name)] if { var(txn.backend_name) -m found }
         default_backend default_backend
     {%- end %}
 
     {# Extension point for additional frontends (e.g., custom TCP services) #}
     {# Resource libraries can inject frontends-* snippets #}
-    {{- render_glob "frontends-*" -}}
+    {{- on_own_lines(render_glob "frontends-*") -}}
 
     {# Include all resource-specific backend definitions using plugin pattern #}
     {# Resource libraries implement backends-* snippets (e.g., backends-ingress, backends-gateway) #}
-    {{- render_glob "backends-*" }}
+    {{- on_own_lines(render_glob "backends-*") }}
 
     {{ render "util-default-backend" | indent(0, true) }}
     {# Trailing newline preserved #}

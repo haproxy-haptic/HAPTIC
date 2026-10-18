@@ -180,6 +180,8 @@ func registerScriggoCustomFunctions(decl native.Declarations) {
 	decl[FuncIsDigit] = scriggoIsDigit
 	decl[FuncSanitizeRegex] = scriggoSanitizeRegex
 	decl[FuncTitle] = scriggoTitle
+	decl[funcOnOwnLinesStart] = scriggoOnOwnLinesStart
+	decl[funcOnOwnLinesJoin] = scriggoOnOwnLinesJoin
 	decl[FuncDig] = scriggoDig
 	decl[FuncDigString] = scriggoDigString
 	decl[FuncIsNil] = scriggoIsNil

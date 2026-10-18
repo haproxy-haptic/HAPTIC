@@ -268,7 +268,7 @@ templateSnippets:
           timeout idle       {{ extraContext | dig("spoaHub", "haproxy", "timeoutIdle") | fallback("5m") }}
           timeout processing {{ messageTimeouts | dig(msg) | fallback(defaultProcessingTimeout) }}
           use-backend spoa-hub
-      {{ render_glob "spoe-agents-*" }}
+      {{ on_own_lines(render_glob "spoe-agents-*") }}
 
       {% if msg == "check-auth" -%}
       {{ render "spoe-message-check-auth-body" }}

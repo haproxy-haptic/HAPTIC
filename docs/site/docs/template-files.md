@@ -431,6 +431,15 @@ Include all snippets matching a glob pattern (rendered in alphabetical order):
 {{ render_glob "backend-*" }}
 ```
 
+`render_glob` joins the snippets exactly as they render, so a snippet that
+doesn't end with a line break runs into the next one. To start each snippet on a
+new line, wrap the glob in `on_own_lines()`. It also starts the first snippet on
+a new line, so strip the template's own line break before the call with `{{-`:
+
+```go
+{{- on_own_lines(render_glob "backend-*") }}
+```
+
 Pass local variables to rendered snippets with `inherit_context`:
 
 ```go

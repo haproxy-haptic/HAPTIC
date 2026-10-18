@@ -102,10 +102,10 @@ watchedResources:
 maps:
   haptic-api-key-routes.map:
     template: |
-      {{ render_glob "map-haptic-api-key-routes-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-api-key-routes-*") -}}
   haptic-apikeys.map:
     template: |
-      {{ render_glob "map-haptic-apikeys-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-apikeys-*") -}}
   haptic-jwt-routes.map:
     template: |
-      {{ render_glob "map-haptic-jwt-routes-*" -}}
+      {{ on_own_lines(render_glob "map-haptic-jwt-routes-*") -}}

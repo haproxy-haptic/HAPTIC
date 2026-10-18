@@ -127,10 +127,12 @@ The base library uses `render_glob "prefix-*"` to automatically include all temp
 
 ```scriggo
 {# In the base library #}
-{{ render_glob "backends-*" }}
+{{- on_own_lines(render_glob "backends-*") }}
 ```
 
 This includes all snippets whose names start with `backends-` (for example `backends-500-ingress`, `backends-500-gateway`, any user-provided `backends-*`). Snippets render in alphabetical order, so numeric prefixes control execution order — see the [snippet priority numbering table](#snippet-priority) below.
+
+[`on_own_lines()`](template-reference.md#functions-and-filters) starts each snippet on a new line, so a snippet doesn't need a leading or trailing newline. Use it for extension points you add to your own templates.
 
 ### Available extension points
 

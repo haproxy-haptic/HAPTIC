@@ -97,6 +97,8 @@ controller:
 
 The base library defines extension points using the `render_glob "prefix-*"` operator. Any template snippet with a matching prefix is automatically rendered at the designated location in the HAProxy configuration.
 
+Each snippet starts on its own line, so a snippet doesn't need a leading or trailing newline. The bundled libraries wrap every extension point that emits lines in [`on_own_lines()`](../template-reference.md#functions-and-filters), which adds a line break only where a snippet would otherwise continue the previous line.
+
 `frontend-switching-*` emits `use_backend` rules after request filters, avoiding HAProxy rule-ordering warnings. Switching snippets run in lexical order before the default backend selection.
 
 ### Available extension points

@@ -48,6 +48,8 @@ var incrementalDeclarationNames = [...]string{
 	FuncIsDigit,
 	FuncSanitizeRegex,
 	FuncTitle,
+	funcOnOwnLinesStart,
+	funcOnOwnLinesJoin,
 	FuncIsNil,
 	FuncDig,
 	FuncDigString,

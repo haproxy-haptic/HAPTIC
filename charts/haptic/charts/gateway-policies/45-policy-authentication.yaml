@@ -1,7 +1,7 @@
 maps:
   gw-policy-errors.map:
     template: |
-      {{ render_glob "map-gateway-policy-errors-*" -}}
+      {{ on_own_lines(render_glob "map-gateway-policy-errors-*") -}}
 
 templateSnippets:
   gateway-policy-errors-empty:

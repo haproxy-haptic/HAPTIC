@@ -648,7 +648,7 @@ templateSnippets:
           guid fe:ssl-tcp
           mode tcp{{ render "util-log-format-tcp" }}
           bind *:{{ extraContext | dig("httpsPort") | fallback(8443) }}
-          {{ render_glob "ssl-tcp-bind-extra-*" | indent(2, true) }}
+          {{- on_own_lines(render_glob "ssl-tcp-bind-extra-*") | indent(2, true) }}
 
           # Extract SNI for routing decisions (wait up to 5s for client hello)
           tcp-request inspect-delay 5s
@@ -870,19 +870,19 @@ templateSnippets:
       {%- if quicBind != "" %}
           {{ quicBind }}
       {%- end %}
-      {%- var extraBinds = render_glob "https-bind-extra-*" %}
+      {%- var extraBinds = on_own_lines(render_glob "https-bind-extra-*") %}
           {{- extraBinds | indent(2, true) }}
       {%- var altSvc = HTTP3AltSvc(quicBind + "\n" + extraBinds) %}
       {%- if altSvc != "" %}
           {{ altSvc | indent(4) }}
       {%- end %}
 
-          {{- render_glob "frontend-extra-*" | indent(2, true) }}
+          {{- on_own_lines(render_glob "frontend-extra-*") | indent(2, true) }}
 
           {{ render "frontend-routing-logic" | indent(2, true) }}
 
-          {{- render_glob "frontend-filters-*" | indent(2, true) }}
-          {{- render_glob "frontend-switching-*" | indent(2, true) }}
+          {{- on_own_lines(render_glob "frontend-filters-*") | indent(2, true) }}
+          {{- on_own_lines(render_glob "frontend-switching-*") | indent(2, true) }}
 
           # Use backend from txn.backend_name (set by qualifier logic)
           use_backend %[var(txn.backend_name)] if { var(txn.backend_name) -m found }

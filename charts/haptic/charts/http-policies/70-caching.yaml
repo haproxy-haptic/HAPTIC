@@ -34,7 +34,7 @@ templateSnippets:
         {%%
           var defaults = DefaultBackendTimeouts()
           var records = []any{defaults}
-          for _, line := range split(render_glob "cache-timeouts-*", "\n") {
+          for _, line := range split(on_own_lines(render_glob "cache-timeouts-*"), "\n") {
             if trimSpace(line) == "" { continue }
             var fields = split(line, " ")
             if len(fields) != 2 { fail("Cache timeout metadata must contain a name and milliseconds.") }

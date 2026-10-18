@@ -1,0 +1,46 @@
+# Operator snippets with no surrounding newlines (#408); scripts/test-templates.sh validates them.
+controller:
+  config:
+    templateSnippets:
+      frontend-extra-000-operator-first:
+        template: 'http-request set-header X-Operator-First 1'
+      frontend-extra-998-operator-a:
+        template: 'http-request set-header X-Operator-A 1'
+      frontend-extra-999-test:
+        template: 'http-request set-header X-Test 1'
+      frontend-filters-150-operator:
+        template: 'http-request set-header X-Operator-Filter 1'
+      forwarded-for-mode-100-operator-a:
+        template: 'http-request set-header X-Operator-ModeA 1'
+      forwarded-for-mode-200-operator-b:
+        template: 'http-request set-header X-Operator-ModeB 1'
+    validationTests:
+      test-operator-snippets-start-on-their-own-line:
+        fixtures:
+          ingresses:
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata: {namespace: default, name: operator-snippets}
+              spec:
+                ingressClassName: haptic
+                rules:
+                  - host: snippets.example.com
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend: {service: {name: echo, port: {number: 80}}}
+        assertions:
+          - type: haproxy_valid
+          - type: contains
+            target: haproxy.cfg
+            pattern: '(?m)^[ \t]*http-request set-header X-Test 1$'
+          - type: contains
+            target: haproxy.cfg
+            pattern: '(?m)^[ \t]*http-request set-header X-Operator-ModeA 1$'
+          - type: contains
+            target: haproxy.cfg
+            pattern: '(?m)^[ \t]*http-request set-header X-Operator-ModeB 1$'
+          - type: not_contains
+            target: haproxy.cfg
+            pattern: '(?m)\S[ \t]*http-request set-header X-(Test|Operator-[A-Za-z]+) 1'
