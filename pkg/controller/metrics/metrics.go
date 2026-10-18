@@ -15,10 +15,15 @@
 package metrics
 
 import (
+	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
 	pkgmetrics "github.com/haproxy-haptic/HAPTIC/pkg/metrics"
 )
 
@@ -26,6 +31,13 @@ const (
 	reasonLabel    = "reason"
 	resultLabel    = "result"
 	validatorLabel = "validator"
+)
+
+// Render cache states, the cache_state label of the render counters.
+const (
+	renderCold   = "cold"
+	renderWarm   = "warm"
+	renderReplay = "replay"
 )
 
 // Metrics holds all controller-specific Prometheus metrics.
@@ -106,9 +118,19 @@ type Metrics struct {
 	// the runtime lane.
 	RuntimeMapDivergence *prometheus.CounterVec
 
-	// Validation metrics
+	// ValidationTotal and ValidationErrors count HAProxy's verdicts on rendered
+	// configurations; the configuration itself is judged in ConfigValidation*.
 	ValidationTotal  prometheus.Counter
 	ValidationErrors prometheus.Counter
+
+	// ConfigValidated is this replica's Validated condition: one series per
+	// known status and reason, the current one at 1.
+	ConfigValidated *prometheus.GaugeVec
+	// ConfigValidationTotal counts this replica's verdicts on its configuration.
+	ConfigValidationTotal *prometheus.CounterVec
+	// configValidated is the state ConfigValidated reports; nil before the
+	// first verdict. It is what CarryConfigValidation reads.
+	configValidated atomic.Pointer[configValidatedState]
 
 	// HAProxyChecksTotal counts the `haproxy -c` runs each validator asked for,
 	// on every replica; HAProxyChecksReusedTotal counts the ones answered by an
@@ -327,12 +349,24 @@ func NewMetrics(registry prometheus.Registerer) *Metrics {
 		ValidationTotal: pkgmetrics.NewCounter(
 			registry,
 			"haptic_validation_total",
-			"Total number of validation attempts",
+			"HAProxy verdicts on rendered configurations: render gate checks and failed render validations (leader-only). Verdicts on the HAProxyTemplateConfig itself count in haptic_config_validation_total.",
 		),
 		ValidationErrors: pkgmetrics.NewCounter(
 			registry,
 			"haptic_validation_errors_total",
-			"Total number of failed validations",
+			"Rendered configurations HAProxy refused or could not check (leader-only). A configuration that fails or cannot finish validation counts in haptic_config_validation_total instead.",
+		),
+		ConfigValidated: pkgmetrics.NewGaugeVec(
+			registry,
+			"haptic_config_validated",
+			"This replica's view of the HAProxyTemplateConfig Validated condition: 1 for the current status and reason, 0 for the others, all 0 before the first verdict. Only the leader reports reason HAProxyValidationFailed.",
+			[]string{"status", reasonLabel},
+		),
+		ConfigValidationTotal: pkgmetrics.NewCounterVec(
+			registry,
+			"haptic_config_validation_total",
+			"Verdicts this replica reached on its HAProxyTemplateConfig, startup load gate included, by result (valid, invalid, inconclusive). An inconclusive validation is retried, so each retry counts.",
+			[]string{resultLabel},
 		),
 
 		HAProxyChecksTotal: pkgmetrics.NewCounterVec(
@@ -521,8 +555,26 @@ func NewMetrics(registry prometheus.Registerer) *Metrics {
 	// entire Unix epoch.
 	m.LastFullSyncTimestamp.Set(float64(time.Now().Unix()))
 	registry.MustRegister(newMailboxDepthCollector())
+	m.initKnownSeries()
 
 	return m
+}
+
+// initKnownSeries exports every known label value at zero, so increase() sees
+// the first increment and an absent series means a broken scrape.
+func (m *Metrics) initKnownSeries() {
+	for _, cacheState := range []string{renderCold, renderWarm, renderReplay} {
+		m.RenderTotal.WithLabelValues(cacheState)
+	}
+	for _, cacheState := range []string{renderCold, renderWarm} {
+		m.RenderErrors.WithLabelValues(cacheState)
+	}
+	for _, result := range configValidationResults {
+		m.ConfigValidationTotal.WithLabelValues(result)
+	}
+	for _, state := range configValidatedStates {
+		m.ConfigValidated.WithLabelValues(state.status, state.reason)
+	}
 }
 
 // RecordReconciliation records a completed reconciliation cycle.
@@ -653,6 +705,79 @@ func (m *Metrics) RecordValidation(success bool) {
 	}
 }
 
+// configValidatedState is one status and reason of the Validated condition.
+type configValidatedState struct {
+	status string
+	reason string
+}
+
+var (
+	configValidationSucceeded = configValidatedState{string(metav1.ConditionTrue), v1alpha1.ReasonValidationSucceeded}
+	configInvalid             = configValidatedState{string(metav1.ConditionFalse), v1alpha1.ReasonConfigInvalid}
+	configRefusedByHAProxy    = configValidatedState{string(metav1.ConditionFalse), v1alpha1.ReasonHAProxyValidationFailed}
+	configRejectedAtLoadGate  = configValidatedState{string(metav1.ConditionFalse), v1alpha1.ReasonLoadGateFailed}
+	configInconclusive        = configValidatedState{string(metav1.ConditionUnknown), v1alpha1.ReasonValidationInconclusive}
+
+	configValidatedStates = []configValidatedState{
+		configValidationSucceeded, configInvalid, configRefusedByHAProxy, configRejectedAtLoadGate, configInconclusive,
+	}
+)
+
+const (
+	configValidationValid        = "valid"
+	configValidationInvalid      = "invalid"
+	configValidationInconclusive = "inconclusive"
+)
+
+var configValidationResults = []string{configValidationValid, configValidationInvalid, configValidationInconclusive}
+
+func (m *Metrics) setConfigValidated(current configValidatedState) {
+	for _, state := range configValidatedStates {
+		value := 0.0
+		if state == current {
+			value = 1
+		}
+		m.ConfigValidated.WithLabelValues(state.status, state.reason).Set(value)
+	}
+	m.configValidated.Store(&current)
+}
+
+func (m *Metrics) recordConfigValidation(result string) {
+	m.ConfigValidationTotal.WithLabelValues(result).Inc()
+}
+
+// RecordLoadGate records the startup load gate's verdict on the configuration
+// an iteration starts from. A pass leaves the reported state alone: the
+// iteration's own events establish it.
+func (m *Metrics) RecordLoadGate(passed bool) {
+	if passed {
+		m.recordConfigValidation(configValidationValid)
+		return
+	}
+	m.recordConfigValidation(configValidationInvalid)
+	m.setConfigValidated(configRejectedAtLoadGate)
+}
+
+// CarryConfigValidation continues previous's config-validation series in m. A
+// reinitialization swaps in a fresh registry, and the valid verdict that
+// triggered it would otherwise never be scraped. previous may be nil.
+func (m *Metrics) CarryConfigValidation(previous *Metrics) error {
+	if previous == nil {
+		return nil
+	}
+	for _, result := range configValidationResults {
+		var carried dto.Metric
+		if err := previous.ConfigValidationTotal.WithLabelValues(result).Write(&carried); err != nil {
+			return fmt.Errorf("reading %s config validations: %w", result, err)
+		}
+		m.ConfigValidationTotal.WithLabelValues(result).Add(carried.GetCounter().GetValue())
+	}
+	if state := previous.configValidated.Load(); state != nil {
+		m.setConfigValidated(*state)
+	}
+	return nil
+}
+
 // RecordHAProxyCheck records one check a validator asked HAProxy for; reused
 // means an earlier verdict answered it without running `haproxy -c`.
 func (m *Metrics) RecordHAProxyCheck(validator, result string, reused bool) {
@@ -756,9 +881,9 @@ func (m *Metrics) RecordRender(cacheState string) {
 // RecordRenderFailure records a reconcile render that produced no output;
 // graphWarm is whether it had a committed graph to build on.
 func (m *Metrics) RecordRenderFailure(graphWarm bool) {
-	cacheState := "cold"
+	cacheState := renderCold
 	if graphWarm {
-		cacheState = "warm"
+		cacheState = renderWarm
 	}
 	m.RenderTotal.WithLabelValues(cacheState).Inc()
 	m.RenderErrors.WithLabelValues(cacheState).Inc()

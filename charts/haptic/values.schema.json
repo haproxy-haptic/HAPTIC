@@ -1124,6 +1124,9 @@
                     "applyRejected": {
                       "type": "boolean"
                     },
+                    "configNotValidated": {
+                      "type": "boolean"
+                    },
                     "configPinned": {
                       "type": "boolean"
                     },

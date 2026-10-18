@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Metrics:
+    - `haptic_config_validated{status,reason}`: each replica's `Validated` condition, one series per state, so an alert can match a configuration stuck at `Unknown` or `False`.
+    - `haptic_config_validation_total{result}`: `valid`, `invalid`, and `inconclusive` verdicts on the `HAProxyTemplateConfig`, the startup load gate included. `haptic_validation_errors_total` counts only HAProxy's verdicts on rendered configurations.
+
+### Changed
+
+- `haptic_render_total` and `haptic_render_errors_total` export every `cache_state` at zero, so `increase()` sees the first failed render.
+
 ### Fixed
 
 - Configuration changes fetch watched-resource schemas in parallel, reducing validation delays on clusters with slow API-server responses.
@@ -20,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raw HAProxy configuration annotations are rejected by default. Any Ingress writer in a watched namespace could otherwise change the configuration for every host, or read HAProxy's TLS keys through a backend directive.
 
 ### Helm chart
+
+#### Added
+
+- `HAProxyControllerConfigNotValidated` alert (`controller.monitoring.prometheusRule.defaultRules.configNotValidated`): a replica hasn't validated its newest `HAProxyTemplateConfig` for 10 minutes.
 
 #### Changed
 

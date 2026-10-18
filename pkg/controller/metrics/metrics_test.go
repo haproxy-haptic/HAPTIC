@@ -319,6 +319,8 @@ func TestMetrics_AllMetricsRegistered(t *testing.T) {
 		"haptic_deployment_errors_total",
 		"haptic_validation_total",
 		"haptic_validation_errors_total",
+		"haptic_config_validated",
+		"haptic_config_validation_total",
 		"haptic_resource_count",
 		"haptic_event_subscribers",
 		"haptic_events_published_total",
