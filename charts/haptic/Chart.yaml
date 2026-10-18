@@ -127,6 +127,8 @@ annotations:
     - kind: fixed
       description: A replica no longer re-renders on every change while a critical http.Fetch source is down
     - kind: fixed
+      description: A new leader deploys critical http.Fetch content as soon as it is accepted, instead of after the next drift-prevention round
+    - kind: fixed
       description: Each release's Ingress and Gateway status lists only its own load balancer addresses
     - kind: changed
       description: Reconciliation cost no longer grows with the watched set, and the leader runs haproxy -c once per render
