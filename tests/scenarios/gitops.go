@@ -70,13 +70,16 @@ func (g *gitops) setup(ctx context.Context) error {
 		}
 	}
 	if g.options.Certificates == certManagerNamespace {
-		if err := g.installManifest(ctx, certManagerNamespace, "https://github.com/cert-manager/cert-manager/releases/download/"+CertManagerVersion+"/cert-manager.yaml", "", nil); err != nil {
+		if err := g.installManifest(ctx, certManagerNamespace, certManagerManifestURL(CertManagerVersion), "", loopbackCertManagerWebhook); err != nil {
 			return err
 		}
 		for _, name := range []string{certManagerNamespace, certManagerWebhook, certManagerCAInjector} {
 			if err := g.rollout(ctx, certManagerNamespace, "deployment/"+name); err != nil {
 				return err
 			}
+		}
+		if err := s.requireCertManagerHTTP2(ctx); err != nil {
+			return err
 		}
 	} else if err := g.externalCertificates(ctx); err != nil {
 		return err

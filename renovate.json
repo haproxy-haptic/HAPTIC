@@ -31,7 +31,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "The cert-manager release the test scenarios install, anchored on the `renovate:` comment above the constant. #300 closes once a release ships controller-runtime's webhook IdleTimeout fix (kubernetes-sigs/controller-runtime#3616).",
+      "description": "The cert-manager release the test scenarios install, anchored on the `renovate:` comment above the constant.",
       "managerFilePatterns": [
         "/^tests/scenarios/defaults\\.go$/"
       ],

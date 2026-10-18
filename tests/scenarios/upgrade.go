@@ -70,13 +70,16 @@ func (u *upgrade) baselineInstall(ctx context.Context) error {
 	if err := s.LoadControllerImage(ctx); err != nil {
 		return err
 	}
-	if err := s.applyRemoteManifest(ctx, "https://github.com/cert-manager/cert-manager/releases/download/"+u.certManager+"/cert-manager.yaml"); err != nil {
+	if err := s.applyCertManager(ctx, u.certManager); err != nil {
 		return err
 	}
 	for _, deployment := range []string{certManagerNamespace, certManagerWebhook, certManagerCAInjector} {
 		if _, err := s.Kube(ctx, nil, "-n", certManagerNamespace, "rollout", "status", "deployment/"+deployment, "--timeout=5m"); err != nil {
 			return err
 		}
+	}
+	if err := s.requireCertManagerHTTP2(ctx); err != nil {
+		return err
 	}
 	values := u.values
 	if u.baseline == "0.1.0" {

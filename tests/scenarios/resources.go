@@ -60,6 +60,7 @@ const (
 	chartName               = "haptic"
 	fieldName               = "name"
 	fieldKind               = "kind"
+	kindDeployment          = "Deployment"
 	fieldEnabled            = "enabled"
 	fieldChart              = "chart"
 	gitopsCredentialsSecret = "gitops-credentials"
