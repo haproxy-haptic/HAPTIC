@@ -420,7 +420,7 @@ func setupPublishedAuxFilesStore(
 
 		watcherConfig := types.WatcherConfig{
 			GVR:           kind.gvr,
-			Namespace:     k8sClient.Namespace(),
+			Namespaces:    []string{k8sClient.Namespace()},
 			IndexBy:       []string{metadataNameIndex},
 			StoreType:     types.StoreTypeMemory,
 			LabelSelector: configpublisher.RuntimeConfigLabelSelector(runtimeConfigName),
@@ -456,11 +456,11 @@ func setupPublishedAuxFilesStore(
 		store.setCommit(commit)
 	}
 	runtimeConfigWatcher, err := watcher.New(types.WatcherConfig{
-		GVR:       haproxyCfgGVR,
-		Namespace: k8sClient.Namespace(),
-		IndexBy:   []string{metadataNameIndex},
-		StoreType: types.StoreTypeMemory,
-		OnChange:  refreshCommit,
+		GVR:        haproxyCfgGVR,
+		Namespaces: []string{k8sClient.Namespace()},
+		IndexBy:    []string{metadataNameIndex},
+		StoreType:  types.StoreTypeMemory,
+		OnChange:   refreshCommit,
 		OnSyncComplete: func(s types.Store, _ int) {
 			refreshCommit(s, types.ChangeStats{})
 		},

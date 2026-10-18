@@ -255,6 +255,44 @@ func TestCreateAliasOverlay_SelectorTransitions(t *testing.T) {
 	}
 }
 
+func TestCreateAliasOverlay_NamespaceScope(t *testing.T) {
+	aliases, err := buildResourceAliases(map[string]config.WatchedResource{
+		"scoped": {
+			APIVersion: "networking.k8s.io/v1",
+			Resources:  "ingresses",
+			Namespaces: []string{"team-a"},
+		},
+	})
+	require.NoError(t, err)
+	alias := aliases[schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}][0]
+	inside := createTestIngress("app", "team-a")
+	outside := createTestIngress("app", "team-b")
+
+	tests := []struct {
+		name          string
+		operation     string
+		namespace     string
+		newResource   *unstructured.Unstructured
+		oldResource   *unstructured.Unstructured
+		wantSubjected bool
+	}{
+		{name: "create inside", operation: operationCreate, namespace: "team-a", newResource: inside, wantSubjected: true},
+		{name: "create outside", operation: operationCreate, namespace: "team-b", newResource: outside},
+		{name: "update inside", operation: operationUpdate, namespace: "team-a", newResource: inside, oldResource: inside, wantSubjected: true},
+		{name: "update outside", operation: operationUpdate, namespace: "team-b", newResource: outside, oldResource: outside},
+		{name: "delete inside without old object", operation: operationDelete, namespace: "team-a", wantSubjected: true},
+		{name: "delete outside without old object", operation: operationDelete, namespace: "team-b"},
+		{name: "delete outside", operation: operationDelete, namespace: "team-b", oldResource: outside},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			overlay, err := createAliasOverlay(alias, tt.namespace, "app", tt.newResource, tt.oldResource, tt.operation)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSubjected, !overlay.IsEmpty())
+		})
+	}
+}
+
 func TestCreateAliasOverlay_MissingOldObjectFailsClosedForFilteredStore(t *testing.T) {
 	aliases, err := buildResourceAliases(map[string]config.WatchedResource{
 		"selected": {

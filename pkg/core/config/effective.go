@@ -42,6 +42,13 @@ type SchemaFieldChecker interface {
 	FieldServed(apiVersion, resources, fieldPath string) (bool, error)
 }
 
+// NamespaceScopeChecker reports whether a served resource is namespaced. A
+// ServedVersionChecker that implements it lets ResolveEffective reject
+// namespaces on a cluster-scoped resource, whose watch could never sync.
+type NamespaceScopeChecker interface {
+	IsNamespaced(apiVersion, resources string) bool
+}
+
 // Resolution describes the outcome of ResolveEffective: which version each
 // watched resource resolved to, which optional resources are unavailable, and
 // which config elements were stripped as a consequence.
@@ -123,6 +130,9 @@ func ResolveEffective(cfg *Config, served ServedVersionChecker, fields SchemaFie
 		}
 		switch {
 		case resolved != "":
+			if err := checkNamespaceScope(served, name, resolved, &resource); err != nil {
+				return nil, nil, err
+			}
 			resource.APIVersion = resolved
 			resource.APIVersions = nil
 			watched[name] = resource
@@ -165,6 +175,15 @@ func ResolveEffective(cfg *Config, served ServedVersionChecker, fields SchemaFie
 	sort.Strings(res.AbsentIncrementalGroups)
 	effective.ValidationTests = tests
 	return &effective, res, nil
+}
+
+func checkNamespaceScope(served ServedVersionChecker, name, apiVersion string, resource *WatchedResource) error {
+	scopes, ok := served.(NamespaceScopeChecker)
+	if !ok || len(resource.Namespaces) == 0 || scopes.IsNamespaced(apiVersion, resource.Resources) {
+		return nil
+	}
+	return fmt.Errorf("watched resource %q lists namespaces, but %s %s is cluster-scoped, so its watch can never start. Remove namespaces from it",
+		name, apiVersion, resource.Resources)
 }
 
 func absentIncrementalGroups(

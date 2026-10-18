@@ -43,10 +43,56 @@ The **namespace Role** grants:
 
 Inspect your release's rendered grants with `helm get manifest haptic -n haptic`.
 If you set `controller.rbac.create: false`, maintain these permissions yourself.
-The chart sources are `templates/clusterrole.yaml` and `templates/role.yaml`.
+The chart sources are `templates/clusterrole.yaml`, `templates/role.yaml`, and
+`templates/watched-resource-roles.yaml`. A watched resource that lists
+`namespaces` gets a Role in each of those namespaces instead of a ClusterRole rule.
 
 [Watch selectors](../watching-resources.md#narrowing-the-watch) limit what templates
 consume; they don't narrow the ServiceAccount's RBAC permissions.
+
+### Read Secrets only in the release namespace
+
+By default the ClusterRole lets the controller read every Secret in the cluster,
+because an Ingress or Gateway can reference a TLS or authentication Secret in its
+own namespace. RBAC can't limit access by Secret type. If your routes use only the
+default or a wildcard certificate from the release namespace, and no per-route
+certificate or authentication Secrets, limit Secret access to that namespace:
+
+```yaml
+controller:
+  rbac:
+    releaseNamespaceSecretsOnly: true
+```
+
+With this setting:
+
+- The ClusterRole has no `secrets` rule. A Role and RoleBinding ending in
+  `-watch` grant `get`, `list`, and `watch` on Secrets in the release namespace.
+- The controller watches Secrets only in the release namespace.
+- The admission webhook rejects an Ingress, Gateway, route, or policy that
+  references a Secret in another namespace:
+
+  ```text
+  secrets team-a/web-tls cannot be read: controller.rbac.releaseNamespaceSecretsOnly limits the secrets watch to haptic. Reference secrets in haptic, or change controller.rbac.releaseNamespaceSecretsOnly
+  ```
+
+- `defaultSSLCertificate.namespace` must stay empty, which keeps the default
+  certificate in the release namespace.
+
+Before you turn it on, remove Secret references outside the release namespace.
+After the restart the controller withholds an object that still has one, so its
+routes stop serving, and records an `InputRejected` event on it. See
+[rejected resource changes](input-isolation.md).
+
+Confirm the narrowed access:
+
+```bash
+kubectl auth can-i list secrets --all-namespaces \
+  --as=system:serviceaccount:haptic:haptic
+```
+
+The answer is `no`. Replace `haptic:haptic` with your release namespace and the
+controller's ServiceAccount name.
 
 ### Credentials
 
@@ -542,6 +588,7 @@ Before exposing a HAPTIC deployment to production traffic:
 - [ ] RBAC that limits `pods/portforward` access to loopback-only `/debug/*` endpoints.
 - [ ] Watched-resource selectors scoped to the namespaces you intend to serve.
 - [ ] `extraContext.ingressPermissions.allowRawHAProxyConfig` left `false` unless every Ingress writer may edit the HAProxy configuration.
+- [ ] `controller.rbac.releaseNamespaceSecretsOnly: true` if your routes reference no Secrets outside the release namespace.
 - [ ] Release namespace labelled with `pod-security.kubernetes.io/enforce=restricted`.
 - [ ] NetworkPolicy allowing DNS, Kubernetes API, agent traffic, and any configured HTTP resources.
 - [ ] `extraContext.forwardedHeaders.trustedProxies` lists every L7 proxy in front of HAPTIC, and nothing else.

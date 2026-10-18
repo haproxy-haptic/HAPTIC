@@ -334,46 +334,44 @@ func TestGetAllStores_UnitTest(t *testing.T) {
 	})
 }
 
-func TestDetermineNamespace(t *testing.T) {
-	// Create a dummy client - Namespace() returns empty string for uninitialized client
-	dummyClient := &client.Client{}
+func TestDetermineNamespaces(t *testing.T) {
+	k8sClient := client.NewFromClientset(fake.NewClientset(), dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), "haptic")
 
 	tests := []struct {
 		name             string
 		resourceTypeName string
-		want             string
+		namespaces       []string
+		want             []string
 	}{
 		{
-			name:             "haproxy-pods returns client namespace",
+			name:             "haproxy-pods are pinned to the controller namespace",
 			resourceTypeName: "haproxy-pods",
-			want:             "", // Empty because dummyClient.Namespace() returns ""
+			namespaces:       []string{"elsewhere"},
+			want:             []string{"haptic"},
 		},
 		{
-			name:             "services returns empty (cluster-wide)",
-			resourceTypeName: "services",
-			want:             "",
+			name:             "unscoped resource watches every namespace",
+			resourceTypeName: "secrets",
+			want:             nil,
 		},
 		{
-			name:             "ingresses returns empty (cluster-wide)",
-			resourceTypeName: "ingresses",
-			want:             "",
+			name:             "scoped resource watches its namespaces",
+			resourceTypeName: "secrets",
+			namespaces:       []string{"team-a", "team-b"},
+			want:             []string{"team-a", "team-b"},
 		},
 		{
-			name:             "pods returns empty (cluster-wide)",
-			resourceTypeName: "pods",
-			want:             "",
-		},
-		{
-			name:             "custom resource returns empty (cluster-wide)",
+			name:             "scoped custom resource watches its namespaces",
 			resourceTypeName: "my-custom-resource",
-			want:             "",
+			namespaces:       []string{"team-a"},
+			want:             []string{"team-a"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := determineNamespace(tt.resourceTypeName, dummyClient)
-			assert.Equal(t, tt.want, got)
+			resource := coreconfig.WatchedResource{Namespaces: tt.namespaces}
+			assert.Equal(t, tt.want, determineNamespaces(tt.resourceTypeName, &resource, k8sClient))
 		})
 	}
 }

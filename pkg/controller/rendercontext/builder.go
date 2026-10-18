@@ -82,6 +82,7 @@ type Builder struct {
 	runtimeEnvironmentSet bool
 	planTokenAuthority    *PlanTokenAuthority
 	planMemo              *PlanMemo
+	scopeFor              func(string) *NamespaceScope
 }
 
 // admissionSubjectOrEmpty returns the subject map for the template context.
@@ -317,6 +318,15 @@ func WithPlanTokenAuthority(authority *PlanTokenAuthority) Option {
 func WithPlanMemo(memo *PlanMemo) Option {
 	return func(b *Builder) {
 		b.planMemo = memo
+	}
+}
+
+// WithNamespaceScopes fails the render for a lookup outside a watch's
+// namespaces (see NamespaceScopes). Pass it for live stores only; fixture
+// stores hold whatever a test declares.
+func WithNamespaceScopes(scopeFor func(string) *NamespaceScope) Option {
+	return func(b *Builder) {
+		b.scopeFor = scopeFor
 	}
 }
 
@@ -697,6 +707,7 @@ func (b *Builder) addTypedResources(
 			}
 			return ""
 		},
+		b.scopeFor,
 		b.logger,
 		resourceErrors,
 		nil,
@@ -775,10 +786,12 @@ func BuildResourcesValue(
 	apiVersionFor func(name string) string,
 	logger *slog.Logger,
 ) any {
-	return buildResourcesValue(ctx, resourceStores, typedTypes, watchedNames, indexByFor, lazyFor, apiVersionFor, logger, nil, nil, nil, false, false)
+	return buildResourcesValue(ctx, resourceStores, typedTypes, watchedNames, indexByFor, lazyFor, apiVersionFor, nil, logger, nil, nil, nil, false, false)
 }
 
-// BuildResourcesValueWithViews applies transaction-pinned reads and a shared derived view.
+// BuildResourcesValueWithViews applies transaction-pinned reads and a shared
+// derived view. scopeFor returns the namespaces a watch is limited to; a
+// lookup into any other namespace fails the render.
 func BuildResourcesValueWithViews(
 	ctx context.Context,
 	resourceStores map[string]stores.Store,
@@ -787,6 +800,7 @@ func BuildResourcesValueWithViews(
 	indexByFor func(name string) []string,
 	lazyFor func(name string) bool,
 	apiVersionFor func(name string) string,
+	scopeFor func(name string) *NamespaceScope,
 	logger *slog.Logger,
 	resourceErrors *ResourceErrorCollector,
 	snapshotView StoreSnapshotView,
@@ -794,7 +808,7 @@ func BuildResourcesValueWithViews(
 	memoizeSnapshotView bool,
 ) any {
 	return buildResourcesValue(
-		ctx, resourceStores, typedTypes, watchedNames, indexByFor, lazyFor, apiVersionFor, logger,
+		ctx, resourceStores, typedTypes, watchedNames, indexByFor, lazyFor, apiVersionFor, scopeFor, logger,
 		resourceErrors, snapshotView, derivedResources, memoizeSnapshotView, false)
 }
 
@@ -808,6 +822,7 @@ func BuildIncrementalResourcesValueWithViews(
 	indexByFor func(name string) []string,
 	lazyFor func(name string) bool,
 	apiVersionFor func(name string) string,
+	scopeFor func(name string) *NamespaceScope,
 	logger *slog.Logger,
 	resourceErrors *ResourceErrorCollector,
 	snapshotView StoreSnapshotView,
@@ -815,7 +830,7 @@ func BuildIncrementalResourcesValueWithViews(
 	memoizeSnapshotView bool,
 ) any {
 	return buildResourcesValue(
-		ctx, resourceStores, typedTypes, watchedNames, indexByFor, lazyFor, apiVersionFor, logger,
+		ctx, resourceStores, typedTypes, watchedNames, indexByFor, lazyFor, apiVersionFor, scopeFor, logger,
 		resourceErrors, snapshotView, derivedResources, memoizeSnapshotView, true)
 }
 
@@ -827,6 +842,7 @@ func buildResourcesValue(
 	indexByFor func(name string) []string,
 	lazyFor func(name string) bool,
 	apiVersionFor func(name string) string,
+	scopeFor func(name string) *NamespaceScope,
 	logger *slog.Logger,
 	resourceErrors *ResourceErrorCollector,
 	snapshotView StoreSnapshotView,
@@ -891,6 +907,7 @@ func buildResourcesValue(
 				ResourceType:        name,
 				Logger:              logger,
 				IndexBy:             indexByFor(name),
+				Scope:               scopeOf(scopeFor, name),
 				LazySnapshot:        lazyFor(name),
 				readContext:         ctx,
 				resourceErrors:      resourceErrors,
@@ -943,6 +960,13 @@ func buildResourcesValue(
 		panic(fmt.Errorf("registering resource function trampolines: %w", err))
 	}
 	return result
+}
+
+func scopeOf(scopeFor func(string) *NamespaceScope, name string) *NamespaceScope {
+	if scopeFor == nil {
+		return nil
+	}
+	return scopeFor(name)
 }
 
 // resourcesTypeCache memoises the dynamically-built `resources` struct type.

@@ -222,21 +222,12 @@ type WatcherConfig struct {
 	//   }
 	GVR schema.GroupVersionResource
 
-	// Namespace restricts watching to a specific namespace.
-	// If empty, watches all namespaces.
-	//
-	// Example:
-	//   Namespace: "default"  // Watch only resources in default namespace
-	//   Namespace: ""         // Watch resources in all namespaces
-	Namespace string
+	// Namespaces restricts watching to these namespaces, one informer each.
+	// Empty watches all namespaces.
+	Namespaces []string
 
-	// NamespacedWatch, when true, restricts watching to the controller's own namespace.
-	// This is determined automatically from the service account token.
-	//
-	// This is useful for watching HAProxy pods that must be in the same namespace
-	// as the controller.
-	//
-	// Takes precedence over Namespace if both are set.
+	// NamespacedWatch, when true, restricts watching to the controller's own
+	// namespace (from the service account token). Overrides Namespaces.
 	NamespacedWatch bool
 
 	// LabelSelector filters resources by label selector.

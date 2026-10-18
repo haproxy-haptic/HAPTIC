@@ -222,6 +222,7 @@ type incrementalRenderState struct {
 	retired                  bool
 	configErr                error
 	transitionNow            func(context.Context) (string, error)
+	scopeFor                 func(string) *rendercontext.NamespaceScope // see RenderService.namespaceScopes
 }
 
 func sampleIncrementalTransitionTime(ctx context.Context) (string, error) {
@@ -1886,6 +1887,7 @@ func (s *incrementalRenderState) resourcesValue(
 		func(name string) []string { return slices.Clone(s.config.WatchedResources[name].IndexBy) },
 		func(name string) bool { return s.config.WatchedResources[name].Store == "on-demand" },
 		func(name string) string { return s.config.WatchedResources[name].APIVersion },
+		s.scopeFor,
 		loggerContext.logger,
 		resourceErrors,
 		view,
@@ -1910,6 +1912,7 @@ func (s *incrementalRenderState) incrementalResourcesValue(
 		func(name string) []string { return slices.Clone(s.config.WatchedResources[name].IndexBy) },
 		func(name string) bool { return s.config.WatchedResources[name].Store == "on-demand" },
 		func(name string) string { return s.config.WatchedResources[name].APIVersion },
+		s.scopeFor,
 		loggerContext.logger,
 		resourceErrors,
 		view,

@@ -862,25 +862,3 @@ func TestWatcher_ApplyListOptions_NoSelector(t *testing.T) {
 
 	assert.Empty(t, options.LabelSelector)
 }
-
-func TestWatcher_AllNamespaces(t *testing.T) {
-	k8sClient := newTestClient(t)
-	cfg := validWatcherConfig()
-	cfg.Namespace = "" // All namespaces
-
-	watcher, err := New(cfg, k8sClient, nil)
-
-	require.NoError(t, err)
-	require.NotNil(t, watcher)
-}
-
-func TestWatcher_SpecificNamespace(t *testing.T) {
-	k8sClient := newTestClient(t)
-	cfg := validWatcherConfig()
-	cfg.Namespace = "kube-system"
-
-	watcher, err := New(cfg, k8sClient, nil)
-
-	require.NoError(t, err)
-	require.NotNil(t, watcher)
-}

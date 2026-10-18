@@ -401,9 +401,12 @@ haptic.watchedResourcesUnion — the union of every enabled library's
 watchedResources plus the operator's, operator winning. For the templates that
 must reason about the whole watch set: the ClusterRole and the
 ValidatingWebhookConfiguration. Retains the Helm-only `statusPatch` field,
-which the object emitter strips.
+which the object emitter strips. controller.rbac.releaseNamespaceSecretsOnly
+scopes the secrets watch here, so every consumer sees the same namespaces.
 */}}
 {{- define "haptic.watchedResourcesUnion" -}}
+{{- /* Memoized: four templates read it, and each computation renders every library. */ -}}
+{{- if not (hasKey .Values "_watchedResourcesUnion") }}
 {{- $union := dict }}
 {{- $prepared := dict }}
 {{- $_ := include "haptic.prepareLibraries" (dict "context" . "result" $prepared) }}
@@ -411,7 +414,10 @@ which the object emitter strips.
   {{- $union = merge $union ($library.config.watchedResources | default dict) }}
 {{- end }}
 {{- $union = merge (deepCopy (.Values.controller.config.watchedResources | default dict)) $union }}
-{{- $union | toYaml }}
+{{- include "haptic.applySecretScope" (list $union .) }}
+{{- $_ := set .Values "_watchedResourcesUnion" ($union | toYaml) }}
+{{- end }}
+{{- get .Values "_watchedResourcesUnion" }}
 {{- end }}
 
 {{/*

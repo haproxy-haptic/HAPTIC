@@ -1464,6 +1464,9 @@
           "properties": {
             "create": {
               "type": "boolean"
+            },
+            "releaseNamespaceSecretsOnly": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false

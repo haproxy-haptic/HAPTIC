@@ -1,7 +1,13 @@
 {{- if .Values.controller.rbac.create }}
 {{- /* The union of every enabled library's watched resources plus the
-       operator's — RBAC must cover the whole watch set. */ -}}
-{{- $allWatchedResources := include "haptic.watchedResourcesUnion" . | fromYaml }}
+       operator's — RBAC must cover the whole watch set. A watch that lists
+       namespaces is granted by watched-resource-roles.yaml instead. */ -}}
+{{- $clusterWide := dict }}
+{{- range $name, $resource := (include "haptic.watchedResourcesUnion" . | fromYaml) }}
+  {{- if not (hasKey $resource "namespaces") }}
+    {{- $_ := set $clusterWide $name $resource }}
+  {{- end }}
+{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -9,36 +15,9 @@ metadata:
   labels:
     {{- include "haptic.labels" . | nindent 4 }}
 rules:
-  # Watched resources from configuration and libraries
-  {{- range $name, $resource := $allWatchedResources }}
-  {{- $groups := list }}
-  {{- range $v := include "haptic.candidateVersionsOf" $resource | fromJsonArray }}
-  {{- $groups = append $groups (include "haptic.apiGroupOf" $v) }}
-  {{- end }}
-  - apiGroups:
-      {{- range $g := $groups | uniq }}
-      - {{ $g }}
-      {{- end }}
-    resources:
-      - {{ $resource.resources }}
-    verbs: ["get", "list", "watch"]
-  {{- end }}
-  # Status subresource patch permissions for resources with statusPatch: true
-  {{- range $name, $resource := $allWatchedResources }}
-  {{- if $resource.statusPatch }}
-  {{- $groups := list }}
-  {{- range $v := include "haptic.candidateVersionsOf" $resource | fromJsonArray }}
-  {{- $groups = append $groups (include "haptic.apiGroupOf" $v) }}
-  {{- end }}
-  - apiGroups:
-      {{- range $g := $groups | uniq }}
-      - {{ $g }}
-      {{- end }}
-    resources:
-      - {{ $resource.resources }}/status
-    verbs: ["patch"]
-  {{- end }}
-  {{- end }}
+  # Watched resources from configuration and libraries, then the status
+  # subresource patch permissions for resources with statusPatch: true
+  {{- include "haptic.watchedResourceRules" $clusterWide | trim | nindent 2 }}
   # Deliberately sparse: pods, the leader-election Lease, the
   # HAProxyTemplateConfig/Library watch, and the output CRDs all act only in the
   # controller's own namespace, so they live in role.yaml. namespaces is watched

@@ -188,10 +188,11 @@ empty slice.
 
 ## Narrowing the watch
 
-Two filters narrow what actually lands in the store:
+Three settings narrow what lands in the store:
 
 - `labelSelector:` — equality-only label-selector string applied to the resource itself (`"app=myapp"` or `"app=nginx,env=prod"`). Set-based syntax (`"tier in (frontend,api)"`, `"!disabled"`) and malformed selectors fail configuration validation. Use comma-separated equality pairs.
-- `fieldSelector:` — a client-side JSONPath equality filter applied *after* the list is fetched (format `"field.path=value"`, for example `"spec.ingressClassName=haproxy"`). Unlike Kubernetes' native field selectors it can target **any** field, not just the server-supported ones, because the watcher evaluates it itself (at the cost of fetching the full list first). A resource that stops matching is handled as a delete; one that starts matching, as an add. This is what the bundled ingress / gateway libraries use to scope by `ingressClassName` / `gatewayClassName`. To pin a watch to a single namespace, filter on `"metadata.namespace=<ns>"`.
+- `fieldSelector:` — a client-side JSONPath equality filter applied *after* the list is fetched (format `"field.path=value"`, for example `"spec.ingressClassName=haproxy"`). Unlike Kubernetes' native field selectors it can target **any** field, not just the server-supported ones, because the watcher evaluates it itself (at the cost of fetching the full list first). A resource that stops matching is handled as a delete; one that starts matching, as an add. This is what the bundled ingress / gateway libraries use to scope by `ingressClassName` / `gatewayClassName`.
+- `namespaces:` — a list of namespaces the controller watches the resource in, one watch per namespace. It needs `indexBy` to start with `metadata.namespace`. The Helm chart grants the resource with a Role in each listed namespace instead of the ClusterRole, so unlike the two filters above it also narrows what the ServiceAccount can read. A `GetSingle` or `Fetch` keyed on another namespace fails the render instead of returning nothing.
 
 Watch the filter in action: two Ingresses reach the playground, but only the `haptic`-class one survives the `fieldSelector` and reaches a backend.
 

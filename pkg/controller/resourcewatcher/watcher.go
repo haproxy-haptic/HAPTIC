@@ -168,7 +168,7 @@ func New(
 		// pkg/k8s/types.DefaultDebounceInterval".
 		watcherConfig := &types.WatcherConfig{
 			GVR:              gvr,
-			Namespace:        determineNamespace(resourceTypeName, k8sClient),
+			Namespaces:       determineNamespaces(resourceTypeName, &watchedResource, k8sClient),
 			LabelSelector:    labelSelector,
 			FieldSelector:    watchedResource.FieldSelector,
 			IndexBy:          watchedResource.IndexBy,
@@ -211,6 +211,7 @@ func New(
 			"resource_type", resourceTypeName,
 			"gvr", gvr.String(),
 			"index_by", watchedResource.IndexBy,
+			"namespaces", watcherConfig.Namespaces,
 			"ignore_fields", len(ignoreFields),
 			"field_selector", watchedResource.FieldSelector)
 	}
@@ -321,14 +322,14 @@ func determineStoreType(storeConfig string) types.StoreType {
 	return types.StoreTypeMemory // Default to full in-memory store
 }
 
-// determineNamespace returns the appropriate namespace for a resource watcher.
-// HAProxy pods ("haproxy-pods") are scoped to the controller namespace for security.
-// All other resources are watched cluster-wide.
-func determineNamespace(resourceTypeName string, k8sClient *client.Client) string {
+// determineNamespaces returns the namespaces a resource watcher covers; nil
+// means all. HAProxy pods are pinned to the controller namespace; every other
+// resource follows its configured namespaces.
+func determineNamespaces(resourceTypeName string, resource *coreconfig.WatchedResource, k8sClient *client.Client) []string {
 	if resourceTypeName == names.HAProxyPodsResourceType {
-		return k8sClient.Namespace()
+		return []string{k8sClient.Namespace()}
 	}
-	return "" // Cluster-wide for other resources
+	return resource.Namespaces
 }
 
 // toGVR converts a WatchedResource configuration to a GroupVersionResource.

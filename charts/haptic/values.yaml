@@ -198,6 +198,13 @@ controller:
   rbac:
     # Create the controller's Role, ClusterRole, and bindings.
     create: true
+    # Read Secrets only in the release namespace: the ClusterRole drops its
+    # Secret rule, a Role grants get/list/watch there, and the controller
+    # watches only that namespace. An Ingress, Gateway, or policy that references
+    # a Secret elsewhere is rejected. For platforms that serve only the default
+    # or a wildcard certificate and use no per-Ingress certificate or auth
+    # Secrets. Not under extraContext because it changes the chart's RBAC objects.
+    releaseNamespaceSecretsOnly: false
   # Service exposing the controller's health and metrics listeners.
   service:
     type: ClusterIP  # @schema enum: [ClusterIP, NodePort, LoadBalancer]

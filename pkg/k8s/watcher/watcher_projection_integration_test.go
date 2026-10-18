@@ -41,7 +41,7 @@ func TestNew_CachedStore_InformerProjectsButServesFullBody(t *testing.T) {
 	require.NoError(t, err)
 
 	// The informer's own cache holds the body-stripped projection.
-	items := w.informer.GetStore().List()
+	items := w.informers[0].informer.GetStore().List()
 	require.Len(t, items, 1)
 	stored, ok := items[0].(*unstructured.Unstructured)
 	require.True(t, ok, "informer cache item should be *unstructured.Unstructured")
@@ -169,7 +169,7 @@ func TestNew_CachedStore_ProjectionRetainsFieldSelectorAndIndexRoots(t *testing.
 
 	// The informer cache holds body-stripped husks: spec retained (index +
 	// selector root), data dropped.
-	items := w.informer.GetStore().List()
+	items := w.informers[0].informer.GetStore().List()
 	require.NotEmpty(t, items)
 	for _, item := range items {
 		u, ok := item.(*unstructured.Unstructured)

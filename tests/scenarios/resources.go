@@ -55,6 +55,8 @@ const (
 	certManagerCAInjector   = "cert-manager-cainjector"
 	helmUpgrade             = "upgrade"
 	helmInstall             = "install"
+	helmCreateNamespace     = "--create-namespace"
+	loopbackHost            = "127.0.0.1"
 	conditionTrue           = "True"
 	providerArgo            = "argo"
 	chartName               = "haptic"

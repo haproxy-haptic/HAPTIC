@@ -422,7 +422,7 @@ func TestTypedResourceListIsAdaptedOncePerRender(t *testing.T) {
 			[]string{"routes"},
 			func(string) []string { return []string{"metadata.namespace", "metadata.name"} },
 			func(string) bool { return false },
-			func(string) string { return "example.test/v1" },
+			func(string) string { return "example.test/v1" }, nil,
 			testutil.NewTestLogger(),
 			NewResourceErrorCollector(),
 			view,

@@ -116,6 +116,8 @@ More than one key can target the same Kubernetes group, version, and resource tu
 | `indexBy` | `[]string` | Required at config load | At least one indexing expression |
 | `labelSelector` | string | No | `""` (equality-only, `"k=v[,k=v]"`; set-based syntax not supported) |
 | `fieldSelector` | string | No | `""` (client-side JSONPath equality, `"field.path=value"`; matches any field) |
+| `namespaces` | `[]string` | No | — (watches every namespace; a list watches only those namespaces and needs `indexBy` to start with `metadata.namespace`; a template lookup into another namespace fails the render) |
+| `namespacesSetting` | string | No | `watchedResources.<name>.namespaces` (the setting the lookup error names; the Helm chart sets it when `controller.rbac.releaseNamespaceSecretsOnly` scopes the Secret watch) |
 | `store` | string (`full` / `on-demand`) | No | `full` |
 | `enableValidationWebhook` | bool | No | `false` |
 | `debounceInterval` | string | No | `""` — empty / invalid uses the `100ms` default; an explicit `"0"` disables debouncing |

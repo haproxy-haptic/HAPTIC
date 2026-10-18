@@ -157,7 +157,6 @@ type CachedStore struct {
     cacheTTL       time.Duration
     client         dynamic.Interface
     gvr            schema.GroupVersionResource
-    namespace      string
     indexer        *indexer.Indexer
     logger         *slog.Logger
 }

@@ -39,10 +39,9 @@ func TestCachedStore_ListCached_ReturnsOnlyWarmEntries(t *testing.T) {
 		// Fake client has NO resources — confirms ListCached doesn't
 		// call out to the API. If it did, every entry would 404
 		// because the fake's tracker is empty.
-		Client:    fake.NewSimpleDynamicClient(scheme),
-		GVR:       gvr,
-		Namespace: "",
-		Indexer:   createTestIndexer(),
+		Client:  fake.NewSimpleDynamicClient(scheme),
+		GVR:     gvr,
+		Indexer: createTestIndexer(),
 	})
 	require.NoError(t, err)
 
@@ -72,11 +71,10 @@ func TestCachedStore_ListCached_SkipsExpiredEntries(t *testing.T) {
 	store, err := NewCachedStore(&CachedStoreConfig{
 		NumKeys: 2,
 		// Very short TTL so we can blow past it deterministically.
-		CacheTTL:  10 * time.Millisecond,
-		Client:    fake.NewSimpleDynamicClient(scheme),
-		GVR:       schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"},
-		Namespace: "",
-		Indexer:   createTestIndexer(),
+		CacheTTL: 10 * time.Millisecond,
+		Client:   fake.NewSimpleDynamicClient(scheme),
+		GVR:      schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"},
+		Indexer:  createTestIndexer(),
 	})
 	require.NoError(t, err)
 

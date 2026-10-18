@@ -1347,6 +1347,27 @@ spec:
                         being dropped, which would silently widen the watch to every object of
                         this kind cluster-wide.
                       type: string
+                    namespaces:
+                      description: |-
+                        Namespaces restricts the watch to these namespaces; unset watches every
+                        namespace. The controller needs read access only there, and a template
+                        lookup into any other namespace fails the render instead of returning
+                        nothing. Requires indexBy to start with metadata.namespace.
+                      items:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                      minItems: 1
+                      type: array
+                      x-kubernetes-list-type: set
+                    namespacesSetting:
+                      description: |-
+                        NamespacesSetting names the setting that chose namespaces, such as a
+                        Helm value; the error for a lookup outside them quotes it. Defaults to
+                        watchedResources.<name>.namespaces.
+                      maxLength: 253
+                      type: string
                     optional:
                       description: |-
                         Optional marks this resource as non-essential: when NO candidate

@@ -1400,6 +1400,11 @@ func (in *WatchedResource) DeepCopyInto(out *WatchedResource) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.Namespaces != nil {
+		in, out := &in.Namespaces, &out.Namespaces
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.IgnoreFields != nil {
 		in, out := &in.IgnoreFields, &out.IgnoreFields
 		*out = make([]string, len(*in))

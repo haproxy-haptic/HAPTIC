@@ -64,7 +64,7 @@ func (s *Session) probeUpgradePod(ctx context.Context, pod *corev1.Pod, roots *x
 		return err
 	}
 	return traffic.Wait(ctx, &traffic.PodProbe{Client: s.Client, Target: "pod/" + pod.Name, Ports: ports, StartupTimeout: 30 * time.Second, RouteTimeout: 120 * time.Second, Interval: time.Second, Check: func(ctx context.Context, locals []int) error {
-		client := httpclient.New(&httpclient.Config{Host: "127.0.0.1", HTTPPort: locals[0], HTTPSPort: locals[1], TLS: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}})
+		client := httpclient.New(&httpclient.Config{Host: loopbackHost, HTTPPort: locals[0], HTTPSPort: locals[1], TLS: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}})
 		defer client.CloseIdleConnections()
 		for _, request := range []*httpclient.Request{client.GET("http.upgrade.test", "/upgrade-check"), client.HTTPS("tls.upgrade.test", "/upgrade-check")} {
 			if err := checkUpgradeRequest(ctx, request); err != nil {

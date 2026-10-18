@@ -53,6 +53,15 @@ func TestScenarioOptionsRetainEnvironmentAndFlags(t *testing.T) {
 	require.Equal(t, "/private/evidence", options.artifacts)
 }
 
+func TestReleaseNamespaceSecretsOptionsOwnTheirCluster(t *testing.T) {
+	t.Setenv("SECRETS_CLUSTER_NAME", "owned-secrets")
+	options, err := parseOptions([]string{secretsScenario, "--image", "haptic:secrets"})
+	require.NoError(t, err)
+	require.Equal(t, "owned-secrets", options.cluster)
+	require.Equal(t, "haptic:secrets", options.image)
+	require.Equal(t, defaultRelease, options.namespace)
+}
+
 func TestImagePartsPreserveRegistryPortAndRequireTag(t *testing.T) {
 	repository, tag, err := imageParts("registry:5000/project/haptic:test")
 	require.NoError(t, err)
