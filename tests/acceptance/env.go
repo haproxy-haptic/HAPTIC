@@ -867,8 +867,8 @@ func GetPodLogs(ctx context.Context, clientset kubernetes.Interface, pod *corev1
 
 // WaitForCondition polls a condition function until it returns true or timeout occurs.
 // The condition function should return (satisfied bool, err error).
-// If err is non-nil, polling continues (transient errors are expected).
-// If satisfied is true, polling stops immediately and returns nil.
+// If err is non-nil, polling continues (transient errors are expected), even
+// when satisfied is true. Only (true, nil) stops polling and returns nil.
 // If timeout occurs, returns an error with the provided description.
 //
 // This is a generic polling helper that replaces sleep-based synchronization

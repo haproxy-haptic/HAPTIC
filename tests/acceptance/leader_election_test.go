@@ -23,14 +23,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 	"sigs.k8s.io/e2e-framework/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/haproxy-haptic/HAPTIC/tests/testutil"
 )
 
 const (
@@ -444,128 +448,48 @@ func TestLeaderElection_Failover(t *testing.T) {
 	testEnv.Test(t, buildLeaderElectionFailoverFeature())
 }
 
-// buildLeaderElectionDisabledModeFeature builds a feature that verifies single-replica
-// mode without leader election.
-//
-// This test validates:
-//  1. Controller starts with leader_election.enabled=false
-//  2. No Lease resource is created
-//  3. Controller operates normally
+// buildLeaderElectionDisabledModeFeature verifies that a controller with leader
+// election disabled never creates the election Lease and still runs its
+// leader-only components.
 func buildLeaderElectionDisabledModeFeature() types.Feature {
 	return features.New("Leader Election - Disabled Mode").
-		Setup(setupLeaderElectionDisabledMode).
-		Assess("No Lease created", assessNoLeaseCreated).
-		Assess("Controller operates normally", assessControllerOperatesNormally).
+		Setup(setupControllerEnv("test-leader-disabled", func(o *ControllerEnvironmentOptions) { o.EnableLeaderElection = false })).
+		Assess("No leader-election Lease created", assessNoLeaderElectionLease).
+		Assess("Controller renders without leader election", assessRendersWithoutLeaderElection).
+		Teardown(teardownControllerEnv).
 		Feature()
 }
 
-func setupLeaderElectionDisabledMode(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+// Standalone mode keeps its retained state in a Lease of its own (ADR-0033),
+// so only the election Lease must stay absent.
+func assessNoLeaderElectionLease(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 	t.Helper()
-	t.Log("Setting up leader election disabled mode test")
-
-	// Note: "test-leader-disabled" is 20 chars, use 36 to get 16 random chars
-	namespace := envconf.RandomName("test-leader-disabled", 36)
-	t.Logf("Using test namespace: %s", namespace)
-
-	ctx = StoreNamespaceInContext(ctx, namespace)
-
-	client, err := cfg.NewClient()
-	if err != nil {
-		t.Fatal("Failed to create client:", err)
-	}
-
-	// Create controller environment with 1 replica and leader election disabled
-	opts := DefaultControllerEnvironmentOptions() // 1 replica, leader election disabled
-	if err := CreateControllerEnvironment(ctx, t, client, namespace, opts); err != nil {
-		t.Fatal("Failed to create controller environment:", err)
-	}
-	t.Log("Created controller environment with leader election disabled")
-
+	namespace, _, clientset := readyControllerEnv(ctx, t, cfg)
+	leases := clientset.CoordinationV1().Leases(namespace)
+	require.NoError(t, testutil.Consistently(ctx, 10*time.Second, 500*time.Millisecond, "no leader-election Lease",
+		func(ctx context.Context) error {
+			_, err := leases.Get(ctx, LeaderElectionLeaseName, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("found Lease %s/%s", namespace, LeaderElectionLeaseName)
+		}))
 	return ctx
 }
 
-func assessNoLeaseCreated(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+// The Coordinator is leader-only, so a render proves standalone mode started it.
+func assessRendersWithoutLeaderElection(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 	t.Helper()
-
-	namespace, err := GetNamespaceFromContext(ctx)
-	if err != nil {
-		t.Fatal("Failed to get namespace from context:", err)
-	}
-
-	client, err := cfg.NewClient()
-	if err != nil {
-		t.Fatal("Failed to create client:", err)
-	}
-
-	if err := WaitForPodReady(ctx, client, namespace, "app="+ControllerDeploymentName, 2*time.Minute); err != nil {
-		t.Fatal("Controller pod did not become ready:", err)
-	}
-	t.Log("Controller pod is ready")
-
-	// Poll to verify Lease is NOT created (leader election disabled)
-	// This replaces the previous 10s sleep with active checking
-	// We poll for 10 seconds to ensure Lease doesn't appear
-	// Use shared clientset (rate limiting disabled) to avoid exhaustion
-	clientset := Clientset()
-
-	err = WaitForCondition(ctx, "Lease to remain absent", 10*time.Second, 500*time.Millisecond, func() (bool, error) {
-		_, err := clientset.CoordinationV1().Leases(namespace).Get(ctx, LeaderElectionLeaseName, metav1.GetOptions{})
-		if err == nil {
-			// Lease exists - this is a failure condition!
-			// Return true to stop polling and fail the test
-			return true, fmt.Errorf("Lease resource exists but leader election is disabled")
-		}
-		// Lease doesn't exist - keep polling until timeout (which is success)
-		return false, nil
-	})
-
-	// For this test, timeout is actually success (Lease remained absent)
-	// But if we get an error message, that means Lease was created (failure)
-	if err != nil && strings.Contains(err.Error(), "Lease resource exists") {
-		t.Fatal(err)
-	}
-
-	t.Log("✓ No Lease resource created (as expected)")
-
-	return ctx
-}
-
-func assessControllerOperatesNormally(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-	t.Helper()
-
-	namespace, err := GetNamespaceFromContext(ctx)
-	if err != nil {
-		t.Fatal("Failed to get namespace from context:", err)
-	}
-
-	client, err := cfg.NewClient()
-	if err != nil {
-		t.Fatal("Failed to create client:", err)
-	}
-
-	// Use shared clientset (rate limiting disabled) to avoid exhaustion
-	clientset := Clientset()
-
-	// Access debug endpoint via NodePort
-	debugClient, err := EnsureDebugClientReady(ctx, t, client, clientset, namespace, 30*time.Second)
-	if err != nil {
-		t.Fatal("Failed to setup debug client:", err)
-	}
-
-	// Wait for config to become available (controller is initializing)
-	// This accommodates the time needed for controller startup and debug variable registration
-	// Longer timeout for disabled mode since there are no HAProxy pods to sync
-	config, err := debugClient.WaitForConfig(ctx, 60*time.Second)
-	if err != nil {
-		t.Fatal("Failed to wait for config:", err)
-	}
-
-	if config == nil {
-		t.Fatal("Config is nil")
-	}
-
-	t.Log("✓ Controller operating normally without leader election")
-
+	namespace, client, clientset := readyControllerEnv(ctx, t, cfg)
+	ingress := NewValidIngress(namespace, "standalone")
+	require.NoError(t, client.Resources().Create(ctx, ingress))
+	debugClient, err := EnsureDebugClientReady(ctx, t, client, clientset, namespace, DefaultClientSetupTimeout)
+	require.NoError(t, err)
+	backend := fmt.Sprintf("ing_%s_%s", namespace, ingress.Name)
+	require.NoError(t, debugClient.WaitForRenderedConfigContains(ctx, backend, 30*time.Second))
 	return ctx
 }
 
