@@ -1719,9 +1719,8 @@ templateSnippets:
       errorfile 503 {{ pathResolver.GetPath("503.http", "file") }}
       errorfile 504 {{ pathResolver.GetPath("504.http", "file") }}
 
-  # Which X-Forwarded-* headers a backend may believe; see
-  # docs/site/docs/libraries/base.md#forwarded-headers. First in the filter
-  # chain, so every later rule and SPOE message sees the cleaned headers.
+  # Sanitize before other filters and SPOE.
+  # See docs/site/docs/libraries/base.md#forwarded-headers.
   frontend-filters-010-forwarded-headers:
     template: |
       {%- import "util-forwarded-for-modes" for ForwardedForModes -%}
@@ -1835,15 +1834,8 @@ templateSnippets:
 
   frontend-filters-100-server-header:
     template: |
-      {# Identify the controller in HTTP responses. Most ingress controllers
-         (nginx-ingress, traefik, ...) emit a Server header by default; HAProxy
-         does not. The upstream Ingress conformance suite asserts that responses
-         carry a Server header (default-backend feature's header table), and
-         backends like the upstream echo image don't emit one themselves, so
-         the controller is expected to. Set rather than add so we don't stack
-         a backend-provided Server with our own. The leading newline is
-         load-bearing: render_glob concatenates snippet outputs verbatim, so a
-         previous snippet without a trailing newline would fuse with this line. #}
+      {# Ingress conformance requires a Server header; set it for every backend.
+         A preceding snippet may omit its trailing newline. #}
       {{ "\n" }}http-after-response set-header Server haptic
 
   frontend-filters-090-request-buffering:
