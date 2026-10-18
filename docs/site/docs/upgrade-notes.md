@@ -7,6 +7,10 @@ to keep your existing routes working. For routine chart upgrades, see
 
 ## Upgrading to 0.7
 
+0.7 changes raw configuration permissions and forwarded headers.
+
+### 1. Check for raw configuration annotations
+
 0.7 rejects raw HAProxy configuration annotations by default. These annotations
 insert their value into `haproxy.cfg` verbatim:
 
@@ -19,16 +23,13 @@ After the upgrade, an Ingress that sets one of them gets an `InputRejected`
 Warning Event and isn't served until you remove the annotation. An annotation of
 an annotation library you haven't enabled has no effect and isn't rejected.
 
-### Check for raw configuration annotations
-
 List the Ingresses that set a raw configuration annotation:
 
 ```bash
 kubectl get ingress --all-namespaces -o json | jq -r '.items[] | select(any(.metadata.annotations // {} | to_entries[]; (.key | test("^((haproxy-haptic\\.org|haproxy-ingress\\.github\\.io)/config-(global|defaults|frontend|backend)|haproxy\\.org/backend-config-snippet|nginx\\.ingress\\.kubernetes\\.io/configuration-snippet)$")) and (.value | test("\\S")))) | "\(.metadata.namespace)/\(.metadata.name)"'
 ```
 
-If the command prints nothing, follow the normal
-[Helm upgrade procedure](deploying-with-helm.md#upgrading).
+If the command prints nothing, continue with the proxy checks below.
 
 If it prints Ingresses, either remove the annotations from them before you
 upgrade, or keep the previous behavior by adding this value to your Helm values:
@@ -46,6 +47,60 @@ Keep the previous behavior only if everyone who can edit an Ingress in a watched
 namespace may also edit the HAProxy configuration. While WAF governance is
 active, `waf.ingressPermissions.allowRawHAProxyConfig` must also be `true`, as
 in 0.6. See [Raw configuration annotations](operations/security.md#raw-configuration-annotations).
+
+### 2. List the proxies in front of HAPTIC
+
+HAPTIC now replaces a client-sent `X-Forwarded-For` with the client address,
+sets `X-Forwarded-Proto` to `https` or `http`, and drops a client-sent
+`X-Forwarded-Host` and `X-Forwarded-Port`. Before, it appended the client
+address to whatever `X-Forwarded-For` the client sent, so any client could
+forge the address a backend logs or trusts.
+
+If clients reach HAPTIC directly, or through an L4 load balancer or the
+[PROXY protocol](haproxy-deployment.md#proxy-protocol), continue with the next
+step. If an L7 load balancer or a content delivery network sets these headers
+in front of HAPTIC, list its source addresses, or your backends lose the
+original client address:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        forwardedHeaders:
+          trustedProxies:
+            - 10.0.0.0/8
+```
+
+To keep the old `X-Forwarded-For` handling for every client, which keeps
+forged values, trust every source:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        forwardedHeaders:
+          trustedProxies: ["0.0.0.0/0", "::/0"]
+```
+
+HAPTIC still sets `X-Forwarded-Proto` on requests that arrive without one. See
+[forwarded headers](operations/security.md#forwarded-headers).
+
+### 3. Check `haproxy-ingress.github.io/forwardfor`
+
+If you don't enable the haproxy-ingress library, skip this step. HAPTIC had the
+values `add` and `update` the wrong way round. They now match haproxy-ingress:
+`add` replaces the client's `X-Forwarded-For` with the client address, and
+`update` keeps it and appends the client address. List the Ingresses that set
+the annotation:
+
+```bash
+kubectl get ingress --all-namespaces -o jsonpath='{range .items[?(@.metadata.annotations.haproxy-ingress\.github\.io/forwardfor)]}{.metadata.namespace}/{.metadata.name}: {.metadata.annotations.haproxy-ingress\.github\.io/forwardfor}{"\n"}{end}'
+```
+
+To keep a listed Ingress's previous behaviour, change `add` to `update` or
+`update` to `add`.
 
 ## Upgrading to 0.6
 

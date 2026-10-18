@@ -542,6 +542,18 @@
                       },
                       "additionalProperties": false
                     },
+                    "forwardedHeaders": {
+                      "type": "object",
+                      "properties": {
+                        "trustedProxies": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "http3": {
                       "type": "object",
                       "properties": {

@@ -29,20 +29,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Raw HAProxy configuration annotations are rejected by default. Any Ingress writer in a watched namespace could otherwise change the configuration for every host, or read HAProxy's TLS keys through a backend directive.
+- Clients can no longer forge the client address or scheme a backend sees: HAPTIC replaces a client-sent `X-Forwarded-For` instead of appending to it, and sets `X-Forwarded-Proto` ([#406](https://github.com/haproxy-haptic/HAPTIC/issues/406)).
 
 ### Helm chart
 
 #### Added
 
 - `HAProxyControllerConfigNotValidated` alert (`controller.monitoring.prometheusRule.defaultRules.configNotValidated`): a replica hasn't validated its newest `HAProxyTemplateConfig` for 10 minutes.
+- `extraContext.forwardedHeaders.trustedProxies`: the L7 load balancers whose `X-Forwarded-For`, `-Proto`, `-Host`, and `-Port` headers HAPTIC keeps.
 
 #### Changed
 
 - **BREAKING:** `haproxy-haptic.org/config-*`, `haproxy-ingress.github.io/config-*`, `haproxy.org/backend-config-snippet`, and `nginx.ingress.kubernetes.io/configuration-snippet` require `controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig: true`, independent of WAF governance; `waf.ingressPermissions.allowRawHAProxyConfig` can only narrow it. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#upgrading-to-07) before upgrading.
+- **BREAKING:** Every HTTP frontend replaces a client-sent `X-Forwarded-For` with the client address, sets `X-Forwarded-Proto` to `https` or `http`, and drops a client-sent `X-Forwarded-Host` and `X-Forwarded-Port`. Behind an L7 load balancer, [list it in `trustedProxies`](./docs/site/docs/upgrade-notes.md#upgrading-to-07); `trustedProxies: ["0.0.0.0/0", "::/0"]` restores the old `X-Forwarded-For` handling.
+- **BREAKING:** haproxy-ingress: `haproxy-ingress.github.io/forwardfor: add` replaces the client's `X-Forwarded-For` and `update` appends to it, as upstream does; HAPTIC had them the other way round. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#3-check-haproxy-ingressgithubioforwardfor) before upgrading.
+- An Ingress that sets `X-Forwarded-For` handling through annotations from two families is rejected at admission, like other mixed-family features.
 
 #### Fixed
 
 - WAF governance's `allowRawHAProxyConfig: false` also rejects raw configuration annotations when the `hapticAnnotations` library is disabled.
+- `haproxy-haptic.org/forwardfor` and `haproxy-ingress.github.io/forwardfor`: `add` and `update` no longer send the client address twice, and `ifmissing` and `ignore` no longer append it to the client's header.
+- haproxytech: `haproxy.org/forwarded-for: "false"` forwards the client's `X-Forwarded-For` unchanged; it was ignored.
 
 ## [0.6.0] - 2026-10-18
 

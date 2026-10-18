@@ -482,6 +482,7 @@ In addition to the snippet-based extension points below, libraries may declare f
 | `frontend-extra-*` | Early frontend directives after bind (options, captures, ACLs) | (user) |
 | `frontend-matchers-advanced-*` | Advanced route matching (method, headers) | gateway |
 | `frontend-filters-*` | Request/response filters (after routing) | gateway, haproxytech |
+| `forwarded-for-mode-*` | Rules setting `txn.xff_mode` (`replace`, `append`, `ifmissing`, `ignore`) for the requests a library claims; base renders them first in the filter chain and applies the mode to `X-Forwarded-For` | ingress-annotations-compat |
 | `log-fields-*` | Named JSON fields for the structured access log; emits log-format items only, no directives. Gate on the feature being configured; only log-time-available fetches are legal (no `path`/`req.hdr()`/`res.hdr()` — materialise into a `txn` var first); never branch on which frontend is rendering | base, ssl, gateway, haptic-annotations, haproxytech, haproxy-ingress, nginx-ingress, spoa-hub |
 | `backend-directives-*` | Backend configuration directives | haproxytech |
 | `map-host-*` | Host map entries | gateway, ingress |
@@ -559,7 +560,7 @@ Snippets use numeric prefixes (e.g., `backends-500-ingress`) to control executio
 | Range | Purpose | Examples |
 |-------|---------|----------|
 | 000-099 | Infrastructure/initialization | `features-050-ssl-initialization` |
-| 100-199 | Feature registration, basic config | `features-100-gateway-tls`, `frontend-filters-100-haproxytech-basic-headers` |
+| 100-199 | Feature registration, basic config | `features-100-gateway-tls`, `frontend-filters-100-server-header` |
 | 200-299 | Access control, security | `frontend-filters-200-haproxytech-access-control` |
 | 300-399 | CORS, header manipulation | `frontend-filters-300-haproxytech-cors` |
 | 400-499 | Redirects, rewrites | `frontend-filters-450-haproxytech-redirects` |

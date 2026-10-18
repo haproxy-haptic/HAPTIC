@@ -19,6 +19,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"testing"
 
@@ -126,8 +127,8 @@ func xffOverwritten(ctx context.Context, hc *httpclient.Client, host, forged str
 	if resp.Echo == nil {
 		return false, fmt.Errorf("no echo JSON in %d bytes", len(resp.Body))
 	}
-	if got := resp.Echo.Headers["x-forwarded-for"]; got == "" || got == forged {
-		return false, fmt.Errorf("upstream saw X-Forwarded-For %q", got)
+	if got := resp.Echo.Headers["x-forwarded-for"]; net.ParseIP(got) == nil || got == forged {
+		return false, fmt.Errorf("upstream saw X-Forwarded-For %q, want only the client address", got)
 	}
 	return true, nil
 }

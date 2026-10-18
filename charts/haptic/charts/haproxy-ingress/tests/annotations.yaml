@@ -344,39 +344,42 @@ validationTests:
       - {type: contains, target: "map:ing-ac-allow.map", pattern: '(?m)^10\.0\.0\.0/8\|default/wl-ingress 1$'}
 
   test-haproxy-ingress-forwardfor:
-    description: forwardfor rides the shared X-Forwarded-For map lane; an unknown value is add, as upstream.
+    description: >-
+      forwardfor follows upstream: add replaces the client's X-Forwarded-For,
+      update keeps it and appends, ifmissing and ignore keep it; an unknown
+      value is add. With trusted proxies, only a trusted source on a route
+      without a mode keeps its X-Forwarded-For.
+    extraContext:
+      forwardedHeaders: {trustedProxies: ["10.0.0.0/8"]}
     fixtures:
       ingresses:
         - apiVersion: networking.k8s.io/v1
           kind: Ingress
-          metadata:
-            namespace: default
-            name: xff-update
-            annotations:
-              haproxy-ingress.github.io/forwardfor: "update"
-          spec:
-            ingressClassName: haproxy
-            rules:
-              - host: xff-update.example.com
-                http: *httpRoot
+          metadata: {namespace: default, name: xff-add, annotations: {haproxy-ingress.github.io/forwardfor: "add"}}
+          spec: {ingressClassName: haproxy, rules: [{host: xff-add.example.com, http: *httpRoot}]}
         - apiVersion: networking.k8s.io/v1
           kind: Ingress
-          metadata:
-            namespace: default
-            name: xff-odd
-            annotations:
-              haproxy-ingress.github.io/forwardfor: "yes"
-          spec:
-            ingressClassName: haproxy
-            rules:
-              - host: xff-odd.example.com
-                http: *httpRoot
+          metadata: {namespace: default, name: xff-update, annotations: {haproxy-ingress.github.io/forwardfor: "update"}}
+          spec: {ingressClassName: haproxy, rules: [{host: xff-update.example.com, http: *httpRoot}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: xff-ifmissing, annotations: {haproxy-ingress.github.io/forwardfor: "ifmissing"}}
+          spec: {ingressClassName: haproxy, rules: [{host: xff-ifmissing.example.com, http: *httpRoot}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: xff-ignore, annotations: {haproxy-ingress.github.io/forwardfor: "ignore"}}
+          spec: {ingressClassName: haproxy, rules: [{host: xff-ignore.example.com, http: *httpRoot}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: xff-odd, annotations: {haproxy-ingress.github.io/forwardfor: "yes"}}
+          spec: {ingressClassName: haproxy, rules: [{host: xff-odd.example.com, http: *httpRoot}]}
     assertions:
       - type: haproxy_valid
-      - {type: contains, target: "map:ing-xff-routes.map", pattern: '(?m)^default/xff-update hi:update$'}
-      - {type: contains, target: "map:ing-xff-routes.map", pattern: '(?m)^default/xff-odd hi:add$'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request add-header X-Forwarded-For %\[src\] if \{ var\(txn\.hi_xff\) -m str "hi:add" \}'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-header X-Forwarded-For %\[src\] if \{ var\(txn\.hi_xff\) -m str "hi:update" \}'}
+      - type: equals
+        target: map:ing-xff-routes.map
+        expected: "default/xff-add replace\ndefault/xff-ifmissing ifmissing\ndefault/xff-ignore ignore\ndefault/xff-odd replace\ndefault/xff-update append\n"
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.xff_mode\) var\(txn\.resource_key\),map\(\S*/ing-xff-routes\.map\)\n'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request del-header X-Forwarded-For if \{ var\(txn\.xff_mode\) -m str replace \} \|\| !\{ var\(txn\.xff_mode\) -m found \} !haptic_trusted_proxy\n'}
 
   test-haproxy-ingress-cors:
     description: HAProxy-Ingress CORS annotations generate correct headers

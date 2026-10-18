@@ -17,7 +17,7 @@
 package e2e
 
 import (
-	"strings"
+	"net"
 	"testing"
 
 	"github.com/haproxy-haptic/HAPTIC/tests/e2e/httpclient"
@@ -104,14 +104,11 @@ func TestHapticHeaders(t *testing.T) {
 					t.Helper()
 					// forwardfor=update rewrites X-Forwarded-For to %[src]; the
 					// exact source IP isn't predictable, so assert the upstream
-					// saw a non-empty dotted IPv4 value via ExpectMatching.
+					// saw exactly one address.
 					httpclient.New(t).GET(host, "/").ExpectMatching(t,
-						"upstream received a dotted X-Forwarded-For",
+						"upstream received only the client address in X-Forwarded-For",
 						func(resp *httpclient.Response) bool {
-							if resp.Echo == nil {
-								return false
-							}
-							return strings.Contains(resp.Echo.Headers["x-forwarded-for"], ".")
+							return resp.Echo != nil && net.ParseIP(resp.Echo.Headers["x-forwarded-for"]) != nil
 						})
 				},
 			},

@@ -11,26 +11,59 @@ _fx:
 validationTests:
 
   test-haptic-forwardfor:
-    description: haproxy-haptic.org/forwardfor=update is a routes-map row read by one X-Forwarded-For set-header (haproxy-ingress semantics)
+    description: >-
+      haproxy-haptic.org/forwardfor maps add to append, update to replace, and
+      keeps ifmissing and ignore; a src-ip-header naming X-Forwarded-For means
+      append unless forwardfor is set. Base's forwarded-headers rules apply the
+      mode before and after set-src reads the header.
     fixtures:
       ingresses:
         - apiVersion: networking.k8s.io/v1
           kind: Ingress
-          metadata:
-            namespace: default
-            name: ff-ingress
-            annotations:
-              haproxy-haptic.org/forwardfor: "update"
-          spec:
-            ingressClassName: haptic
-            rules:
-              - host: ff.example.com
-                http: *httpRoot
+          metadata: {namespace: default, name: ff-add, annotations: {haproxy-haptic.org/forwardfor: "add"}}
+          spec: {ingressClassName: haptic, rules: [{host: ff-add.example.com, http: *httpRoot}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: ff-update, annotations: {haproxy-haptic.org/forwardfor: "update", haproxy-haptic.org/src-ip-header: X-Forwarded-For}}
+          spec: {ingressClassName: haptic, rules: [{host: ff-update.example.com, http: *httpRoot}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: src-xff, annotations: {haproxy-haptic.org/src-ip-header: x-forwarded-for}}
+          spec: {ingressClassName: haptic, rules: [{host: src-xff.example.com, http: *httpRoot}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: ff-ifmissing, annotations: {haproxy-haptic.org/forwardfor: "ifmissing"}}
+          spec: {ingressClassName: haptic, rules: [{host: ff-ifmissing.example.com, http: *httpRoot}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: ff-ignore, annotations: {haproxy-haptic.org/forwardfor: "ignore"}}
+          spec: {ingressClassName: haptic, rules: [{host: ff-ignore.example.com, http: *httpRoot}]}
     assertions:
       - type: haproxy_valid
-      - {type: contains, target: "map:ing-xff-routes.map", pattern: '(?m)^default/\S+ haptic:update$'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-header X-Forwarded-For %\[src\] if \{ var\(txn\.haptic_xff\) -m str "haptic:update" \}'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-header X-Forwarded-For %\[src\] if \{ var\(txn\.haptic_xff\) -m str "haptic:ifmissing" \} !\{ req\.hdr\(X-Forwarded-For\) -m found \}'}
+      - type: equals
+        target: map:ing-xff-routes.map
+        expected: "default/ff-add append\ndefault/ff-ifmissing ifmissing\ndefault/ff-ignore ignore\ndefault/ff-update replace\ndefault/src-xff append\n"
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - '(?m)^frontend http_frontend$'
+          - 'http-request set-var\(txn\.xff_mode\) var\(txn\.resource_key\),map\(\S*/ing-xff-routes\.map\)\n'
+          - 'http-request del-header X-Forwarded-For unless \{ var\(txn\.xff_mode\) -m str append ifmissing ignore \}\n'
+          - 'http-request set-src hdr\(X-Forwarded-For\)'
+          - 'http-request add-header X-Forwarded-For %\[src\] unless \{ var\(txn\.xff_mode\) -m str ignore \} \|\| \{ var\(txn\.xff_mode\) -m str ifmissing \} \{ req\.hdr\(X-Forwarded-For\) -m found \}\n'
+
+  test-haptic-forwardfor-rejects-unknown-value:
+    description: An unknown forwardfor value fails instead of leaving the route on a handling nobody chose.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: ff-odd, annotations: {haproxy-haptic.org/forwardfor: "yes"}}
+          spec: {ingressClassName: haptic, rules: [{host: ff-odd.example.com, http: *httpRoot}]}
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "Invalid value 'yes' for annotation 'haproxy-haptic.org/forwardfor'.*Valid values: add, ifmissing, ignore, update"
 
   test-haptic-header-manipulation:
     description: request/response-set-header (newline form), src-ip-header, and request-capture with a custom length
@@ -83,6 +116,7 @@ validationTests:
       - {type: not_contains, target: haproxy.cfg, pattern: 'set-header X-Custom-Req "req-value"'}
       - {type: contains, target: "map:ing-src-ip-routes.map", pattern: '(?m)^default/hdr-ingress haptic:X-Real-IP$'}
       - {type: contains, target: haproxy.cfg, pattern: 'http-request set-src hdr\(X-Real-IP\) if \{ var\(txn\.resource_key\),map\(\S*/ing-src-ip-routes\.map\) -m str "haptic:X-Real-IP" \}'}
+      - {type: not_exists, target: map:ing-xff-routes.map, description: Only a src-ip-header naming X-Forwarded-For sets a forwarded-for mode.}
       - {type: contains, target: haproxy.cfg, pattern: "capture request header X-Forwarded-Proto len 256"}
       # Two routes share the pair; the slot is emitted once per frontend, never twice.
       - {type: not_contains, target: haproxy.cfg, pattern: 'capture request header X-Forwarded-Proto len 256\n\s*capture request header X-Forwarded-Proto len 256'}
@@ -295,8 +329,8 @@ validationTests:
       - {type: contains, target: "map:ing-ac-routes.map", pattern: '(?m)^default/scoped-hostless haptic:deny$'}
       - {type: contains, target: "map:ing-ac-deny.map", pattern: '(?m)^192\.0\.2\.0/24\|default/scoped-hostless 1$'}
       # XFF overwrite reaches both shapes — else a forged XFF survives.
-      - {type: contains, target: "map:ing-xff-routes.map", pattern: '(?m)^default/scoped-wild haptic:update$'}
-      - {type: contains, target: "map:ing-xff-routes.map", pattern: '(?m)^default/scoped-hostless haptic:update$'}
+      - {type: contains, target: "map:ing-xff-routes.map", pattern: '(?m)^default/scoped-wild replace$'}
+      - {type: contains, target: "map:ing-xff-routes.map", pattern: '(?m)^default/scoped-hostless replace$'}
       # No enforcement may be gated on an exact host match again.
       - type: not_contains
         target: haproxy.cfg

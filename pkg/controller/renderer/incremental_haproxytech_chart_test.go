@@ -36,7 +36,7 @@ import (
 )
 
 var haproxyTechGatedComponents = []string{
-	"haproxytech-forwarded-for-publications",
+	"ingress-forwardfor-0500-haproxytech",
 	"ingress-access-control-0200-haproxytech",
 	"ingress-cors-0300-haproxytech",
 	"haproxytech-ssl-redirect-port-publications",
@@ -48,7 +48,7 @@ var haproxyTechGatedComponents = []string{
 	"haproxytech-captured-headers-publications",
 }
 
-const haproxyTechGatedRoot = `{{- render "haproxytech-forwarded-for-publications" -}}
+const haproxyTechGatedRoot = `{{- render "ingress-forwardfor-0500-haproxytech" -}}
 {{- render "ingress-access-control-0200-haproxytech" -}}
 {{- render "ingress-cors-0300-haproxytech" -}}
 {{- render "haproxytech-ssl-redirect-port-publications" -}}
@@ -58,9 +58,9 @@ const haproxyTechGatedRoot = `{{- render "haproxytech-forwarded-for-publications
 {{- render "map-reqhdr-host-250-haproxytech" -}}
 {{- render "ingress-header-mods-0300-haproxytech" -}}
 {{- render "haproxytech-captured-headers-publications" -}}
-{{ len(incremental_values("haproxytech-forwarded-for", "enabled")) }}`
+{{ len(incremental_values("ingress-forwardfor", "route")) }}`
 
-const haproxyTechAuthRoot = `{{- render "haproxytech-forwarded-for-publications" -}}
+const haproxyTechAuthRoot = `{{- render "ingress-forwardfor-0500-haproxytech" -}}
 {{- render "ingress-access-control-0200-haproxytech" -}}
 {{- render "ingress-cors-0300-haproxytech" -}}
 {{- render "haproxytech-ssl-redirect-port-publications" -}}
@@ -140,7 +140,7 @@ func TestHAProxyTechGatedComponentsSkipAnnotationFreeIngresses(t *testing.T) {
 			assert.Empty(t, fixture.engine.executionCounts())
 
 			fixture.updateIngress(t, haproxyTechIngress(target, map[string]any{
-				"haproxy.org/forwarded-for": "true",
+				"haproxy.org/forwarded-for": "false",
 			}, "v3"))
 			assert.Equal(t, "1\n", fixture.renderAndCommit(t).HAProxyConfig)
 			assert.Equal(t, map[string]int{"ingresses/" + target: 1}, fixture.engine.executionCounts())
@@ -433,6 +433,7 @@ func loadHAProxyTechGatedSnippets(t *testing.T) map[string]config.TemplateSnippe
 		"util-validate-cidr-list":             true,
 		"util-publish-access-control":         true,
 		"util-cors-publish":                   true,
+		"util-forwardfor-publish":             true,
 	}
 	for _, name := range haproxyTechGatedComponents {
 		wanted[name] = true

@@ -204,7 +204,9 @@ keep working.
 
 This is separate from the
 [`haproxy-haptic.org/proxy-protocol`](libraries/haptic-annotations.md)
-annotation, which makes HAProxy *send* a PROXY header to a backend.
+annotation, which makes HAProxy *send* a PROXY header to a backend. For an L7
+load balancer that sets `X-Forwarded-For` instead, see
+[forwarded headers](operations/security.md#trust-an-l7-load-balancer).
 
 ### Full HAProxy Service reference
 

@@ -135,49 +135,6 @@ validationTests:
       - {type: contains, target: file:spoe.conf, pattern: "args auth_url=var\\(txn.auth_url\\)"}
       - {type: contains, target: file:spoe.conf, pattern: "spoe-group check-auth-group"}
 
-  # Regression: an Ingress with haproxy.org/forwarded-for=true triggers
-  # the haproxytech library to emit `option forwardfor` in the frontend
-  # at priority 100. The spoa-hub library's frontend-filters-100-* runs
-  # next (alphabetical tie-break), so its output must start on a new
-  # line — otherwise we get `option forwardforfilter spoe engine ...`
-  # (a real bug found in CI when both snippets co-rendered).
-  test-spoa-hub-frontend-filters-newline-after-forwardfor:
-    # Skip on HAProxy <3.1: fixture pins haproxyVersion=3.2 so the
-    # spoa-hub backend renders `mode spop`, which 3.0 can't parse.
-    _helm_skip_test: '{{ if semverCompare "<3.1" .Values.haproxyVersion }}true{{ else }}false{{ end }}'
-    description: "When haproxytech's option-forwardfor and the spoa-hub filter spoe directive both render at frontend-filters priority 100, they must be on separate lines. Catches the cycle 4 part C bug where the `{%- if` in spoa-hub's snippet stripped the separating newline."
-    extraContext:
-      haproxyVersion: "3.2"
-      spoaHub: *spoahubEnabledHaproxy
-    fixtures:
-      services:
-        - apiVersion: v1
-          kind: Service
-          metadata: {namespace: default, name: ff-svc}
-          spec:
-            ports:
-              - port: 80
-      ingresses:
-        - apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            namespace: default
-            name: ff-ingress
-            annotations:
-              haproxy.org/forwarded-for: "true"
-          spec:
-            ingressClassName: haproxy
-            rules:
-              - host: ff.example.com
-                http:
-                  paths:
-                    - path: /
-                      pathType: Prefix
-                      backend: {service: {name: ff-svc, port: {number: 80}}}
-    assertions:
-      - type: haproxy_valid
-      - {type: not_contains, target: haproxy.cfg, pattern: "forwardforfilter"}
-
   test-spoa-hub-mode-tcp-on-haproxy-3-0:
     description: "On HAProxy 3.0 the `spop` proxy mode doesn't exist (introduced in 3.1). The chart must auto-fall-back the spoa-hub backend to `mode tcp` — both transports work with the SPOE filter; mode spop is just..."
     extraContext:

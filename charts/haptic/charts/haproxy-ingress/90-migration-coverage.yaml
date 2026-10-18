@@ -207,8 +207,8 @@ _migrationCoverage:
         doc: annotation-support
       # --- forwardfor / headers ---
       haproxy-ingress.github.io/forwardfor:
-        status: supported
-        note: add, update and ifmissing map to the matching X-Forwarded-For handling; "ignore" leaves the header untouched.
+        status: different
+        note: '`add`, `update`, `ifmissing`, and `ignore` handle `X-Forwarded-For` as upstream does, per Ingress; the client''s original value isn''t copied to `X-Original-Forwarded-For`.'
       haproxy-ingress.github.io/headers:
         status: supported
         note: Pipe-separated name:value request headers set for the Ingress's hosts.

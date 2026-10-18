@@ -497,9 +497,18 @@ annotations:
 
 ### `haproxy-ingress.github.io/forwardfor`
 
-Configure X-Forwarded-For header handling.
+Overrides the [default `X-Forwarded-For` handling](../operations/security.md#forwarded-headers)
+for the Ingress, with upstream's values:
 
-**Valid values**: `add`, `update`, `ignore`, `ifmissing`
+| Value | What the backend receives |
+|-------|---------------------------|
+| `add` | Only the client address, even from a trusted proxy. An unknown value is `add` too. |
+| `update` | The client's `X-Forwarded-For` with the client address appended. |
+| `ifmissing` | The client's `X-Forwarded-For`, or the client address when there is none. |
+| `ignore` | The client's `X-Forwarded-For` unchanged, or no header. |
+
+Unlike upstream, HAPTIC applies it per Ingress and doesn't copy the client's
+value to `X-Original-Forwarded-For`.
 
 ```yaml
 annotations:

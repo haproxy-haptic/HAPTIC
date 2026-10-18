@@ -231,7 +231,7 @@ Request/response header manipulation, capture, CORS, source-IP allow/deny, and u
 | `haproxy-haptic.org/cors-expose-headers` | Sets the `Access-Control-Expose-Headers` response header. |
 | `haproxy-haptic.org/cors-max-age` | Sets the `Access-Control-Max-Age` response header (default `86400`). |
 | `haproxy-haptic.org/denylist-source-range` | Denies the listed CIDRs and allows all other source IPs for the host. |
-| `haproxy-haptic.org/forwardfor` | Controls the `X-Forwarded-For` header: `add`, `update`, `ifmissing`, or `ignore`. Applied from a per-route map. |
+| `haproxy-haptic.org/forwardfor` | Overrides the [default `X-Forwarded-For` handling](../operations/security.md#forwarded-headers) for the route: `add` keeps the client's value and appends the client address, `update` replaces it with the client address even from a trusted proxy, `ifmissing` keeps it or sets the client address when there is none, and `ignore` forwards it unchanged. Any other value fails the render. Applied from a per-route map. |
 | `haproxy-haptic.org/response-cookie-domain` | Rewrites the `Domain` attribute of upstream `Set-Cookie` response headers, given a `<from> <to>` pair, preserving the rest of the cookie string. Host-scoped; a wrong-arity value fails the render. Applied from a per-route map; the first route with a new pair reloads once. |
 | `haproxy-haptic.org/response-cookie-path` | Rewrites the `Path` attribute of upstream `Set-Cookie` response headers, given a `<from> <to>` pair, preserving the rest of the cookie string. Host-scoped; a wrong-arity value fails the render. Applied from a per-route map; the first route with a new pair reloads once. |
 | `haproxy-haptic.org/response-location-rewrite-from` | Names the literal text to match in the `Location` and `Refresh` response headers; the matched text is regex-escaped and replaced with the value of `response-location-rewrite-to`. Host-scoped. Applied from a per-route map; the first route with a new pair reloads once. |
@@ -240,7 +240,7 @@ Request/response header manipulation, capture, CORS, source-IP allow/deny, and u
 | `haproxy-haptic.org/request-capture-len` | Sets the capture length for `request-capture` (default `128`). |
 | `haproxy-haptic.org/request-set-header` | Sets request headers sent to the upstream, one `<name> <value>` per line. Changing a value avoids a reload; the first use of a new header name requires one. |
 | `haproxy-haptic.org/response-set-header` | Sets response headers, one `<name> <value>` per line. Changing a value avoids a reload; the first use of a new header name requires one. |
-| `haproxy-haptic.org/src-ip-header` | Derives the client source IP from the named request header via `http-request set-src`, from a per-route map; the first route to name a new header reloads once. |
+| `haproxy-haptic.org/src-ip-header` | Derives the client source IP from the named request header via `http-request set-src`, from a per-route map; the first route to name a new header reloads once. Naming `X-Forwarded-For` also keeps the client's `X-Forwarded-For` for the route, as `forwardfor: add` does, unless the route sets `forwardfor`. |
 
 ### Canary and traffic mirroring
 

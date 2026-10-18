@@ -6,15 +6,11 @@ templateSnippets:
   # Phase 2: Frontend Filters
   # ============================================================================
 
-  # forwardfor: add | update | ifmissing | ignore (an unknown value is add,
-  # as upstream), from the shared map lane (util-forwardfor-lane).
+  # forwardfor, as upstream: add replaces the client's X-Forwarded-For with the
+  # client address, update keeps it and appends the address, ifmissing keeps
+  # it or sets the address, ignore forwards it unchanged; an unknown value is
+  # add. Base's forwarded-headers filters apply it.
   # Documentation: https://haproxy-ingress.github.io/docs/configuration/keys/#forwardfor
-  frontend-filters-600-haproxy-ingress-forwardfor:
-    requires: [ingresses]
-    template: |-
-      {%- import "util-forwardfor-lane" for ForwardForLane -%}
-      {{- ForwardForLane("hi") -}}
-
   ingress-forwardfor-0600-haproxy-ingress:
     requires: [ingresses]
     incremental:
@@ -27,7 +23,7 @@ templateSnippets:
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
-        {{- PublishForwardFor(ingress, "haproxy-ingress.github.io/forwardfor", "hi", false) -}}
+        {{- PublishForwardFor(ingress, "haproxy-ingress.github.io/forwardfor", map[string]string{"add": "replace", "update": "append", "ifmissing": "ifmissing", "ignore": "ignore"}, "replace") -}}
       {%- end -%}
 
   ingress-access-control-0610-haproxy-ingress:

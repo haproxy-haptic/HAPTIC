@@ -143,6 +143,58 @@ Controller metrics ingress is disabled until you set
 [network access](networking.md) for complete rules, cache and rate-limit store
 policies, and Prometheus selectors.
 
+## Forwarded headers
+
+Backends such as GitLab and Keycloak take the client address from
+`X-Forwarded-For` and the scheme from `X-Forwarded-Proto`. HAPTIC sets these
+headers itself on every HTTP listener, for Ingress and Gateway routes alike, so a
+client can't forge them:
+
+| Header | What the backend receives |
+|--------|---------------------------|
+| `X-Forwarded-For` | The client address. A value the client sent is dropped. |
+| `X-Forwarded-Proto` | `https` when HAPTIC terminated TLS, otherwise `http`. |
+| `X-Forwarded-Host`, `X-Forwarded-Port` | Nothing. A value the client sent is dropped. |
+
+With [PROXY protocol](../haproxy-deployment.md#proxy-protocol), the client
+address is the one the load balancer reports.
+
+HAPTIC doesn't set `X-Forwarded-Port`: its listeners bind container ports behind
+the HAProxy Service, so the port it sees isn't always the port the client used.
+`X-Forwarded-Host` would repeat the `Host` header.
+
+### Trust an L7 load balancer
+
+If an L7 load balancer or a content delivery network in front of HAPTIC sets
+these headers, list its source addresses. From a listed source, HAPTIC keeps all
+four headers and appends the address it received the request from to
+`X-Forwarded-For`. It still sets `X-Forwarded-Proto` when the request has none.
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        forwardedHeaders:
+          trustedProxies:
+            - 10.0.0.0/8
+            - 2001:db8::/32
+```
+
+List only the proxies: a client that connects from a listed address can set
+every one of these headers.
+
+### Per-route exceptions
+
+An Ingress can choose its own `X-Forwarded-For` handling with
+[`haproxy-haptic.org/forwardfor`](../libraries/haptic-annotations.md#headers-cors-and-access-control),
+[`haproxy-ingress.github.io/forwardfor`](../libraries/haproxy-ingress.md#haproxy-ingressgithubioforwardfor),
+or [`haproxy.org/forwarded-for`](../libraries/haproxytech.md#haproxyorgforwarded-for).
+The values that keep the client's header (`add`, `ifmissing`, and `ignore` for
+the native annotation) bring forged addresses back for that route's backend.
+An Ingress whose `src-ip-header` names `X-Forwarded-For` already trusts that
+header, so HAPTIC keeps the client's `X-Forwarded-For` for its routes.
+
 ## Secrets in templates
 
 Templates can read Secrets included in your watches. Decode `.data` values with
@@ -492,6 +544,7 @@ Before exposing a HAPTIC deployment to production traffic:
 - [ ] `extraContext.ingressPermissions.allowRawHAProxyConfig` left `false` unless every Ingress writer may edit the HAProxy configuration.
 - [ ] Release namespace labelled with `pod-security.kubernetes.io/enforce=restricted`.
 - [ ] NetworkPolicy allowing DNS, Kubernetes API, agent traffic, and any configured HTTP resources.
+- [ ] `extraContext.forwardedHeaders.trustedProxies` lists every L7 proxy in front of HAPTIC, and nothing else.
 - [ ] Audit policy in place for `HAProxyTemplateConfig` changes.
 
 ## See also

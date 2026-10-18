@@ -238,7 +238,7 @@ _migrationCoverage:
         note: "CIDR deny-list ACL + host-scoped deny via shared EmitAnnotationAccessControl (aclPrefix haptic); CIDRs validated"
       haproxy-haptic.org/forwardfor:
         status: supported
-        note: "add|update|ifmissing|ignore X-Forwarded-For, host-scoped; invalid enum fails loud"
+        note: "add appends to the client's X-Forwarded-For, update replaces it, ifmissing keeps or sets it, ignore forwards it unchanged; route-scoped; invalid enum fails loud"
       haproxy-haptic.org/apex-www-redirect:
         status: supported
         note: "Issues a `301` redirect between the apex domain and its `www` subdomain, in both directions, preserving the request path and scheme."
@@ -520,7 +520,7 @@ _migrationCoverage:
         note: "Overrides upstream Host via reload-free reqhdr-host.map"
       haproxy-haptic.org/src-ip-header:
         status: supported
-        note: "http-request set-src hdr(<name>), host-scoped; header name ValidateConfigValue-guarded"
+        note: "http-request set-src hdr(<name>), host-scoped; header name ValidateConfigValue-guarded; naming X-Forwarded-For keeps the client's X-Forwarded-For for the route"
       haproxy-haptic.org/ssl-passthrough:
         status: supported
         note: "Incremental per-Ingress SNI publication with winner-conditioned backends; ssl.yaml builds the SNI TCP frontend."

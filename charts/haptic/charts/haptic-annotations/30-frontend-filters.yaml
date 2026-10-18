@@ -2,7 +2,7 @@
 #
 # Best-of-breed superset of the three vendor frontend-filter fragments, exposed
 # under the haproxy-haptic.org/* prefix:
-#   - forwardfor        (haproxy-ingress: add|update|ifmissing|ignore)
+#   - forwardfor        (add|update|ifmissing|ignore)
 #   - request/response-set-header, src-ip-header (map lane), request-capture (haproxytech)
 #   - cors              (the shared CORS map lane — ingress-nginx model)
 #   - allow/deny-list   (the shared EmitAnnotationAccessControl macro)
@@ -14,8 +14,9 @@
 templateSnippets:
 
 
-  # forwardfor (haproxy-ingress semantics): add | update | ifmissing | ignore,
-  # from the shared map lane (util-forwardfor-lane).
+  # forwardfor: add keeps the client's X-Forwarded-For and appends the client
+  # address, update replaces it, ifmissing keeps it or sets the address,
+  # ignore forwards it unchanged. Base's forwarded-headers filters apply it.
   ingress-forwardfor-0800-haptic:
     requires: [ingresses]
     incremental:
@@ -28,14 +29,8 @@ templateSnippets:
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
-        {{- PublishForwardFor(ingress, "haproxy-haptic.org/forwardfor", "haptic", true) -}}
+        {{- PublishForwardFor(ingress, "haproxy-haptic.org/forwardfor", map[string]string{"add": "append", "update": "replace", "ifmissing": "ifmissing", "ignore": "ignore"}, "") -}}
       {%- end -%}
-
-  frontend-filters-800-haptic-forwardfor:
-    requires: [ingresses]
-    template: |-
-      {%- import "util-forwardfor-lane" for ForwardForLane -%}
-      {{- ForwardForLane("haptic") -}}
 
   ingress-access-control-0810-haptic:
     requires: [ingresses]

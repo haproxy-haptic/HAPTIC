@@ -856,8 +856,7 @@ templateSnippets:
 
       frontend https
           guid fe:https
-          mode http
-          option forwardfor{{ render "util-http-frontend-settings" }}
+          mode http{{ render "util-http-frontend-settings" }}
       {%- if len(passthroughBackends) > 0 && bindHTTPSDefault %}
           bind unix@/etc/haproxy/ssl-frontend.sock mode 660{{ render "util-ssl-bind-options" }} accept-proxy
       {%- else if bindHTTPSDefault %}
@@ -976,7 +975,11 @@ validationTests:
 
       - type: contains
         target: haproxy.cfg
-        pattern: '(?ms)^frontend https$.*?^\s+mode http$.*?^\s+option forwardfor$'
+        pattern: '(?m)^frontend https\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Proto %\[ssl_fc,iif\(https,http\)\]\n[ \t]+http-request del-header X-Forwarded-Host\n[ \t]+http-request del-header X-Forwarded-Port\n[ \t]+http-request del-header X-Forwarded-For\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request add-header X-Forwarded-For %\[src\]\n'
+
+      - type: not_contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend https\n(?:[ \t][^\n]*\n|\n)*?[ \t]+option forwardfor'
 
       - {type: contains, target: haproxy.cfg, pattern: "bind .*:443.*ssl crt"}
 

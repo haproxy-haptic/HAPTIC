@@ -211,6 +211,7 @@ JWTs
 Kata
 KEDA
 Keepalived
+Keycloak
 keyless
 kubeconfig
 kubectl
