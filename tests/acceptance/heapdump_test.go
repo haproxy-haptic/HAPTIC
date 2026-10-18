@@ -51,66 +51,8 @@ const debugClientKey ctxKey = "heapdump.debugClient"
 // a well-formed dump from a controller running in a cluster.
 func buildHeapDumpFeature() types.Feature {
 	return features.New("Heap Dump Endpoint").
-		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			t.Helper()
-
-			namespace := envconf.RandomName("test-heapdump", 16)
-			ctx = StoreNamespaceInContext(ctx, namespace)
-
-			client, err := cfg.NewClient()
-			if err != nil {
-				t.Fatal("Failed to create client:", err)
-			}
-
-			opts := DefaultControllerEnvironmentOptions()
-			if err := CreateControllerEnvironment(ctx, t, client, namespace, opts); err != nil {
-				t.Fatal("Failed to create controller environment:", err)
-			}
-
-			debugClient, err := SetupDebugClient(ctx, client, Clientset(), namespace, DefaultClientSetupTimeout)
-			if err != nil {
-				t.Fatal("Failed to setup debug client:", err)
-			}
-			if _, err := debugClient.WaitForConfig(ctx, DefaultPodReadyTimeout); err != nil {
-				t.Fatal("Controller did not load its configuration:", err)
-			}
-
-			return context.WithValue(ctx, debugClientKey, debugClient)
-		}).
-		Assess("Heap dump is served and well-formed", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			t.Helper()
-
-			debugClient, ok := ctx.Value(debugClientKey).(*DebugClient)
-			if !ok {
-				t.Fatal("debug client missing from context")
-			}
-
-			dump, err := debugClient.GetHeapDump(ctx)
-			if err != nil {
-				t.Fatal("Failed to fetch heap dump:", err)
-			}
-
-			if !bytes.HasPrefix(dump, []byte(heapDumpHeader)) {
-				got := dump
-				if len(got) > 32 {
-					got = got[:32]
-				}
-				t.Fatalf("heap dump lacks the %q header, a reader cannot parse it; got %q",
-					heapDumpHeader, got)
-			}
-
-			// A near-empty Go test binary already dumps ~960 KiB, so this floor
-			// is far below any controller and far above the empty or truncated
-			// body a broken handler returns.
-			const minPlausibleDump = 256 << 10
-			if len(dump) < minPlausibleDump {
-				t.Fatalf("heap dump is %d bytes, too small to be a real heap; the handler likely wrote nothing",
-					len(dump))
-			}
-
-			t.Logf("heap dump: %d bytes", len(dump))
-			return ctx
-		}).
+		Setup(setupHeapDump).
+		Assess("Heap dump is served and well-formed", assessHeapDumpWellFormed).
 		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
 
@@ -122,6 +64,68 @@ func buildHeapDumpFeature() types.Feature {
 			return CleanupControllerEnvironment(ctx, t, client)
 		}).
 		Feature()
+}
+
+func setupHeapDump(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
+
+	namespace := envconf.RandomName("test-heapdump", 16)
+	ctx = StoreNamespaceInContext(ctx, namespace)
+
+	client, err := cfg.NewClient()
+	if err != nil {
+		t.Fatal("Failed to create client:", err)
+	}
+
+	opts := DefaultControllerEnvironmentOptions()
+	if err := CreateControllerEnvironment(ctx, t, client, namespace, opts); err != nil {
+		t.Fatal("Failed to create controller environment:", err)
+	}
+
+	debugClient, err := SetupDebugClient(ctx, client, Clientset(), namespace, DefaultClientSetupTimeout)
+	if err != nil {
+		t.Fatal("Failed to setup debug client:", err)
+	}
+	if _, err := debugClient.WaitForConfig(ctx, DefaultPodReadyTimeout); err != nil {
+		t.Fatal("Controller did not load its configuration:", err)
+	}
+
+	return context.WithValue(ctx, debugClientKey, debugClient)
+}
+
+func assessHeapDumpWellFormed(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
+
+	debugClient, ok := ctx.Value(debugClientKey).(*DebugClient)
+	if !ok {
+		t.Fatal("debug client missing from context")
+	}
+
+	dump, err := debugClient.GetHeapDump(ctx)
+	if err != nil {
+		t.Fatal("Failed to fetch heap dump:", err)
+	}
+
+	if !bytes.HasPrefix(dump, []byte(heapDumpHeader)) {
+		got := dump
+		if len(got) > 32 {
+			got = got[:32]
+		}
+		t.Fatalf("heap dump lacks the %q header, a reader cannot parse it; got %q",
+			heapDumpHeader, got)
+	}
+
+	// A near-empty Go test binary already dumps ~960 KiB, so this floor
+	// is far below any controller and far above the empty or truncated
+	// body a broken handler returns.
+	const minPlausibleDump = 256 << 10
+	if len(dump) < minPlausibleDump {
+		t.Fatalf("heap dump is %d bytes, too small to be a real heap; the handler likely wrote nothing",
+			len(dump))
+	}
+
+	t.Logf("heap dump: %d bytes", len(dump))
+	return ctx
 }
 
 func TestHeapDumpEndpoint(t *testing.T) {

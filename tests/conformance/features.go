@@ -25,5 +25,5 @@ func retryCodesFeature(available []features.Feature) (features.FeatureName, erro
 			}
 		}
 	}
-	return "", errors.New("Gateway API has no recognized retry-codes feature; update the conformance feature mapping")
+	return "", errors.New("no recognized retry-codes feature in Gateway API; update the conformance feature mapping")
 }

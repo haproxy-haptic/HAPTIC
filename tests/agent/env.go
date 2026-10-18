@@ -17,9 +17,7 @@
 package agent
 
 import (
-	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +27,7 @@ import (
 	"time"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/client"
+	"github.com/haproxy-haptic/HAPTIC/tests/httpclient"
 )
 
 const (
@@ -79,6 +78,7 @@ func newEnvWithReloadInterval(t *testing.T, reloadInterval time.Duration) *env {
 }
 
 func containerName(t *testing.T) string {
+	t.Helper()
 	sanitized := strings.Map(func(r rune) rune {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
@@ -224,11 +224,6 @@ func (e *env) worker(command string) string {
 	return e.socket(workerSocketPath, command)
 }
 
-func (e *env) master(command string) string {
-	e.t.Helper()
-	return e.socket(masterSocketPath, command)
-}
-
 func (e *env) socket(socket, command string) string {
 	e.t.Helper()
 	out, err := runDocker(strings.NewReader(command+"\n"),
@@ -301,14 +296,14 @@ func (e *env) listAll(dir string) string {
 	return out
 }
 
-func (e *env) get(url string) (int, string, error) {
+func (e *env) get(url string) (status int, body string, err error) {
 	resp, err := e.http.Get(url)
 	if err != nil {
 		return 0, "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return resp.StatusCode, string(body), err
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return resp.StatusCode, string(raw), err
 }
 
 // statsURL and httpURL address the published ports of the HAProxy container.
@@ -320,13 +315,9 @@ func (e *env) httpURL(path string) string {
 	return fmt.Sprintf("http://%s:%d%s", connectHost(), publishedPort(e.t, e.haproxy, httpPort), path)
 }
 
-func (e *env) httpsAddr() string {
-	return fmt.Sprintf("%s:%d", connectHost(), publishedPort(e.t, e.haproxy, httpsPort))
-}
-
 // requestWithHost sends one request through the HTTP frontend with a chosen
 // Host header, which is what the routing map keys on.
-func (e *env) requestWithHost(host, path string) (int, http.Header, string) {
+func (e *env) requestWithHost(host, path string) (status int, header http.Header, body string) {
 	e.t.Helper()
 	req, err := http.NewRequest(http.MethodGet, e.httpURL(path), http.NoBody)
 	if err != nil {
@@ -338,33 +329,20 @@ func (e *env) requestWithHost(host, path string) (int, http.Header, string) {
 		e.t.Fatalf("GET %s with Host %s: %v", path, host, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return resp.StatusCode, resp.Header, string(body)
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return resp.StatusCode, resp.Header, string(raw)
 }
 
 // peerCertificate completes a TLS handshake for one SNI and returns the leaf
-// HAProxy served, which is how a rotation is observed without a reload. The
-// suite mints its own self-signed leaves, so the handshake is an observation,
-// never a trust decision — do not "fix" the verification setting.
+// HAProxy served, which is how a rotation is observed without a reload.
 func (e *env) peerCertificate(sni string) *x509.Certificate {
 	e.t.Helper()
+	probe := httpclient.New(&httpclient.Config{Host: connectHost(), HTTPSPort: publishedPort(e.t, e.haproxy, httpsPort)})
 	var leaf *x509.Certificate
 	waitFor(e.t, "a TLS handshake for "+sni, convergeBudget, func() error {
-		conn, err := tls.Dial("tcp", e.httpsAddr(), &tls.Config{
-			ServerName:         sni,
-			InsecureSkipVerify: true,
-			MinVersion:         tls.VersionTLS12,
-		})
-		if err != nil {
-			return err
-		}
-		defer func() { _ = conn.Close() }()
-		chain := conn.ConnectionState().PeerCertificates
-		if len(chain) == 0 {
-			return errors.New("handshake carried no certificate")
-		}
-		leaf = chain[0]
-		return nil
+		var err error
+		leaf, err = probe.PeerCertificate(e.t.Context(), sni)
+		return err
 	})
 	return leaf
 }
@@ -410,33 +388,29 @@ func (e *env) statRow(backend, server string) (map[string]string, bool) {
 	return nil, false
 }
 
-func (e *env) mustStatRow(backend, server string) map[string]string {
+// mustServerRow reads server's row in be-1, the backend the runtime server ops change.
+func (e *env) mustServerRow(server string) map[string]string {
 	e.t.Helper()
-	row, ok := e.statRow(backend, server)
+	row, ok := e.statRow("be-1", server)
 	if !ok {
-		e.t.Fatalf("show stat has no row for %s/%s:\n%s", backend, server, e.worker("show stat"))
+		e.t.Fatalf("show stat has no row for be-1/%s:\n%s", server, e.worker("show stat"))
 	}
 	return row
 }
 
-// haproxyAtLeast compares the version under test with a "major.minor" bound, so
-// a test for a directive introduced later skips on the older bracket.
-func haproxyAtLeast(bound string) bool {
-	parse := func(version string) (int, int) {
-		parts := strings.SplitN(version, ".", 3)
-		major, _ := strconv.Atoi(parts[0])
-		minor := 0
-		if len(parts) > 1 {
-			minor, _ = strconv.Atoi(parts[1])
-		}
-		return major, minor
+// requireDynamicBackends skips on a bracket older than HAProxy 3.4, the release
+// that added `add backend`.
+func requireDynamicBackends(t *testing.T) {
+	t.Helper()
+	parts := strings.SplitN(haproxyVersion(), ".", 3)
+	major, _ := strconv.Atoi(parts[0])
+	minor := 0
+	if len(parts) > 1 {
+		minor, _ = strconv.Atoi(parts[1])
 	}
-	haveMajor, haveMinor := parse(haproxyVersion())
-	wantMajor, wantMinor := parse(bound)
-	if haveMajor != wantMajor {
-		return haveMajor > wantMajor
+	if major < 3 || major == 3 && minor < 4 {
+		t.Skipf("`add backend` arrived in HAProxy 3.4; this bracket runs %s", haproxyVersion())
 	}
-	return haveMinor >= wantMinor
 }
 
 // mapEntries parses `show map <path>` into key → value, dropping the entry id

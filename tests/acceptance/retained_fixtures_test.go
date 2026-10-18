@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -225,7 +226,7 @@ func (f *retainedFleet) pods(ctx context.Context, t *testing.T) []*corev1.Pod {
 	return result
 }
 
-func (f *retainedFleet) waitReady(ctx context.Context, t *testing.T, count int) []*corev1.Pod {
+func (f *retainedFleet) waitReady(ctx context.Context, t *testing.T, count int) {
 	t.Helper()
 	var ready []*corev1.Pod
 	require.NoError(t, wait.PollUntilContextTimeout(ctx, time.Second, retainedReadyBound, true, func(ctx context.Context) (bool, error) {
@@ -247,7 +248,13 @@ func (f *retainedFleet) waitReady(ctx context.Context, t *testing.T, count int) 
 		require.NoError(t, err)
 		require.Equal(t, "host-x", body)
 	}
-	return ready
+}
+
+// servesWatchedInputs reports whether pod's haproxy.cfg was rendered from count
+// watched inputs. A failed read counts as not yet: the pod may be restarting.
+func (f *retainedFleet) servesWatchedInputs(ctx context.Context, pod string, count int) bool {
+	content, err := f.exec(ctx, pod, "haproxy", "cat", "/etc/haproxy/haproxy.cfg")
+	return err == nil && strings.Contains(content, fmt.Sprintf("# watched inputs: %d", count))
 }
 
 func (f *retainedFleet) exec(ctx context.Context, pod, container string, command ...string) (string, error) {
@@ -381,7 +388,9 @@ func (f *retainedFleet) dumpOnFailure(ctx context.Context, t *testing.T) {
 	for i := range pods.Items {
 		pod := &pods.Items[i]
 		t.Logf("=== HAProxy pod %s (uid %s, deleting %t) conditions: %+v", pod.Name, pod.UID, pod.DeletionTimestamp != nil, pod.Status.Conditions)
-		for _, status := range append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...) {
+		statuses := slices.Concat(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses)
+		for j := range statuses {
+			status := &statuses[j]
 			t.Logf("    container %s ready=%t restarts=%d state=%+v", status.Name, status.Ready, status.RestartCount, status.State)
 		}
 		state, err := f.exec(ctx, pod.Name, "agent", "curl", "-sS", "--max-time", "5", "-u", "admin:password", "http://127.0.0.1:5555/v1/state?verify=1&plan=0")
@@ -394,7 +403,8 @@ func (f *retainedFleet) dumpOnFailure(ctx context.Context, t *testing.T) {
 	}
 	events, err := Clientset().CoreV1().Events(f.namespace).List(ctx, metav1.ListOptions{FieldSelector: "type=Warning"})
 	if err == nil {
-		for _, event := range events.Items {
+		for i := range events.Items {
+			event := &events.Items[i]
 			t.Logf("=== Event %s %s/%s x%d: %s", event.Reason, event.InvolvedObject.Kind, event.InvolvedObject.Name, event.Count, event.Message)
 		}
 	}

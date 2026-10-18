@@ -174,48 +174,8 @@ func TestIngressConformance(t *testing.T) {
 	require.NotEmpty(t, os.Getenv("KUBECONFIG"),
 		"KUBECONFIG must point at the haptic-e2e cluster's kubeconfig")
 
-	bin := upstreamBinaryPath
-	if override := os.Getenv("INGRESS_CONFORMANCE_BIN"); override != "" {
-		bin = override
-	}
-	_, err := os.Stat(bin)
-	require.NoErrorf(t, err,
-		"upstream ingress-controller-conformance binary not found at %s — "+
-			"the Makefile target should have built it; set "+
-			"$INGRESS_CONFORMANCE_BIN to override", bin)
-
-	workDir := upstreamFeaturesDir
-	if override := os.Getenv("INGRESS_CONFORMANCE_FEATURES_DIR"); override != "" {
-		workDir = override
-	}
-	// Sharded runs (SHARD_ID + SHARD_COUNT set by GitLab CI's `parallel:`
-	// keyword) generate a per-shard `features/` dir at runtime from the
-	// baked-in one and point the binary at it. See prepareShardedFeatures
-	// for the assignment strategy. We do this BEFORE the directory-exists
-	// check below so that check validates the shard's view, not the
-	// (unsharded) source.
-	shardID, shardCount, sharded, err := shardEnv()
-	require.NoError(t, err, "parse SHARD_ID/SHARD_COUNT env")
-	if sharded {
-		shardDir := t.TempDir()
-		err := prepareShardedFeatures(workDir, shardDir, shardID, shardCount)
-		require.NoErrorf(t, err, "prepare shard %d/%d features", shardID, shardCount)
-		t.Logf("[conformance] shard %d/%d: rewrote features into %s", shardID, shardCount, shardDir)
-		workDir = shardDir
-	}
-	// The upstream binary's feature loader uses paths like
-	// `features/default_backend.feature` resolved relative to its CWD.
-	// Verify the directory we'd run it from actually has those features
-	// staged, so a misconfigured image fails with a clearer message than
-	// "no features found".
-	featuresPath := filepath.Join(workDir, "features")
-	entries, err := os.ReadDir(featuresPath)
-	require.NoErrorf(t, err,
-		"upstream features directory %s is missing — "+
-			"Dockerfile.ingress-conformance-test must COPY the upstream "+
-			"features/ tree into the image", featuresPath)
-	require.NotEmptyf(t, entries,
-		"upstream features directory %s exists but is empty", featuresPath)
+	bin := upstreamBinary(t)
+	workDir := stagedFeaturesDir(t)
 
 	outDir := t.TempDir()
 
@@ -307,34 +267,93 @@ func TestIngressConformance(t *testing.T) {
 	}
 
 	for _, reportPath := range reports {
-		raw, err := os.ReadFile(reportPath)
-		require.NoErrorf(t, err, "read %s", reportPath)
+		reportScenarios(t, reportPath)
+	}
+}
 
-		var features []cucumberFeature
-		require.NoErrorf(t, json.Unmarshal(raw, &features),
-			"parse %s as Cucumber JSON", reportPath)
+// upstreamBinary returns the upstream ingress-controller-conformance binary.
+func upstreamBinary(t *testing.T) string {
+	t.Helper()
+	bin := upstreamBinaryPath
+	if override := os.Getenv("INGRESS_CONFORMANCE_BIN"); override != "" {
+		bin = override
+	}
+	_, err := os.Stat(bin)
+	require.NoErrorf(t, err,
+		"upstream ingress-controller-conformance binary not found at %s — "+
+			"the Makefile target should have built it; set "+
+			"$INGRESS_CONFORMANCE_BIN to override", bin)
+	return bin
+}
 
-		for _, feature := range features {
-			feature := feature
-			t.Run(sanitize(feature.Name), func(t *testing.T) {
-				for _, element := range feature.Elements {
-					element := element
-					t.Run(sanitize(element.Name), func(t *testing.T) {
-						for _, step := range element.Steps {
-							if step.Result.Status == "passed" {
-								continue
-							}
-							t.Fatalf(
-								"step %q (%s): %s",
-								strings.TrimSpace(step.Keyword)+" "+step.Name,
-								step.Result.Status,
-								step.Result.ErrorMessage,
-							)
+// stagedFeaturesDir returns the directory the upstream binary runs from: its
+// features/ subdirectory holds this shard's features.
+func stagedFeaturesDir(t *testing.T) string {
+	t.Helper()
+	workDir := upstreamFeaturesDir
+	if override := os.Getenv("INGRESS_CONFORMANCE_FEATURES_DIR"); override != "" {
+		workDir = override
+	}
+	// Sharded runs (SHARD_ID + SHARD_COUNT set by GitLab CI's `parallel:`
+	// keyword) generate a per-shard `features/` dir at runtime from the
+	// baked-in one and point the binary at it. See prepareShardedFeatures
+	// for the assignment strategy. We do this BEFORE the directory-exists
+	// check below so that check validates the shard's view, not the
+	// (unsharded) source.
+	shardID, shardCount, sharded, err := shardEnv()
+	require.NoError(t, err, "parse SHARD_ID/SHARD_COUNT env")
+	if sharded {
+		shardDir := t.TempDir()
+		err := prepareShardedFeatures(workDir, shardDir, shardID, shardCount)
+		require.NoErrorf(t, err, "prepare shard %d/%d features", shardID, shardCount)
+		t.Logf("[conformance] shard %d/%d: rewrote features into %s", shardID, shardCount, shardDir)
+		workDir = shardDir
+	}
+	// The upstream binary's feature loader uses paths like
+	// `features/default_backend.feature` resolved relative to its CWD.
+	// Verify the directory we'd run it from actually has those features
+	// staged, so a misconfigured image fails with a clearer message than
+	// "no features found".
+	featuresPath := filepath.Join(workDir, "features")
+	entries, err := os.ReadDir(featuresPath)
+	require.NoErrorf(t, err,
+		"upstream features directory %s is missing — "+
+			"Dockerfile.ingress-conformance-test must COPY the upstream "+
+			"features/ tree into the image", featuresPath)
+	require.NotEmptyf(t, entries,
+		"upstream features directory %s exists but is empty", featuresPath)
+	return workDir
+}
+
+// reportScenarios turns one Cucumber JSON report into a subtest per feature
+// and scenario, failing each scenario on its first step that did not pass.
+func reportScenarios(t *testing.T, reportPath string) {
+	t.Helper()
+	raw, err := os.ReadFile(reportPath)
+	require.NoErrorf(t, err, "read %s", reportPath)
+
+	var features []cucumberFeature
+	require.NoErrorf(t, json.Unmarshal(raw, &features),
+		"parse %s as Cucumber JSON", reportPath)
+
+	for _, feature := range features {
+		t.Run(sanitize(feature.Name), func(t *testing.T) {
+			for _, element := range feature.Elements {
+				t.Run(sanitize(element.Name), func(t *testing.T) {
+					for _, step := range element.Steps {
+						if step.Result.Status == "passed" {
+							continue
 						}
-					})
-				}
-			})
-		}
+						t.Fatalf(
+							"step %q (%s): %s",
+							strings.TrimSpace(step.Keyword)+" "+step.Name,
+							step.Result.Status,
+							step.Result.ErrorMessage,
+						)
+					}
+				})
+			}
+		})
 	}
 }
 
@@ -372,8 +391,8 @@ type testLogWriter struct {
 // `v1 Endpoints` object — and the upstream polls it constantly, so a
 // full run drops ~150 identical W-level lines into the log:
 //
-//	W0521 22:06:17.537610      12 warnings.go:67] v1 Endpoints is
-//	  deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+//	W0521 22:06:17.537610      12 warnings.go:67] v1 Endpoints is deprecated
+//	  in v1.33+; use discovery.k8s.io/v1 EndpointSlice
 //
 // The upstream binary is pinned to a dormant repo (no v1 EndpointSlice
 // migration coming) so the warning will recur on every run for the
@@ -440,6 +459,7 @@ type progressReporter struct {
 }
 
 func newProgressReporter(t *testing.T, dir string) *progressReporter {
+	t.Helper()
 	return &progressReporter{
 		t:       t,
 		dir:     dir,
@@ -547,11 +567,9 @@ func (r *progressReporter) emit(filename string) bool {
 				passed++
 			}
 		}
-		status := "passed"
+		status := fmt.Sprintf("passed (%d scenarios)", passed)
 		if failed > 0 {
 			status = fmt.Sprintf("FAILED (%d/%d scenarios)", failed, passed+failed)
-		} else {
-			status = fmt.Sprintf("passed (%d scenarios)", passed)
 		}
 		r.t.Logf("[conformance] feature %q %s, t+%s", f.Name, status, elapsed)
 	}

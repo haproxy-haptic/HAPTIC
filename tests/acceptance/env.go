@@ -35,6 +35,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -45,12 +46,14 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/util/flowcontrol"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/e2e-framework/klient"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 	"sigs.k8s.io/e2e-framework/pkg/env"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/types"
 
+	haproxyv1alpha1 "github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
 	"github.com/haproxy-haptic/HAPTIC/tests/testutil"
 )
 
@@ -276,19 +279,19 @@ func CreateControllerEnvironment(ctx context.Context, t *testing.T, cfg klient.C
 // createControllerRBAC creates ServiceAccount, Role, RoleBinding, ClusterRole, and ClusterRoleBinding.
 func createControllerRBAC(ctx context.Context, client klient.Client, namespace string) error {
 	if err := client.Resources().Create(ctx, NewServiceAccount(namespace, ControllerServiceAccountName)); err != nil {
-		return fmt.Errorf("ServiceAccount: %w", err)
+		return fmt.Errorf("create ServiceAccount: %w", err)
 	}
 	if err := client.Resources().Create(ctx, NewRole(namespace, ControllerRoleName)); err != nil {
-		return fmt.Errorf("Role: %w", err)
+		return fmt.Errorf("create Role: %w", err)
 	}
 	if err := client.Resources().Create(ctx, NewRoleBinding(namespace, ControllerRoleBindingName, ControllerRoleName, ControllerServiceAccountName)); err != nil {
-		return fmt.Errorf("RoleBinding: %w", err)
+		return fmt.Errorf("create RoleBinding: %w", err)
 	}
 	if err := client.Resources().Create(ctx, NewClusterRole(ControllerClusterRoleName, namespace)); err != nil {
-		return fmt.Errorf("ClusterRole: %w", err)
+		return fmt.Errorf("create ClusterRole: %w", err)
 	}
 	if err := client.Resources().Create(ctx, NewClusterRoleBinding(ControllerClusterRoleBindingName, ControllerClusterRoleName, ControllerServiceAccountName, namespace, namespace)); err != nil {
-		return fmt.Errorf("ClusterRoleBinding: %w", err)
+		return fmt.Errorf("create ClusterRoleBinding: %w", err)
 	}
 	return nil
 }
@@ -372,17 +375,20 @@ func WaitForServiceEndpoints(ctx context.Context, client klient.Client, namespac
 
 	return testutil.WaitForConditionWithDescription(ctx, cfg, "service endpoints ready",
 		func(ctx context.Context) (bool, error) {
-			var endpoints corev1.Endpoints
+			var endpointSlices discoveryv1.EndpointSliceList
 			res := client.Resources(namespace)
 
-			if err := res.Get(ctx, serviceName, namespace, &endpoints); err != nil {
+			if err := res.List(ctx, &endpointSlices, resources.WithLabelSelector(discoveryv1.LabelServiceName+"="+serviceName)); err != nil {
 				return false, err
 			}
 
-			// Check if there's at least one ready address
-			for _, subset := range endpoints.Subsets {
-				if len(subset.Addresses) > 0 {
-					return true, nil
+			// A nil Ready condition means unknown, which EndpointSlice consumers treat as ready.
+			for i := range endpointSlices.Items {
+				for j := range endpointSlices.Items[i].Endpoints {
+					endpoint := &endpointSlices.Items[i].Endpoints[j]
+					if len(endpoint.Addresses) > 0 && ptr.Deref(endpoint.Conditions.Ready, true) {
+						return true, nil
+					}
 				}
 			}
 			return false, fmt.Errorf("no ready endpoints")
@@ -547,6 +553,14 @@ func GetControllerPod(ctx context.Context, client klient.Client, namespace strin
 	return &podList.Items[0], nil
 }
 
+// dumpControllerPodLogs dumps the controller pod's logs when a controller pod exists.
+func dumpControllerPodLogs(ctx context.Context, t *testing.T, client klient.Client, clientset kubernetes.Interface, namespace string) {
+	t.Helper()
+	if pod, err := GetControllerPod(ctx, client, namespace); err == nil {
+		DumpPodLogs(ctx, t, clientset, pod)
+	}
+}
+
 // DumpPodLogs captures and prints pod logs to test output.
 // This is useful for debugging test failures by providing visibility into what
 // happened inside the pod.
@@ -558,41 +572,40 @@ func DumpPodLogs(ctx context.Context, t *testing.T, clientset kubernetes.Interfa
 
 	t.Logf("=== Pod %s/%s logs ===", pod.Namespace, pod.Name)
 
-	// Capture logs for each container in the pod
-	for _, container := range pod.Spec.Containers {
-		t.Logf("--- Container: %s ---", container.Name)
-
-		// Get pod logs
-		podLogOpts := corev1.PodLogOptions{
-			Container: container.Name,
-		}
-
-		req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
-		podLogs, err := req.Stream(ctx)
-		if err != nil {
-			t.Logf("Error getting logs for container %s: %v", container.Name, err)
-			continue
-		}
-		defer podLogs.Close()
-
-		// Read and print logs
-		buf := make([]byte, 2048)
-		for {
-			n, err := podLogs.Read(buf)
-			if n > 0 {
-				t.Logf("%s", string(buf[:n]))
-			}
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				t.Logf("Error reading logs: %v", err)
-				break
-			}
-		}
+	for i := range pod.Spec.Containers {
+		dumpContainerLogs(ctx, t, clientset, pod, pod.Spec.Containers[i].Name)
 	}
 
 	t.Logf("=== End of pod logs ===")
+}
+
+// dumpContainerLogs prints one container's logs to the test output.
+func dumpContainerLogs(ctx context.Context, t *testing.T, clientset kubernetes.Interface, pod *corev1.Pod, container string) {
+	t.Helper()
+	t.Logf("--- Container: %s ---", container)
+
+	req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container})
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		t.Logf("Error getting logs for container %s: %v", container, err)
+		return
+	}
+	defer podLogs.Close()
+
+	buf := make([]byte, 2048)
+	for {
+		n, err := podLogs.Read(buf)
+		if n > 0 {
+			t.Logf("%s", string(buf[:n]))
+		}
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			t.Logf("Error reading logs: %v", err)
+			return
+		}
+	}
 }
 
 // GetAllControllerPods returns all controller pods in the namespace.
@@ -629,22 +642,32 @@ func WaitForNewPodReady(ctx context.Context, client klient.Client, namespace, la
 				continue
 			}
 
-			// Check if any pod is ready AND has a different UID
-			for i := range podList.Items {
-				pod := &podList.Items[i]
-				// Skip pods with the original UID
-				if string(pod.UID) == originalUID {
-					continue
-				}
-				// Check if this new pod is ready
-				for _, condition := range pod.Status.Conditions {
-					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-						return pod, nil
-					}
-				}
+			if pod := readyPodExcept(podList.Items, originalUID); pod != nil {
+				return pod, nil
 			}
 		}
 	}
+}
+
+// readyPodExcept returns a ready pod whose UID is not excludedUID, or nil.
+func readyPodExcept(pods []corev1.Pod, excludedUID string) *corev1.Pod {
+	for i := range pods {
+		pod := &pods[i]
+		if string(pod.UID) != excludedUID && podReady(pod) {
+			return pod
+		}
+	}
+	return nil
+}
+
+// podReady reports whether the pod's Ready condition is True.
+func podReady(pod *corev1.Pod) bool {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 // GetLeaseHolder queries the Lease resource and returns the holder identity.
@@ -724,75 +747,96 @@ func WaitForNewLeader(ctx context.Context, client klient.Client, clientset kuber
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
-	// Track state for better error reporting
-	var lastLeaseErr error
-	var lastPodErr error
-	var lastLeaseHolder string
-	var lastPodStates []string
-
-	pollCount := 0
+	poll := &newLeaderPoll{client: client, clientset: clientset, namespace: namespace, leaseName: leaseName, oldLeader: oldLeaderIdentity}
 	for {
 		select {
 		case <-ctx.Done():
-			// Build detailed error message
-			errMsg := fmt.Sprintf("timeout waiting for new leader (old: %s, polls: %d", oldLeaderIdentity, pollCount)
-			if lastLeaseErr != nil {
-				errMsg += fmt.Sprintf(", lastLeaseErr: %v", lastLeaseErr)
-			}
-			if lastLeaseHolder != "" {
-				errMsg += fmt.Sprintf(", lastLeaseHolder: %s", lastLeaseHolder)
-			}
-			if lastPodErr != nil {
-				errMsg += fmt.Sprintf(", lastPodErr: %v", lastPodErr)
-			}
-			if len(lastPodStates) > 0 {
-				errMsg += fmt.Sprintf(", lastPodStates: %v", lastPodStates)
-			}
-			errMsg += ")"
-			return "", errors.New(errMsg)
+			return "", poll.timeoutError()
 
 		case <-ticker.C:
-			pollCount++
-			lease, err := clientset.CoordinationV1().Leases(namespace).Get(ctx, leaseName, metav1.GetOptions{})
-			if err != nil {
-				lastLeaseErr = err
-				continue
+			if newLeader, ok := poll.observe(ctx); ok {
+				return newLeader, nil
 			}
-			lastLeaseErr = nil
-
-			if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
-				lastLeaseHolder = "<empty>"
-				continue
-			}
-
-			newLeader := *lease.Spec.HolderIdentity
-			lastLeaseHolder = newLeader
-
-			// Must be different from old leader
-			if newLeader == oldLeaderIdentity {
-				continue
-			}
-
-			// Verify the new leader pod exists and is running
-			pods, err := GetAllControllerPods(ctx, client, namespace)
-			if err != nil {
-				lastPodErr = err
-				continue
-			}
-			lastPodErr = nil
-
-			// Track pod states for debugging
-			lastPodStates = make([]string, 0, len(pods))
-			for i := range pods {
-				pod := &pods[i]
-				lastPodStates = append(lastPodStates, fmt.Sprintf("%s=%s", pod.Name, pod.Status.Phase))
-				if strings.Contains(newLeader, pod.Name) && pod.Status.Phase == corev1.PodRunning {
-					return newLeader, nil
-				}
-			}
-			// New leader in lease but pod not running yet, keep waiting
 		}
 	}
+}
+
+// newLeaderPoll is one WaitForNewLeader wait; it keeps the last observation of
+// each step for the timeout error.
+type newLeaderPoll struct {
+	client    klient.Client
+	clientset kubernetes.Interface
+	namespace string
+	leaseName string
+	oldLeader string
+
+	polls       int
+	leaseErr    error
+	leaseHolder string
+	podErr      error
+	podStates   []string
+}
+
+// observe reads the Lease once and returns its holder when that is a running
+// pod other than the old leader.
+func (p *newLeaderPoll) observe(ctx context.Context) (string, bool) {
+	p.polls++
+	lease, err := p.clientset.CoordinationV1().Leases(p.namespace).Get(ctx, p.leaseName, metav1.GetOptions{})
+	if err != nil {
+		p.leaseErr = err
+		return "", false
+	}
+	p.leaseErr = nil
+
+	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
+		p.leaseHolder = "<empty>"
+		return "", false
+	}
+
+	newLeader := *lease.Spec.HolderIdentity
+	p.leaseHolder = newLeader
+
+	// Must be different from old leader
+	if newLeader == p.oldLeader {
+		return "", false
+	}
+
+	// Verify the new leader pod exists and is running
+	pods, err := GetAllControllerPods(ctx, p.client, p.namespace)
+	if err != nil {
+		p.podErr = err
+		return "", false
+	}
+	p.podErr = nil
+
+	p.podStates = make([]string, 0, len(pods))
+	for i := range pods {
+		pod := &pods[i]
+		p.podStates = append(p.podStates, fmt.Sprintf("%s=%s", pod.Name, pod.Status.Phase))
+		if strings.Contains(newLeader, pod.Name) && pod.Status.Phase == corev1.PodRunning {
+			return newLeader, true
+		}
+	}
+	// New leader in lease but pod not running yet, keep waiting
+	return "", false
+}
+
+func (p *newLeaderPoll) timeoutError() error {
+	errMsg := fmt.Sprintf("timeout waiting for new leader (old: %s, polls: %d", p.oldLeader, p.polls)
+	if p.leaseErr != nil {
+		errMsg += fmt.Sprintf(", lastLeaseErr: %v", p.leaseErr)
+	}
+	if p.leaseHolder != "" {
+		errMsg += fmt.Sprintf(", lastLeaseHolder: %s", p.leaseHolder)
+	}
+	if p.podErr != nil {
+		errMsg += fmt.Sprintf(", lastPodErr: %v", p.podErr)
+	}
+	if len(p.podStates) > 0 {
+		errMsg += fmt.Sprintf(", lastPodStates: %v", p.podStates)
+	}
+	errMsg += ")"
+	return errors.New(errMsg)
 }
 
 // GetPodLogs retrieves the last N lines of logs from a pod.
@@ -988,11 +1032,7 @@ func getDynamicClient(config *rest.Config) (dynamic.Interface, error) {
 
 // haproxyTemplateConfigGVR returns the GroupVersionResource for HAProxyTemplateConfig.
 func haproxyTemplateConfigGVR() schema.GroupVersionResource {
-	return schema.GroupVersionResource{
-		Group:    "haproxy-haptic.org",
-		Version:  "v1alpha1",
-		Resource: "haproxytemplateconfigs",
-	}
+	return haproxyv1alpha1.SchemeGroupVersion.WithResource(resourceTemplateConfigs)
 }
 
 // EnsureDebugClientReady waits for the controller pod to be ready, then creates
@@ -1085,22 +1125,12 @@ func (mc *MetricsClient) GetMetrics(ctx context.Context) (string, error) {
 
 	// Check if we have enough time remaining for retries.
 	// If deadline is tight, try once and fail fast to let the Wait function retry.
-	if deadline, ok := ctx.Deadline(); ok {
-		remaining := time.Until(deadline)
-		if remaining < minTimeForRetries {
-			// Not enough time for meaningful retries - try once and return
-			data, err := mc.clientset.CoreV1().Services(mc.namespace).ProxyGet(
-				"http",
-				mc.serviceName,
-				mc.port,
-				"metrics",
-				nil,
-			).DoRaw(ctx)
-			if err != nil {
-				return "", fmt.Errorf("failed to fetch metrics: %w", err)
-			}
-			return string(data), nil
+	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < minTimeForRetries {
+		data, err := mc.fetchMetrics(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch metrics: %w", err)
 		}
+		return string(data), nil
 	}
 
 	var lastErr error
@@ -1113,21 +1143,11 @@ func (mc *MetricsClient) GetMetrics(ctx context.Context) (string, error) {
 			case <-ctx.Done():
 				return "", ctx.Err()
 			case <-time.After(backoff):
-				backoff *= 2
-				if backoff > maxBackoff {
-					backoff = maxBackoff
-				}
+				backoff = min(backoff*2, maxBackoff)
 			}
 		}
 
-		data, err := mc.clientset.CoreV1().Services(mc.namespace).ProxyGet(
-			"http",
-			mc.serviceName,
-			mc.port,
-			"metrics",
-			nil,
-		).DoRaw(ctx)
-
+		data, err := mc.fetchMetrics(ctx)
 		if err == nil {
 			return string(data), nil
 		}
@@ -1139,20 +1159,26 @@ func (mc *MetricsClient) GetMetrics(ctx context.Context) (string, error) {
 			return "", ctx.Err()
 		}
 
-		// Check if error is retryable (server overloaded, temporary unavailability)
-		errStr := err.Error()
-		if strings.Contains(errStr, "unable to handle the request") ||
-			strings.Contains(errStr, "connection refused") ||
-			strings.Contains(errStr, "no endpoints available") {
-			// Retryable error, continue to next attempt
-			continue
+		if !retryableMetricsError(err) {
+			return "", fmt.Errorf("failed to fetch metrics: %w", err)
 		}
-
-		// Non-retryable error, return immediately
-		return "", fmt.Errorf("failed to fetch metrics: %w", err)
 	}
 
 	return "", fmt.Errorf("failed to fetch metrics after %d retries: %w", maxRetries, lastErr)
+}
+
+// fetchMetrics reads /metrics once through the API server's Service proxy.
+func (mc *MetricsClient) fetchMetrics(ctx context.Context) ([]byte, error) {
+	return mc.clientset.CoreV1().Services(mc.namespace).ProxyGet("http", mc.serviceName, mc.port, "metrics", nil).DoRaw(ctx)
+}
+
+// retryableMetricsError reports whether err means the server was overloaded or
+// briefly unavailable.
+func retryableMetricsError(err error) bool {
+	errStr := err.Error()
+	return strings.Contains(errStr, "unable to handle the request") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "no endpoints available")
 }
 
 // parseMetricValue extracts a single metric value from a raw Prometheus metrics body.
@@ -1303,37 +1329,9 @@ func WaitForNginxContent(ctx context.Context, clientset kubernetes.Interface, na
 			return fmt.Errorf("timeout waiting for nginx to serve content containing %q (last content: %q, last error: %v)",
 				expectedContent, lastContent, lastError)
 		case <-ticker.C:
-			// Get blocklist server pod
-			pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-				LabelSelector: "app=blocklist-server",
-			})
+			content, err := readServedBlocklist(ctx, clientset, namespace)
 			if err != nil {
-				lastError = fmt.Errorf("failed to list pods: %w", err)
-				continue
-			}
-			if len(pods.Items) == 0 {
-				lastError = fmt.Errorf("no blocklist-server pods found")
-				continue
-			}
-
-			// Find a running pod
-			var targetPod *corev1.Pod
-			for i := range pods.Items {
-				if pods.Items[i].Status.Phase == corev1.PodRunning {
-					targetPod = &pods.Items[i]
-					break
-				}
-			}
-			if targetPod == nil {
-				lastError = fmt.Errorf("no running blocklist-server pod found")
-				continue
-			}
-
-			// Read the file content using exec
-			content, err := ExecInPod(ctx, clientset, namespace, targetPod.Name, "nginx",
-				[]string{"cat", "/usr/share/nginx/html/blocklist.txt"})
-			if err != nil {
-				lastError = fmt.Errorf("failed to exec in pod: %w", err)
+				lastError = err
 				continue
 			}
 
@@ -1345,6 +1343,37 @@ func WaitForNginxContent(ctx context.Context, clientset kubernetes.Interface, na
 			}
 		}
 	}
+}
+
+// readServedBlocklist reads the blocklist file a running blocklist-server pod serves.
+func readServedBlocklist(ctx context.Context, clientset kubernetes.Interface, namespace string) (string, error) {
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "app=blocklist-server",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to list pods: %w", err)
+	}
+	if len(pods.Items) == 0 {
+		return "", fmt.Errorf("no blocklist-server pods found")
+	}
+
+	var targetPod *corev1.Pod
+	for i := range pods.Items {
+		if pods.Items[i].Status.Phase == corev1.PodRunning {
+			targetPod = &pods.Items[i]
+			break
+		}
+	}
+	if targetPod == nil {
+		return "", fmt.Errorf("no running blocklist-server pod found")
+	}
+
+	content, err := ExecInPod(ctx, clientset, namespace, targetPod.Name, "nginx",
+		[]string{"cat", "/usr/share/nginx/html/blocklist.txt"})
+	if err != nil {
+		return "", fmt.Errorf("failed to exec in pod: %w", err)
+	}
+	return content, nil
 }
 
 // SetupBlocklistServer creates all resources needed for the blocklist HTTP server.
@@ -1424,6 +1453,7 @@ func UpdateBlocklistAndRestart(ctx context.Context, t *testing.T, client klient.
 // environment options before creation.
 func setupControllerEnv(prefix string, tweak ...func(*ControllerEnvironmentOptions)) types.StepFunc {
 	return func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		t.Helper()
 		namespace := envconf.RandomName(prefix, 32)
 		ctx = StoreNamespaceInContext(ctx, namespace)
 		t.Logf("Test namespace: %s", namespace)
@@ -1441,6 +1471,18 @@ func setupControllerEnv(prefix string, tweak ...func(*ControllerEnvironmentOptio
 
 		return ctx
 	}
+}
+
+// teardownControllerEnv is the feature Teardown step that removes what
+// CreateControllerEnvironment created.
+func teardownControllerEnv(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
+	client, err := cfg.NewClient()
+	if err != nil {
+		t.Logf("Failed to create client for cleanup: %v", err)
+		return ctx
+	}
+	return CleanupControllerEnvironment(ctx, t, client)
 }
 
 // readyControllerEnv resolves the test namespace and clients, then blocks until

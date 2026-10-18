@@ -54,6 +54,8 @@ conflict: CI tests the PR merged into `main`, and post-merge CI tests it again.
 
 ## `golangci-lint`
 
+`make lint` runs it over the untagged build and once for each build tag that gates a suite, so tagged code is linted without a cluster or containers: `e2e`, `integration`, `testinfra`, `playground`, `acceptance`, `gateway_conformance`, `ingress_conformance`, and `agentdocker`.
+
 The config is in v2 format (`version: "2"`), so formatters and linters are separated:
 
 **Formatters** (`gofmt`, `goimports`) auto-format source on `make lint-fix`.

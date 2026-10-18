@@ -92,6 +92,7 @@ func buildBasicAuthInputIsolationFeature() types.Feature {
 }
 
 func setupBasicAuthIsolation(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+	t.Helper()
 	return setupIsolationInputs(ctx, t, cfg, nil, false)
 }
 

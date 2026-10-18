@@ -100,8 +100,7 @@ func (f *retainedFleet) deployWatchedInputs(ctx context.Context, t *testing.T, c
 	require.NoError(t, wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, retainedReadyBound, true, func(ctx context.Context) (bool, error) {
 		plan = ""
 		for _, pod := range f.pods(ctx, t) {
-			content, err := f.exec(ctx, pod.Name, "haproxy", "cat", "/etc/haproxy/haproxy.cfg")
-			if err != nil || !strings.Contains(content, fmt.Sprintf("# watched inputs: %d", count)) {
+			if !f.servesWatchedInputs(ctx, pod.Name, count) {
 				return false, nil
 			}
 			applied := f.state(ctx, t, pod.Name).AppliedPlanID

@@ -163,17 +163,17 @@ func TestServerOpsRunAtRuntime(t *testing.T) {
 	require.True(t, result.OK, "server_add was rejected: %+v", result.Error)
 	assert.Equal(t, api.ResultRuntime, result.Mode)
 	assert.Equal(t, worker, e.workerPID(), "adding a server must not reload")
-	assert.Equal(t, "10", e.mustStatRow("be-1", "srv2")["weight"])
+	assert.Equal(t, "10", e.mustServerRow("srv2")["weight"])
 	// weight 0 must survive as a real weight: a zero-weighted backend takes no
 	// traffic, and HAProxy would default a weightless add server to 1.
-	assert.Equal(t, "0", e.mustStatRow("be-1", "srv0")["weight"])
+	assert.Equal(t, "0", e.mustServerRow("srv0")["weight"])
 
 	weight := 5
 	reweighted := s.next(api.ModeAuto)
 	reweighted.Ops = []api.Op{{Kind: api.OpServerSetWeight, Backend: "be-1", Server: "srv2", Weight: &weight}}
 	result = s.apply(reweighted, nil)
 	require.True(t, result.OK, "server_set_weight was rejected: %+v", result.Error)
-	assert.Equal(t, strconv.Itoa(weight), e.mustStatRow("be-1", "srv2")["weight"])
+	assert.Equal(t, strconv.Itoa(weight), e.mustServerRow("srv2")["weight"])
 
 	// HAProxy answers `set server addr` at WARNING severity both when it
 	// changed something and when it refused; the words decide, and "nothing
@@ -182,7 +182,7 @@ func TestServerOpsRunAtRuntime(t *testing.T) {
 	moved.Ops = []api.Op{{Kind: api.OpServerSetAddr, Backend: "be-1", Server: "srv2", Address: "127.0.0.2", Port: upstreamPort}}
 	result = s.apply(moved, nil)
 	require.True(t, result.OK, "server_set_addr was rejected: %+v", result.Error)
-	assert.Equal(t, "127.0.0.2:"+strconv.Itoa(upstreamPort), e.mustStatRow("be-1", "srv2")["addr"])
+	assert.Equal(t, "127.0.0.2:"+strconv.Itoa(upstreamPort), e.mustServerRow("srv2")["addr"])
 	unchanged := s.next(api.ModeAuto)
 	unchanged.Ops = moved.Ops
 	result = s.apply(unchanged, nil)
@@ -193,7 +193,7 @@ func TestServerOpsRunAtRuntime(t *testing.T) {
 	drained.Ops = []api.Op{{Kind: api.OpServerSetState, Backend: "be-1", Server: "srv2", State: "maint"}}
 	result = s.apply(drained, nil)
 	require.True(t, result.OK, "server_set_state was rejected: %+v", result.Error)
-	assert.Contains(t, e.mustStatRow("be-1", "srv2")["status"], "MAINT")
+	assert.Contains(t, e.mustServerRow("srv2")["status"], "MAINT")
 
 	// An idle keep-alive client holds a connection to the frontend while the
 	// server is removed: `disable server` empties the idle pool, so the wait
@@ -240,9 +240,7 @@ func keepAliveClient(t *testing.T, e *env) *http.Client {
 }
 
 func TestReloadRetiresDeferredBackendDeletes(t *testing.T) {
-	if !haproxyAtLeast("3.4") {
-		t.Skipf("dynamic backends require HAProxy 3.4; this bracket runs %s", haproxyVersion())
-	}
+	requireDynamicBackends(t)
 	e, s := converged(t)
 	worker := e.workerPID()
 	added := s.next(api.ModeAuto)
@@ -280,9 +278,7 @@ func TestReloadRetiresDeferredBackendDeletes(t *testing.T) {
 }
 
 func TestDynamicBackendLifecycle(t *testing.T) {
-	if !haproxyAtLeast("3.4") {
-		t.Skipf("`add backend` arrived in HAProxy 3.4; this bracket runs %s", haproxyVersion())
-	}
+	requireDynamicBackends(t)
 	e, s := converged(t)
 	worker := e.workerPID()
 
@@ -339,9 +335,7 @@ func TestDynamicBackendLifecycle(t *testing.T) {
 }
 
 func TestBackendDeletionWithSaturatedHAProxyMessages(t *testing.T) {
-	if !haproxyAtLeast("3.4") {
-		t.Skipf("dynamic backends require HAProxy 3.4; this bracket runs %s", haproxyVersion())
-	}
+	requireDynamicBackends(t)
 	e := newEnv(t)
 	s := newSession(e)
 	s.set(configPath, strings.Replace(renderedConfig, "global\n", "global\n    nbthread 1\n", 1))
@@ -349,18 +343,20 @@ func TestBackendDeletionWithSaturatedHAProxyMessages(t *testing.T) {
 	worker := e.workerPID()
 	added := s.next(api.ModeAuto)
 	added.Ops = []api.Op{{Kind: api.OpBackendAdd, Backend: "retiring", Profile: defaultsProfile, Mode: "http"}}
-	var deletes []api.Op
 	// 65 server deletion notices fill HAProxy 3.4's 1024-byte thread-local message buffer.
-	for i := range 65 {
+	const servers = 65
+	deletes := make([]api.Op, 0, servers+1)
+	for i := range servers {
 		name := fmt.Sprintf("srv%d", i)
 		added.Ops = append(added.Ops, api.Op{
 			Kind: api.OpServerAdd, Backend: "retiring", Server: name, Address: "127.0.0.1", Port: upstreamPort,
 		})
 		deletes = append(deletes, api.Op{Kind: api.OpServerDel, Backend: "retiring", Server: name})
 	}
+	deletes = append(deletes, api.Op{Kind: api.OpBackendDel, Backend: "retiring"})
 	require.True(t, s.apply(added, nil).OK)
 	removed := s.next(api.ModeAuto)
-	removed.Ops = append(deletes, api.Op{Kind: api.OpBackendDel, Backend: "retiring"})
+	removed.Ops = deletes
 	require.True(t, s.apply(removed, nil).OK)
 	waitFor(t, "confirmed backend deletion", convergeBudget, func() error {
 		state, err := e.client.State(t.Context(), api.StateRead{})
@@ -392,9 +388,7 @@ func TestBackendDeletionWithSaturatedHAProxyMessages(t *testing.T) {
 // worker session and defers only the drain+delete tail, which is what makes the
 // make-before-break hold.
 func TestDynamicBackendRenameKeepsTraffic(t *testing.T) {
-	if !haproxyAtLeast("3.4") {
-		t.Skipf("`add backend` arrived in HAProxy 3.4; this bracket runs %s", haproxyVersion())
-	}
+	requireDynamicBackends(t)
 	e, s := converged(t)
 	worker := e.workerPID()
 
@@ -466,9 +460,7 @@ func TestDynamicBackendRenameKeepsTraffic(t *testing.T) {
 // apply is an ACK (mode reload), not a NACK, and its op results carry HAProxy's
 // own words so the controller can label the fallback.
 func TestNameCollisionFallsBackToReload(t *testing.T) {
-	if !haproxyAtLeast("3.4") {
-		t.Skipf("`add backend` arrived in HAProxy 3.4; this bracket runs %s", haproxyVersion())
-	}
+	requireDynamicBackends(t)
 	e, s := converged(t)
 	worker := e.workerPID()
 

@@ -67,6 +67,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
@@ -150,59 +151,9 @@ func TestGatewayAPIConformance(t *testing.T) {
 	cs, err := clientset.NewForConfig(cfg)
 	require.NoError(t, err, "create kubernetes clientset")
 
-	require.NoError(t, v1alpha3.Install(c.Scheme()))
-	require.NoError(t, v1alpha2.Install(c.Scheme()))
-	require.NoError(t, v1beta1.Install(c.Scheme()))
-	require.NoError(t, xv1alpha1.Install(c.Scheme()))
-	require.NoError(t, gatewayv1.Install(c.Scheme()))
-	require.NoError(t, apiextensionsv1.AddToScheme(c.Scheme()))
+	installConformanceSchemes(t, c.Scheme())
 
-	// Exclude only documented dataplane or architecture gaps from standard features.
-	excluded := sets.New[features.FeatureName](
-		// HAProxy lacks an overall request deadline; see docs/site/docs/libraries/gateway.md#timeout-limits.
-		features.SupportHTTPRouteRequestTimeout,
-		// Mesh / GAMMA features are permanently out of scope for haptic.
-		// The conformance tests exercise pod-to-pod east-west traffic
-		// (`echo.ConnectToApp` / `ConnectToAppInNamespace`) that never
-		// traverses the chart's edge HAProxy: HTTPRoutes attach to a
-		// Service `parentRef`, ClusterIPMatching requires seeing the
-		// original destination IP before NAT, and ConsumerRoute
-		// dispatches by the source pod's namespace. All three assume a
-		// sidecar-per-pod (or kernel-level interceptor) data plane.
-		// haptic is a single front-door HAProxy by design; closing
-		// these would mean shipping a different product. Not deferred
-		// — abandoned.
-		features.SupportMesh,
-		features.SupportMeshClusterIPMatching,
-		features.SupportMeshConsumerRoute,
-		// UDPRoute relies on UDP listeners and backend forwarding.
-		// HAProxy OSS has no UDP load balancing — `udp@` listeners
-		// exist but are restricted to `log-forward` sections (syslog
-		// ingress), QUIC listeners terminate HTTP/3 (not arbitrary
-		// UDP), and the resolvers subsystem is outbound DNS only.
-		// There is no `mode udp` and no way to forward datagrams to
-		// upstream UDP servers. Full UDP routing is a HAPEE-only
-		// feature (the `hapee-lb-udp` enterprise module), out of
-		// scope for an OSS chart.
-		features.SupportUDPRoute,
-	)
-	supported := sets.Set[features.FeatureName]{}
-	for _, f := range features.AllFeatures.UnsortedList() {
-		if f.Channel != features.FeatureChannelStandard {
-			continue
-		}
-		if excluded.Has(f.Name) {
-			continue
-		}
-		supported.Insert(f.Name)
-	}
-	experimental, err := servesExperimentalChannel(t.Context(), c)
-	require.NoError(t, err)
-	if experimental {
-		retryFeature, err := retryCodesFeature(features.AllFeatures.UnsortedList())
-		require.NoError(t, err)
-		supported.Insert(retryFeature)
-	}
+	supported := supportedConformanceFeatures(t, c)
 
 	// Upstream defaults are sized for "any compliant implementation,
 	// even a slow one" — RequestTimeout=10s with 3 consecutive successes
@@ -400,6 +351,70 @@ func TestGatewayAPIConformance(t *testing.T) {
 	gwconformance.RunConformanceWithOptions(t, opts)
 }
 
+// installConformanceSchemes registers every API group the upstream suite reads.
+func installConformanceSchemes(t *testing.T, scheme *runtime.Scheme) {
+	t.Helper()
+	require.NoError(t, v1alpha3.Install(scheme))
+	require.NoError(t, v1alpha2.Install(scheme))
+	require.NoError(t, v1beta1.Install(scheme))
+	require.NoError(t, xv1alpha1.Install(scheme))
+	require.NoError(t, gatewayv1.Install(scheme))
+	require.NoError(t, apiextensionsv1.AddToScheme(scheme))
+}
+
+// supportedConformanceFeatures returns the standard-channel features the chart
+// implements, plus the retry-codes feature on an experimental-channel cluster.
+func supportedConformanceFeatures(t *testing.T, c client.Client) sets.Set[features.FeatureName] {
+	t.Helper()
+	// Exclude only documented dataplane or architecture gaps from standard features.
+	excluded := sets.New[features.FeatureName](
+		// HAProxy lacks an overall request deadline; see docs/site/docs/libraries/gateway.md#timeout-limits.
+		features.SupportHTTPRouteRequestTimeout,
+		// Mesh / GAMMA features are permanently out of scope for haptic.
+		// The conformance tests exercise pod-to-pod east-west traffic
+		// (`echo.ConnectToApp` / `ConnectToAppInNamespace`) that never
+		// traverses the chart's edge HAProxy: HTTPRoutes attach to a
+		// Service `parentRef`, ClusterIPMatching requires seeing the
+		// original destination IP before NAT, and ConsumerRoute
+		// dispatches by the source pod's namespace. All three assume a
+		// sidecar-per-pod (or kernel-level interceptor) data plane.
+		// haptic is a single front-door HAProxy by design; closing
+		// these would mean shipping a different product. Not deferred
+		// — abandoned.
+		features.SupportMesh,
+		features.SupportMeshClusterIPMatching,
+		features.SupportMeshConsumerRoute,
+		// UDPRoute relies on UDP listeners and backend forwarding.
+		// HAProxy OSS has no UDP load balancing — `udp@` listeners
+		// exist but are restricted to `log-forward` sections (syslog
+		// ingress), QUIC listeners terminate HTTP/3 (not arbitrary
+		// UDP), and the resolvers subsystem is outbound DNS only.
+		// There is no `mode udp` and no way to forward datagrams to
+		// upstream UDP servers. Full UDP routing is a HAPEE-only
+		// feature (the `hapee-lb-udp` enterprise module), out of
+		// scope for an OSS chart.
+		features.SupportUDPRoute,
+	)
+	supported := sets.Set[features.FeatureName]{}
+	for _, f := range features.AllFeatures.UnsortedList() {
+		if f.Channel != features.FeatureChannelStandard {
+			continue
+		}
+		if excluded.Has(f.Name) {
+			continue
+		}
+		supported.Insert(f.Name)
+	}
+	experimental, err := servesExperimentalChannel(t.Context(), c)
+	require.NoError(t, err)
+	if experimental {
+		retryFeature, err := retryCodesFeature(features.AllFeatures.UnsortedList())
+		require.NoError(t, err)
+		supported.Insert(retryFeature)
+	}
+	return supported
+}
+
 func isolateSharedReferenceGrants(t *testing.T) {
 	t.Helper()
 	original := conformancetests.ConformanceTests
@@ -458,7 +473,7 @@ func waitForGatewayClassExists(t *testing.T, c client.Client, name string) {
 //
 // Returns an error rather than t.Fatal so the caller can attach a
 // helpful require.NoError message.
-func discoverStaticAddressPools(ctx context.Context, restConfig *rest.Config) ([]v1beta1.GatewaySpecAddress, []v1beta1.GatewaySpecAddress, error) {
+func discoverStaticAddressPools(ctx context.Context, restConfig *rest.Config) (usable, unusable []v1beta1.GatewaySpecAddress, err error) {
 	// Apply a short timeout so a misconfigured cluster fails fast rather
 	// than blocking the whole conformance suite on the static-addresses
 	// fixture setup.
@@ -502,8 +517,8 @@ func discoverStaticAddressPools(ctx context.Context, restConfig *rest.Config) ([
 	}
 
 	ipAddr := v1beta1.IPAddressType
-	usable := []v1beta1.GatewaySpecAddress{{Type: &ipAddr, Value: usableValue}}
-	unusable := []v1beta1.GatewaySpecAddress{{Type: &ipAddr, Value: "192.0.2.1"}}
+	usable = []v1beta1.GatewaySpecAddress{{Type: &ipAddr, Value: usableValue}}
+	unusable = []v1beta1.GatewaySpecAddress{{Type: &ipAddr, Value: "192.0.2.1"}}
 	return usable, unusable, nil
 }
 

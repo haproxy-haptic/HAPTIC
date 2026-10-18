@@ -39,6 +39,18 @@ const (
 	verbDelete = "delete"
 )
 
+const (
+	resourceTemplateConfigs   = "haproxytemplateconfigs"
+	resourceTemplateLibraries = "haproxytemplatelibraries"
+	resourceIngresses         = "ingresses"
+)
+
+// appLabels returns a fresh `app: name` label set, for both an object's labels
+// and the selector that matches it.
+func appLabels(name string) map[string]string {
+	return map[string]string{"app": name}
+}
+
 // InitialConfigYAML is the initial controller configuration.
 const InitialConfigYAML = `
 pod_selector:
@@ -503,7 +515,7 @@ func (b *HAProxyTemplateConfigBuilder) Build() *haproxyv1alpha1.HAProxyTemplateC
 			WatchedResources: map[string]haproxyv1alpha1.WatchedResource{
 				"ingresses": {
 					APIVersion:       "networking.k8s.io/v1",
-					Resources:        "ingresses",
+					Resources:        resourceIngresses,
 					IndexBy:          []string{"metadata.namespace", "metadata.name"},
 					DebounceInterval: watchedResourceDebounce,
 				},
@@ -551,62 +563,62 @@ func NewRole(namespace, name string) *rbacv1.Role {
 				// denied list/watch fails its cache sync, which fails the whole
 				// iteration. The controller then never becomes ready and reports
 				// reconciliation_total 0 with nothing pointing at RBAC.
-				APIGroups: []string{"haproxy-haptic.org"},
-				Resources: []string{"haproxytemplateconfigs", "haproxytemplatelibraries"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
+				Resources: []string{resourceTemplateConfigs, resourceTemplateLibraries},
 				Verbs:     []string{verbGet, verbWatch, verbList},
 			},
 			{
 				// Stamping the config as owner of the libraries it references,
 				// so resource-tree views show the relationship.
-				APIGroups: []string{"haproxy-haptic.org"},
-				Resources: []string{"haproxytemplatelibraries"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
+				Resources: []string{resourceTemplateLibraries},
 				Verbs:     []string{verbPatch},
 			},
 			{
 				// Mirrors the chart ClusterRole — the status_updater writes
 				// validation outcomes (incl. config-gate rejections) to
 				// haproxytemplateconfigs/status.
-				APIGroups: []string{"haproxy-haptic.org"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
 				Resources: []string{"haproxytemplateconfigs/status"},
 				Verbs:     []string{verbGet, verbUpdate, verbPatch},
 			},
 			{
-				APIGroups: []string{"haproxy-haptic.org"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
 				Resources: []string{"haproxycfgs"},
 				Verbs:     []string{verbGet, verbList, verbWatch, verbCreate, verbUpdate, verbPatch, verbDelete},
 			},
 			{
-				APIGroups: []string{"haproxy-haptic.org"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
 				Resources: []string{"haproxycfgs/status"},
 				Verbs:     []string{verbGet, verbUpdate, verbPatch},
 			},
 			{
-				APIGroups: []string{"haproxy-haptic.org"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
 				Resources: []string{"haproxymapfiles"},
 				Verbs:     []string{verbGet, verbList, verbWatch, verbCreate, verbUpdate, verbPatch, verbDelete},
 			},
 			{
-				APIGroups: []string{"haproxy-haptic.org"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
 				Resources: []string{"haproxymapfiles/status"},
 				Verbs:     []string{verbGet, verbUpdate, verbPatch},
 			},
 			{
-				APIGroups: []string{"haproxy-haptic.org"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
 				Resources: []string{"haproxygeneralfiles"},
 				Verbs:     []string{verbGet, verbList, verbWatch, verbCreate, verbUpdate, verbPatch, verbDelete},
 			},
 			{
-				APIGroups: []string{"haproxy-haptic.org"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
 				Resources: []string{"haproxygeneralfiles/status"},
 				Verbs:     []string{verbGet, verbUpdate, verbPatch},
 			},
 			{
-				APIGroups: []string{"haproxy-haptic.org"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
 				Resources: []string{"haproxycrtlistfiles"},
 				Verbs:     []string{verbGet, verbList, verbWatch, verbCreate, verbUpdate, verbPatch, verbDelete},
 			},
 			{
-				APIGroups: []string{"haproxy-haptic.org"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
 				Resources: []string{"haproxycrtlistfiles/status"},
 				Verbs:     []string{verbGet, verbUpdate, verbPatch},
 			},
@@ -627,7 +639,7 @@ func NewRole(namespace, name string) *rbacv1.Role {
 			},
 			{
 				APIGroups: []string{"networking.k8s.io"},
-				Resources: []string{"ingresses"},
+				Resources: []string{resourceIngresses},
 				Verbs:     []string{verbGet, verbWatch, verbList},
 			},
 		},
@@ -676,20 +688,20 @@ func NewClusterRole(name, namespace string) *rbacv1.ClusterRole {
 				// denied list/watch fails its cache sync, which fails the whole
 				// iteration. The controller then never becomes ready and reports
 				// reconciliation_total 0 with nothing pointing at RBAC.
-				APIGroups: []string{"haproxy-haptic.org"},
-				Resources: []string{"haproxytemplateconfigs", "haproxytemplatelibraries"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
+				Resources: []string{resourceTemplateConfigs, resourceTemplateLibraries},
 				Verbs:     []string{verbGet, verbWatch, verbList},
 			},
 			{
 				// Stamping the config as owner of the libraries it references,
 				// so resource-tree views show the relationship.
-				APIGroups: []string{"haproxy-haptic.org"},
-				Resources: []string{"haproxytemplatelibraries"},
+				APIGroups: []string{haproxyv1alpha1.GroupName},
+				Resources: []string{resourceTemplateLibraries},
 				Verbs:     []string{verbPatch},
 			},
 			{
 				APIGroups: []string{"networking.k8s.io"},
-				Resources: []string{"ingresses"},
+				Resources: []string{resourceIngresses},
 				Verbs:     []string{verbGet, verbWatch, verbList},
 			},
 			{
@@ -739,27 +751,21 @@ func NewClusterRoleBinding(name, clusterRoleName, serviceAccountName, serviceAcc
 }
 
 // NewControllerDeployment creates a controller deployment.
-func NewControllerDeployment(namespace, crdName, secretName, serviceAccountName string, debugPort int32, replicas int32) *appsv1.Deployment {
+func NewControllerDeployment(namespace, crdName, secretName, serviceAccountName string, debugPort, replicas int32) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ControllerDeploymentName,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"app": ControllerDeploymentName,
-			},
+			Labels:    appLabels(ControllerDeploymentName),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": ControllerDeploymentName,
-				},
+				MatchLabels: appLabels(ControllerDeploymentName),
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": ControllerDeploymentName,
-					},
+					Labels: appLabels(ControllerDeploymentName),
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: serviceAccountName,
@@ -837,9 +843,7 @@ func NewWebhookService(namespace, serviceName string) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serviceName,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"app": ControllerDeploymentName,
-			},
+			Labels:    appLabels(ControllerDeploymentName),
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
@@ -851,9 +855,7 @@ func NewWebhookService(namespace, serviceName string) *corev1.Service {
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},
-			Selector: map[string]string{
-				"app": ControllerDeploymentName,
-			},
+			Selector: appLabels(ControllerDeploymentName),
 		},
 	}
 }
@@ -980,22 +982,16 @@ func NewBlocklistServerDeployment(namespace string) *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      BlocklistServerName,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"app": BlocklistServerName,
-			},
+			Labels:    appLabels(BlocklistServerName),
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": BlocklistServerName,
-				},
+				MatchLabels: appLabels(BlocklistServerName),
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": BlocklistServerName,
-					},
+					Labels: appLabels(BlocklistServerName),
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -1040,9 +1036,7 @@ func NewBlocklistService(namespace string) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      BlocklistServerName,
 			Namespace: namespace,
-			Labels: map[string]string{
-				"app": BlocklistServerName,
-			},
+			Labels:    appLabels(BlocklistServerName),
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
@@ -1053,9 +1047,7 @@ func NewBlocklistService(namespace string) *corev1.Service {
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},
-			Selector: map[string]string{
-				"app": BlocklistServerName,
-			},
+			Selector: appLabels(BlocklistServerName),
 		},
 	}
 }
@@ -1125,14 +1117,10 @@ func NewDebugService(namespace, deploymentName string, debugPort int32) *corev1.
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      DebugServiceName(deploymentName),
 			Namespace: namespace,
-			Labels: map[string]string{
-				"app": deploymentName,
-			},
+			Labels:    appLabels(deploymentName),
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{
-				"app": deploymentName,
-			},
+			Selector: appLabels(deploymentName),
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "debug",
@@ -1154,14 +1142,10 @@ func NewMetricsService(namespace, deploymentName string, metricsPort int32) *cor
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      MetricsServiceName(deploymentName),
 			Namespace: namespace,
-			Labels: map[string]string{
-				"app": deploymentName,
-			},
+			Labels:    appLabels(deploymentName),
 		},
 		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{
-				"app": deploymentName,
-			},
+			Selector: appLabels(deploymentName),
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "metrics",
