@@ -97,6 +97,8 @@
     "upgrade-0.4.1-minimum",
     "upgrade-0.5.0-current",
     "upgrade-0.5.0-minimum",
+    "upgrade-0.6.0-current",
+    "upgrade-0.6.0-minimum",
     "vector",
     "wasm"
   ],
