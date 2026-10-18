@@ -170,7 +170,7 @@ templateSnippets:
       {%- for _, msg := range messages %}
       filter spoe engine spoa-hub-{{ msg }} config {{ pathResolver.GetPath("spoe.conf", "file") }}
       {%- end %}
-      {{- render_glob "frontend-spoe-filters-*" }}
+      {{- on_own_lines(render_glob "frontend-spoe-filters-*") }}
       {%- end %}
 
   # Resolve and parse the packed shared-rate-limit rule before any plugin is
@@ -414,17 +414,17 @@ templateSnippets:
       {#- Emitted only while a route has an auth-url map entry; the first
           route reloads once, as does removing the last. #}
       {%- if strip(render_glob "map-auth-url-*") != "" %}
-      http-request set-var(txn.auth_key) var(txn.resource_key){{ "\n" }}
+      http-request set-var(txn.auth_key) var(txn.resource_key)
       {#- frontend-spoe-auth-request-* may preset auth_* variables for its routes. #}
-      {{- render_glob "frontend-spoe-auth-request-*" }}{{ "\n" }}
+      {{- on_own_lines(render_glob "frontend-spoe-auth-request-*") }}{{ "\n" }}
       http-request set-var(txn.auth_url) var(txn.auth_key),map({{ pathResolver.GetPath("auth-url.map", "map") }}) unless { var(txn.auth_url) -m found }
       http-request set-var(txn.auth_signin) var(txn.auth_key),map({{ pathResolver.GetPath("auth-signin.map", "map") }}) unless { var(txn.auth_signin) -m found }
       http-request set-var(txn.auth_method) var(txn.auth_key),map({{ pathResolver.GetPath("auth-method.map", "map") }}) unless { var(txn.auth_method) -m found }
       http-request set-var(txn.auth_forward_headers) var(txn.auth_key),map({{ pathResolver.GetPath("auth-forward-headers.map", "map") }}) unless { var(txn.auth_forward_headers) -m found }
       http-request set-var(txn.auth_extract_headers) var(txn.auth_key),map({{ pathResolver.GetPath("auth-extract-headers.map", "map") }}) unless { var(txn.auth_extract_headers) -m found }
       {#- frontend-spoe-auth-verdict-* may revoke the verdict before it is read. #}
-      http-request send-spoe-group spoa-hub-check-auth check-auth-group if { var(txn.auth_url) -m found }{{ "\n" }}
-      {{- render_glob "frontend-spoe-auth-verdict-*" }}{{ "\n" }}
+      http-request send-spoe-group spoa-hub-check-auth check-auth-group if { var(txn.auth_url) -m found }
+      {{- on_own_lines(render_glob "frontend-spoe-auth-verdict-*") }}{{ "\n" }}
       {#- Pass-headers extension point: ingress libraries emit one
           `http-request set-header` per unique header in any
           ingress's auth-response-headers / auth-headers-succeed union.
@@ -436,7 +436,7 @@ templateSnippets:
           matched anything — without it, when the glob is empty the
           adjacent `{#- ... -#}` trim markers collapse the
           send-spoe-group line into the redirect line. -#}
-      {{- render_glob "frontend-spoe-set-pass-headers-*" }}{{ "\n" }}
+      {{- on_own_lines(render_glob "frontend-spoe-set-pass-headers-*") }}{{ "\n" }}
       {# Browser-friendly sign-in redirect on auth failure: if the
           ingress has `auth-signin`, redirect to it (302) instead of
           denying. The deny rule below still fires when auth-signin
@@ -456,7 +456,7 @@ templateSnippets:
           received from a backend, so they'd silently skip the deny
           path. Empty when no ingress uses the annotation. Same
           trailing-newline trick as the pass-headers glob. #}
-      {{- render_glob "frontend-spoe-set-fail-headers-*" }}{{ "\n" }}
+      {{- on_own_lines(render_glob "frontend-spoe-set-fail-headers-*") }}{{ "\n" }}
       {%- end %}
       {%- end %}
 

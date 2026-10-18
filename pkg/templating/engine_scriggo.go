@@ -397,7 +397,8 @@ func (e *ScriggoEngine) compileEntryPoint(name string, scope *scriggoEntryPointS
 		// which compiles to OpGoRender and is not gated by this flag. The flag
 		// gates only {% go f() %}, whose goroutine outlives the render and
 		// whose panic is unrecovered.
-		AllowGoStmt: false,
+		AllowGoStmt:         false,
+		ExpandedTransformer: distributeOnOwnLines,
 	}
 	if incremental {
 		opts.UnexpandedTransformer = rejectDerivedRenderModeOverride

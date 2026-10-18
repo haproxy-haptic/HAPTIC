@@ -103,6 +103,7 @@ func compileIncrementalSourceTransactionCarrier(
 			Globals:                transactionGlobals,
 			EnableProfiling:        profiling,
 			AllowGoStmt:            false,
+			ExpandedTransformer:    distributeOnOwnLines,
 			IsolateRootRenderState: true,
 			UnexpandedTransformer: func(tree *ast.Tree) error {
 				if tree.Path == incrementalSourceTransactionTemplatePath {

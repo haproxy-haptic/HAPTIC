@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Metrics:
     - `haptic_config_validated{status,reason}`: each replica's `Validated` condition, one series per state, so an alert can match a configuration stuck at `Unknown` or `False`.
     - `haptic_config_validation_total{result}`: `valid`, `invalid`, and `inconclusive` verdicts on the `HAProxyTemplateConfig`, the startup load gate included. `haptic_validation_errors_total` counts only HAProxy's verdicts on rendered configurations.
+- `on_own_lines(render_glob "prefix-*")` template function: renders the matching snippets so that each starts on a new line.
 
 ### Changed
 
@@ -50,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Fixed
 
+- A snippet at an extension point now starts on its own line whether or not its template begins or ends with a newline. Before, a `frontend-extra-*` or other snippet without a leading newline could join the previous line and fail validation.
 - WAF governance's `allowRawHAProxyConfig: false` also rejects raw configuration annotations when the `hapticAnnotations` library is disabled.
 - Reduce Helm release storage by keeping generated defaults in the helper subchart.
 - `haproxy-haptic.org/forwardfor` and `haproxy-ingress.github.io/forwardfor`: `add` and `update` no longer send the client address twice, and `ifmissing` and `ignore` no longer append it to the client's header.

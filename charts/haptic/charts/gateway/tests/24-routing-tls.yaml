@@ -794,6 +794,8 @@ validationTests:
       # connections still get no alt-svc after the unix-socket hop.
       - {type: contains, target: haproxy.cfg, pattern: 'server loopback unix@/etc/haproxy/ssl-frontend\.sock send-proxy-v2 set-proxy-v2-tlv-fmt\(0xE0\) %\[so_name\]'}
       - {type: match_count, target: haproxy.cfg, pattern: 'set-header alt-svc .* if \{ dst_port 443 \} !\{ so_name https-proxy-protocol \} !\{ fc_pp_tlv\(0xE0\) -m str https-proxy-protocol \}', expected: "2"}
+      # The first frontends-* snippet starts its own line instead of continuing default_backend (#408).
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^# ssl/frontends-ssl-tcp$'}
 
   test-tlsroute-weighted-backends:
     requires: [gateways, tlsroutes]

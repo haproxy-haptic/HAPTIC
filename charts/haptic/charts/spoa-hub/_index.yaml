@@ -56,7 +56,7 @@ maps:
       # tenant's modsecurity-snippet rules stay isolated. Populated by nginx-ingress
       # map-coraza-app-*; fed to the check-request SPOE app= arg (empty → default WAF).
       # See https://haproxy-haptic.org/docs/latest/operations/spoa-hub/
-      {{ render_glob "map-coraza-app-*" -}}
+      {{ on_own_lines(render_glob "map-coraza-app-*") -}}
 
   coraza-body.map:
     template: |
@@ -64,7 +64,7 @@ maps:
       # "none|buffered any|json max_body_bytes". The centrally authored policy
       # decides whether this Ingress stays on the low-latency metadata path or
       # waits for a bounded complete request body.
-      {{ render_glob "map-coraza-body-*" -}}
+      {{ on_own_lines(render_glob "map-coraza-body-*") -}}
 
   haproxy-ingress-waf.map:
     template: |
@@ -72,7 +72,7 @@ maps:
       # Populated by map-haproxy-ingress-waf-* snippets; read into
       # txn.coraza_mode (empty → no opt-in; request skips the WAF SPOE roundtrip).
       # See https://haproxy-haptic.org/docs/latest/operations/spoa-hub/
-      {{ render_glob "map-haproxy-ingress-waf-*" -}}
+      {{ on_own_lines(render_glob "map-haproxy-ingress-waf-*") -}}
 
   coraza-disabled.map:
     template: |
@@ -80,20 +80,20 @@ maps:
       # (keyed by host+path) excludes that path from the unconditional WAF SPOE dispatch.
       # Populated by nginx-ingress map-coraza-disabled-* (enable-modsecurity: "false");
       # empty under the default opt-in dispatch. See https://haproxy-haptic.org/docs/latest/operations/spoa-hub/
-      {{ render_glob "map-coraza-disabled-*" -}}
+      {{ on_own_lines(render_glob "map-coraza-disabled-*") -}}
 
   auth-url.map:
     template: |
       # External-auth URL per txn.resource_key (<ns>/<name> for an Ingress,
       # gateway/<rule id> for a Gateway rule). Populated by map-auth-url-*.
-      {{ render_glob "map-auth-url-*" -}}
+      {{ on_own_lines(render_glob "map-auth-url-*") -}}
 
   auth-signin.map:
     template: |
       # External-auth per-ingress sign-in URL: when set, an auth failure redirects (302) to it
       # instead of denying (401) — browser OIDC/SAML login flows. Keyed by <ns>/<name>.
       # Populated by ingress libraries' map-auth-signin-* contributions.
-      {{ render_glob "map-auth-signin-*" -}}
+      {{ on_own_lines(render_glob "map-auth-signin-*") -}}
 
   auth-forward-headers.map:
     template: |
@@ -101,7 +101,7 @@ maps:
       # list). Keyed by <ns>/<name>. Populated by ingress map-auth-forward-headers-*
       # (haproxy-ingress.github.io/auth-headers-request); fed to the check-auth SPOE
       # forward_headers arg (empty → plugin-level default).
-      {{ render_glob "map-auth-forward-headers-*" -}}
+      {{ on_own_lines(render_glob "map-auth-forward-headers-*") -}}
 
   auth-extract-headers.map:
     template: |
@@ -110,7 +110,7 @@ maps:
       # Populated by ingress map-auth-extract-headers-*; fed to the check-auth SPOE
       # extract_headers arg, which publishes each as txn.hub.external_auth.<name>.
       # See https://haproxy-haptic.org/docs/latest/operations/spoa-hub/
-      {{ render_glob "map-auth-extract-headers-*" -}}
+      {{ on_own_lines(render_glob "map-auth-extract-headers-*") -}}
 
 
   auth-method.map:
@@ -118,7 +118,7 @@ maps:
       # External-auth per-ingress HTTP method override for the auth subrequest. Keyed by
       # <ns>/<name>. Populated by ingress map-auth-method-* ({nginx,haproxy}-ingress
       # auth-method annotations); fed to the check-auth SPOE method arg (empty → no override).
-      {{ render_glob "map-auth-method-*" -}}
+      {{ on_own_lines(render_glob "map-auth-method-*") -}}
 
   rate-limit.map:
     template: |
@@ -129,7 +129,7 @@ maps:
       # rules dispatch before Coraza; consumer rules dispatch after native auth
       # in the selected backend. Empty → route isn't rate-limited (SPOE skipped).
       # See https://haproxy-haptic.org/docs/latest/operations/spoa-hub/
-      {{ render_glob "map-rate-limit-*" -}}
+      {{ on_own_lines(render_glob "map-rate-limit-*") -}}
 
   request-schema.map:
     template: |
@@ -140,4 +140,4 @@ maps:
       # and shipped to the api-gateway SPOE plugin. Empty → route is not
       # schema-validated (SPOE skipped).
       # See https://haproxy-haptic.org/docs/latest/operations/spoa-hub/
-      {{ render_glob "map-request-schema-*" -}}
+      {{ on_own_lines(render_glob "map-request-schema-*") -}}

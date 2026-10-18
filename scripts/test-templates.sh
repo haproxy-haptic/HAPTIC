@@ -331,6 +331,27 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     rm -f "$PROBE_CONFIG" "$PROBE_RESULTS" "$PROBE_LOG"
 fi
 
+if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
+    # The two bundled tests render chart snippets that end mid-line just
+    # before the operator's frontend-extra snippet.
+    SNIPPET_CONFIG=$(mktemp /tmp/haptic-extension-point-snippets-XXXXXX.yaml)
+    echo -e "${YELLOW}Validating operator snippets without surrounding newlines...${NC}" >&2
+    if ! helm template "$CHART_DIR" --namespace default $HAPROXY_VERSION_ARG \
+        --set controller.templateLibraries.hapticAnnotations.enabled=true \
+        --set controller.templateLibraries.haproxyIngress.enabled=true \
+        --values "$PROJECT_ROOT/tests/fixtures/extension-point-snippets/values.yaml" \
+        | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
+        > "$SNIPPET_CONFIG"; then
+        rm -f "$SNIPPET_CONFIG"
+        exit 1
+    fi
+    "$CONTROLLER_BIN" validate --file "$SNIPPET_CONFIG" "${SCHEMA_DIR_ARGS[@]}" \
+        --test test-operator-snippets-start-on-their-own-line \
+        --test test-haptic-config-injection \
+        --test test-haproxy-ingress-config-frontend || FULL_RC=$?
+    rm -f "$SNIPPET_CONFIG"
+fi
+
 if ! single_test_requested "$@"; then
     # Access-log coverage invariant: every frontend the chart renders must carry a
     # log-format, or that frontend silently falls back to `option httplog` from

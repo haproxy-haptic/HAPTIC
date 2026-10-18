@@ -103,9 +103,10 @@ func compileIncrementalVectorEntryPoint(
 		},
 		incrementalVectorTemplatePath,
 		&scriggo.BuildOptions{
-			Globals:         vectorGlobals,
-			EnableProfiling: profiling,
-			AllowGoStmt:     false,
+			Globals:             vectorGlobals,
+			EnableProfiling:     profiling,
+			AllowGoStmt:         false,
+			ExpandedTransformer: distributeOnOwnLines,
 			UnexpandedTransformer: func(tree *ast.Tree) error {
 				if err := rejectIncrementalVectorUnsafeSource(tree, bindingSet); err != nil {
 					unsafe = true

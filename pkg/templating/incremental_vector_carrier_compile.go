@@ -96,6 +96,7 @@ func compileIncrementalVectorCarrier(
 			Globals:                vectorGlobals,
 			EnableProfiling:        profiling,
 			AllowGoStmt:            false,
+			ExpandedTransformer:    distributeOnOwnLines,
 			IsolateRootRenderState: true,
 			UnexpandedTransformer: func(tree *ast.Tree) error {
 				if err := rejectIncrementalVectorUnsafeSource(tree, bindingSet); err != nil {

@@ -468,7 +468,7 @@ templateSnippets:
           seenBackends[dedupKey] = true
           var backendKey = BackendNameIngress(ingress, path)
           var serverOpts = map[string]any{"flags": []any{}, "profile": []any{}, "body": []any{}}
-          var directives = AppendLines([]any{}, render_glob "backend-directives-*" inherit_context)
+          var directives = AppendLines([]any{}, on_own_lines(render_glob "backend-directives-*" inherit_context))
           var profile = IngressProfile(serverOpts, beTimeoutSrv, beTimeoutTun)
           var body = IngressBody(serverOpts, directives)
           var serverResult = BackendServersResult(svcName, 0, port, serverOpts, portName, backendKey, ns)
@@ -549,7 +549,7 @@ templateSnippets:
         {%- var path = map[string]any{"backend": map[string]any{"service": map[string]any{
           "name": svcName, "port": map[string]any{"number": port},
         }}} -%}
-        {%- var directives = AppendLines([]any{}, render_glob "backend-directives-*" inherit_context) -%}
+        {%- var directives = AppendLines([]any{}, on_own_lines(render_glob "backend-directives-*" inherit_context)) -%}
         {%- var profile = []any{} -%}
         {%- for _, line := range toSlice(serverOpts["profile"]) -%}{%- profile = append(profile, line) -%}{%- end -%}
         {%- var body = []any{} -%}
@@ -882,7 +882,7 @@ templateSnippets:
       {%- import "util-backend-timeouts" for BackendTimeouts -%}
       {% macro PublishIngressTimeouts(ingress any, backendKey string, profile []any, body []any) string %}
         {{- shared.Publish("timeouts", backendKey, BackendTimeouts(map[string]any{}, append(profile, body...))) -}}
-        {%- for _, line := range split(render_glob "backend-timeout-metadata-*" inherit_context, "\n") -%}
+        {%- for _, line := range split(on_own_lines(render_glob "backend-timeout-metadata-*" inherit_context), "\n") -%}
           {%- if trimSpace(line) == "" -%}{%- continue -%}{%- end -%}
           {%- var fields = split(line, " ") -%}
           {{- shared.Publish("timeout-overrides", backendKey + "|" + line, map[string]any{fields[0]: toint(fields[1])}) -}}
