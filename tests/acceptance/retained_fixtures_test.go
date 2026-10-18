@@ -195,7 +195,7 @@ func retainedChartFleet(ctx context.Context, t *testing.T, namespace string) (*a
 	require.NotNil(t, bootstrap)
 	for _, containers := range [][]corev1.Container{deployment.Spec.Template.Spec.Containers, deployment.Spec.Template.Spec.InitContainers} {
 		for i := range containers {
-			containers[i].Image = "haptic:test"
+			containers[i].Image = ControllerImageName
 			containers[i].ImagePullPolicy = corev1.PullNever
 		}
 	}
