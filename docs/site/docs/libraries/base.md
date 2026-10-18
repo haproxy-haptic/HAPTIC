@@ -115,6 +115,7 @@ This table is the authoritative registry of every `render_glob` extension point 
 | Host Matching | `frontend-routing-host-match-*` | Before the standard hostname lookups | Set `txn.host_match` to select a routing group; leave it empty to use the standard lookups |
 | Frontend Matchers | `frontend-matchers-advanced-*` | Within frontend routing logic | Advanced request matching (method, headers, query params) |
 | Frontend Filters | `frontend-filters-*` | HTTP frontend, after routing | Request/response filters (header modification, redirects) |
+| Forwarded-For Mode | `forwarded-for-mode-*` | HTTP frontend, first in the filter chain | Rules that set `txn.xff_mode` to `replace`, `append`, `ifmissing`, or `ignore` for the requests a library claims; see [forwarded headers](#forwarded-headers) |
 | Frontend Switching | `frontend-switching-*` | HTTP/HTTPS frontend, after filters and before the default backend selection | Conditional `use_backend` rules, including canary splits |
 | Access Log Fields | `log-fields-*` | Inside the per-frontend `log-format` line | Named JSON fields contributed to the [structured access log](../operations/access-logging.md) |
 | Custom Frontends | `frontends-*` | After HTTP frontend | Additional frontend definitions |
@@ -262,6 +263,39 @@ rules and frontend snippets.
 
 Unmatched gRPC requests receive `grpc-status: 12` (Unimplemented). Other unmatched
 HTTP requests receive `404`.
+
+### Forwarded headers
+
+Every HTTP frontend drops the `X-Forwarded-*` headers a client sends and sets its
+own; the [security page](../operations/security.md#forwarded-headers) describes
+what backends receive and how to trust a load balancer. Without trusted proxies
+and per-route modes, the rules are:
+
+```haproxy
+http-request set-header X-Forwarded-Proto %[ssl_fc,iif(https,http)]
+http-request del-header X-Forwarded-Host
+http-request del-header X-Forwarded-Port
+http-request del-header X-Forwarded-For
+# ... every other frontend-filters-* rule, including set-src ...
+http-request add-header X-Forwarded-For %[src]
+```
+
+`frontend-filters-010-forwarded-headers` runs first in the filter chain, so SPOE
+messages and every later rule see the cleaned headers.
+`frontend-filters-998-forwarded-for` appends the client address after any
+`set-src` rewrite. With `extraContext.forwardedHeaders.trustedProxies` set, the
+deletions skip a source listed in `forwarded-trusted-proxies.map`, and such a
+source gets `X-Forwarded-Proto` only when it sent none.
+
+A library overrides `X-Forwarded-For` per request with a `forwarded-for-mode-*`
+snippet that sets `txn.xff_mode`:
+
+| Mode | Client's `X-Forwarded-For` | Client address appended |
+|------|----------------------------|-------------------------|
+| `replace` | Dropped, even from a trusted proxy | Yes |
+| `append` | Kept | Yes |
+| `ifmissing` | Kept | Only when there is none |
+| `ignore` | Kept | No |
 
 ### Request buffering
 

@@ -38,7 +38,10 @@ const haproxyIngressSweepFailure = `{%- if tostring(extraContext | dig("failAfte
 
 var haproxyIngressSnippetDependencyPattern = regexp.MustCompile(`(?:import|render)\s+"([^"]+)"`)
 
-const haproxyIngressForwardForBlock = "frontend-filters-600-haproxy-ingress-forwardfor"
+const haproxyIngressForwardForBlock = "forwarded-for-mode-500-ingress"
+
+// haproxyIngressSrcIPGroup declares the src-ip group the forwardfor block also reads.
+const haproxyIngressSrcIPGroup = "ingress-src-ip-9999-declaration"
 
 func TestHAProxyIngressIncrementalSweepScalesWithChangedResources(t *testing.T) {
 	for _, resourceCount := range []int{300, 1000, 3000} {
@@ -65,8 +68,9 @@ func TestHAProxyIngressIncrementalSweepScalesWithChangedResources(t *testing.T) 
 				"haproxy-ingress.github.io/forwardfor": "add",
 			}, "v3"))
 			active := fixture.renderAndCommit(t)
-			assert.Contains(t, active.HAProxyConfig, "# hi/forwardfor")
-			assert.Contains(t, active.HAProxyConfig, `add-header X-Forwarded-For %[src] if { var(txn.hi_xff) -m str "hi:add" }`)
+			assert.Contains(t, active.HAProxyConfig, "# ingress/forwardfor")
+			assert.Contains(t, active.HAProxyConfig, `http-request set-var(txn.xff_mode) var(txn.resource_key),map(`)
+			assert.Equal(t, "default/"+target+" replace\n", haproxyIngressXFFRoutes(t, active))
 			assert.Equal(t, map[string]int{"ingresses/" + target: 1}, fixture.engine.executionCounts())
 			assert.Equal(t, active.HAProxyConfig, fixture.renderAndCommit(t).HAProxyConfig)
 			assert.Equal(t, map[string]int{"ingresses/" + target: 1}, fixture.engine.executionCounts())
@@ -122,7 +126,7 @@ func TestHAProxyIngressIncrementalSweepAbortsDoNotPoisonCache(t *testing.T) {
 		rendercontext.WithAdmissionSubject("ingresses", "default", "subject"),
 	)
 	require.NoError(t, err)
-	assert.Contains(t, admission.HAProxyConfig, "hi/forwardfor")
+	assert.Contains(t, admission.HAProxyConfig, "ingress/forwardfor")
 	assert.Equal(t, map[string]int{"ingresses/subject": 1}, fixture.engine.executionCounts())
 	assert.Equal(t, baseline.HAProxyConfig, fixture.renderAndCommit(t).HAProxyConfig)
 	assert.Equal(t, map[string]int{"ingresses/subject": 1}, fixture.engine.executionCounts())
@@ -136,7 +140,7 @@ func TestHAProxyIngressIncrementalSweepAbortsDoNotPoisonCache(t *testing.T) {
 
 	fixture.config.TemplatingSettings.ExtraContext["failAfterAuth"] = false
 	retried := fixture.renderAndCommit(t)
-	assert.Contains(t, retried.HAProxyConfig, "hi/forwardfor")
+	assert.Contains(t, retried.HAProxyConfig, "ingress/forwardfor")
 	assert.Equal(t, map[string]int{"ingresses/subject": 3}, fixture.engine.executionCounts())
 	assert.Equal(t, retried.HAProxyConfig, fixture.renderAndCommit(t).HAProxyConfig)
 	assert.Equal(t, map[string]int{"ingresses/subject": 3}, fixture.engine.executionCounts())
@@ -189,8 +193,20 @@ func loadHAProxyIngressSweepSnippets(t *testing.T) (snippets map[string]config.T
 	// The forwardfor block is not incremental itself; it reads the lane the
 	// publisher above fills, so the root renders it after the components.
 	selected[haproxyIngressForwardForBlock] = true
+	selected[haproxyIngressSrcIPGroup] = true
 	expandHAProxyIngressSweepSelection(t, all, selected, append(append([]string(nil), components...), haproxyIngressForwardForBlock))
 	return haproxyIngressSweepConfigSnippets(all, selected), components
+}
+
+func haproxyIngressXFFRoutes(t *testing.T, result *RenderResult) string {
+	t.Helper()
+	for _, file := range requireAuxiliaryFiles(t, result).MapFiles {
+		if strings.HasSuffix(file.Path, "/ing-xff-routes.map") || file.Path == "ing-xff-routes.map" {
+			return file.Content
+		}
+	}
+	require.FailNow(t, "ing-xff-routes.map is missing")
+	return ""
 }
 
 func expandHAProxyIngressSweepSelection(
@@ -253,6 +269,7 @@ func haproxyIngressSweepRoot(components []string) string {
 	for _, name := range components {
 		fmt.Fprintf(&root, `{{- render %q -}}`, name)
 	}
+	fmt.Fprintf(&root, `{{- render %q -}}`, haproxyIngressSrcIPGroup)
 	fmt.Fprintf(&root, `{{- render %q -}}`, haproxyIngressForwardForBlock)
 	root.WriteString(haproxyIngressSweepFailure)
 	return root.String()

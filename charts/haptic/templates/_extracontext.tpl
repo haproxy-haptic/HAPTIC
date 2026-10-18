@@ -1030,7 +1030,8 @@
        selects which libraries and tests exist (every value _helm_load and
        _helm_skip_test read), which follows the deployment. */ -}}
 {{- define "haptic.testValues" -}}
-{{- $values := .Files.Get "files/default-values.json" | fromJson }}
+{{- $helpers := index .Subcharts "helm-helpers" }}
+{{- $values := $helpers.Files.Get "files/default-values.json" | fromJson }}
 {{- $_ := set $values "haproxyVersion" .Values.haproxyVersion }}
 {{- $_ := set $values.controller "templateLibraries" (deepCopy .Values.controller.templateLibraries) }}
 {{- $_ := set $values.spoaHub "enabled" (eq (include "haptic.spoaHub.enabled" .) "true") }}

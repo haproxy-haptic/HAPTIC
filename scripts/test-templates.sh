@@ -958,6 +958,32 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     fi
 fi
 
+# Trusted-proxy opt-in profile: every test's fixtures must render and pass
+# haproxy -c with extraContext.forwardedHeaders.trustedProxies set.
+if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
+    TRUSTED_PROXIES_CONFIG=$(mktemp /tmp/haptic-trusted-proxies-config-XXXXXX.yaml)
+    trap 'rm -f "$TEMP_CONFIG" "$RATE_LIMIT_CONFIG" "$PROXY_PROTOCOL_CONFIG" "$TRUSTED_PROXIES_CONFIG"' EXIT
+    echo -e "${YELLOW}Rendering trusted-proxy profile...${NC}" >&2
+    if ! helm template "$CHART_DIR" \
+        --namespace default \
+        $HAPROXY_VERSION_ARG \
+        --set controller.templateLibraries.haproxyIngress.enabled=true \
+        --set controller.templateLibraries.nginxIngress.enabled=true \
+        --set controller.templateLibraries.haproxytech.enabled=true \
+        --set-json 'controller.config.templatingSettings.extraContext.forwardedHeaders.trustedProxies=["10.0.0.0/8","2001:db8::/32"]' \
+        | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
+        > "$TRUSTED_PROXIES_CONFIG"; then
+        echo -e "${RED}Error: Failed to render trusted-proxy Helm profile${NC}" >&2
+        exit 1
+    fi
+    echo -e "${YELLOW}Trusted-proxy profile: full validation pass...${NC}" >&2
+    if ! "$CONTROLLER_BIN" validate --file "$TRUSTED_PROXIES_CONFIG" "${SCHEMA_DIR_ARGS[@]}" "$@"; then
+        echo -e "${RED}Trusted-proxy profile: tests that pass with the opt-in OFF must also pass with it ON — the load gate crash-loops the controller otherwise${NC}" >&2
+        FULL_RC=1
+    fi
+    rm -f "$TRUSTED_PROXIES_CONFIG"
+fi
+
 # Tracing opt-in profile. Runs the WHOLE test set with tracing on, for the same
 # reason as the PROXY-protocol profile above, plus one specific to tracing: the
 # fields and the route lookup are removed at HELM time when the opt-in is off

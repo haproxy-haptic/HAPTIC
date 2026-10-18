@@ -397,25 +397,25 @@ templateSnippets:
         {%- end -%}
       {%- end macro -%}
 
-  # X-Forwarded-For from a per-route map: ing-xff-routes.map holds
-  # "<route id>" -> "<family>:<add|update|ifmissing>" (ignore publishes
-  # nothing). strict refuses an unknown value; haproxy-ingress treats it as
-  # add, as upstream does.
+  # The route's X-Forwarded-For mode (replace, append, ifmissing or ignore)
+  # for base's forwarded-headers filters. modes maps the annotation's values
+  # to a mode, "" keeping the default; an unknown value takes fallback, or
+  # fails when fallback is "".
   util-forwardfor-publish:
     template: |-
-      {%- macro PublishForwardFor(ingress *resources.ingresses.T, annotation string, family string, strict bool) -%}
-        {%- var mode = ingress.Metadata.Annotations[annotation] -%}
-        {%- if mode != "" -%}
+      {%- macro PublishForwardFor(ingress *resources.ingresses.T, annotation string, modes map[string]string, fallback string) -%}
+        {%- var value = ingress.Metadata.Annotations[annotation] -%}
+        {%- if value != "" -%}
           {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
-          {%- if mode != "add" && mode != "update" && mode != "ifmissing" && mode != "ignore" -%}
-            {%- if strict -%}
-              {{- fail("Invalid value '" + mode + "' for annotation '" + annotation + "' on Ingress '" + key + "'. Valid values: add, update, ifmissing, ignore") -}}
+          {%- var mode, known = modes[value] -%}
+          {%- if !known -%}
+            {%- if fallback == "" -%}
+              {{- fail("Invalid value '" + value + "' for annotation '" + annotation + "' on Ingress '" + key + "'. Valid values: " + join(keys(modes), ", ")) -}}
             {%- end -%}
-            {%- mode = "add" -%}
+            {%- mode = fallback -%}
           {%- end -%}
-          {%- if mode != "ignore" -%}
-            {{- shared.Publish(family, "any", "any") -}}
-            {{- shared.Publish("route", key, key + " " + family + ":" + mode) -}}
+          {%- if mode != "" -%}
+            {{- shared.Publish("route", key, key + " " + mode) -}}
           {%- end -%}
         {%- end -%}
       {%- end macro -%}
@@ -430,35 +430,47 @@ templateSnippets:
       effects: [publishValue]
     template: '{{- "" -}}'
 
-  util-forwardfor-lane:
+  # Base's forwarded-for-mode-* extension point. ing-xff-routes.map holds
+  # "<route id> <mode>". A src-ip-header naming X-Forwarded-For already
+  # trusts that header for its route, so it means append unless the route
+  # sets a forwardfor mode.
+  forwarded-for-mode-500-ingress:
+    requires: [ingresses]
     template: |-
       {%- import "util-register-map" for RegisterMap -%}
-      {%- macro ForwardForLane(family string) -%}
-        {%- if incremental_value_count("ingress-forwardfor", family) > 0 -%}
-          {%%
-            var routesVal, _ = shared.ComputeIfAbsent("ingressForwardForMap", func() any {
-            var lines = func(key string) []string {
-              var rows = []any{}
-              for _, v := range incremental_values("ingress-forwardfor", key) {
-                rows = append(rows, tostring(v))
-              }
-              var out = []string{}
-              for _, r := range sort_strings(rows) {
-                out = append(out, tostring(r))
-              }
-              return out
+      {%- if incremental_value_count("ingress-forwardfor", "route") > 0 || incremental_value_count("ingress-src-ip", "route") > 0 -%}
+        {%%
+          var routesVal, _ = shared.ComputeIfAbsent("ingressForwardForMap", func() any {
+            var rows = []any{}
+            var claimed = map[string]bool{}
+            for _, v := range incremental_values("ingress-forwardfor", "route") {
+              var row = tostring(v)
+              rows = append(rows, row)
+              claimed[row[:index(row, " ")]] = true
             }
-              return RegisterMap("ing-xff-routes.map", lines("route"), map[string]any{"ordered": false})
-            })
-            var routes = tostring(routesVal)
-          %%}
-      # {{ family }}/forwardfor
-      http-request set-var(txn.{{ family }}_xff) var(txn.resource_key),map({{ routes }})
-      http-request add-header X-Forwarded-For %[src] if { var(txn.{{ family }}_xff) -m str "{{ family }}:add" }
-      http-request set-header X-Forwarded-For %[src] if { var(txn.{{ family }}_xff) -m str "{{ family }}:update" }
-      http-request set-header X-Forwarded-For %[src] if { var(txn.{{ family }}_xff) -m str "{{ family }}:ifmissing" } !{ req.hdr(X-Forwarded-For) -m found }
+            for _, v := range incremental_values("ingress-src-ip", "route") {
+              var row = tostring(v)
+              var key = row[:index(row, " ")]
+              if toLower(row[index(row, ":")+1:]) == "x-forwarded-for" && !claimed[key] {
+                rows = append(rows, key + " append")
+              }
+            }
+            if len(rows) == 0 {
+              return ""
+            }
+            var lines = []string{}
+            for _, r := range sort_strings(rows) {
+              lines = append(lines, tostring(r))
+            }
+            return RegisterMap("ing-xff-routes.map", lines, map[string]any{"ordered": false})
+          })
+          var routes = tostring(routesVal)
+        %%}
+        {%- if routes != "" %}
+      # ingress/forwardfor
+      http-request set-var(txn.xff_mode) var(txn.resource_key),map({{ routes }})
         {%- end -%}
-      {%- end macro -%}
+      {%- end -%}
 
   # Client address from a trusted request header (set-src) from a per-route
   # map: ing-src-ip-routes.map holds "<route id>" -> "<family>:<Header>".
@@ -1619,6 +1631,11 @@ templateSnippets:
             "haproxyIngress": {"affinity", "session-cookie-name", "session-cookie-strategy", "session-cookie-dynamic", "session-cookie-keywords", "session-cookie-domain", "session-cookie-same-site", "session-cookie-preserve"},
             "haproxytech":    {"cookie-persistence", "cookie-persistence-no-dynamic"},
             "nginx":          {"affinity", "session-cookie-name", "session-cookie-path", "session-cookie-domain", "session-cookie-secure", "session-cookie-samesite", "session-cookie-max-age", "session-cookie-expires", "session-cookie-hash"},
+          }},
+          {"name": "X-Forwarded-For handling", "families": map[string][]string{
+            "haptic":         {"forwardfor"},
+            "haproxyIngress": {"forwardfor"},
+            "haproxytech":    {"forwarded-for"},
           }},
           {"name": "Host header rewrite", "families": map[string][]string{
             "haptic":      {"set-host"},

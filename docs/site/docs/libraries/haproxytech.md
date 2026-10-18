@@ -315,12 +315,16 @@ The override value lives in `reqhdr-host.map` keyed on the backend, so changing 
 
 ### `haproxy.org/forwarded-for`
 
-Add X-Forwarded-For header with client IP address.
+`"true"` keeps the [default `X-Forwarded-For` handling](../operations/security.md#forwarded-headers):
+the backend receives the client address, and a value the client sent is dropped
+unless it comes from a trusted proxy. Upstream keeps the client's value instead.
+`"false"` forwards the client's `X-Forwarded-For` unchanged. Any other value
+fails the render.
 
 **Default**: `true`
 
 ```yaml
-haproxy.org/forwarded-for: "true"
+haproxy.org/forwarded-for: "false"
 ```
 
 ## Path manipulation
@@ -784,7 +788,8 @@ haproxy.org/src-ip-header: "CF-Connecting-IP"
 
 Use this only when traffic reaches HAProxy through a trusted proxy that overwrites
 the header. Direct clients can forge it. Choose the header your proxy supplies,
-such as `CF-Connecting-IP`, `X-Forwarded-For`, or `True-Client-IP`.
+such as `CF-Connecting-IP`, `X-Forwarded-For`, or `True-Client-IP`. Naming
+`X-Forwarded-For` also keeps the client's `X-Forwarded-For` for the route.
 
 ## Advanced backend configuration
 

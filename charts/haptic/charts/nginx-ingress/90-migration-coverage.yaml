@@ -689,13 +689,19 @@ _migrationCoverage:
         status: supported
       - keys:
         - name: use-forwarded-headers
-        - name: forwarded-for-header
+          default: 'false'
         - name: compute-full-forwarded-for
-        - name: enable-real-ip
+          default: 'false'
         - name: proxy-real-ip-cidr
-        setting: 'Per Ingress: `haproxy-haptic.org/forwardfor`, `haproxy-haptic.org/src-ip-header`'
+        setting: '`extraContext.forwardedHeaders.trustedProxies` (`[]`)'
         status: different
-        note: HAPTIC appends the connecting address to `X-Forwarded-For` and keeps the values the client sent. It doesn't set `X-Forwarded-Proto`, `X-Forwarded-Host`, or `X-Forwarded-Port`. `src-ip-header` trusts the header from every client; there's no trusted-CIDR list.
+        note: 'Like `use-forwarded-headers: false`, HAPTIC replaces `X-Forwarded-For` with the client address and sets `X-Forwarded-Proto`, but drops a client-sent `X-Forwarded-Host` and `X-Forwarded-Port` instead of setting them. Listed sources keep these headers, with the client address appended to `X-Forwarded-For`; HAPTIC doesn''t take the client address from them. See [forwarded headers](operations/security.md#forwarded-headers).'
+      - keys:
+        - name: forwarded-for-header
+        - name: enable-real-ip
+        setting: 'Per Ingress: `haproxy-haptic.org/src-ip-header`'
+        status: different
+        note: '`src-ip-header` takes the client address from the named header on every connection; there''s no trusted-CIDR list for it.'
       - keys:
         - name: use-proxy-protocol
           default: 'false'

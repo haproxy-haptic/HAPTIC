@@ -140,7 +140,7 @@
     },
     {
       "customType": "regex",
-      "description": "HAProxy patch versions in the generated chart defaults. charts/haptic/files/default-values.json is generated from values.yaml and make lint fails when they differ; this mirrors the values.yaml manager above so a bot bump updates both.",
+      "description": "HAProxy patch versions in the generated chart defaults. charts/haptic/charts/helm-helpers/files/default-values.json is generated from values.yaml and make lint fails when they differ; this mirrors the values.yaml manager above so a bot bump updates both.",
       "matchStringsStrategy": "recursive",
       "matchStrings": [
         "\"haproxyPatchVersions\":\\{[^}]*\\}",
@@ -151,12 +151,12 @@
       "packageNameTemplate": "haproxytech/haproxy-debian",
       "versioningTemplate": "regex:^(?<major>{{{seriesMajor}}})\\.(?<minor>{{{seriesMinor}}})\\.(?<patch>\\d+)$",
       "managerFilePatterns": [
-        "/^charts/haptic/files/default-values\\.json$/"
+        "/^charts/haptic/charts/helm-helpers/files/default-values\\.json$/"
       ]
     },
     {
       "customType": "regex",
-      "description": "Vector image tag in the generated chart defaults. charts/haptic/files/default-values.json is generated from values.yaml and make lint fails when they differ; this mirrors the values.yaml manager above so a bot bump updates both.",
+      "description": "Vector image tag in the generated chart defaults. charts/haptic/charts/helm-helpers/files/default-values.json is generated from values.yaml and make lint fails when they differ; this mirrors the values.yaml manager above so a bot bump updates both.",
       "matchStrings": [
         "\"repository\":\"timberio/vector\"[^}]*\"tag\":\"(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+-[a-z]+)\""
       ],
@@ -165,12 +165,12 @@
       "packageNameTemplate": "timberio/vector",
       "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<compatibility>[a-z]+)$",
       "managerFilePatterns": [
-        "/^charts/haptic/files/default-values\\.json$/"
+        "/^charts/haptic/charts/helm-helpers/files/default-values\\.json$/"
       ]
     },
     {
       "customType": "regex",
-      "description": "Valkey image in the generated chart defaults. charts/haptic/files/default-values.json is generated from values.yaml and make lint fails when they differ; this mirrors the values.yaml manager above so a bot bump updates both.",
+      "description": "Valkey image in the generated chart defaults. charts/haptic/charts/helm-helpers/files/default-values.json is generated from values.yaml and make lint fails when they differ; this mirrors the values.yaml manager above so a bot bump updates both.",
       "matchStrings": [
         "\"valkey/valkey:(?<currentValue>[0-9]+(\\.[0-9]+)*-alpine)\""
       ],
@@ -179,7 +179,7 @@
       "packageNameTemplate": "valkey/valkey",
       "versioningTemplate": "regex:^(?<major>\\d+)(\\.(?<minor>\\d+))?(\\.(?<patch>\\d+))?-(?<compatibility>[a-z]+)$",
       "managerFilePatterns": [
-        "/^charts/haptic/files/default-values\\.json$/"
+        "/^charts/haptic/charts/helm-helpers/files/default-values\\.json$/"
       ]
     },
     {

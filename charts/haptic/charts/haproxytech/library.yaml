@@ -34,35 +34,25 @@ templateSnippets:
 
   features-099-haproxytech-publications:
     template: |-
-      {{- render "haproxytech-forwarded-for-publications" -}}
       {{- render "haproxytech-logging-publications" -}}
       {{- render "haproxytech-ssl-redirect-port-publications" -}}
       {{- render "haproxytech-captured-headers-publications" -}}
 
-  frontend-filters-100-haproxytech-basic-headers:
-    template: |
-      {%- if incremental_value_count("haproxytech-forwarded-for", "enabled") > 0 %}
-      # haproxytech/frontend-filters-haproxytech-basic-headers (forwarded-for)
-      option forwardfor
-      {%- end -%}
-
-  haproxytech-forwarded-for-publications:
+  # forwarded-for: "true" (upstream's default) keeps the controller-wide
+  # X-Forwarded-For handling, "false" forwards the client's header unchanged.
+  ingress-forwardfor-0500-haproxytech:
     requires: [ingresses]
     incremental:
       source: ingresses
       whenAnyPathExists: ["metadata.annotations['haproxy.org/forwarded-for']"]
-      group: haproxytech-forwarded-for
+      group: ingress-forwardfor
       effects: [publishValue]
     template: |-
+      {%- import "util-forwardfor-publish" for PublishForwardFor -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
-        {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
-        {%- var value = ingress.Metadata.Annotations["haproxy.org/forwarded-for"] -%}
-        {%- if value != "" && value != "true" && value != "false" -%}
-          {{- fail("Invalid value '" + value + "' for annotation 'haproxy.org/forwarded-for' on Ingress '" + key + "'. Valid values: 'true', 'false'") -}}
-        {%- end -%}
-        {%- if value == "true" -%}{{- shared.Publish("enabled", "global", true) -}}{%- end -%}
+        {{- PublishForwardFor(ingress, "haproxy.org/forwarded-for", map[string]string{"true": "", "false": "ignore"}, "") -}}
       {%- end -%}
 
   frontend-filters-200-haproxytech-access-control:
@@ -1274,6 +1264,43 @@ validationTests:
     - type: not_contains
       target: haproxy.cfg
       pattern: timeout server 28806900ms
+
+  test-haproxytech-forwarded-for:
+    description: forwarded-for "true" leaves the route on the default X-Forwarded-For handling; "false" forwards the client's header unchanged.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: xff-true, annotations: {haproxy.org/forwarded-for: "true"}}
+          spec: *specTestExampleComRoot
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: xff-false, annotations: {haproxy.org/forwarded-for: "false"}}
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: xff-false.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - type: haproxy_valid
+      - type: equals
+        target: map:ing-xff-routes.map
+        expected: "default/xff-false ignore\n"
+
+  test-haproxytech-forwarded-for-rejects-unknown-value:
+    description: A forwarded-for value other than true or false fails the render.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: xff-odd, annotations: {haproxy.org/forwarded-for: "yes"}}
+          spec: *specTestExampleComRoot
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "Invalid value 'yes' for annotation 'haproxy.org/forwarded-for' on Ingress 'default/xff-odd'. Valid values: false, true"
 
   test-haproxytech-set-host:
     description: haproxy.org/set-host relocates the upstream Host override to reqhdr-host.map (reload-free)
@@ -2818,8 +2845,8 @@ _migrationCoverage:
         status: supported
         note: SNI-based TCP passthrough; HTTP-level annotations don't apply to passthrough hosts.
       haproxy.org/forwarded-for:
-        status: supported
-        note: '"true" enables option forwardfor; "false" disables it; other values fail the render.'
+        status: different
+        note: '"true" keeps the controller-wide X-Forwarded-For handling, which replaces a client-sent value unless the source is a trusted proxy; "false" forwards the client''s header unchanged; other values fail the render.'
       haproxy.org/allow-list:
         status: different
         note: Host-scoped source-IP allowlist — only gates rules with an explicit host; invalid CIDRs fail the render.

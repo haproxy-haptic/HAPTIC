@@ -24,7 +24,7 @@ class CheckImagePinsTests(unittest.TestCase):
                 '  "3.4": "3.4.4"\n'
             ),
             "scripts/dev-env-assets/haproxy-production.yaml": "image: haproxytech/haproxy-debian:3.2.23\n",
-            "charts/haptic/files/default-values.json": '{"haproxyPatchVersions":{"3.2":"3.2.23","3.4":"3.4.4"}}\n',
+            "charts/haptic/charts/helm-helpers/files/default-values.json": '{"haproxyPatchVersions":{"3.2":"3.2.23","3.4":"3.4.4"}}\n',
             "ci/build-pins.yml": (
                 '  HAPROXY_IMAGE_32: "haproxytech/haproxy-debian:3.2.23@sha256:' + 'a' * 64 + '"\n'
                 '  HAPROXY_IMAGE_34: "haproxytech/haproxy-debian:3.4.4@sha256:' + 'b' * 64 + '"\n'

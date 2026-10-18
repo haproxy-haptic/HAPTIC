@@ -173,7 +173,7 @@ The library classifies 141 `nginx.ingress.kubernetes.io/*` annotations: 56 suppo
 ## Differences from haproxy-ingress {#haproxy-ingress}
 
 <!-- BEGIN generated: migration-coverage haproxy-ingress -->
-The library classifies 92 `haproxy-ingress.github.io/*` annotations: 59 supported, 31 with behaviour differences, 2 not carried over, 0 failing.
+The library classifies 92 `haproxy-ingress.github.io/*` annotations: 58 supported, 32 with behaviour differences, 2 not carried over, 0 failing.
 
 | Annotation | Status | What to check |
 |------------|--------|---------------|
@@ -195,6 +195,7 @@ The library classifies 92 `haproxy-ingress.github.io/*` annotations: 59 supporte
 | `haproxy-ingress.github.io/default-backend-redirect-code` | Behaviour differs | Default 302; an invalid code fails the render. |
 | `haproxy-ingress.github.io/denylist-source-range` | Behaviour differs | Host-scoped — only gates rules with an explicit host; invalid CIDRs fail the render. |
 | `haproxy-ingress.github.io/docs` | Not carried over | A pointer to jcmoraisjr/haproxy-ingress documentation, not a configuration key; not read. |
+| `haproxy-ingress.github.io/forwardfor` | Behaviour differs | `add`, `update`, `ifmissing`, and `ignore` handle `X-Forwarded-For` as upstream does, per Ingress; the client's original value isn't copied to `X-Original-Forwarded-For`. |
 | `haproxy-ingress.github.io/hsts` | Behaviour differs | By default the header is emitted only when the Ingress sets `hsts` to `"true"`, whereas jcmoraisjr/haproxy-ingress enables HSTS globally by default. Set extraContext.tls.hsts.enabled=true to send HSTS on all TLS hosts (matching that default); a per-Ingress `hsts` annotation still overrides the value for its hosts. |
 | `haproxy-ingress.github.io/limit-connections` | Behaviour differs | Maps to backend `fullconn` (a soft full-queue threshold) rather than a hard per-server connection cap; must be a positive integer. |
 | `haproxy-ingress.github.io/limit-rpm` | Behaviour differs | Same hard-cap/429 semantics, and ignored when limit-rps is also set (one stick-table per backend). |
@@ -215,7 +216,7 @@ The library classifies 92 `haproxy-ingress.github.io/*` annotations: 59 supporte
 ## Differences from HAProxy Technologies {#haproxytech}
 
 <!-- BEGIN generated: migration-coverage haproxytech -->
-The library classifies 56 `haproxy.org/*` annotations: 36 supported, 15 with behaviour differences, 5 not carried over, 0 failing.
+The library classifies 56 `haproxy.org/*` annotations: 35 supported, 16 with behaviour differences, 5 not carried over, 0 failing.
 
 | Annotation | Status | What to check |
 |------------|--------|---------------|
@@ -227,6 +228,7 @@ The library classifies 56 `haproxy.org/*` annotations: 36 supported, 15 with beh
 | `haproxy.org/blacklist` | Behaviour differs | Deprecated alias of deny-list, honoured only when deny-list is absent; host-scoped. |
 | `haproxy.org/cookie-persistence-no-dynamic` | Behaviour differs | Static (non-dynamic) cookie stickiness; setting it together with cookie-persistence fails the render. |
 | `haproxy.org/deny-list` | Behaviour differs | Host-scoped source-IP denylist — only gates rules with an explicit host; invalid CIDRs fail the render. |
+| `haproxy.org/forwarded-for` | Behaviour differs | "true" keeps the controller-wide X-Forwarded-For handling, which replaces a client-sent value unless the source is a trusted proxy; "false" forwards the client's header unchanged; other values fail the render. |
 | `haproxy.org/pod-maxconn` | Behaviour differs | Divided across the number of ready HAProxy pods (quantized to a power of two) rather than applied per-server verbatim; must be a positive integer. |
 | `haproxy.org/request-redirect-code` | Behaviour differs | Default 302; an invalid code fails the render. |
 | `haproxy.org/scale-server-slots` | Not carried over | Inert; servers are named after their pods (ADR-0011), so there is no slot pool to size. Setting it emits an UnsupportedAnnotation Warning Event. |
