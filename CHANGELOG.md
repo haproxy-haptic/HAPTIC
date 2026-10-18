@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Controller images retain the legacy `haptic-controller` command used by 0.1 Deployments.
 - Deployments no longer contend with leader Lease renewals or log spurious `Failed to update lease` errors.
 - Startup-validation messages describe retrying NotReady pods and stalled rollouts instead of claiming the controller exits on rejection.
 - A new leader preserves the latest configuration validation verdict instead of reporting an older accepted configuration as valid over a newer rejected or unvalidated generation.
@@ -66,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reduce Helm release storage by keeping generated defaults in the helper subchart.
 - `haproxy-haptic.org/forwardfor` and `haproxy-ingress.github.io/forwardfor`: `add` and `update` no longer send the client address twice, and `ifmissing` and `ignore` no longer append it to the client's header.
 - haproxytech: `haproxy.org/forwarded-for: "false"` forwards the client's `X-Forwarded-For` unchanged; it was ignored.
+- Chart upgrades prepare controllers that accept the live configuration before applying new templates, preventing old replicas from rejecting valid incoming sets.
 
 ## [0.6.0] - 2026-10-18
 

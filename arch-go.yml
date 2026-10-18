@@ -9,6 +9,7 @@ dependenciesRules:
   - package: "**.pkg.controller.**"
     shouldOnlyDependsOn:
       internal:
+        - "**.pkg.buildinfo.**"    # Immutable build identity values
         - "**.pkg.compression.**"  # Decompression for CRD content
         - "**.pkg.controller.**"
         - "**.pkg.core.**"
@@ -340,3 +341,8 @@ dependenciesRules:
     shouldOnlyDependsOn:
       internal:
         - "**.pkg.transportsecurity.**"
+
+  - package: "**.pkg.buildinfo.**"
+    shouldOnlyDependsOn:
+      internal:
+        - "**.pkg.buildinfo.**"

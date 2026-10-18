@@ -93,6 +93,7 @@ func (r *Runner) assertDeterministic(
 			return result
 		}
 		result.Passed = false
+		result.ConfigRejected = isTemplateRejection(err)
 		result.Error = fmt.Sprintf("second render failed: %v", templating.RenderErrorMessage(err))
 		return result
 	}
@@ -100,6 +101,7 @@ func (r *Runner) assertDeterministic(
 	// Compare main HAProxy config
 	if firstConfig != second.HAProxyConfig {
 		result.Passed = false
+		result.ConfigRejected = true
 		diff := generateUnifiedDiff(names.MainTemplateName+" (render 1)", names.MainTemplateName+" (render 2)", firstConfig, second.HAProxyConfig)
 		result.Error = fmt.Sprintf("%s differs between renders:\n%s", names.MainTemplateName, diff)
 		r.populateTargetMetadata(&result, firstConfig, names.MainTemplateName, true)
@@ -108,6 +110,7 @@ func (r *Runner) assertDeterministic(
 
 	if diffResult := compareAuxiliaryFiles(firstAuxFiles, second.AuxiliaryFiles); diffResult != "" {
 		result.Passed = false
+		result.ConfigRejected = true
 		result.Error = diffResult
 		return result
 	}
@@ -116,11 +119,13 @@ func (r *Runner) assertDeterministic(
 	// is stamped from the clock, so two renders legitimately differ.
 	if diffResult := compareRenderedK8sResources(first.K8sResources, second.K8sResources); diffResult != "" {
 		result.Passed = false
+		result.ConfigRejected = true
 		result.Error = diffResult
 		return result
 	}
 	if first.Events != second.Events {
 		result.Passed = false
+		result.ConfigRejected = true
 		result.Error = fmt.Sprintf("events differ between renders:\n%s",
 			generateUnifiedDiff("events (render 1)", "events (render 2)", first.Events, second.Events))
 		return result
@@ -374,6 +379,7 @@ func checkFusedDirectives(test *config.ValidationTest, haproxyConfig string, res
 				continue
 			}
 			check.Passed = false
+			check.ConfigRejected = true
 			check.Error = fmt.Sprintf(
 				"comment swallowed a %sdirective, which HAProxy then ignores: %s",
 				directive, strings.TrimSpace(line))
@@ -523,6 +529,17 @@ func (r *Runner) runAssertion(
 	default:
 		result.Passed = false
 		result.Error = fmt.Sprintf("unknown assertion type: %s (known: %s)", assertion.Type, strings.Join(SupportedAssertionTypes, ", "))
+	}
+
+	if !result.Passed && renderError == "" {
+		switch assertion.Type {
+		case "contains", "not_contains", "match_count", "equals", "jsonpath", "match_order", "not_exists":
+			result.ConfigRejected = true
+		}
+	}
+
+	if renderError != "" {
+		result.ConfigRejected = false
 	}
 
 	return result

@@ -398,6 +398,9 @@ func TestRunner_DeploymentValues(t *testing.T) {
 		if strings.Contains(string(cfg), "port=rejected") {
 			return []byte("[ALERT]    (1) : config : invalid port\n"), errors.New("exit status 1")
 		}
+		if strings.Contains(string(cfg), "port=unavailable") {
+			return nil, errors.New("cannot execute HAProxy: permission denied")
+		}
 		return nil, nil
 	}))
 	t.Cleanup(restore)
@@ -413,11 +416,12 @@ func TestRunner_DeploymentValues(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name       string
-		deployment map[string]any
-		test       v1alpha1.ValidationTest
-		wantPassed bool
-		wantError  string
+		name         string
+		deployment   map[string]any
+		test         v1alpha1.ValidationTest
+		wantPassed   bool
+		wantError    string
+		wantRejected bool
 	}{
 		{
 			name:       "an overridden default does not fail the assertion",
@@ -426,10 +430,11 @@ func TestRunner_DeploymentValues(t *testing.T) {
 			wantPassed: true,
 		},
 		{
-			name:       "a value that fails the render fails the test",
-			deployment: map[string]any{"breaks": true},
-			test:       defaultAssertion,
-			wantError:  "breaks is set",
+			name:         "a value that fails the render fails the test",
+			deployment:   map[string]any{"breaks": true},
+			test:         defaultAssertion,
+			wantError:    "breaks is set",
+			wantRejected: true,
 		},
 		{
 			name:       "a value that refuses only these fixtures fails the test",
@@ -440,13 +445,21 @@ func TestRunner_DeploymentValues(t *testing.T) {
 					{Type: "contains", Target: "haproxy.cfg", Pattern: "port=default"},
 				},
 			},
-			wantError: "weak input refused",
+			wantError:    "weak input refused",
+			wantRejected: true,
 		},
 		{
-			name:       "a value HAProxy rejects fails the test",
-			deployment: map[string]any{"port": "rejected"},
+			name:         "a value HAProxy rejects fails the test",
+			deployment:   map[string]any{"port": "rejected"},
+			test:         defaultAssertion,
+			wantError:    "invalid port",
+			wantRejected: true,
+		},
+		{
+			name:       "an unavailable deployment checker is not an input rejection",
+			deployment: map[string]any{"port": "unavailable"},
 			test:       defaultAssertion,
-			wantError:  "invalid port",
+			wantError:  "permission denied",
 		},
 		{
 			name:       "haproxy -c runs only where the test asserts haproxy_valid",
@@ -500,6 +513,7 @@ func TestRunner_DeploymentValues(t *testing.T) {
 				last := result.Assertions[len(result.Assertions)-1]
 				assert.Equal(t, deploymentAssertionType, last.Type)
 				assert.Contains(t, last.Error, tt.wantError)
+				assert.Equal(t, tt.wantRejected, last.ConfigRejected)
 			}
 		})
 	}

@@ -648,6 +648,7 @@ func Run(
 	}
 	if debugPort > 0 {
 		infra.IntrospectionServer = introspection.NewServer(fmt.Sprintf(":%d", debugPort), infra.IntrospectionRegistry)
+		registerBuildIdentity(infra.IntrospectionServer)
 	}
 	if podName, selector := os.Getenv("POD_NAME"), os.Getenv(controllerPodSelectorEnv); podName != "" && selector != "" {
 		siblings, err := newSiblingProbes(procCtx, k8sClient.Clientset(), k8sClient.Namespace(), podName, selector, logger)

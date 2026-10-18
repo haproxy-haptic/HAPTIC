@@ -236,6 +236,7 @@ func runController(cmd *cobra.Command, _ []string) error {
 	// HAPROXY_MINOR is set by the haproxytech/haproxy-debian base image and contains
 	// the full semver of the bundled HAProxy (e.g. "3.2.11").
 	controller.SetBuildInfo(version, os.Getenv("HAPROXY_MINOR"))
+	controller.SetBuildSourceHash(sourceHash)
 	directory := cmp.Or(runAgentTLSDirectory, os.Getenv("AGENT_TLS_DIR"))
 	peerName := cmp.Or(runAgentTLSServerName, os.Getenv("AGENT_TLS_SERVER_NAME"))
 	var agentTLS *transportsecurity.Source

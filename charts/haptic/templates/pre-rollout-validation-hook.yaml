@@ -1,11 +1,11 @@
 {{- /*
-Pre-rollout validation hook: runs `haptic preflight` against the
-release's OWN values before any manifest is applied.
+Pre-rollout validation hook: validates the complete incoming set, then prepares
+the existing controller image before Helm applies new templates (ADR-0036).
 
 With config admission gone (ADR-0016 — a per-object webhook cannot judge the
 multi-object change the chart ships), this Job is the only gate that sees the
 COMPLETE future config set before the upgrade touches anything. A failing
-suite fails the release with nothing applied: Helm marks it failed and the
+suite fails the release with no controller or template changes: Helm marks it failed and the
 previous release keeps serving; under Argo CD the hook maps to PreSync and a
 failure stops the sync the same way. The fail-closed load gate remains the
 authority on every path that skips hooks (--no-hooks, kubectl, rollback).
@@ -122,6 +122,58 @@ subjects:
     name: {{ $name }}
     namespace: {{ .Release.Namespace }}
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "haptic.labels.withCommon" . | nindent 4 }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: [{{ include "haptic.controllerFullname" . | quote }}]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+  - apiGroups: ["haproxy-haptic.org"]
+    resources: ["haproxytemplateconfigs", "haproxytemplatelibraries"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "haptic.labels.withCommon" . | nindent 4 }}
+  annotations:
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "3"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -169,6 +221,8 @@ spec:
           command: ["/usr/local/bin/haptic"]
           args:
             - preflight
+            - --prepare-upgrade
+            - --prepare-timeout={{ div (mul $job.activeDeadlineSeconds 9) 10 }}s
             - --values=/haptic/values/values.yaml
             - --namespace={{ .Release.Namespace }}
             - --release={{ .Release.Name }}
