@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -63,6 +64,28 @@ func newStatusUpdaterFixture(t *testing.T, existing ...runtime.Object) (*StatusU
 	return NewStatusUpdater(crdClient, k8sfake.NewSimpleClientset(), bus, logger), crdClient
 }
 
+// testVerdicts numbers the verdicts tests hand the updater in the order they
+// are built, as the config-change handler numbers its own.
+var testVerdicts atomic.Uint64
+
+func validatedVerdict(templateConfig any, version string) *events.ConfigValidatedEvent {
+	event := events.NewConfigValidatedEvent(nil, templateConfig, version, "")
+	event.VerdictSequence = testVerdicts.Add(1)
+	return event
+}
+
+func invalidVerdict(version string, templateConfig any, validationErrors map[string][]string) *events.ConfigInvalidEvent {
+	event := events.NewConfigInvalidEvent(version, templateConfig, validationErrors)
+	event.VerdictSequence = testVerdicts.Add(1)
+	return event
+}
+
+func inconclusiveVerdict(version string, templateConfig any, reasons map[string][]string) *events.ConfigValidationInconclusiveEvent {
+	event := events.NewConfigValidationInconclusiveEvent(version, templateConfig, reasons, time.Second)
+	event.VerdictSequence = testVerdicts.Add(1)
+	return event
+}
+
 func TestStatusUpdater_EmitsEvents(t *testing.T) {
 	u, _ := newStatusUpdaterFixture(t)
 	rec := record.NewFakeRecorder(10)
@@ -100,7 +123,7 @@ func TestStatusUpdater_EmitsRenderGateEvents(t *testing.T) {
 	u, _ := newStatusUpdaterFixture(t)
 	rec := record.NewFakeRecorder(10)
 	u.recorder = rec
-	u.cacheConfigRefs([]events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
+	u.adoptVerdict(1, true, []events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
 
 	u.handleRenderGateCompleted(events.NewRenderGateCompletedEvent(
 		"plan-1", false, true, true, "[ALERT] unknown keyword 'bogus'", false, 12))
@@ -140,7 +163,7 @@ func TestStatusUpdater_FirstRenderGatePassIsNotARecovery(t *testing.T) {
 	u, _ := newStatusUpdaterFixture(t)
 	rec := record.NewFakeRecorder(10)
 	u.recorder = rec
-	u.cacheConfigRefs([]events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
+	u.adoptVerdict(1, true, []events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
 
 	u.handleRenderGateCompleted(events.NewRenderGateCompletedEvent("plan-1", true, false, true, "", false, 12))
 
@@ -159,7 +182,7 @@ func TestStatusUpdater_RenderGateEventSeparatesAnUnavailableGate(t *testing.T) {
 	u, _ := newStatusUpdaterFixture(t)
 	rec := record.NewFakeRecorder(10)
 	u.recorder = rec
-	u.cacheConfigRefs([]events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
+	u.adoptVerdict(1, true, []events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
 
 	u.handleRenderGateCompleted(events.NewRenderGateCompletedEvent(
 		"plan-1", false, false, true, "creating temp directory: read-only file system", true, 12))
@@ -179,7 +202,7 @@ func TestStatusUpdater_UnavailableGateDoesNotClaimARevert(t *testing.T) {
 	u, _ := newStatusUpdaterFixture(t)
 	rec := record.NewFakeRecorder(10)
 	u.recorder = rec
-	u.cacheConfigRefs([]events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
+	u.adoptVerdict(1, true, []events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
 
 	u.handleRenderGateCompleted(events.NewRenderGateCompletedEvent(
 		"plan-1", false, false, true, "creating temp directory: read-only file system", false, 12))
@@ -227,7 +250,7 @@ func TestStatusUpdater_HandleConfigValidated_Success(t *testing.T) {
 	htc := newHTC()
 	u, crd := newStatusUpdaterFixture(t, htc)
 
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(htc, "v1"))
 
 	status := getStatus(t, crd)
 	assert.Equal(t, "Valid", status.ValidationStatus)
@@ -295,7 +318,7 @@ func TestStatusUpdater_HandleConfigInvalid(t *testing.T) {
 	htc := newHTC()
 	u, crd := newStatusUpdaterFixture(t, htc)
 
-	u.handleConfigInvalid(context.Background(), events.NewConfigInvalidEvent("v1", htc, map[string][]string{
+	u.handleConfigInvalid(context.Background(), invalidVerdict("v1", htc, map[string][]string{
 		"template": {"boom", "kaboom"},
 	}))
 
@@ -324,7 +347,7 @@ func TestStatusUpdater_ObservedGenerationTracksValidatedGeneration(t *testing.T)
 
 	validated := newHTC()
 	validated.Generation = 4 // but we validated the previous generation
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, validated, "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(validated, "v1"))
 
 	status := getStatus(t, crd)
 	assert.Equal(t, int64(4), status.ObservedGeneration)
@@ -346,10 +369,8 @@ func TestStatusUpdater_HandleConfigValidated_SkipsInitialVersion(t *testing.T) {
 func TestStatusUpdater_HandleConfigValidated_SkipsActiveSnapshotRestore(t *testing.T) {
 	htc := newHTC()
 	u, crd := newStatusUpdaterFixture(t, htc)
-	restore := events.NewConfigValidatedEvent(nil, htc, "active", "")
-	restore.ActiveSnapshotRestore = true
 
-	u.handleConfigValidated(context.Background(), restore)
+	u.handleConfigValidated(context.Background(), newActiveSnapshotRestore(validatedVerdict(htc, "active")))
 
 	assert.Empty(t, getStatus(t, crd).ValidationStatus)
 }
@@ -358,7 +379,7 @@ func TestStatusUpdater_HandleConfigValidated_WrongTemplateType(t *testing.T) {
 	u, crd := newStatusUpdaterFixture(t, newHTC())
 
 	// TemplateConfig is not an *HAProxyTemplateConfig — handler should skip silently.
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, "not-a-crd", "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict("not-a-crd", "v1"))
 
 	assert.Empty(t, getStatus(t, crd).ValidationStatus)
 }
@@ -369,7 +390,7 @@ func TestStatusUpdater_HandleConfigValidated_GetError(t *testing.T) {
 	htc := newHTC()
 
 	// Must not panic or leave partial state.
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(htc, "v1"))
 
 	_, err := crd.HaproxyTemplateICV1alpha1().
 		HAProxyTemplateConfigs(testNamespace).
@@ -396,7 +417,7 @@ func TestStatusUpdater_HandleConfigValidated_UpdateError(t *testing.T) {
 	})
 
 	// Must not panic.
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(htc, "v1"))
 }
 
 func TestStatusUpdater_HandleConfigInvalid_Success(t *testing.T) {
@@ -408,7 +429,7 @@ func TestStatusUpdater_HandleConfigInvalid_Success(t *testing.T) {
 		"template": {"unknown identifier", "syntax error at line 3"},
 	}
 
-	u.handleConfigInvalid(context.Background(), events.NewConfigInvalidEvent("v2", htc, errs))
+	u.handleConfigInvalid(context.Background(), invalidVerdict("v2", htc, errs))
 
 	status := getStatus(t, crd)
 	assert.Equal(t, "Invalid", status.ValidationStatus)
@@ -425,13 +446,13 @@ func TestStatusUpdater_HandleConfigInvalid_Success(t *testing.T) {
 func TestStatusUpdater_HandleConfigInvalid_WrongTemplateType(t *testing.T) {
 	u, crd := newStatusUpdaterFixture(t, newHTC())
 
-	u.handleConfigInvalid(context.Background(), events.NewConfigInvalidEvent("v2", "not-a-crd", nil))
+	u.handleConfigInvalid(context.Background(), invalidVerdict("v2", "not-a-crd", nil))
 	assert.Empty(t, getStatus(t, crd).ValidationStatus)
 }
 
 func TestStatusUpdater_HandleConfigInvalid_GetError(t *testing.T) {
 	u, _ := newStatusUpdaterFixture(t)
-	u.handleConfigInvalid(context.Background(), events.NewConfigInvalidEvent("v2", newHTC(), nil))
+	u.handleConfigInvalid(context.Background(), invalidVerdict("v2", newHTC(), nil))
 }
 
 func TestStatusUpdater_HandleHAProxyValidationFailed_WithoutCachedRef(t *testing.T) {
@@ -448,7 +469,7 @@ func TestStatusUpdater_HandleHAProxyValidationFailed_Success(t *testing.T) {
 	u, crd := newStatusUpdaterFixture(t, htc)
 
 	// Prime cache via a previous ConfigValidated handler call.
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(htc, "v1"))
 
 	errs := []string{"haproxy: line 42: unknown keyword"}
 	u.handleHAProxyValidationFailed(context.Background(), events.NewValidationFailedEvent(errs, 100, "reconcile"))
@@ -464,7 +485,7 @@ func TestStatusUpdater_HandleHAProxyValidationFailed_Success(t *testing.T) {
 func TestStatusUpdater_PassingGateRestoresValidatedAfterHAProxyFailure(t *testing.T) {
 	htc := newHTC()
 	u, crd := newStatusUpdaterFixture(t, htc)
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(htc, "v1"))
 	u.handleHAProxyValidationFailed(context.Background(), events.NewValidationFailedEvent([]string{"refused"}, 1, "reconcile"))
 	require.Equal(t, "Invalid", getStatus(t, crd).ValidationStatus)
 
@@ -489,7 +510,7 @@ func TestStatusUpdater_PassingGateRestoresValidatedAfterHAProxyFailure(t *testin
 	// a verdict accepting the previous configuration's render must not flip
 	// the new, invalid configuration to Valid.
 	u.handleHAProxyValidationFailed(context.Background(), events.NewValidationFailedEvent([]string{"refused"}, 1, "reconcile"))
-	u.handleConfigInvalid(context.Background(), events.NewConfigInvalidEvent("v2", htc, map[string][]string{"basic": {"bad"}}))
+	u.handleConfigInvalid(context.Background(), invalidVerdict("v2", htc, map[string][]string{"basic": {"bad"}}))
 	u.HandleEvent(events.NewRenderGateCompletedEvent("plan-4", true, false, true, "", false, 1))
 	status = getStatus(t, crd)
 	assert.Equal(t, "Invalid", status.ValidationStatus)
@@ -500,7 +521,7 @@ func TestStatusUpdater_HandleHAProxyValidationFailed_GetError(t *testing.T) {
 	// Seed an HTC so cache can be populated, then delete it so the subsequent Get fails.
 	htc := newHTC()
 	u, crd := newStatusUpdaterFixture(t, htc)
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(htc, "v1"))
 	require.NoError(t, crd.HaproxyTemplateICV1alpha1().HAProxyTemplateConfigs(testNamespace).Delete(context.Background(), testName, metav1.DeleteOptions{}))
 
 	u.handleHAProxyValidationFailed(context.Background(), events.NewValidationFailedEvent([]string{"x"}, 1, ""))
@@ -522,18 +543,12 @@ func TestStatusUpdater_Integration(t *testing.T) {
 		_ = u.Start(ctx)
 		close(done)
 	}()
+	<-u.SubscriptionReady()
 
-	u.EventBus().Publish(events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.EventBus().Publish(validatedVerdict(htc, "v1"))
 
 	require.Eventually(t, func() bool {
 		return getStatus(t, crd).ValidationStatus == "Valid"
-	}, 2*time.Second, 10*time.Millisecond)
-
-	u.EventBus().Publish(events.NewConfigInvalidEvent("v2", htc, map[string][]string{"basic": {"err"}}))
-
-	require.Eventually(t, func() bool {
-		s := getStatus(t, crd)
-		return s.ValidationStatus == "Invalid" && len(s.ValidationErrors) == 1
 	}, 2*time.Second, 10*time.Millisecond)
 
 	u.EventBus().Publish(events.NewValidationFailedEvent([]string{"haproxy: bad"}, 5, ""))
@@ -541,6 +556,13 @@ func TestStatusUpdater_Integration(t *testing.T) {
 	require.Eventually(t, func() bool {
 		s := getStatus(t, crd)
 		return s.ValidationMessage == "HAProxy configuration validation failed"
+	}, 2*time.Second, 10*time.Millisecond)
+
+	u.EventBus().Publish(invalidVerdict("v2", htc, map[string][]string{"basic": {"err"}}))
+
+	require.Eventually(t, func() bool {
+		s := getStatus(t, crd)
+		return s.ValidationStatus == "Invalid" && len(s.ValidationErrors) == 1 && s.ValidationErrors[0] == "err"
 	}, 2*time.Second, 10*time.Millisecond)
 
 	u.Stop()
@@ -585,7 +607,7 @@ func TestStatusUpdater_ErrorCountMessage(t *testing.T) {
 	htc := newHTC()
 	u, crd := newStatusUpdaterFixture(t, htc)
 	errs := map[string][]string{"a": {"1", "2"}, "b": {"3"}}
-	u.handleConfigInvalid(context.Background(), events.NewConfigInvalidEvent("v3", htc, errs))
+	u.handleConfigInvalid(context.Background(), invalidVerdict("v3", htc, errs))
 	assert.Equal(t, fmt.Sprintf("%d validation error(s)", 3), getStatus(t, crd).ValidationMessage)
 }
 
@@ -617,7 +639,7 @@ func TestStatusUpdater_StampsEverySourceOfTheMergedSet(t *testing.T) {
 	a, b, c := shard("haptic-config-base", 4), shard("haptic-config-ssl", 7), shard("haptic-config", 2)
 	u, crdClient := newStatusUpdaterFixture(t, a, b, c)
 
-	event := events.NewConfigValidatedEvent(nil, c, "v9", "")
+	event := validatedVerdict(c, "v9")
 	event.Sources = []events.ConfigSourceRef{
 		{Namespace: testNamespace, Name: a.Name, Generation: a.Generation},
 		{Namespace: testNamespace, Name: b.Name, Generation: b.Generation},
@@ -648,7 +670,7 @@ func TestStatusUpdater_SkipsNoOpStatusWrites(t *testing.T) {
 	htc := newHTC()
 	u, crdClient := newStatusUpdaterFixture(t, htc)
 
-	event := events.NewConfigValidatedEvent(nil, htc, "v1", "")
+	event := validatedVerdict(htc, "v1")
 	u.handleConfigValidated(context.Background(), event)
 
 	var writes int
@@ -660,11 +682,11 @@ func TestStatusUpdater_SkipsNoOpStatusWrites(t *testing.T) {
 	})
 
 	// Same verdict again — everything but LastValidated would be identical.
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, htc, "v2", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(htc, "v2"))
 	assert.Zero(t, writes, "an unchanged status must not be rewritten")
 
 	// A real change still writes.
-	u.handleConfigInvalid(context.Background(), events.NewConfigInvalidEvent("v3", htc, map[string][]string{
+	u.handleConfigInvalid(context.Background(), invalidVerdict("v3", htc, map[string][]string{
 		"basic": {"boom"},
 	}))
 	assert.Equal(t, 1, writes, "a changed status must still be written")
@@ -685,7 +707,7 @@ func TestStatusUpdaterEmitsHTTPContentRevocationEffects(t *testing.T) {
 			updater, _ := newStatusUpdaterFixture(t)
 			recorder := record.NewFakeRecorder(1)
 			updater.recorder = recorder
-			updater.cacheConfigRefs([]events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
+			updater.adoptVerdict(1, true, []events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
 
 			updater.HandleEvent(events.NewHTTPContentRevokedEvent(
 				"https://example.test/page", "checksum", test.restored, test.critical))
@@ -709,7 +731,7 @@ func TestStatusUpdaterHTTPRejectionIdentifiesConfig(t *testing.T) {
 	htc := newHTC()
 	htc.UID = "config-uid"
 	htc.ResourceVersion = "42"
-	updater.cacheConfigRefs(sourceRefsOrFallback(nil, htc))
+	updater.adoptVerdict(1, true, sourceRefsOrFallback(nil, htc))
 
 	updater.HandleEvent(events.NewHTTPContentRejectedEvent("https://example.test/list"))
 	select {

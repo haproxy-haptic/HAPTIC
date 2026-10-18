@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Deployments no longer contend with leader Lease renewals or log spurious `Failed to update lease` errors.
 - Startup-validation messages describe retrying NotReady pods and stalled rollouts instead of claiming the controller exits on rejection.
+- A new leader preserves the latest configuration validation verdict instead of reporting an older accepted configuration as valid over a newer rejected or unvalidated generation.
 - Configuration changes fetch watched-resource schemas in parallel, reducing validation delays on clusters with slow API-server responses.
 - API discovery timeouts leave configuration validation inconclusive and retry it instead of rejecting templates that use typed fields.
 - Template admission denials show the rule's message; other render errors identify the watched object without exposing encoded cache keys.

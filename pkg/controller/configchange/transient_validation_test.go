@@ -188,8 +188,8 @@ func TestStatusUpdater_HandleConfigValidationInconclusive(t *testing.T) {
 	htc := newHTC()
 	u, crd := newStatusUpdaterFixture(t, htc)
 
-	u.handleConfigValidationInconclusive(context.Background(), events.NewConfigValidationInconclusiveEvent(
-		"v2", htc, map[string][]string{"template": {schemaTimeoutReason}}, time.Second))
+	u.handleConfigValidationInconclusive(context.Background(), inconclusiveVerdict(
+		"v2", htc, map[string][]string{"template": {schemaTimeoutReason}}))
 
 	status := getStatus(t, crd)
 	assert.Equal(t, statusUnknown, status.ValidationStatus)

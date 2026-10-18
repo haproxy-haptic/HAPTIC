@@ -58,7 +58,7 @@ Components that only run on the elected leader (registered via `registry.Build()
 | **Deployer** | Executes deployments to HAProxy pods | `DeploymentScheduledEvent`<br>`DeploymentCancelRequestEvent` (cancels an in-progress deployment when the scheduler hits its `deploymentTimeout`)<br>`RenderGateCompletedEvent` (records the plans HAProxy passed, so a pod's manifest names the one it applied; reverts the pods carrying a refused plan) | N/A (stateless) | N/A (stateless) |
 | **DriftPreventionMonitor** | Triggers periodic drift prevention deployments | `DeploymentCompletedEvent` | N/A (timer-based) | ✅ `LostLeadershipEvent` |
 | **ConfigPublisher** | Creates and updates HAProxyCfg and auxiliary file resources | `ConfigValidatedEvent`<br>`TemplateRenderedEvent` (the publish trigger)<br>`RenderGateCompletedEvent` (writes the `ConfigValidated` / `ConfigPinned` conditions)<br>`ValidationFailedEvent` (publishes the failed render as an *invalid* HAProxyCfg)<br>`ConfigAppliedToPodEvent`<br>`HAProxyPodTerminatedEvent`<br>`HAProxyPodsDiscoveredEvent` (reconciles `deployedToPods` status against the currently-running set, cleaning up stale entries from pods that terminated while the controller was restarting) | N/A (caches state from events) | ✅ `LostLeadershipEvent` |
-| **StatusUpdater** | Writes validation results back to the `HAProxyTemplateConfig` CRD's status subresource, and emits the Kubernetes Events an operator sees first | `ConfigValidatedEvent`, `ConfigInvalidEvent`, `ValidationFailedEvent`, `RenderGateCompletedEvent` (Warning on a refusal, Normal on recovery — transitions only) | N/A | N/A (context cancellation tears down) |
+| **StatusUpdater** | Writes validation results back to the `HAProxyTemplateConfig` CRD's status subresource, and emits the Kubernetes Events an operator sees first | `ConfigVerdictReplayedEvent`, `ConfigValidatedEvent`, `ConfigInvalidEvent`, `ConfigValidationInconclusiveEvent`, `ValidationFailedEvent`, `RenderGateCompletedEvent` (Warning on a refusal, Normal on recovery — transitions only) | Clears queued events and signals readiness before replay | Context cancellation stops event acceptance |
 
 ## All-Replica Components with State Replay
 
@@ -66,8 +66,18 @@ Components that run on all replicas and replay state on leadership transitions v
 
 | Component | Purpose | Replays On Leadership | Handler |
 |-----------|---------|----------------------|---------|
-| **ConfigChangeHandler** | Validation orchestrator + reinit signaller | `BecameLeaderEvent` → `ConfigValidatedEvent` | `configchange/handler.go` (`configReplayer`) |
+| **ConfigChangeHandler** | Validation orchestrator + reinit signaller | `BecameLeaderEvent` → `ConfigVerdictReplayedEvent`, then `ConfigValidatedEvent` | `configchange/handler.go` (`verdictReplayer`, `configReplayer`) |
 | **Discovery** | Discovers HAProxy pod endpoints | `BecameLeaderEvent` → `HAProxyPodsDiscoveredEvent` | `discovery/component.go` (`discoveredReplayer`) |
+
+The config handler caches the newest validation verdict separately from the
+accepted configuration still running. On takeover, it replays the verdict first
+through `ConfigVerdictReplayedEvent`, which only the status updater consumes.
+Ordinary configuration replay still initializes deployment consumers. Verdict
+sequence numbers prevent that older accepted configuration from replacing a newer
+rejection or inconclusive verdict in status. The updater also checks persisted
+`observedGeneration` across every source before writing, so a replica cannot
+replace a newer generation already reported by its predecessor. Render results
+cannot clear a rejection of a newer configuration.
 
 There is no renderer *component* (ADR-0001) — the renderer is the synchronous `renderer.RenderService` driven inside the leader-only `Coordinator`'s `Pipeline.Execute`. There is therefore no separate subscription that could be late, and no `StateReplayer` to wire. Instead, the Reconciler triggers a fresh reconciliation on `BecameLeaderEvent` (`pkg/controller/reconciler/reconciler.go`), so the new leader's pipeline produces a current `TemplateRenderedEvent` rather than replaying a stale one. That render is warm: the all-replica `Warmer` (`pkg/controller/warmer`) drives the same service on a follower for every trigger, commits the render for its incremental graph, and publishes nothing. It stands down on `BecameLeaderEvent`, which the bus replays ahead of the trigger the Reconciler derives from it.
 
