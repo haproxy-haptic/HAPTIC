@@ -154,6 +154,13 @@ func TestRenderSeriesStartAtZero(t *testing.T) {
 		gatherSeries(t, f.registry, "haptic_render_total", "cache_state"))
 }
 
+func TestConfigRejectedSeriesStartAtZero(t *testing.T) {
+	f := newValidatedFixture(t)
+
+	require.Equal(t, map[string]float64{"basic": 0, "template": 0, "jsonpath": 0, "validationtests": 0, "coordinator": 0},
+		gatherSeries(t, f.registry, "haptic_config_rejected_total", "validator"))
+}
+
 func TestConfigValidated_TrueUnknownTrue(t *testing.T) {
 	f := newValidatedFixture(t)
 

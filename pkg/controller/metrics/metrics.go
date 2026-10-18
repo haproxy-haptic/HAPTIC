@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/validator"
 	pkgmetrics "github.com/haproxy-haptic/HAPTIC/pkg/metrics"
 )
 
@@ -32,6 +33,9 @@ const (
 	resultLabel    = "result"
 	validatorLabel = "validator"
 )
+
+// configRejectedByCoordinator labels a rejection no single validator made: one timed out or didn't answer.
+const configRejectedByCoordinator = "coordinator"
 
 // Render cache states, the cache_state label of the render counters.
 const (
@@ -575,6 +579,9 @@ func (m *Metrics) initKnownSeries() {
 	for _, state := range configValidatedStates {
 		m.ConfigValidated.WithLabelValues(state.status, state.reason)
 	}
+	for _, validatorName := range append(validator.AllValidatorNames(), configRejectedByCoordinator) {
+		m.ConfigRejectedTotal.WithLabelValues(validatorName)
+	}
 }
 
 // RecordReconciliation records a completed reconciliation cycle.
@@ -780,12 +787,12 @@ func (m *Metrics) CarryConfigValidation(previous *Metrics) error {
 
 // RecordHAProxyCheck records one check a validator asked HAProxy for; reused
 // means an earlier verdict answered it without running `haproxy -c`.
-func (m *Metrics) RecordHAProxyCheck(validator, result string, reused bool) {
+func (m *Metrics) RecordHAProxyCheck(validatorName, result string, reused bool) {
 	if reused {
-		m.HAProxyChecksReusedTotal.WithLabelValues(validator, result).Inc()
+		m.HAProxyChecksReusedTotal.WithLabelValues(validatorName, result).Inc()
 		return
 	}
-	m.HAProxyChecksTotal.WithLabelValues(validator, result).Inc()
+	m.HAProxyChecksTotal.WithLabelValues(validatorName, result).Inc()
 }
 
 // SetResourceCount sets the count for a specific resource type.
@@ -846,8 +853,8 @@ func (m *Metrics) RecordHAProxyPodRejected(reason string) {
 
 // RecordConfigRejected increments the config-rejection counter for the given
 // validator (the one whose check failed).
-func (m *Metrics) RecordConfigRejected(validator string) {
-	m.ConfigRejectedTotal.WithLabelValues(validator).Inc()
+func (m *Metrics) RecordConfigRejected(validatorName string) {
+	m.ConfigRejectedTotal.WithLabelValues(validatorName).Inc()
 }
 
 // RecordHTTPContentRevoked counts one revoked HTTP content acceptance.

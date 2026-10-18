@@ -236,7 +236,7 @@ func (c *Component) handleConfigEvent(event busevents.Event) {
 func (c *Component) handleConfigInvalid(event *events.ConfigInvalidEvent) {
 	// A missing validator verdict is still a coordinator rejection.
 	if len(event.ValidationErrors) == 0 {
-		c.metrics.RecordConfigRejected("coordinator")
+		c.metrics.RecordConfigRejected(configRejectedByCoordinator)
 	}
 	for validator := range event.ValidationErrors {
 		c.metrics.RecordConfigRejected(validator)
