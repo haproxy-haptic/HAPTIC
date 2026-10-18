@@ -38,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/rest"
 	"k8s.io/kube-openapi/pkg/handler3"
 	"k8s.io/kube-openapi/pkg/spec3"
@@ -49,10 +50,12 @@ import (
 // discovery-backed OpenAPI v3 provider into the live-cluster schema
 // fetcher. The controller's iteration wiring and the CLI commands that reach
 // a live cluster both build their schema access through this entry point.
+// A cached d (memory.NewMemCacheClient) answers every CRD's plural from one
+// discovery fetch.
 func NewClusterSchemaFetcher(apiext apiextensionsclientset.Interface, d discovery.DiscoveryInterface) schemafetcher.Fetcher {
 	return schemafetcher.NewClusterFetcher(
 		newAPIExtensionsCRDGetter(apiext, d),
-		newDiscoveryOpenAPIV3Provider(d),
+		newDiscoveryOpenAPIV3Provider(d.RESTClient()),
 	)
 }
 
@@ -61,12 +64,12 @@ func NewClusterSchemaFetcher(apiext apiextensionsclientset.Interface, d discover
 // <plural>.<group>: a consistent LIST of every CRD took 3.5 s on a k3s
 // apiserver where the GET took 5 ms (#329).
 type apiextensionsCRDGetter struct {
-	clientset  apiextensionsclientset.Interface
-	restClient rest.Interface
+	clientset apiextensionsclientset.Interface
+	discovery discovery.DiscoveryInterfaceWithContext
 }
 
 func newAPIExtensionsCRDGetter(clientset apiextensionsclientset.Interface, d discovery.DiscoveryInterface) schemafetcher.CRDGetter {
-	return &apiextensionsCRDGetter{clientset: clientset, restClient: d.RESTClient()}
+	return &apiextensionsCRDGetter{clientset: clientset, discovery: discovery.ToDiscoveryInterfaceWithContext(d)}
 }
 
 // GetCRD returns schemafetcher.ErrNoCRD for the core group, a group/version
@@ -75,19 +78,12 @@ func (g *apiextensionsCRDGetter) GetCRD(ctx context.Context, gvk schema.GroupVer
 	if gvk.Group == "" {
 		return nil, schemafetcher.ErrNoCRD
 	}
-	if g.restClient == nil {
-		return nil, errors.New("discovery REST client is unavailable")
-	}
-	data, err := g.restClient.Get().AbsPath("/apis", gvk.Group, gvk.Version).Do(ctx).Raw()
-	if apierrors.IsNotFound(err) {
+	resources, err := g.discovery.ServerResourcesForGroupVersionWithContext(ctx, gvk.GroupVersion().String())
+	if apierrors.IsNotFound(err) || errors.Is(err, memory.ErrCacheNotFound) {
 		return nil, schemafetcher.ErrNoCRD
 	}
 	if err != nil {
 		return nil, fmt.Errorf("discovering resources of %s: %w", gvk.GroupVersion(), err)
-	}
-	var resources metav1.APIResourceList
-	if err := json.Unmarshal(data, &resources); err != nil {
-		return nil, fmt.Errorf("decoding resources of %s: %w", gvk.GroupVersion(), err)
 	}
 	for i := range resources.APIResources {
 		resource := &resources.APIResources[i]
@@ -107,33 +103,35 @@ func (g *apiextensionsCRDGetter) GetCRD(ctx context.Context, gvk schema.GroupVer
 	return nil, schemafetcher.ErrNoCRD
 }
 
+// discoveryOpenAPIV3Provider reads one GroupVersion's OpenAPI v3 document
+// through the /openapi/v3 index, which it fetches once per instance.
 type discoveryOpenAPIV3Provider struct {
 	restClient rest.Interface
+
+	// indexSlot is a one-slot lock that, unlike a mutex, lets a waiter
+	// give up when its context ends. It guards index.
+	indexSlot chan struct{}
+	index     map[string]handler3.OpenAPIV3DiscoveryGroupVersion
 }
 
-func newDiscoveryOpenAPIV3Provider(d discovery.DiscoveryInterface) schemafetcher.OpenAPIV3Provider {
-	return &discoveryOpenAPIV3Provider{restClient: d.RESTClient()}
+func newDiscoveryOpenAPIV3Provider(restClient rest.Interface) *discoveryOpenAPIV3Provider {
+	return &discoveryOpenAPIV3Provider{restClient: restClient, indexSlot: make(chan struct{}, 1)}
 }
 
-func (p *discoveryOpenAPIV3Provider) GVSpec(ctx context.Context, gv schema.GroupVersion) (*spec3.OpenAPI, error) {
+func (p *discoveryOpenAPIV3Provider) GVComponents(ctx context.Context, gv schema.GroupVersion) (*spec3.Components, error) {
 	if p.restClient == nil {
 		return nil, errors.New("OpenAPI discovery REST client is unavailable")
 	}
-
-	discoveryData, err := p.restClient.Get().AbsPath("/openapi/v3").Do(ctx).Raw()
+	index, err := p.documentIndex(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("fetching OpenAPI discovery: %w", err)
-	}
-	var document handler3.OpenAPIV3Discovery
-	if err := json.Unmarshal(discoveryData, &document); err != nil {
-		return nil, fmt.Errorf("decoding OpenAPI discovery: %w", err)
+		return nil, err
 	}
 
 	apiPath := "api/" + gv.Version
 	if gv.Group != "" {
 		apiPath = "apis/" + gv.Group + "/" + gv.Version
 	}
-	item, ok := document.Paths[apiPath]
+	item, ok := index[apiPath]
 	if !ok {
 		return nil, fmt.Errorf("group version %s has no OpenAPI v3 document", gv.String())
 	}
@@ -160,9 +158,39 @@ func (p *discoveryOpenAPIV3Provider) GVSpec(ctx context.Context, gv schema.Group
 	if err != nil {
 		return nil, fmt.Errorf("fetching OpenAPI document for %s: %w", gv.String(), err)
 	}
-	var spec spec3.OpenAPI
-	if err := json.Unmarshal(schemaData, &spec); err != nil {
+	// Not spec3.OpenAPI: its paths, which no caller reads, were 60% of
+	// the decode (#410).
+	var document struct {
+		Components *spec3.Components `json:"components"`
+	}
+	if err := json.Unmarshal(schemaData, &document); err != nil {
 		return nil, fmt.Errorf("decoding OpenAPI document for %s: %w", gv.String(), err)
 	}
-	return &spec, nil
+	return document.Components, nil
+}
+
+func (p *discoveryOpenAPIV3Provider) documentIndex(ctx context.Context) (map[string]handler3.OpenAPIV3DiscoveryGroupVersion, error) {
+	select {
+	case p.indexSlot <- struct{}{}:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("fetching OpenAPI discovery: %w", ctx.Err())
+	}
+	defer func() { <-p.indexSlot }()
+	if p.index != nil {
+		return p.index, nil
+	}
+
+	discoveryData, err := p.restClient.Get().AbsPath("/openapi/v3").Do(ctx).Raw()
+	if err != nil {
+		return nil, fmt.Errorf("fetching OpenAPI discovery: %w", err)
+	}
+	var document handler3.OpenAPIV3Discovery
+	if err := json.Unmarshal(discoveryData, &document); err != nil {
+		return nil, fmt.Errorf("decoding OpenAPI discovery: %w", err)
+	}
+	p.index = document.Paths
+	if p.index == nil {
+		p.index = map[string]handler3.OpenAPIV3DiscoveryGroupVersion{}
+	}
+	return p.index, nil
 }

@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Configuration changes fetch watched-resource schemas in parallel, reducing validation delays on clusters with slow API-server responses.
+- API discovery timeouts leave configuration validation inconclusive and retry it instead of rejecting templates that use typed fields.
+
 ### Security
 
 - Raw HAProxy configuration annotations are rejected by default. Any Ingress writer in a watched namespace could otherwise change the configuration for every host, or read HAProxy's TLS keys through a backend directive.

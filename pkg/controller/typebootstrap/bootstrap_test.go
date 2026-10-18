@@ -17,11 +17,14 @@ package typebootstrap
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -316,6 +319,46 @@ func TestBootstrap_FailClosedOnFetcherError(t *testing.T) {
 	// surfaces (status CRD, log enumeration of which resource broke).
 	require.Contains(t, result.Errors, "mystery")
 	assert.ErrorContains(t, result.Errors["mystery"], "fetching schema")
+}
+
+// barrierFetcher answers no Fetch until want of them are in flight.
+type barrierFetcher struct {
+	schemafetcher.Fetcher
+	want     int32
+	arrivals atomic.Int32
+	release  chan struct{}
+}
+
+func (f *barrierFetcher) Fetch(ctx context.Context, gvk schema.GroupVersionKind) (*spec.Schema, map[string]spec.Schema, error) {
+	if f.arrivals.Add(1) == f.want {
+		close(f.release)
+	}
+	select {
+	case <-f.release:
+		return f.Fetcher.Fetch(ctx, gvk)
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
+}
+
+// Each fetch is an apiserver round trip; resolved one after another, a
+// chart's resources cost the sum of them (#410).
+func TestBootstrap_ResolvesResourcesConcurrently(t *testing.T) {
+	const resources = 8
+	schemas := map[schema.GroupVersionKind]*spec.Schema{}
+	cfg := Config{Logger: silentLogger()}
+	for i := range resources {
+		gvk := schema.GroupVersionKind{Group: "example.com", Version: "v1", Kind: fmt.Sprintf("Kind%d", i)}
+		schemas[gvk] = gatewaySchemaSeed()
+		cfg.Resources = append(cfg.Resources, Resource{Name: fmt.Sprintf("kind%d", i), GVK: gvk})
+	}
+	cfg.Fetcher = &barrierFetcher{Fetcher: schemafetcher.NewMapFetcher(schemas), want: resources, release: make(chan struct{})}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result, err := Bootstrap(ctx, cfg)
+	require.NoError(t, err, "fetching one resource at a time never fills the barrier")
+	assert.Len(t, result.Types, resources)
 }
 
 func TestBootstrap_IgnoreFieldsMerged(t *testing.T) {

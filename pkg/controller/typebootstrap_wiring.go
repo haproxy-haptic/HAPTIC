@@ -16,6 +16,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -38,15 +39,14 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/schemafetcher"
 )
 
-// typeBootstrapFetchTimeout bounds the entire bootstrap loop's
-// wall-clock cost. Each per-resource fetch goes through the
-// cluster fetcher's CRD-list + OpenAPI v3 paths; on a healthy
-// cluster the whole loop completes in well under 100ms. The
-// deadline is generous on purpose — it only fires when the
-// apiserver is degraded, at which point the deadline-exceeded
-// error fails the iteration startup with a clear signal for
-// operators (no silent degradation to envelope-only types;
-// see typebootstrap.Bootstrap's fail-closed contract).
+// typeBootstrapFetchTimeout bounds the entire bootstrap's wall-clock
+// cost, discovery included. The bundled chart's bootstrap is about
+// five apiserver round trips deep (150 ms at a 25 ms round trip,
+// #410), so the deadline only fires when the apiserver is degraded,
+// at which point the deadline-exceeded error fails the iteration
+// startup with a clear signal for operators (no silent degradation
+// to envelope-only types; see typebootstrap.Bootstrap's fail-closed
+// contract).
 const typeBootstrapFetchTimeout = 2 * time.Second
 
 // typedRendererWiring carries the two outputs the renderer needs
@@ -153,10 +153,9 @@ func runTypeBootstrap(
 		return nil, fmt.Errorf("constructing apiextensions client for type bootstrap: %w", err)
 	}
 
-	return RunTypeBootstrap(ctx, cfg,
-		NewClusterSchemaFetcher(apiextClient, k8sClient.Clientset().Discovery()),
-		k8sClient.Clientset().Discovery(),
-		logger)
+	// One discovery fetch serves both Kind resolution and every CRD lookup.
+	d := memory.NewMemCacheClient(k8sClient.Clientset().Discovery())
+	return RunTypeBootstrap(ctx, cfg, NewClusterSchemaFetcher(apiextClient, d), d, logger)
 }
 
 // RunTypeBootstrap is the schema-source-agnostic core of the live type
@@ -180,18 +179,18 @@ func RunTypeBootstrap(
 	}
 
 	// Cap the bootstrap's wall-clock cost so a slow apiserver can't
-	// stall Stage 5 indefinitely. discoveryOpenAPIV3Provider.GVSpec
-	// now honours ctx (via an inline goroutine + select — see
-	// typebootstrap_clients.go), so this deadline actually fires
-	// inside the OpenAPI v3 fetches that were previously
-	// non-cancellable. Deadline-exceeded surfaces as a hard
+	// stall Stage 5 indefinitely. Every request below, discovery
+	// included, honours ctx. Deadline-exceeded surfaces as a hard
 	// bootstrap error (Bootstrap is fail-closed) — iteration
 	// startup aborts with a clear signal rather than running with
 	// silently degraded typed access.
 	ctx, cancel := context.WithTimeout(ctx, typeBootstrapFetchTimeout)
 	defer cancel()
 
-	resources := buildBootstrapResources(cfg, d, logger)
+	resources, err := buildBootstrapResources(ctx, cfg, d, logger)
+	if err != nil {
+		return nil, fmt.Errorf("type bootstrap: %w", err)
+	}
 
 	result, err := typebootstrap.Bootstrap(ctx, typebootstrap.Config{
 		Resources:          resources,
@@ -247,25 +246,35 @@ func typedResourceNames(result *typebootstrap.Result) []string {
 // generic map-backed access for that resource (just no typed
 // shortcut). The most common reason for a miss is a misconfigured
 // apiVersion — operator-visible via the warn log and easier to
-// debug than a hard boot failure.
+// debug than a hard boot failure. A failed discovery is returned
+// instead: skipping on it would strip typed access from every
+// resource because the apiserver was slow.
 func buildBootstrapResources(
+	ctx context.Context,
 	cfg *config.Config,
 	d discovery.DiscoveryInterface,
 	logger *slog.Logger,
-) []typebootstrap.Resource {
-	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(d))
+) ([]typebootstrap.Resource, error) {
+	cached, ok := d.(discovery.CachedDiscoveryInterface)
+	if !ok {
+		cached = memory.NewMemCacheClient(d)
+	}
+	mapper := restmapper.NewDeferredDiscoveryRESTMapperWithContext(discovery.ToCachedDiscoveryInterfaceWithContext(cached))
 
 	out := make([]typebootstrap.Resource, 0, len(cfg.WatchedResources))
 	for name := range cfg.WatchedResources {
 		wr := cfg.WatchedResources[name]
-		gvk, err := resolveKind(mapper, &wr)
-		if err != nil {
+		gvk, err := resolveKind(ctx, mapper, &wr)
+		if errors.Is(err, errKindUnresolvable) {
 			logger.Warn("Type bootstrap: skipping resource whose Kind couldn't be resolved",
 				"resource", name,
 				"apiVersion", wr.APIVersion,
 				"resources", wr.Resources,
 				"error", err)
 			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("watched resource %q: %w", name, err)
 		}
 		out = append(out, typebootstrap.Resource{
 			Name: name,
@@ -280,7 +289,7 @@ func buildBootstrapResources(
 			IgnoreFields: nil,
 		})
 	}
-	return out
+	return out, nil
 }
 
 // newIterationTypeBootstrapper returns the validator.TypeBootstrapper
@@ -296,18 +305,24 @@ func newIterationTypeBootstrapper(k8sClient *client.Client, logger *slog.Logger)
 	}
 }
 
+// errKindUnresolvable marks a watched resource whose apiVersion is malformed
+// or names a resource the cluster doesn't serve.
+var errKindUnresolvable = errors.New("kind not resolvable")
+
 // resolveKind converts a (apiVersion, resources-plural) pair into a
-// fully-qualified GVK by querying the RESTMapper. Wraps the
-// resolution so the wiring caller sees one error type regardless of
-// whether the apiVersion was malformed or the cluster didn't know
-// the resource.
-func resolveKind(mapper meta.RESTMapper, wr *config.WatchedResource) (schema.GroupVersionKind, error) {
+// fully-qualified GVK by querying the RESTMapper. A config the cluster
+// can't map wraps errKindUnresolvable; any other error is a failed
+// discovery.
+func resolveKind(ctx context.Context, mapper meta.RESTMapperWithContext, wr *config.WatchedResource) (schema.GroupVersionKind, error) {
 	gv, err := schema.ParseGroupVersion(wr.APIVersion)
 	if err != nil {
-		return schema.GroupVersionKind{}, fmt.Errorf("parsing apiVersion %q: %w", wr.APIVersion, err)
+		return schema.GroupVersionKind{}, fmt.Errorf("%w: parsing apiVersion %q: %w", errKindUnresolvable, wr.APIVersion, err)
 	}
 	gvr := gv.WithResource(wr.Resources)
-	gvk, err := mapper.KindFor(gvr)
+	gvk, err := mapper.KindForWithContext(ctx, gvr)
+	if meta.IsNoMatchError(err) {
+		return schema.GroupVersionKind{}, fmt.Errorf("%w: %w", errKindUnresolvable, err)
+	}
 	if err != nil {
 		return schema.GroupVersionKind{}, fmt.Errorf("resolving Kind for %s: %w", gvr, err)
 	}
