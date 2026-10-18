@@ -158,3 +158,57 @@ func TestPollKeepsCancellationAndLastObservationError(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	require.ErrorIs(t, err, cause)
 }
+
+func TestConsistentlyChecksUntilTheEndOfTheWindow(t *testing.T) {
+	clock := &fakePollClock{}
+	calls := 0
+	err := consistently(t.Context(), 10*time.Second, 4*time.Second, "absence", func(context.Context) error {
+		calls++
+		return nil
+	}, clock)
+	require.NoError(t, err)
+	assert.Equal(t, 4, calls)
+	assert.Equal(t, []time.Duration{4 * time.Second, 4 * time.Second, 2 * time.Second}, clock.waits)
+}
+
+func TestConsistentlyFailsOnTheFirstBrokenCheck(t *testing.T) {
+	clock := &fakePollClock{}
+	found := errors.New("lease exists")
+	calls := 0
+	err := consistently(t.Context(), 10*time.Second, 4*time.Second, "absence", func(context.Context) error {
+		calls++
+		if calls == 2 {
+			return found
+		}
+		return nil
+	}, clock)
+	require.ErrorIs(t, err, found)
+	require.ErrorContains(t, err, "absence: lease exists (after 4s of 10s)")
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, []time.Duration{4 * time.Second}, clock.waits)
+}
+
+func TestConsistentlyFailsWhenObservationEndsEarly(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := consistently(ctx, 10*time.Second, 4*time.Second, "absence", func(context.Context) error {
+		t.Fatal("cancelled observation must not check")
+		return nil
+	}, &fakePollClock{})
+	require.ErrorIs(t, err, context.Canceled)
+
+	clock := &fakePollClock{waitErr: context.DeadlineExceeded}
+	err = consistently(t.Context(), 10*time.Second, 4*time.Second, "absence", func(context.Context) error { return nil }, clock)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Len(t, clock.waits, 1)
+}
+
+func TestConsistentlyRejectsAnEmptyWindowOrInterval(t *testing.T) {
+	for _, tc := range []struct{ window, interval time.Duration }{{0, time.Second}, {time.Second, 0}} {
+		err := consistently(t.Context(), tc.window, tc.interval, "absence", func(context.Context) error {
+			t.Fatal("invalid settings must not check")
+			return nil
+		}, &fakePollClock{})
+		require.ErrorContains(t, err, "positive window and interval")
+	}
+}

@@ -50,6 +50,34 @@ func (realPollClock) wait(ctx context.Context, delay time.Duration) error {
 	}
 }
 
+// Consistently runs check every interval until window has elapsed and returns
+// its first error at once. The last check runs at the end of the window.
+func Consistently(ctx context.Context, window, interval time.Duration, description string, check func(context.Context) error) error {
+	return consistently(ctx, window, interval, description, check, realPollClock{})
+}
+
+func consistently(ctx context.Context, window, interval time.Duration, description string, check func(context.Context) error, clock pollClock) error {
+	if window <= 0 || interval <= 0 {
+		return errors.New("consistently needs a positive window and interval")
+	}
+	start := clock.now()
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("%s: observation ended early: %w", description, err)
+		}
+		if err := check(ctx); err != nil {
+			return fmt.Errorf("%s: %w (after %v of %v)", description, err, clock.now().Sub(start), window)
+		}
+		remaining := window - clock.now().Sub(start)
+		if remaining <= 0 {
+			return nil
+		}
+		if err := clock.wait(ctx, min(interval, remaining)); err != nil {
+			return fmt.Errorf("%s: observation ended early: %w", description, err)
+		}
+	}
+}
+
 // Poll retries only PollPending; PollFailed and cancellation stop immediately.
 func Poll(ctx context.Context, cfg WaitConfig, description string, observe func(context.Context) (PollResult, error)) error {
 	return poll(ctx, cfg, description, observe, realPollClock{})
