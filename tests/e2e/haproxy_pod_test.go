@@ -20,11 +20,18 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/e2e-framework/klient"
+	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
+
 	"github.com/haproxy-haptic/HAPTIC/tests/e2e/availability"
+	"github.com/haproxy-haptic/HAPTIC/tests/testutil"
 )
 
 func execInHAProxyPod(ctx context.Context, pod, container string, argv ...string) (string, error) {
@@ -44,6 +51,44 @@ func execInHAProxyPod(ctx context.Context, pod, container string, argv ...string
 			pod, container, argv, err, stderr.String())
 	}
 	return stdout.String(), nil
+}
+
+// waitForHAProxyPodsToReach waits until a GET of url succeeds within budget
+// from every HAProxy pod. kube-proxy can program a new Service seconds after
+// its endpoints turn ready; what a pod sends there before that is lost.
+func waitForHAProxyPodsToReach(ctx context.Context, t *testing.T, client klient.Client, url string, budget time.Duration) {
+	t.Helper()
+	var pods corev1.PodList
+	if err := client.Resources(ControllerNamespace).List(ctx, &pods, resources.WithLabelSelector(LabelSelectorHAProxy)); err != nil {
+		t.Fatalf("list HAProxy pods: %v", err)
+	}
+	pending := map[string]bool{}
+	for i := range pods.Items {
+		if pods.Items[i].DeletionTimestamp == nil {
+			pending[pods.Items[i].Name] = true
+		}
+	}
+	if len(pending) == 0 {
+		t.Fatalf("no HAProxy pod matches %q", LabelSelectorHAProxy)
+	}
+	maxTime := strconv.FormatFloat(budget.Seconds(), 'f', -1, 64)
+	start := time.Now()
+	err := testutil.WaitForConditionWithDescription(ctx, testutil.FastWaitConfig(), "every HAProxy pod to reach "+url,
+		func(c context.Context) (bool, error) {
+			var lastErr error
+			for pod := range pending {
+				if _, err := execInHAProxyPod(c, pod, "haproxy", "curl", "-fsS", "-o", "/dev/null", "--max-time", maxTime, url); err != nil {
+					lastErr = err
+					continue
+				}
+				delete(pending, pod)
+			}
+			return len(pending) == 0, lastErr
+		})
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	t.Logf("every HAProxy pod reached %s after %v", url, time.Since(start).Round(time.Millisecond))
 }
 
 func podJSONPath(ctx context.Context, pod, expr string) (string, error) {
