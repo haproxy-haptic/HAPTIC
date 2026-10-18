@@ -188,7 +188,7 @@ func directBoundResourceSpecTestDeclaration(
 		[]string{resourceType},
 		func(string) []string { return nil },
 		func(string) bool { return false },
-		func(string) string { return "example.test/v1" },
+		func(string) string { return "example.test/v1" }, nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		rendercontext.NewResourceErrorCollector(),
 		view,

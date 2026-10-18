@@ -1,0 +1,219 @@
+suite: namespace-scoped watches — the RBAC grant and the watch read the same namespaces
+# The ClusterRole, the per-namespace Roles, and the config's watchedResources all
+# derive from haptic.watchedResourcesUnion. Each case asserts the grant and the
+# watch together, so a change that moves only one of them fails here.
+templates:
+  - clusterrole.yaml
+  - watched-resource-roles.yaml
+  - haproxytemplateconfig.yaml
+release:
+  name: haptic
+  namespace: haptic
+tests:
+  - it: grants Secrets cluster-wide and watches every namespace by default
+    asserts:
+      - template: clusterrole.yaml
+        contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [secrets]
+            verbs: ["get", "list", "watch"]
+      - template: watched-resource-roles.yaml
+        hasDocuments:
+          count: 0
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        notExists:
+          path: spec.watchedResources.secrets.namespaces
+
+  - it: reads Secrets only in the release namespace when releaseNamespaceSecretsOnly is on
+    set:
+      controller.rbac.releaseNamespaceSecretsOnly: true
+    asserts:
+      - template: clusterrole.yaml
+        notContains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [secrets]
+            verbs: ["get", "list", "watch"]
+      - template: watched-resource-roles.yaml
+        hasDocuments:
+          count: 2
+      - template: watched-resource-roles.yaml
+        documentIndex: 0
+        equal:
+          path: metadata.namespace
+          value: haptic
+      - template: watched-resource-roles.yaml
+        documentIndex: 0
+        equal:
+          path: rules
+          value:
+            - apiGroups: [""]
+              resources: [secrets]
+              verbs: ["get", "list", "watch"]
+      - template: watched-resource-roles.yaml
+        documentIndex: 1
+        equal:
+          path: subjects
+          value:
+            - kind: ServiceAccount
+              name: haptic
+              namespace: haptic
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        equal:
+          path: spec.watchedResources.secrets.namespaces
+          value: [haptic]
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        equal:
+          path: spec.watchedResources.secrets.namespacesSetting
+          value: controller.rbac.releaseNamespaceSecretsOnly
+
+  - it: scopes an aliased core Secret watch without restricting a custom resource named secrets
+    set:
+      controller.rbac.releaseNamespaceSecretsOnly: true
+      controller.config.watchedResources.certificates:
+        apiVersion: v1
+        resources: secrets
+        indexBy: ["metadata.namespace", "metadata.name"]
+      controller.config.watchedResources.customSecrets:
+        apiVersion: example.io/v1
+        resources: secrets
+        indexBy: ["metadata.namespace", "metadata.name"]
+    asserts:
+      - template: clusterrole.yaml
+        notContains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [secrets]
+            verbs: ["get", "list", "watch"]
+      - template: clusterrole.yaml
+        contains:
+          path: rules
+          content:
+            apiGroups: [example.io]
+            resources: [secrets]
+            verbs: ["get", "list", "watch"]
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        equal:
+          path: spec.watchedResources.certificates.namespaces
+          value: [haptic]
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        equal:
+          path: spec.watchedResources.certificates.namespacesSetting
+          value: controller.rbac.releaseNamespaceSecretsOnly
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        notExists:
+          path: spec.watchedResources.customSecrets.namespaces
+
+  - it: grants an operator-scoped watch only in its namespaces, with its status rule
+    set:
+      controller.config.watchedResources.widgets:
+        apiVersion: example.io/v1
+        resources: widgets
+        indexBy: ["metadata.namespace", "metadata.name"]
+        namespaces: [team-b, team-a]
+        statusPatch: true
+    asserts:
+      - template: clusterrole.yaml
+        notContains:
+          path: rules
+          content:
+            apiGroups: [example.io]
+            resources: [widgets]
+            verbs: ["get", "list", "watch"]
+      - template: clusterrole.yaml
+        notContains:
+          path: rules
+          content:
+            apiGroups: [example.io]
+            resources: [widgets/status]
+            verbs: ["patch"]
+      - template: watched-resource-roles.yaml
+        hasDocuments:
+          count: 4
+      - template: watched-resource-roles.yaml
+        documentIndex: 0
+        equal:
+          path: metadata.namespace
+          value: team-a
+      - template: watched-resource-roles.yaml
+        documentIndex: 2
+        equal:
+          path: metadata.namespace
+          value: team-b
+      - template: watched-resource-roles.yaml
+        documentIndex: 2
+        equal:
+          path: rules
+          value:
+            - apiGroups: [example.io]
+              resources: [widgets]
+              verbs: ["get", "list", "watch"]
+            - apiGroups: [example.io]
+              resources: [widgets/status]
+              verbs: ["patch"]
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        equal:
+          path: spec.watchedResources.widgets.namespaces
+          value: [team-b, team-a]
+
+  - it: creates no Role when RBAC creation is off
+    set:
+      controller.rbac.create: false
+      controller.rbac.releaseNamespaceSecretsOnly: true
+    template: watched-resource-roles.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rejects a default certificate outside the release namespace
+    set:
+      controller.rbac.releaseNamespaceSecretsOnly: true
+      defaultSSLCertificate.namespace: certificates
+    template: watched-resource-roles.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "defaultSSLCertificate.namespace is certificates, but controller.rbac.releaseNamespaceSecretsOnly lets the controller read Secrets only in haptic, so HTTPS would have no certificate. Leave defaultSSLCertificate.namespace empty."
+
+  - it: rejects a Secret watch scoped twice
+    set:
+      controller.rbac.releaseNamespaceSecretsOnly: true
+      controller.config.watchedResources.secrets.namespaces: [team-a]
+    template: watched-resource-roles.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "controller.config.watchedResources.secrets.namespaces and controller.rbac.releaseNamespaceSecretsOnly both set the Secret watch's namespaces, so one would silently win. Remove controller.config.watchedResources.secrets.namespaces."
+
+  - it: rejects namespaces on a watch nothing defines
+    set:
+      controller.config.watchedResources.secretz.namespaces: [team-a]
+    template: watched-resource-roles.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "controller.config.watchedResources.secretz lists namespaces, but no library or value defines a watch named secretz, so nothing would be watched. Correct the name."
+
+  - it: rejects an empty namespace list
+    set:
+      controller.config.watchedResources.secrets.namespaces: []
+    template: watched-resource-roles.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "controller.config.watchedResources.secrets.namespaces is empty, which would watch nothing. List at least one namespace or remove the field to watch all namespaces."
+
+  - it: rejects an invalid namespace name
+    set:
+      controller.config.watchedResources.secrets.namespaces: [Team_A]
+    template: watched-resource-roles.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "controller.config.watchedResources.secrets.namespaces contains Team_A, which is not a namespace name."

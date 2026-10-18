@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `watchedResources.<name>.namespaces` restricts watches and template lookups to listed namespaces; `namespacesSetting` identifies the setting in rejection messages.
 - Metrics:
     - `haptic_config_validated{status,reason}`: each replica's `Validated` condition, one series per state, so an alert can match a configuration stuck at `Unknown` or `False`.
     - `haptic_config_validation_total{result}`: `valid`, `invalid`, and `inconclusive` verdicts on the `HAProxyTemplateConfig`, the startup load gate included. `haptic_validation_errors_total` counts only HAProxy's verdicts on rendered configurations.
@@ -41,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `HAProxyControllerConfigNotValidated` alert (`controller.monitoring.prometheusRule.defaultRules.configNotValidated`): a replica hasn't validated its newest `HAProxyTemplateConfig` for 10 minutes.
 - `extraContext.forwardedHeaders.trustedProxies`: the L7 load balancers whose `X-Forwarded-For`, `-Proto`, `-Host`, and `-Port` headers HAPTIC keeps.
+- `controller.rbac.releaseNamespaceSecretsOnly` limits Secret reads to the release namespace and rejects references elsewhere.
+- A watched resource that lists `namespaces` is granted by a Role in each listed namespace instead of the ClusterRole.
 
 #### Changed
 

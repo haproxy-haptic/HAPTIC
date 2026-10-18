@@ -235,12 +235,11 @@ func TestCachedStore_NonUniqueKeys(t *testing.T) {
 	testIndexer := createTestIndexer()
 
 	cfg := &CachedStoreConfig{
-		NumKeys:   1, // Index by service name only
-		CacheTTL:  5 * time.Minute,
-		Client:    client,
-		GVR:       configMapGVR,
-		Namespace: "",
-		Indexer:   testIndexer,
+		NumKeys:  1, // Index by service name only
+		CacheTTL: 5 * time.Minute,
+		Client:   client,
+		GVR:      configMapGVR,
+		Indexer:  testIndexer,
 	}
 
 	store, err := NewCachedStore(cfg)
@@ -737,12 +736,11 @@ func TestCachedStore_UpdateAddsNewResourceToExistingKey(t *testing.T) {
 	testIndexer := createTestIndexer()
 
 	cfg := &CachedStoreConfig{
-		NumKeys:   1, // Index by service name only
-		CacheTTL:  5 * time.Minute,
-		Client:    client,
-		GVR:       configMapGVR,
-		Namespace: "",
-		Indexer:   testIndexer,
+		NumKeys:  1, // Index by service name only
+		CacheTTL: 5 * time.Minute,
+		Client:   client,
+		GVR:      configMapGVR,
+		Indexer:  testIndexer,
 	}
 
 	store, err := NewCachedStore(cfg)
@@ -824,12 +822,11 @@ func TestCachedStore_CacheMissLogging(t *testing.T) {
 	}
 
 	cfg := &CachedStoreConfig{
-		NumKeys:   2,
-		CacheTTL:  5 * time.Minute,
-		Client:    client,
-		GVR:       configMapGVR,
-		Namespace: "",
-		Indexer:   idx,
+		NumKeys:  2,
+		CacheTTL: 5 * time.Minute,
+		Client:   client,
+		GVR:      configMapGVR,
+		Indexer:  idx,
 		// Logger is optional, will use slog.Default()
 	}
 
@@ -884,7 +881,6 @@ func TestCachedStore_LRUEviction(t *testing.T) {
 		MaxCacheSize: 3, // Only 3 entries fit
 		Client:       client,
 		GVR:          configMapGVR,
-		Namespace:    "",
 		Indexer:      testIndexer,
 	}
 

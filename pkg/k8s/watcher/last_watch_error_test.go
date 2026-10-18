@@ -37,7 +37,7 @@ func TestWatcher_LastWatchError(t *testing.T) {
 
 	require.True(t, w.LastWatchError().IsZero(), "no watch error yet → zero time")
 
-	w.handleWatchError(nil, errors.New("the server could not find the requested resource"))
+	w.handleWatchError("", errors.New("the server could not find the requested resource"))
 
 	require.False(t, w.LastWatchError().IsZero(), "after a watch error → non-zero timestamp")
 }

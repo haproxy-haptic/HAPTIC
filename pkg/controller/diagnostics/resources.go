@@ -130,13 +130,17 @@ func (c *Collector) collectWatch(ctx context.Context, report *Report, name strin
 			return
 		}
 	}
+	namespaces := watch.Namespaces
+	if len(namespaces) == 0 {
+		namespaces = []string{metav1.NamespaceAll}
+	}
 	for _, version := range versions {
 		gv, err := schema.ParseGroupVersion(version)
 		if err != nil {
 			report.incomplete("watch-version-invalid", name, "Repair this watch's API versions.")
 			return
 		}
-		if c.collectResourcePages(ctx, report, name, gv.WithResource(watch.Resources), watch.LabelSelector, matcher, remaining) {
+		if c.collectResourcePages(ctx, report, name, gv.WithResource(watch.Resources), namespaces, watch.LabelSelector, matcher, remaining) {
 			return
 		}
 	}
@@ -145,29 +149,34 @@ func (c *Collector) collectWatch(ctx context.Context, report *Report, name strin
 	}
 }
 
-func (c *Collector) collectResourcePages(ctx context.Context, report *Report, name string, gvr schema.GroupVersionResource, selector string, matcher *indexer.FieldSelectorMatcher, remaining *int) bool {
-	continuation := ""
-	for {
-		if *remaining <= 0 {
-			report.incomplete("resource-limit-reached", name, "Increase --max-resources to collect the remaining watched resources.")
-			return true
-		}
-		objects, err := c.dynamic.Resource(gvr).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: int64(min(*remaining, 250)), Continue: continuation})
-		if apierrors.IsNotFound(err) {
-			return false
-		}
-		if err != nil {
-			report.incomplete("watch-read-failed", name, "Allow listing this watched resource API and retry.")
-			return true
-		}
-		if !report.appendWatchedObjects(name, objects.Items, matcher, remaining) {
-			return true
-		}
-		continuation = objects.GetContinue()
-		if continuation == "" {
-			return true
+// collectResourcePages lists a watch in each namespace it reads. It returns
+// false only when the API version is not served.
+func (c *Collector) collectResourcePages(ctx context.Context, report *Report, name string, gvr schema.GroupVersionResource, namespaces []string, selector string, matcher *indexer.FieldSelectorMatcher, remaining *int) bool {
+	for _, namespace := range namespaces {
+		continuation := ""
+		for {
+			if *remaining <= 0 {
+				report.incomplete("resource-limit-reached", name, "Increase --max-resources to collect the remaining watched resources.")
+				return true
+			}
+			objects, err := c.dynamic.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{LabelSelector: selector, Limit: int64(min(*remaining, 250)), Continue: continuation})
+			if apierrors.IsNotFound(err) {
+				return false
+			}
+			if err != nil {
+				report.incomplete("watch-read-failed", name, "Allow listing this watched resource API and retry.")
+				return true
+			}
+			if !report.appendWatchedObjects(name, objects.Items, matcher, remaining) {
+				return true
+			}
+			continuation = objects.GetContinue()
+			if continuation == "" {
+				break
+			}
 		}
 	}
+	return true
 }
 
 func (r *Report) appendWatchedObjects(name string, objects []unstructured.Unstructured, matcher *indexer.FieldSelectorMatcher, remaining *int) bool {

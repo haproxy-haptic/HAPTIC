@@ -75,6 +75,10 @@ type StoreWrapper struct {
 	// to index resources. Required for snapshot-served Fetch/GetSingle.
 	IndexBy []string
 
+	// Scope fails the render for a lookup outside the namespaces the store
+	// was filled from; nil allows every namespace.
+	Scope *NamespaceScope
+
 	// LazySnapshot defers the eager Store.List() until List() is
 	// actually called. Set when the underlying store is a CachedStore
 	// (WatchedResources[name].Store == "on-demand"). See type doc.
@@ -182,6 +186,7 @@ func (w *StoreWrapper) CloneWithSnapshotViewContext(
 		readContext:         ctx,
 		resourceErrors:      w.resourceErrors,
 		IndexBy:             slices.Clone(w.IndexBy),
+		Scope:               w.Scope,
 		LazySnapshot:        w.LazySnapshot,
 		SnapshotView:        view,
 		DerivedView:         w.DerivedView,
@@ -873,6 +878,22 @@ func (w *StoreWrapper) fetchInInvocation(ctx context.Context, keys []any) ([]any
 }
 
 func (w *StoreWrapper) lookupKeys(keys []any, operation string) ([]string, bool) {
+	stringKeys, ok := w.normalizeLookupKeys(keys, operation)
+	if !ok {
+		return nil, false
+	}
+	return stringKeys, w.inNamespaceScope(stringKeys)
+}
+
+func (w *StoreWrapper) inNamespaceScope(keys []string) bool {
+	if err := w.Scope.Check(keys); err != nil {
+		w.recordReadFailure(err)
+		return false
+	}
+	return true
+}
+
+func (w *StoreWrapper) normalizeLookupKeys(keys []any, operation string) ([]string, bool) {
 	if w.usesSnapshotView() {
 		if normalizer, ok := w.SnapshotView.(StoreLookupKeyNormalizer); ok {
 			stringKeys, err := normalizer.NormalizeLookupKeys(w.ResourceType, keys)
@@ -904,6 +925,17 @@ func (w *StoreWrapper) lookupKeySource(
 	keys StoreLookupKeySource,
 	operation string,
 ) ([]string, bool) {
+	stringKeys, ok := w.normalizeLookupKeySource(keys, operation)
+	if !ok {
+		return nil, false
+	}
+	return stringKeys, w.inNamespaceScope(stringKeys)
+}
+
+func (w *StoreWrapper) normalizeLookupKeySource(
+	keys StoreLookupKeySource,
+	operation string,
+) ([]string, bool) {
 	if w.usesSnapshotView() {
 		if normalizer, ok := w.SnapshotView.(StoreLookupKeySourceNormalizer); ok {
 			stringKeys, err := normalizer.NormalizeLookupKeySource(w.ResourceType, keys)
@@ -928,7 +960,7 @@ func (w *StoreWrapper) lookupKeySource(
 	for index := range values {
 		values[index] = keys.Value(index)
 	}
-	return w.lookupKeys(values, operation)
+	return w.normalizeLookupKeys(values, operation)
 }
 
 // GetSingle performs O(1) indexed lookup over the per-render snapshot

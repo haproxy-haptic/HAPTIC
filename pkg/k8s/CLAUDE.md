@@ -125,7 +125,7 @@ type Store interface {
 // Watcher configuration
 type WatcherConfig struct {
     GVR           schema.GroupVersionResource
-    Namespace     string
+    Namespaces    []string
     LabelSelector *metav1.LabelSelector
     IndexBy       []string
     StoreType     StoreType
@@ -274,7 +274,7 @@ cfg := types.WatcherConfig{
     GVR: schema.GroupVersionResource{
         Group: "networking.k8s.io", Version: "v1", Resource: "ingresses",
     },
-    Namespace: "", // empty = all namespaces (NamespacedWatch overrides this)
+    Namespaces: nil, // nil = all namespaces; one informer per listed namespace (NamespacedWatch overrides this)
     LabelSelector: &metav1.LabelSelector{
         MatchLabels: map[string]string{"app": "myapp"},
     },
@@ -579,7 +579,7 @@ indexBy := []string{
 // Step 4: Create config
 cfg := types.WatcherConfig{
     GVR:       configMapGVR,
-    Namespace: "", // All namespaces
+    Namespaces: nil, // All namespaces
     LabelSelector: &metav1.LabelSelector{
         MatchLabels: map[string]string{"app": "myapp"},
     },

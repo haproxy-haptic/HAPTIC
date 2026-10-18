@@ -57,7 +57,7 @@ func TestNew_MemoryStore_InformerTransformKeepsFullBody(t *testing.T) {
 	_, err = w.WaitForSync(ctx)
 	require.NoError(t, err)
 
-	items := w.informer.GetStore().List()
+	items := w.informers[0].informer.GetStore().List()
 	require.Len(t, items, 1)
 	stored, ok := items[0].(*store.ImmutableResource)
 	require.True(t, ok)

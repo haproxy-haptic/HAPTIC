@@ -226,8 +226,8 @@ func libraryWatcherConfig(
 	publish func(types.Store),
 ) types.WatcherConfig {
 	return types.WatcherConfig{
-		GVR:       gvr,
-		Namespace: namespace,
+		GVR:        gvr,
+		Namespaces: []string{namespace},
 		// Name alone identifies a library within the namespace, and it is what
 		// spec.libraryRefs names.
 		IndexBy: []string{metadataNameIndex},

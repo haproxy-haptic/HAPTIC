@@ -24,6 +24,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kube-openapi/pkg/validation/spec"
 
+	coreconfig "github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/schemafetcher"
 )
 
@@ -141,4 +142,22 @@ func TestDiscoveryServedChecker_FieldServed(t *testing.T) {
 	fresh := NewDiscoveryServedChecker(context.Background(), fd, fetcher, slog.Default())
 	_, err = fresh.FieldServed("gateway.example.io/v1", "gadgets", "spec.rules")
 	require.Error(t, err, "schema-fetch failure must fail the resolution, not silently strip")
+}
+
+func TestDiscoveryServedChecker_IsNamespaced(t *testing.T) {
+	fd := kubefake.NewSimpleClientset().Discovery().(*fakediscovery.FakeDiscovery)
+	fd.Resources = []*metav1.APIResourceList{{
+		GroupVersion: "v1",
+		APIResources: []metav1.APIResource{
+			{Name: "secrets", Kind: "Secret", Namespaced: true},
+			{Name: "namespaces", Kind: "Namespace"},
+		},
+	}}
+	checker := NewDiscoveryServedChecker(context.Background(), fd, schemafetcher.NewMapFetcher(nil), slog.Default())
+
+	assert.True(t, checker.IsNamespaced("v1", "secrets"))
+	assert.False(t, checker.IsNamespaced("v1", "namespaces"))
+	assert.False(t, checker.IsNamespaced("v1", "unserved"))
+	_, implemented := any(checker).(coreconfig.NamespaceScopeChecker)
+	assert.True(t, implemented, "ResolveEffective must see the scope of live resources")
 }

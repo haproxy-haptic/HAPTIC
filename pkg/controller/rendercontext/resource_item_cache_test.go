@@ -329,7 +329,7 @@ func resourceItemCacheTestSurface(
 		[]string{"routes"},
 		func(string) []string { return []string{"metadata.namespace", "metadata.name"} },
 		func(string) bool { return false },
-		func(string) string { return "cache.test/v1" },
+		func(string) string { return "cache.test/v1" }, nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		NewResourceErrorCollector(),
 		view,

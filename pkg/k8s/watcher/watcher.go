@@ -42,10 +42,10 @@ type Watcher struct {
 	fieldSelectorMatcher *indexer.FieldSelectorMatcher // nil if no field selector configured
 	store                types.Store
 	debouncer            *Debouncer
-	informerFactory      dynamicinformer.DynamicSharedInformerFactory
-	informer             cache.SharedIndexInformer
-	// Synced only after the handlers applied the initial list; informer.HasSynced is not.
-	handlers          cache.ResourceEventHandlerRegistration
+	informers            []namespaceInformer
+	// Serializes event handlers: one informer per namespace delivers events
+	// concurrently, while the handlers assume one caller at a time.
+	eventMu           sync.Mutex
 	stopCh            chan struct{}
 	stopOnce          sync.Once // guards stopCh close so Stop() is idempotent
 	startOnce         sync.Once
@@ -92,9 +92,8 @@ func New(cfg types.WatcherConfig, k8sClient *client.Client, logger *slog.Logger)
 		return nil, err
 	}
 
-	// Handle namespaced watch
 	if cfg.NamespacedWatch {
-		cfg.Namespace = k8sClient.Namespace()
+		cfg.Namespaces = []string{k8sClient.Namespace()}
 	}
 
 	// Serialize the selector once; Validate already proved it converts.
@@ -140,13 +139,12 @@ func New(cfg types.WatcherConfig, k8sClient *client.Client, logger *slog.Logger)
 		}
 
 		cachedStore, err := store.NewCachedStore(&store.CachedStoreConfig{
-			NumKeys:   len(cfg.IndexBy),
-			CacheTTL:  cfg.CacheTTL,
-			Client:    dynamicClient,
-			GVR:       cfg.GVR,
-			Namespace: cfg.Namespace,
-			Indexer:   idx,
-			Logger:    logger,
+			NumKeys:  len(cfg.IndexBy),
+			CacheTTL: cfg.CacheTTL,
+			Client:   dynamicClient,
+			GVR:      cfg.GVR,
+			Indexer:  idx,
+			Logger:   logger,
 			// On-demand kinds are read by live API GET, never from the
 			// informer/store-cached body, so the informer copy can be
 			// body-stripped to save memory (see createInformer's
@@ -182,44 +180,49 @@ func New(cfg types.WatcherConfig, k8sClient *client.Client, logger *slog.Logger)
 		logger:               logger,
 	}
 
-	if err := w.createInformer(); err != nil {
-		return nil, fmt.Errorf("creating informer: %w", err)
+	for _, namespace := range w.watchedNamespaces() {
+		informer, err := w.createInformer(namespace)
+		if err != nil {
+			return nil, fmt.Errorf("creating informer for namespace %q: %w", namespace, err)
+		}
+		w.informers = append(w.informers, informer)
 	}
 
 	return w, nil
 }
 
-// createInformer creates a SharedIndexInformer for the watched resource.
-func (w *Watcher) createInformer() error {
-	// Get dynamic client
+// namespaceInformer watches the resource in one namespace, or in all of them
+// when namespace is metav1.NamespaceAll.
+type namespaceInformer struct {
+	namespace string
+	factory   dynamicinformer.DynamicSharedInformerFactory
+	informer  cache.SharedIndexInformer
+	// Synced only after the handlers applied the initial list; informer.HasSynced is not.
+	handlers cache.ResourceEventHandlerRegistration
+}
+
+func (w *Watcher) watchedNamespaces() []string {
+	if len(w.config.Namespaces) == 0 {
+		return []string{metav1.NamespaceAll}
+	}
+	return w.config.Namespaces
+}
+
+// createInformer creates a SharedIndexInformer for the watched resource in
+// one namespace. Every informer feeds the same store and debouncer.
+func (w *Watcher) createInformer(namespace string) (namespaceInformer, error) {
 	dynamicClient := w.client.DynamicClient()
 	if dynamicClient == nil {
-		return errors.New("dynamic client is nil")
+		return namespaceInformer{}, errors.New("dynamic client is nil")
 	}
 
-	// Create informer factory
-	if w.config.Namespace != "" {
-		w.informerFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(
-			dynamicClient,
-			0, // No resync
-			w.config.Namespace,
-			func(options *metav1.ListOptions) {
-				w.applyListOptions(options)
-			},
-		)
-	} else {
-		w.informerFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(
-			dynamicClient,
-			0, // No resync
-			metav1.NamespaceAll,
-			func(options *metav1.ListOptions) {
-				w.applyListOptions(options)
-			},
-		)
-	}
-
-	// Get informer for resource
-	w.informer = w.informerFactory.ForResource(w.config.GVR).Informer()
+	factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
+		dynamicClient,
+		0, // No resync
+		namespace,
+		w.applyListOptions,
+	)
+	informer := factory.ForResource(w.config.GVR).Informer()
 
 	var transform cache.TransformFunc
 	switch w.config.StoreType {
@@ -228,8 +231,8 @@ func (w *Watcher) createInformer() error {
 	case types.StoreTypeMemory:
 		transform = newNormalizeTransform(w.indexer)
 	}
-	if err := w.informer.SetTransform(transform); err != nil {
-		return fmt.Errorf("installing %s-store transform: %w", w.config.StoreType, err)
+	if err := informer.SetTransform(transform); err != nil {
+		return namespaceInformer{}, fmt.Errorf("installing %s-store transform: %w", w.config.StoreType, err)
 	}
 
 	// Surface watch-connection errors instead of leaving them to client-go's
@@ -238,31 +241,53 @@ func (w *Watcher) createInformer() error {
 	// e.g. because the watched API version stopped being served after an
 	// in-place CRD upgrade — is completely silent while the informer keeps
 	// serving its stale cache.
-	if err := w.informer.SetWatchErrorHandler(w.handleWatchError); err != nil {
-		return fmt.Errorf("setting watch error handler: %w", err)
+	if err := informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) {
+		w.handleWatchError(namespace, err)
+	}); err != nil {
+		return namespaceInformer{}, fmt.Errorf("setting watch error handler: %w", err)
 	}
 
-	handlers, err := w.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    w.handleAdd,
-		UpdateFunc: w.handleUpdate,
-		DeleteFunc: w.handleDelete,
+	handlers, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj any) {
+			w.eventMu.Lock()
+			defer w.eventMu.Unlock()
+			w.handleAdd(obj)
+		},
+		UpdateFunc: func(oldObj, newObj any) {
+			w.eventMu.Lock()
+			defer w.eventMu.Unlock()
+			w.handleUpdate(oldObj, newObj)
+		},
+		DeleteFunc: func(obj any) {
+			w.eventMu.Lock()
+			defer w.eventMu.Unlock()
+			w.handleDelete(obj)
+		},
 	})
 	if err != nil {
-		return fmt.Errorf("adding event handler: %w", err)
+		return namespaceInformer{}, fmt.Errorf("adding event handler: %w", err)
 	}
-	w.handlers = handlers
 
-	return nil
+	return namespaceInformer{namespace: namespace, factory: factory, informer: informer, handlers: handlers}, nil
 }
 
 // handleWatchError records and logs a dropped watch connection. The Reflector
 // retries automatically with exponential backoff after this handler returns.
-func (w *Watcher) handleWatchError(_ *cache.Reflector, err error) {
+func (w *Watcher) handleWatchError(namespace string, err error) {
 	w.lastWatchErrNanos.Store(time.Now().UnixNano())
 	w.logger.Warn("Watcher watch error (Reflector will retry)",
 		"gvr", w.config.GVR.String(),
-		"namespace", w.config.Namespace,
+		"namespace", namespace,
 		"error", err)
+}
+
+// handlersSynced reports, per informer, whether its handlers applied the initial list.
+func (w *Watcher) handlersSynced() []cache.InformerSynced {
+	synced := make([]cache.InformerSynced, len(w.informers))
+	for i := range w.informers {
+		synced[i] = w.informers[i].handlers.HasSynced
+	}
+	return synced
 }
 
 // LastWatchError returns the time of the most recent watch-connection error,
@@ -299,8 +324,10 @@ func (w *Watcher) Start(ctx context.Context) error {
 		})
 		defer stopOnCancel()
 
-		w.informerFactory.Start(w.stopCh)
-		if !cache.WaitForCacheSync(w.stopCh, w.handlers.HasSynced) {
+		for i := range w.informers {
+			w.informers[i].factory.Start(w.stopCh)
+		}
+		if !cache.WaitForCacheSync(w.stopCh, w.handlersSynced()...) {
 			w.startErr = ctx.Err()
 			if w.startErr == nil {
 				w.startErr = errors.New("syncing cache")
@@ -343,7 +370,9 @@ func (w *Watcher) Stop() error {
 	w.stopOnce.Do(func() {
 		close(w.stopCh)
 		w.debouncer.Stop()
-		w.informerFactory.Shutdown()
+		for i := range w.informers {
+			w.informers[i].factory.Shutdown()
+		}
 	})
 
 	return nil
@@ -375,7 +404,7 @@ func (w *Watcher) Store() types.Store {
 //	}
 //	slog.Info("Watcher synced", "resource_count", count)
 func (w *Watcher) WaitForSync(ctx context.Context) (int, error) {
-	if !cache.WaitForCacheSync(ctx.Done(), w.handlers.HasSynced) {
+	if !cache.WaitForCacheSync(ctx.Done(), w.handlersSynced()...) {
 		return 0, errors.New("syncing cache")
 	}
 

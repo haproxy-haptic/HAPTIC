@@ -324,6 +324,10 @@ type RenderService struct {
 	skipCurrentConfigProjection bool
 	skipCurrentFilesProjection  bool
 
+	// namespaceScopes rejects lookups outside a watch's namespaces. Only live
+	// stores honor it; fixture renders (the testrunner) never set it.
+	namespaceScopes func(string) *rendercontext.NamespaceScope
+
 	// renderTimeout is the maximum time allowed for rendering a single template.
 	renderTimeout time.Duration
 
@@ -502,9 +506,11 @@ func NewRenderService(cfg *RenderServiceConfig) *RenderService {
 		typedResourceTypes:          cfg.TypedResourceTypes,
 		skipCurrentConfigProjection: engineProvesGlobalUnused(cfg.Engine, "currentConfig"),
 		skipCurrentFilesProjection:  engineProvesGlobalUnused(cfg.Engine, "currentFiles"),
+		namespaceScopes:             rendercontext.NamespaceScopes(cfg.Config),
 	}
 	service.incremental = newIncrementalRenderState(cfg.Config, cfg.Engine)
 	if service.incremental != nil {
+		service.incremental.scopeFor = service.namespaceScopes
 		service.incremental.cacheBuildObserver = cfg.IncrementalCacheBuildObserver
 		if cfg.ColdRendersRunToCompletion {
 			service.coldRenders = newColdRenderGate(service.IncrementalGraphWarm)
@@ -1970,6 +1976,7 @@ func (s *RenderService) buildRenderingContextFromAttemptInputs(
 		rendercontext.WithRenderMode(mode),
 		rendercontext.WithPlanTokenAuthority(s.planTokenAuthority),
 		rendercontext.WithPlanMemo(s.planMemo),
+		rendercontext.WithNamespaceScopes(s.namespaceScopes),
 	}
 	opts = append(opts, attemptInputs.options()...)
 

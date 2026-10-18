@@ -81,7 +81,7 @@ docker image inspect haptic:test > .pilot/controller-image.json
 
 case "$PILOT_SUITE" in
     upgrade) SKIP_DOCKER_BUILD=1 make test-chart-upgrade ;;
-    plain) SKIP_DOCKER_BUILD=1 make test-install-without-gateway-api ;;
+    plain) SKIP_DOCKER_BUILD=1 make test-install-without-gateway-api test-release-namespace-secrets ;;
     gitops) GITOPS_IMAGE=haptic:test make test-gitops-lifecycle ;;
     acceptance) make test-acceptance-parallel ;;
     defaults) HELM_DEFAULTS_IMAGE=haptic:test make test-helm-defaults ;;

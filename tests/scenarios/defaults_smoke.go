@@ -35,7 +35,7 @@ func (s *Session) defaultsSmoke(ctx context.Context) (result error) {
 		return &PhaseError{Code: 6, Phase: "port-forward", Err: err}
 	}
 	defer func() { result = errors.Join(result, forward.Process.Stop()) }()
-	client := httpclient.New(&httpclient.Config{Host: "127.0.0.1", HTTPPort: forward.Locals[2], HTTPSPort: forward.Locals[1]})
+	client := httpclient.New(&httpclient.Config{Host: loopbackHost, HTTPPort: forward.Locals[2], HTTPSPort: forward.Locals[1]})
 	defer client.CloseIdleConnections()
 	if err := poll(startup, 15*time.Second, time.Second, "HAProxy stats connection", func(ctx context.Context) (testutil.PollResult, error) {
 		_, err := client.GET("localhost", "/healthz").Do(ctx)

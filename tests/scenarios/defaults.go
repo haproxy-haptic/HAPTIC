@@ -120,7 +120,7 @@ func (s *Session) installDefaultsChart(ctx context.Context, options *DefaultsOpt
 	if err := s.LoadSPOAImage(ctx); err != nil {
 		return err
 	}
-	args := []string{helmUpgrade, "--install", s.Release, filepath.Join(s.Root, "charts", chartName), "--create-namespace"}
+	args := []string{helmUpgrade, "--install", s.Release, filepath.Join(s.Root, "charts", chartName), helmCreateNamespace}
 	if options.Image != "" {
 		args = append(args, s.ImageValues()...)
 	}

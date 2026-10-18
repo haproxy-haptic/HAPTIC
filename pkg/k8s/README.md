@@ -56,6 +56,7 @@ if _, err := w.WaitForSync(ctx); err != nil { /* ... */ }
 Key `WatcherConfig` fields (see `pkg/k8s/types/types.go` for full docs):
 
 - `IndexBy` — JSONPath expressions that form the composite lookup key. Order matters: `.Get(partial…)` does a prefix scan when fewer keys are supplied.
+- `Namespaces` — empty watches all namespaces. A list runs one informer per namespace, all feeding the same store and debouncer, so the watcher never lists or watches outside it; `FreshStore` lists the same namespaces.
 - `StoreType` — `StoreTypeMemory` (default) or `StoreTypeCached`. `CacheTTL` only applies to the cached store and defaults to ~2 min (auto-derived from drift prevention at the controller layer).
 - `DebounceInterval` — default `types.DefaultDebounceInterval` (100ms). Set to 0 for default, or a positive duration to override.
 - `CallOnChangeDuringSync` — when true, `OnChange` fires during initial bulk load with `stats.IsInitialSync == true`; when false, only `OnSyncComplete` fires for the initial set.

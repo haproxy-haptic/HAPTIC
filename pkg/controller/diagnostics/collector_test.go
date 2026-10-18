@@ -190,6 +190,25 @@ func TestCollectCustomWatchVersionsSelectorsAndLimit(t *testing.T) {
 	requireFinding(t, report, "resource-limit-reached")
 }
 
+func TestCollectScopedWatchListsOnlyItsNamespaces(t *testing.T) {
+	c, _, dyn := diagnosticFixture(t)
+	input, err := dyn.Resource(inputGVR).Namespace("haptic").Get(t.Context(), "haptic-config", metav1.GetOptions{})
+	require.NoError(t, err)
+	input.Object["spec"] = map[string]any{"watchedResources": map[string]any{"custom": map[string]any{
+		"apiVersion": "example.test/v1", "resources": "widgets", "namespaces": []any{"team-a", "team-b"},
+	}}}
+	_, err = dyn.Resource(inputGVR).Namespace("haptic").Update(t.Context(), input, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	var listed []string
+	dyn.PrependReactor("list", "widgets", func(action ktesting.Action) (bool, runtime.Object, error) {
+		listed = append(listed, action.GetNamespace())
+		return true, &unstructured.UnstructuredList{}, nil
+	})
+	report := c.Collect(t.Context())
+	require.True(t, report.Complete, "%+v", report.Findings)
+	require.Equal(t, []string{"team-a", "team-b"}, listed)
+}
+
 func TestCollectRejectsStaleLibraryRevision(t *testing.T) {
 	c, _, dyn := diagnosticFixture(t)
 	input, err := dyn.Resource(inputGVR).Namespace("haptic").Get(t.Context(), "haptic-config", metav1.GetOptions{})

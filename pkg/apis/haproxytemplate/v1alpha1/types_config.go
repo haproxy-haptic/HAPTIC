@@ -544,6 +544,25 @@ type WatchedResource struct {
 	// +optional
 	FieldSelector string `json:"fieldSelector,omitempty"`
 
+	// Namespaces restricts the watch to these namespaces; unset watches every
+	// namespace. The controller needs read access only there, and a template
+	// lookup into any other namespace fails the render instead of returning
+	// nothing. Requires indexBy to start with metadata.namespace.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=63
+	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +listType=set
+	// +optional
+	Namespaces []string `json:"namespaces,omitempty"`
+
+	// NamespacesSetting names the setting that chose namespaces, such as a
+	// Helm value; the error for a lookup outside them quotes it. Defaults to
+	// watchedResources.<name>.namespaces.
+	// +kubebuilder:validation:MaxLength=253
+	// +optional
+	NamespacesSetting string `json:"namespacesSetting,omitempty"`
+
 	// Store specifies the storage backend for this resource type.
 	//
 	// Valid values:

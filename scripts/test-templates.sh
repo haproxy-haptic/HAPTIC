@@ -1042,6 +1042,36 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     fi
 fi
 
+# Release-namespace Secrets opt-in. The fixtures hold Secrets in many namespaces;
+# the deployment's watch scope must not reach them, or the load gate rejects the
+# config of every install that turns the opt-in on.
+if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
+    SECRET_SCOPE_CONFIG=$(mktemp /tmp/haptic-secret-scope-config-XXXXXX.yaml)
+    trap 'rm -f "$TEMP_CONFIG" "$RATE_LIMIT_CONFIG" "$PROXY_PROTOCOL_CONFIG" "$TRACING_CONFIG" "$SECRET_SCOPE_CONFIG"' EXIT
+    echo -e "${YELLOW}Rendering release-namespace Secrets profile...${NC}" >&2
+    if ! helm template "$CHART_DIR" \
+        --namespace default \
+        $HAPROXY_VERSION_ARG \
+        --set controller.templateLibraries.haproxyIngress.enabled=true \
+        --set controller.templateLibraries.nginxIngress.enabled=true \
+        --set controller.rbac.releaseNamespaceSecretsOnly=true \
+        | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
+        > "$SECRET_SCOPE_CONFIG"; then
+        echo -e "${RED}Error: Failed to render the release-namespace Secrets profile${NC}" >&2
+        exit 1
+    fi
+    if [[ "$(yq 'select(.kind == "HAProxyTemplateConfig") | .spec.watchedResources.secrets.namespaces[0]' "$SECRET_SCOPE_CONFIG")" != "default" ]]; then
+        echo -e "${RED}Release-namespace Secrets profile: the Secret watch is not scoped — this profile would test nothing${NC}" >&2
+        FULL_RC=1
+    fi
+    echo -e "${YELLOW}Release-namespace Secrets profile: full validation pass...${NC}" >&2
+    if ! "$CONTROLLER_BIN" validate --file "$SECRET_SCOPE_CONFIG" "${SCHEMA_DIR_ARGS[@]}" "$@"; then
+        echo -e "${RED}Release-namespace Secrets profile: tests that pass with the opt-in OFF must also pass with it ON — the load gate crash-loops the controller otherwise${NC}" >&2
+        FULL_RC=1
+    fi
+    rm -f "$SECRET_SCOPE_CONFIG"
+fi
+
 # Non-default namespace. Every render above uses `--namespace default`, so an
 # assertion that pins a release-derived value — the namespace itself, the
 # fullname, anything from .Release — passes here and fails on every install that

@@ -66,6 +66,77 @@ func TestStoreWrapper_RecordsAmbiguousGetSingle(t *testing.T) {
 	assert.Contains(t, errorCollector.Err().Error(), "matched 2 objects; use Fetch or configure unique indexBy values")
 }
 
+func TestStoreWrapper_RecordsLookupOutsideNamespaces(t *testing.T) {
+	byNamespace := []string{"metadata.namespace", "metadata.name"}
+	tests := []struct {
+		name     string
+		resource config.WatchedResource
+		lookup   func(*StoreWrapper) any
+		wantErr  string
+	}{
+		{
+			name:     "GetSingle outside",
+			resource: config.WatchedResource{IndexBy: byNamespace, Namespaces: []string{"team-a"}},
+			lookup:   func(w *StoreWrapper) any { return w.GetSingle("team-b", "tls") },
+			wantErr:  "secrets team-b/tls cannot be read: watchedResources.secrets.namespaces limits the secrets watch to team-a. Reference secrets in team-a, or change watchedResources.secrets.namespaces",
+		},
+		{
+			name:     "Fetch outside names the setting that chose the namespaces",
+			resource: config.WatchedResource{IndexBy: byNamespace, Namespaces: []string{"haptic"}, NamespacesSetting: "controller.rbac.releaseNamespaceSecretsOnly"},
+			lookup:   func(w *StoreWrapper) any { return w.Fetch("team-b") },
+			wantErr:  "secrets in namespace team-b cannot be read: controller.rbac.releaseNamespaceSecretsOnly limits the secrets watch to haptic. Reference secrets in haptic, or change controller.rbac.releaseNamespaceSecretsOnly",
+		},
+		{
+			name:     "lookup inside",
+			resource: config.WatchedResource{IndexBy: byNamespace, Namespaces: []string{"team-a", "team-b"}},
+			lookup:   func(w *StoreWrapper) any { return w.GetSingle("team-b", "tls") },
+		},
+		{
+			name:     "a cloned wrapper keeps the scope",
+			resource: config.WatchedResource{IndexBy: byNamespace, Namespaces: []string{"team-a"}},
+			lookup: func(w *StoreWrapper) any {
+				return w.CloneWithSnapshotViewContext(w.readContext, nil, false).GetSingle("team-b", "tls")
+			},
+			wantErr: "secrets team-b/tls cannot be read",
+		},
+		{
+			name:     "unscoped watch",
+			resource: config.WatchedResource{IndexBy: byNamespace},
+			lookup:   func(w *StoreWrapper) any { return w.GetSingle("team-b", "tls") },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errorCollector := NewResourceErrorCollector()
+			wrapper := &StoreWrapper{
+				readContext:    templating.WithImmutableResourceInputs(t.Context()),
+				Store:          &storetest.MockStore{},
+				ResourceType:   "secrets",
+				Logger:         testutil.NewTestLogger(),
+				IndexBy:        tt.resource.IndexBy,
+				Scope:          namespaceScopeOf("secrets", &tt.resource),
+				resourceErrors: errorCollector,
+			}
+			assert.Empty(t, tt.lookup(wrapper), "the store is empty and an out-of-scope lookup returns nothing")
+			if tt.wantErr == "" {
+				require.NoError(t, errorCollector.Err())
+				return
+			}
+			require.Error(t, errorCollector.Err())
+			assert.Contains(t, errorCollector.Err().Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestNamespaceScopeOfUnscopedWatches(t *testing.T) {
+	assert.Nil(t, namespaceScopeOf("secrets", &config.WatchedResource{IndexBy: []string{"metadata.namespace"}}))
+	assert.Nil(t, namespaceScopeOf("secrets", &config.WatchedResource{IndexBy: []string{"metadata.name"}, Namespaces: []string{"a"}}),
+		"validation rejects this config; without a namespace key there is nothing to check")
+	assert.NoError(t, namespaceScopeOf("secrets", &config.WatchedResource{IndexBy: []string{"metadata.namespace"}, Namespaces: []string{"a"}}).Check(nil))
+	var unscoped *NamespaceScope
+	assert.NoError(t, unscoped.Check([]string{"any"}))
+}
+
 func TestStoreWrapper_RecordsInvalidKeyCount(t *testing.T) {
 	tests := []struct {
 		name string

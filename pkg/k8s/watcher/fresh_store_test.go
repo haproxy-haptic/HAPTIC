@@ -102,7 +102,7 @@ func TestFreshStoreReadsEveryPageOrRejectsTheSnapshot(t *testing.T) {
 				return true, page, nil
 			})
 			cfg := validWatcherConfig()
-			cfg.Namespace = "default"
+			cfg.Namespaces = []string{"default"}
 			watcher, err := New(cfg, client, nil)
 			require.NoError(t, err)
 			fresh, err := watcher.FreshStore(t.Context())

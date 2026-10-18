@@ -62,7 +62,6 @@ type CachedStore struct {
 	cacheTTL            time.Duration               // Cache entry TTL
 	client              dynamic.Interface           // Kubernetes dynamic client
 	gvr                 schema.GroupVersionResource // Resource type to fetch
-	namespace           string                      // Namespace for fetching (empty = all)
 	indexer             *indexer.Indexer            // Indexer for processing fetched resources
 	logger              *slog.Logger                // Logger for debug and warning messages
 	projected           bool                        // Informer delivers body-stripped objects (see Projected)
@@ -92,9 +91,6 @@ type CachedStoreConfig struct {
 
 	// GVR identifies the resource type to fetch
 	GVR schema.GroupVersionResource
-
-	// Namespace restricts fetching to a specific namespace (empty = all namespaces)
-	Namespace string
 
 	// Indexer processes fetched resources (field filtering)
 	Indexer *indexer.Indexer
@@ -146,7 +142,6 @@ func NewCachedStore(cfg *CachedStoreConfig) (*CachedStore, error) {
 		cacheTTL:       cfg.CacheTTL,
 		client:         cfg.Client,
 		gvr:            cfg.GVR,
-		namespace:      cfg.Namespace,
 		indexer:        cfg.Indexer,
 		logger:         logger,
 		projected:      cfg.Projected,
@@ -623,13 +618,8 @@ func (s *CachedStore) fetchProcessedResource(
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	if s.namespace != "" || ref.namespace != "" {
-		// Namespaced resource
-		ns := s.namespace
-		if ns == "" {
-			ns = ref.namespace
-		}
-		resource, err = s.client.Resource(s.gvr).Namespace(ns).Get(fetchCtx, ref.name, metav1.GetOptions{})
+	if ref.namespace != "" {
+		resource, err = s.client.Resource(s.gvr).Namespace(ref.namespace).Get(fetchCtx, ref.name, metav1.GetOptions{})
 	} else {
 		// Cluster-scoped resource
 		resource, err = s.client.Resource(s.gvr).Get(fetchCtx, ref.name, metav1.GetOptions{})

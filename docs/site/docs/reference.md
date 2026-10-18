@@ -372,6 +372,7 @@ These settings control how HAPTIC applies configuration to each HAProxy pod.
 | `indexBy` | list | `[]` | JSONPath expressions used to index resources for O(1) template lookup |
 | `fieldSelector` | string | `""` | Client-side JSONPath filter (for example `spec.ingressClassName=haptic`); supports any JSONPath expression unlike Kubernetes' built-in `fieldSelector` |
 | `labelSelector` | string | `""` | Server-side label selector for watch-time filtering (equality-only `key=value` pairs joined by commas) |
+| `namespaces` | list | unset | Watch only these namespaces. The chart then grants the resource with a Role in each listed namespace instead of the ClusterRole, and a template lookup into another namespace fails the render. Requires `indexBy` to start with `metadata.namespace` |
 | `enableValidationWebhook` | bool | `false` | Include this resource in the chart-rendered `ValidatingWebhookConfiguration` |
 | `statusPatch` | bool | `false` | Allow the controller to patch this resource's `/status` subresource |
 | `ignoreFields` | list | `[]` | JSONPath expressions dropped from this resource before storing it, in addition to `watchedResourcesIgnoreFields`; `[*]` selects every array element. An update that changes only ignored fields triggers no render |
@@ -487,6 +488,7 @@ to add checks for other generated files.
 | `controller.serviceAccount.annotations` | map | `{}` | ServiceAccount annotations |
 | `controller.serviceAccount.name` | string | `""` | ServiceAccount name (auto-generated if empty) |
 | `controller.rbac.create` | bool | `true` | Create RBAC resources |
+| `controller.rbac.releaseNamespaceSecretsOnly` | bool | `false` | Read Secrets only in the release namespace: the ClusterRole drops `secrets`, a Role grants it there, and references to Secrets elsewhere are rejected. See [Read Secrets only in the release namespace](operations/security.md#read-secrets-only-in-the-release-namespace) |
 
 ## Pod configuration (controller)
 

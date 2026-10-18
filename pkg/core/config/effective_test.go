@@ -306,3 +306,40 @@ func TestResolutionEqual_StrippedFieldTests(t *testing.T) {
 	assert.False(t, upgraded.Equal(base))
 	assert.False(t, base.Equal(renamed))
 }
+
+// scopedServedSet also reports which served resources are namespaced.
+type scopedServedSet struct {
+	servedSet
+	namespaced map[string]bool
+}
+
+func (s scopedServedSet) IsNamespaced(apiVersion, resources string) bool {
+	return s.namespaced[apiVersion+"|"+resources]
+}
+
+func TestResolveEffective_NamespacesRequireANamespacedResource(t *testing.T) {
+	served := scopedServedSet{
+		servedSet:  servedSet{"v1|secrets": true, "v1|namespaces": true},
+		namespaced: map[string]bool{"v1|secrets": true},
+	}
+	resolve := func(resources string, namespaces []string) error {
+		cfg := &Config{WatchedResources: map[string]WatchedResource{
+			"watched": {APIVersion: "v1", Resources: resources, IndexBy: []string{"metadata.namespace"}, Namespaces: namespaces},
+		}}
+		_, _, err := ResolveEffective(cfg, served, nil)
+		return err
+	}
+
+	require.NoError(t, resolve("secrets", []string{"team-a"}))
+	require.NoError(t, resolve("namespaces", nil))
+	err := resolve("namespaces", []string{"team-a"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `watched resource "watched" lists namespaces, but v1 namespaces is cluster-scoped`)
+
+	// A checker that cannot tell scopes resolves without the check.
+	cfg := &Config{WatchedResources: map[string]WatchedResource{
+		"watched": {APIVersion: "v1", Resources: "namespaces", IndexBy: []string{"metadata.namespace"}, Namespaces: []string{"team-a"}},
+	}}
+	_, _, err = ResolveEffective(cfg, served.servedSet, nil)
+	require.NoError(t, err)
+}

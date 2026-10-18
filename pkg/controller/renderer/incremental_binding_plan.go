@@ -124,7 +124,28 @@ func (s *incrementalRenderState) planComponentBindingsSnapshot(
 	if err != nil {
 		return nil, fmt.Errorf("planning incremental component %q bindings: %w", component.name, err)
 	}
+	if err := s.checkProjectionScopes(component, bindings); err != nil {
+		return nil, fmt.Errorf("planning incremental component %q bindings: %w", component.name, err)
+	}
 	return bindings, nil
+}
+
+// checkProjectionScopes applies the watched-namespace scope to resource
+// projections, which read the store by key without a template lookup.
+func (s *incrementalRenderState) checkProjectionScopes(component *incrementalComponent, bindings []incrementalBinding) error {
+	if s.scopeFor == nil || !component.resourceProjection {
+		return nil
+	}
+	for _, binding := range bindings {
+		projection, err := decodeIncrementalResourceProjection(binding.props)
+		if err != nil {
+			return err
+		}
+		if err := s.scopeFor(binding.source).Check(projection.Keys); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func newIncrementalBindingPlan() *incrementalBindingPlan {
@@ -302,6 +323,9 @@ func (s *incrementalRenderState) planComponentBindings(
 	}
 	bindings, err := decodeIncrementalBindings(component.name, encoded, s.config.WatchedResources)
 	if err != nil {
+		return nil, fmt.Errorf("planning incremental component %q bindings: %w", component.name, err)
+	}
+	if err := s.checkProjectionScopes(component, bindings); err != nil {
 		return nil, fmt.Errorf("planning incremental component %q bindings: %w", component.name, err)
 	}
 	return bindings, nil

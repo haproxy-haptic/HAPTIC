@@ -1,5 +1,5 @@
 .PHONY: help version lint lint-fix lint-chart lint-chart-ci audit check-all \
-        test test-unit test-integration test-agent-docker test-acceptance test-acceptance-parallel test-e2e test-gateway-conformance test-ingress-conformance test-helm-defaults build-integration-test \
+        test test-unit test-integration test-agent-docker test-acceptance test-acceptance-parallel test-e2e test-gateway-conformance test-ingress-conformance test-helm-defaults test-release-namespace-secrets build-integration-test \
         test-coverage test-integration-coverage test-coverage-combined bench bench-gateway-api \
         build check-source-hash docker-build docker-build-multiarch docker-build-multiarch-push docker-load-kind docker-push docker-clean \
         spoa-prep spoa-hub-image spoa-bundle-render spoa-bundle-check test-spoa-reload \
@@ -839,6 +839,10 @@ test-install-without-gateway-api: $(if $(SKIP_DOCKER_BUILD),,docker-build-test) 
 	@# Every other suite installs Gateway API first. This one must not, which is
 	@# why it owns its own cluster rather than joining the e2e one.
 	bash scripts/test-install-without-gateway-api.sh $(if $(KEEP_CLUSTER),--keep,)
+
+test-release-namespace-secrets: $(if $(SKIP_DOCKER_BUILD),,docker-build-test) ## Install with controller.rbac.releaseNamespaceSecretsOnly and verify RBAC, TLS, and rejections
+	@# Owns its own cluster: the chart's RBAC is the subject under test.
+	bash scripts/test-release-namespace-secrets.sh $(if $(KEEP_CLUSTER),--keep,)
 
 test-chart-upgrade: $(if $(SKIP_DOCKER_BUILD),,docker-build-test) ## Verify released-chart upgrades, traffic, rejection, and recovery
 	@# Owns its own kind cluster: it installs a released chart whose pre-upgrade

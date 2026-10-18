@@ -59,7 +59,7 @@ type DiscoveryServedChecker struct {
 	fetcher      schemafetcher.Fetcher
 	ctx          context.Context
 	logger       *slog.Logger
-	cache        map[string]map[string]string // groupVersion -> plural -> kind ("" never stored)
+	cache        map[string]map[string]servedResource // groupVersion -> plural
 	transientErr error
 }
 
@@ -69,14 +69,24 @@ func NewDiscoveryServedChecker(ctx context.Context, d discovery.DiscoveryInterfa
 		fetcher:   fetcher,
 		ctx:       ctx,
 		logger:    logger,
-		cache:     make(map[string]map[string]string),
+		cache:     make(map[string]map[string]servedResource),
 	}
+}
+
+type servedResource struct {
+	kind       string
+	namespaced bool
 }
 
 // IsServed implements coreconfig.ServedVersionChecker.
 func (c *DiscoveryServedChecker) IsServed(apiVersion, resources string) bool {
-	_, ok := c.servedKinds(apiVersion)[resources]
+	_, ok := c.servedResources(apiVersion)[resources]
 	return ok
+}
+
+// IsNamespaced implements coreconfig.NamespaceScopeChecker.
+func (c *DiscoveryServedChecker) IsNamespaced(apiVersion, resources string) bool {
+	return c.servedResources(apiVersion)[resources].namespaced
 }
 
 // FieldServed implements coreconfig.SchemaFieldChecker: it fetches the
@@ -86,7 +96,8 @@ func (c *DiscoveryServedChecker) IsServed(apiVersion, resources string) bool {
 // resource discovery says is served — fails the resolution rather than
 // silently stripping, mirroring the fail-closed type-bootstrap contract.
 func (c *DiscoveryServedChecker) FieldServed(apiVersion, resources, fieldPath string) (bool, error) {
-	kind, ok := c.servedKinds(apiVersion)[resources]
+	served, ok := c.servedResources(apiVersion)[resources]
+	kind := served.kind
 	if c.transientErr != nil {
 		return false, c.transientErr
 	}
@@ -104,13 +115,13 @@ func (c *DiscoveryServedChecker) FieldServed(apiVersion, resources, fieldPath st
 	return schemafetcher.SchemaHasField(sch, components, fieldPath), nil
 }
 
-// servedKinds returns the plural→Kind map for a group/version, querying
+// servedResources returns the served plurals of a group/version, querying
 // discovery on first use and memoizing the answer (including the negative
 // one). Transient errors are recorded in transientErr; see the type comment.
-func (c *DiscoveryServedChecker) servedKinds(apiVersion string) map[string]string {
+func (c *DiscoveryServedChecker) servedResources(apiVersion string) map[string]servedResource {
 	served, ok := c.cache[apiVersion]
 	if !ok {
-		served = make(map[string]string)
+		served = make(map[string]servedResource)
 		list, err := c.discovery.ServerResourcesForGroupVersion(apiVersion)
 		switch {
 		case apierrors.IsNotFound(err):
@@ -124,7 +135,8 @@ func (c *DiscoveryServedChecker) servedKinds(apiVersion string) map[string]strin
 			}
 		default:
 			for i := range list.APIResources {
-				served[list.APIResources[i].Name] = list.APIResources[i].Kind
+				resource := &list.APIResources[i]
+				served[resource.Name] = servedResource{kind: resource.Kind, namespaced: resource.Namespaced}
 			}
 		}
 		c.cache[apiVersion] = served

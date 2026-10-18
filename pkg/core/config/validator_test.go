@@ -450,6 +450,39 @@ func TestValidateWatchedResource_VersionFields(t *testing.T) {
 	}
 }
 
+func TestValidateWatchedResource_Namespaces(t *testing.T) {
+	scoped := func(indexBy []string, namespaces ...string) WatchedResource {
+		return WatchedResource{APIVersion: "v1", Resources: "secrets", IndexBy: indexBy, Namespaces: namespaces}
+	}
+	byNamespace := []string{"metadata.namespace", "metadata.name"}
+	tests := []struct {
+		name      string
+		resource  WatchedResource
+		errSubstr string // empty = expect success
+	}{
+		{name: "unset watches all namespaces", resource: WatchedResource{APIVersion: "v1", Resources: "secrets", IndexBy: []string{"metadata.name"}}},
+		{name: "listed namespaces", resource: scoped(byNamespace, "team-a", "team-b")},
+		{name: "empty list is rejected", resource: WatchedResource{APIVersion: "v1", Resources: "secrets", IndexBy: byNamespace, Namespaces: []string{}}, errSubstr: "namespaces is empty"},
+		{name: "index must start with the namespace", resource: scoped([]string{"metadata.name", "metadata.namespace"}, "team-a"), errSubstr: "namespaces requires index_by to start with metadata.namespace"},
+		{name: "invalid name", resource: scoped(byNamespace, "Team_A"), errSubstr: `namespaces[0] "Team_A" is not a valid namespace name`},
+		{name: "empty name", resource: scoped(byNamespace, "team-a", ""), errSubstr: `namespaces[1] "" is not a valid namespace name`},
+		{name: "duplicate", resource: scoped(byNamespace, "team-a", "team-a"), errSubstr: `namespaces lists "team-a" twice`},
+		{name: "setting describes listed namespaces", resource: WatchedResource{APIVersion: "v1", Resources: "secrets", IndexBy: byNamespace, Namespaces: []string{"team-a"}, NamespacesSetting: "chart.value"}},
+		{name: "setting without namespaces", resource: WatchedResource{APIVersion: "v1", Resources: "secrets", IndexBy: byNamespace, NamespacesSetting: "chart.value"}, errSubstr: "namespaces_setting has no namespaces to describe"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateStructure(versionFieldsBaseConfig(&tt.resource))
+			if tt.errSubstr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errSubstr)
+		})
+	}
+}
+
 func TestValidateRequires(t *testing.T) {
 	base := func() *Config {
 		return versionFieldsBaseConfig(&WatchedResource{

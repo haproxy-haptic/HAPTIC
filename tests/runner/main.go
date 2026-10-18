@@ -28,6 +28,7 @@ const upgradeScenario = "chart-upgrade"
 const checkBaselinesScenario = "check-upgrade-baselines"
 const defaultsScenario = "helm-defaults"
 const gitopsScenario = "gitops-lifecycle"
+const secretsScenario = "release-namespace-secrets"
 
 func main() {
 	if err := mainError(); err != nil && !errors.Is(err, flag.ErrHelp) {
@@ -70,7 +71,7 @@ func parseOptions(args []string) (options, error) {
 		return options, errors.New("usage: test-infra install-without-gateway-api [flags]")
 	}
 	options.name = args[0]
-	if options.name != "install-without-gateway-api" && options.name != upgradeScenario && options.name != checkBaselinesScenario && options.name != defaultsScenario && options.name != gitopsScenario {
+	if options.name != "install-without-gateway-api" && options.name != upgradeScenario && options.name != checkBaselinesScenario && options.name != defaultsScenario && options.name != gitopsScenario && options.name != secretsScenario {
 		return options, fmt.Errorf("unknown scenario %q", options.name)
 	}
 	options.setDefaults()
@@ -103,6 +104,9 @@ func (options *options) setDefaults() {
 	options.release = defaultRelease
 	if options.name == gitopsScenario {
 		options.cluster = ""
+	}
+	if options.name == secretsScenario {
+		options.cluster = envDefault("SECRETS_CLUSTER_NAME", "haptic-secrets")
 	}
 	if options.name == defaultsScenario {
 		options.cluster = envDefault("CLUSTER_NAME", "helm-defaults")
@@ -247,6 +251,9 @@ func execute(ctx context.Context, session *scenarios.Session, options *options) 
 	}
 	if options.name == gitopsScenario {
 		return session.GitOps(ctx, &scenarios.GitOpsOptions{Provider: options.provider, Certificates: options.certificates, Image: options.image})
+	}
+	if options.name == secretsScenario {
+		return session.ReleaseNamespaceSecrets(ctx)
 	}
 	return session.InstallWithoutGatewayAPI(ctx)
 }

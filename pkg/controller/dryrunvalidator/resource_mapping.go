@@ -42,6 +42,7 @@ const (
 
 type resourceAlias struct {
 	name          string
+	namespaces    []string // empty: every namespace
 	labelSelector map[string]string
 	fieldSelector *indexer.FieldSelectorMatcher
 }
@@ -70,6 +71,7 @@ func buildResourceAliases(resources map[string]config.WatchedResource) (map[sche
 		key := schema.GroupVersionResource{Group: gv.Group, Version: gv.Version, Resource: resource.Resources}
 		aliases[key] = append(aliases[key], resourceAlias{
 			name:          name,
+			namespaces:    resource.Namespaces,
 			labelSelector: resource.LabelSelector,
 			fieldSelector: fieldSelector,
 		})
@@ -78,7 +80,7 @@ func buildResourceAliases(resources map[string]config.WatchedResource) (map[sche
 }
 
 func (a resourceAlias) matches(object *unstructured.Unstructured) (bool, error) {
-	if object == nil {
+	if object == nil || !a.watchesNamespace(object.GetNamespace()) {
 		return false, nil
 	}
 	labels := object.GetLabels()
@@ -91,6 +93,12 @@ func (a resourceAlias) matches(object *unstructured.Unstructured) (bool, error) 
 		return true, nil
 	}
 	return a.fieldSelector.Matches(object.Object)
+}
+
+// watchesNamespace reports whether the store can hold objects of the
+// namespace; an object it can never hold is not an input of the render.
+func (a resourceAlias) watchesNamespace(namespace string) bool {
+	return len(a.namespaces) == 0 || slices.Contains(a.namespaces, namespace)
 }
 
 func (a resourceAlias) filtered() bool {
@@ -191,6 +199,9 @@ func createAliasOverlayForDelete(alias resourceAlias, namespace, name string, ol
 		return nil, fmt.Errorf("DELETE has no old object required by selector on store %q", alias.name)
 	}
 	if oldResource == nil {
+		if !alias.watchesNamespace(namespace) {
+			return stores.NewStoreOverlay(), nil
+		}
 		return stores.NewStoreOverlayForDelete(namespace, name), nil
 	}
 	matches, err := alias.matches(oldResource)

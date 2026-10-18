@@ -24,6 +24,7 @@ The shared Go helpers and scenarios replace the original implementations below.
 | --- | --- | --- |
 | `make test-chart-upgrade` | `BASELINE_CHART_VERSION`, registry baseline discovery, `--list-baselines`, `--keep`, `UPGRADE_CLUSTER_NAME`, namespace/release/image overrides, per-baseline artifacts, historical 0.1.0 values | `test-chart-upgrade`, `test-chart-upgrade-minimum-kubernetes` |
 | `make test-install-without-gateway-api` | `PLAIN_CLUSTER_NAME`, `--keep`, selected HAProxy/Kind versions, absence of Gateway API CRDs, default installation and later compatibility checks | Default and minimum-Kubernetes install jobs |
+| `make test-release-namespace-secrets` | `SECRETS_CLUSTER_NAME`, `--image`, `--keep`; `controller.rbac.releaseNamespaceSecretsOnly` RBAC answers, TLS from the release namespace, admission and reconcile rejection of Secrets elsewhere | Default and minimum-Kubernetes install jobs |
 | `make test-helm-defaults` | `--image`, `--namespace`, `--keep-cluster`, `CLUSTER_NAME`, `NAMESPACE`, `RELEASE_NAME`, `TIMEOUT`, `KEEP_CLUSTER`, cert-manager version; exit codes 1–11 retain their named failure phases | `test-helm-defaults` |
 | `make test-gitops-lifecycle` | `--provider argo\|flux`, `--image`, `--certificates external\|cert-manager`, `--cluster`, `--artifacts`, `--keep`; real GitOps controllers | Existing provider/certificate matrix |
 | Acceptance and e2e suites | Existing frameworks, test names, tags, parallel runner, sharding weights, JUnit, image identity, and failure artifacts | Existing acceptance/e2e jobs and full merge train |

@@ -129,6 +129,8 @@ func ConvertSpec(spec *v1alpha1.HAProxyTemplateConfigSpec) (*config.Config, erro
 			IndexBy:                 crdRes.IndexBy,
 			LabelSelector:           labelSelectorMap,
 			FieldSelector:           crdRes.FieldSelector,
+			Namespaces:              crdRes.Namespaces,
+			NamespacesSetting:       crdRes.NamespacesSetting,
 			Store:                   crdRes.Store,
 			DebounceInterval:        crdRes.DebounceInterval,
 			IgnoreFields:            crdRes.IgnoreFields,

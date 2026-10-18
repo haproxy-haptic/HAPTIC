@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -726,6 +727,39 @@ func validateWatchedResource(name string, resource *WatchedResource) error {
 		}
 	}
 
+	return validateWatchNamespaces(name, resource)
+}
+
+// NamespaceIndexPath is the indexBy expression whose lookup key is a namespace.
+const NamespaceIndexPath = "metadata.namespace"
+
+var namespaceName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+func validateWatchNamespaces(name string, resource *WatchedResource) error {
+	if resource.Namespaces == nil {
+		if resource.NamespacesSetting != "" {
+			return fmt.Errorf("resource %q: namespaces_setting has no namespaces to describe; set namespaces or remove it", name)
+		}
+		return nil
+	}
+	if len(resource.Namespaces) == 0 {
+		return fmt.Errorf("resource %q: namespaces is empty; list at least one namespace or remove the field to watch all namespaces", name)
+	}
+	// Without the namespace as first key a lookup outside the list would
+	// silently find nothing instead of failing.
+	if resource.IndexBy[0] != NamespaceIndexPath {
+		return fmt.Errorf("resource %q: namespaces requires index_by to start with %s", name, NamespaceIndexPath)
+	}
+	seen := make(map[string]bool, len(resource.Namespaces))
+	for i, namespace := range resource.Namespaces {
+		if len(namespace) > 63 || !namespaceName.MatchString(namespace) {
+			return fmt.Errorf("resource %q: namespaces[%d] %q is not a valid namespace name", name, i, namespace)
+		}
+		if seen[namespace] {
+			return fmt.Errorf("resource %q: namespaces lists %q twice", name, namespace)
+		}
+		seen[namespace] = true
+	}
 	return nil
 }
 
