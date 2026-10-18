@@ -209,6 +209,12 @@ HAPTIC doesn't set `X-Forwarded-Port`: its listeners bind container ports behind
 the HAProxy Service, so the port it sees isn't always the port the client used.
 `X-Forwarded-Host` would repeat the `Host` header.
 
+HAPTIC removes or replaces client `X-Forwarded-Host`, `-Port`, and `-Proto`
+before operator `frontend-extra-*` snippets run, so these snippets can set their
+own values.
+`X-Forwarded-For` remains subject to the [per-route policy](../libraries/base.md#forwarded-headers),
+which runs after these snippets.
+
 ### Trust an L7 load balancer
 
 If an L7 load balancer or a content delivery network in front of HAPTIC sets

@@ -277,13 +277,24 @@ and per-route modes, the rules are:
 http-request set-header X-Forwarded-Proto %[ssl_fc,iif(https,http)]
 http-request del-header X-Forwarded-Host
 http-request del-header X-Forwarded-Port
+# ... frontend-extra-* snippets and routing ...
 http-request del-header X-Forwarded-For
 # ... every other frontend-filters-* rule, including set-src ...
 http-request add-header X-Forwarded-For %[src]
 ```
 
-`frontend-filters-010-forwarded-headers` runs first in the filter chain, so SPOE
-messages and every later rule see the cleaned headers.
+`frontend-forwarded-headers` sanitizes the client's `X-Forwarded-Host`, `-Port`,
+and `-Proto` before `frontend-extra-*` snippets run. A snippet can then set
+these headers without HAPTIC deleting or replacing them.
+Trust for these headers uses the connection source before any operator
+`set-src` rewrite; the later `X-Forwarded-For` policy sees the rewritten source.
+
+`frontend-filters-010-forwarded-headers` applies `X-Forwarded-For` policy after
+routing determines the per-route mode, before SPOE messages and other filters.
+This policy also applies to an `X-Forwarded-For` written by a `frontend-extra-*`
+snippet. To set that header after the route policy, use a `frontend-filters-*`
+snippet ordered after `010`; `998` still appends the source address according
+to the route mode. A snippet ordered after `998` can set the final header.
 `frontend-filters-998-forwarded-for` appends the client address after any
 `set-src` rewrite. With `extraContext.forwardedHeaders.trustedProxies` set, the
 deletions skip a source listed in `forwarded-trusted-proxies.map`, and such a

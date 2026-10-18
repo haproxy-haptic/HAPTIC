@@ -1716,25 +1716,12 @@ templateSnippets:
       errorfile 503 {{ pathResolver.GetPath("503.http", "file") }}
       errorfile 504 {{ pathResolver.GetPath("504.http", "file") }}
 
-  # Sanitize before other filters and SPOE.
-  # See docs/site/docs/libraries/base.md#forwarded-headers.
-  frontend-filters-010-forwarded-headers:
+  # Sanitize client authority and scheme before operator snippets write their own.
+  frontend-forwarded-headers:
     template: |
-      {%- import "util-forwarded-for-modes" for ForwardedForModes -%}
-      {%%
-        var modes = ForwardedForModes()
-        var trusted = shared.Get("forwardedTrustedProxiesMap") | fallback("") | tostring()
-        var unlessTrusted = ""
-        if trusted != "" {
-          unlessTrusted = " unless haptic_trusted_proxy"
-        }
-        var xffCondition = unlessTrusted
-        if modes != "" && trusted != "" {
-          xffCondition = " if { var(txn.xff_mode) -m str replace } || !{ var(txn.xff_mode) -m found } !haptic_trusted_proxy"
-        } else if modes != "" {
-          xffCondition = " unless { var(txn.xff_mode) -m str append ifmissing ignore }"
-        }
-      %%}
+      {%- var trusted = shared.Get("forwardedTrustedProxiesMap") | fallback("") | tostring() -%}
+      {%- var unlessTrusted = "" -%}
+      {%- if trusted != "" %}{% unlessTrusted = " unless haptic_trusted_proxy" %}{% end %}
       # base/forwarded-headers (extraContext.forwardedHeaders)
       {%- if trusted != "" %}
       acl haptic_trusted_proxy src,map_ip({{ trusted }}) -m found
@@ -1742,6 +1729,24 @@ templateSnippets:
       http-request set-header X-Forwarded-Proto %[ssl_fc,iif(https,http)]{{ unlessTrusted }}{% if trusted != "" %} { req.hdr(X-Forwarded-Proto) -m found }{% end %}
       http-request del-header X-Forwarded-Host{{ unlessTrusted }}
       http-request del-header X-Forwarded-Port{{ unlessTrusted }}
+
+  # X-Forwarded-For policy needs the route key and must precede SPOE.
+  frontend-filters-010-forwarded-headers:
+    template: |
+      {%- import "util-forwarded-for-modes" for ForwardedForModes -%}
+      {%%
+        var modes = ForwardedForModes()
+        var trusted = shared.Get("forwardedTrustedProxiesMap") | fallback("") | tostring()
+        var xffCondition = ""
+        if trusted != "" {
+          xffCondition = " unless haptic_trusted_proxy"
+        }
+        if modes != "" && trusted != "" {
+          xffCondition = " if { var(txn.xff_mode) -m str replace } || !{ var(txn.xff_mode) -m found } !haptic_trusted_proxy"
+        } else if modes != "" {
+          xffCondition = " unless { var(txn.xff_mode) -m str append ifmissing ignore }"
+        }
+      %%}
       {%- if modes != "" %}
       {{ modes }}
       {%- end %}
@@ -1758,7 +1763,7 @@ templateSnippets:
       http-request add-header X-Forwarded-For %[src]
       {%- end %}
 
-  # Registers the map frontend-filters-010 reads (features render first);
+  # Registers the trust map before frontend rules render;
   # haproxy -c rejects an address the charset check lets through.
   features-010-forwarded-headers:
     template: |-
@@ -3068,6 +3073,7 @@ haproxyConfig:
         bind unix@/etc/haproxy/http-h1-frontend.sock mode 660 accept-proxy{{ render "util-http-frontend-settings" }}
         {# Extension point for early frontend directives (options, captures, ACLs) #}
         {# Runs BEFORE routing logic; use frontend-filters-* for post-routing manipulation #}
+        {{ render "frontend-forwarded-headers" | indent(2, true) }}
         {{- on_own_lines(render_glob "frontend-extra-*") | indent(2, true) }}
 
         {# Include frontend routing logic (can be overridden by libraries) #}
@@ -3092,6 +3098,7 @@ haproxyConfig:
         {# routing/filter snippet lands in both protocols' frontends so #}
         {# behaviour stays in lockstep regardless of which protocol the #}
         {# client uses. #}
+        {{ render "frontend-forwarded-headers" | indent(2, true) }}
         {{- on_own_lines(render_glob "frontend-extra-*") | indent(2, true) }}
         {{ render "frontend-routing-logic" | indent(2, true) }}
         {{- FrontendFilterChain() | indent(2, true) }}
@@ -3557,7 +3564,7 @@ validationTests:
           frontend logs the request).
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^frontend http_frontend\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Proto %\[ssl_fc,iif\(https,http\)\]\n[ \t]+http-request del-header X-Forwarded-Host\n[ \t]+http-request del-header X-Forwarded-Port\n[ \t]+http-request del-header X-Forwarded-For\n'
+        pattern: '(?m)^frontend http_frontend\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Proto %\[ssl_fc,iif\(https,http\)\]\n[ \t]+http-request del-header X-Forwarded-Host\n[ \t]+http-request del-header X-Forwarded-Port\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-For\n'
       - type: contains
         target: haproxy.cfg
         pattern: '(?m)^frontend http_frontend_h2c\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-For\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request add-header X-Forwarded-For %\[src\]\n'
@@ -3603,7 +3610,7 @@ validationTests:
         expected: "2001:db8::/32 1\n10.0.0.0/8 1\n192.0.2.10 1\n"
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^frontend http_frontend\n(?:[ \t][^\n]*\n|\n)*?[ \t]+acl haptic_trusted_proxy src,map_ip\(\S*/forwarded-trusted-proxies\.map\) -m found\n[ \t]+http-request set-header X-Forwarded-Proto %\[ssl_fc,iif\(https,http\)\] unless haptic_trusted_proxy \{ req\.hdr\(X-Forwarded-Proto\) -m found \}\n[ \t]+http-request del-header X-Forwarded-Host unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-Port unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-For unless haptic_trusted_proxy\n'
+        pattern: '(?m)^frontend http_frontend\n(?:[ \t][^\n]*\n|\n)*?[ \t]+acl haptic_trusted_proxy src,map_ip\(\S*/forwarded-trusted-proxies\.map\) -m found\n[ \t]+http-request set-header X-Forwarded-Proto %\[ssl_fc,iif\(https,http\)\] unless haptic_trusted_proxy \{ req\.hdr\(X-Forwarded-Proto\) -m found \}\n[ \t]+http-request del-header X-Forwarded-Host unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-Port unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-For unless haptic_trusted_proxy\n'
 
   test-forwarded-headers-trusted-proxies-rejects-bad-entry:
     description: A trusted-proxy entry that is not an address could inject configuration, so the render refuses it
