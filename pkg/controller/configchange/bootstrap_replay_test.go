@@ -36,17 +36,19 @@ func TestBootstrapPreservesValidationReplay(t *testing.T) {
 			observed := bus.Subscribe("validation-replay-test", 10)
 			bus.Start()
 			handler.handleBecameLeader(events.NewBecameLeaderEvent("new-controller"))
+			verdict := testutil.WaitForEvent[*events.ConfigVerdictReplayedEvent](t, observed, testutil.LongTimeout)
 			replayed := testutil.WaitForEvent[*events.ConfigValidatedEvent](t, observed, testutil.LongTimeout)
 			require.Equal(t, "config=3", replayed.Version)
 			assert.Equal(t, "secret=2", replayed.SecretVersion)
 			assert.Equal(t, source == "active restore", replayed.ActiveSnapshotRestore)
+
+			// The startup snapshot stays the newest verdict whatever state
+			// the bootstrap left to replay.
+			startup, ok := verdict.Verdict.(*events.ConfigValidatedEvent)
+			require.True(t, ok)
+			updater.handleConfigValidated(t.Context(), startup)
 			updater.handleConfigValidated(t.Context(), replayed)
-			status := getStatus(t, client)
-			if source == "active restore" {
-				assert.Equal(t, metav1.ConditionFalse, status.Conditions[0].Status)
-			} else {
-				assert.Equal(t, metav1.ConditionTrue, status.Conditions[0].Status)
-			}
+			assert.Equal(t, metav1.ConditionTrue, getStatus(t, client).Conditions[0].Status)
 		})
 	}
 }

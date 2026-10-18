@@ -69,6 +69,7 @@ const (
 	EventTypeConfigValidated              = "config.validated"
 	EventTypeConfigInvalid                = "config.invalid"
 	EventTypeConfigValidationInconclusive = "config.validation.inconclusive"
+	EventTypeConfigVerdictReplayed        = "config.verdict.replayed"
 	EventTypeConfigResourceChanged        = "config.resource.changed"
 	EventTypeLibrarySetChanged            = "snippets.set.changed"
 

@@ -43,6 +43,7 @@ func startStatusUpdater(t *testing.T, u *StatusUpdater) {
 		cancel()
 		<-done
 	})
+	<-u.SubscriptionReady()
 }
 
 // staleLoadGateWrite is what an old controller version that cannot load the
@@ -90,7 +91,7 @@ func TestStatusUpdater_LeaderVerdictWinsOverStaleWriterOfSameGeneration(t *testi
 	u, crd := newStatusUpdaterFixture(t, htc)
 	startStatusUpdater(t, u)
 
-	u.EventBus().Publish(events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.EventBus().Publish(validatedVerdict(htc, "v1"))
 	requireLeaderVerdict(t, crd)
 
 	for range 3 {
@@ -107,7 +108,7 @@ func TestStatusUpdater_LeaderVerdictWinsOverStaleWriterOfOlderGeneration(t *test
 	u, crd := newStatusUpdaterFixture(t, htc)
 	startStatusUpdater(t, u)
 
-	u.EventBus().Publish(events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.EventBus().Publish(validatedVerdict(htc, "v1"))
 	requireLeaderVerdict(t, crd)
 
 	staleLoadGateWrite(t, crd, testGeneration-1)
@@ -123,7 +124,7 @@ func TestStatusUpdater_DoesNotOverwriteANewerGeneration(t *testing.T) {
 	u.statusGuardMaxInterval = 20 * time.Millisecond
 	startStatusUpdater(t, u)
 
-	u.EventBus().Publish(events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.EventBus().Publish(validatedVerdict(htc, "v1"))
 	requireLeaderVerdict(t, crd)
 
 	staleLoadGateWrite(t, crd, testGeneration+1)
@@ -138,7 +139,7 @@ func TestStatusUpdater_DoesNotOverwriteANewerGeneration(t *testing.T) {
 func TestReportConfigLoadFailure_LeavesANewerGenerationAlone(t *testing.T) {
 	htc := newHTC()
 	u, crd := newStatusUpdaterFixture(t, htc)
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(htc, "v1"))
 
 	_, logger := testutil.NewTestBusAndLogger()
 	ReportConfigLoadFailure(context.Background(), crd, events.ConfigSourceRef{
@@ -159,7 +160,7 @@ func TestStatusUpdater_NewTermDoesNotRestoreAPreviousTermsVerdict(t *testing.T) 
 	u.statusGuardMinInterval = 10 * time.Millisecond
 	u.statusGuardMaxInterval = 20 * time.Millisecond
 	u.EventBus().Start()
-	u.handleConfigValidated(context.Background(), events.NewConfigValidatedEvent(nil, htc, "v1", ""))
+	u.handleConfigValidated(context.Background(), validatedVerdict(htc, "v1"))
 
 	staleLoadGateWrite(t, crd, testGeneration)
 

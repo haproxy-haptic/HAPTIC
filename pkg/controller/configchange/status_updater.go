@@ -21,6 +21,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
@@ -95,6 +96,10 @@ const (
 // - HAProxy validation (Stage 4): Rendered config syntax check with haproxy -c.
 type StatusUpdater struct {
 	*component.Base
+	*component.ReadySignal
+
+	// Followers recover missed verdicts through replay on takeover.
+	leading atomic.Bool
 
 	crdClient versioned.Interface
 
@@ -130,6 +135,9 @@ type StatusUpdater struct {
 	// condition is otherwise only rewritten on a configuration load, and a
 	// single failed check would leave it False for the rest of the term.
 	haproxyRefused bool
+	// Verdict sequences are local to this iteration.
+	verdict      uint64
+	verdictValid bool
 
 	// asserted is the status this leader last wrote (or found already
 	// written) per source, keyed by namespace/name. The status guard
@@ -160,6 +168,7 @@ func NewStatusUpdater(
 	logger *slog.Logger,
 ) *StatusUpdater {
 	u := &StatusUpdater{
+		ReadySignal:            component.NewReadySignal(),
 		crdClient:              crdClient,
 		kubeClient:             kubeClient,
 		asserted:               make(map[string]v1alpha1.HAProxyTemplateConfigStatus),
@@ -183,11 +192,13 @@ func NewStatusUpdater(
 			events.EventTypeConfigValidated,
 			events.EventTypeConfigInvalid,
 			events.EventTypeConfigValidationInconclusive,
+			events.EventTypeConfigVerdictReplayed,
 			events.EventTypeValidationFailed,
 			events.EventTypeRenderGateCompleted,
 			events.EventTypeHTTPContentRevoked,
 			events.EventTypeHTTPContentRejected,
 		},
+		EventFilter: func(busevents.Event) bool { return u.leading.Load() },
 	})
 
 	return u
@@ -205,10 +216,19 @@ func (u *StatusUpdater) Start(ctx context.Context) error {
 	u.recorder = u.broadcaster.NewRecorder(clientsetscheme.Scheme, corev1.EventSource{Component: eventSourceComponent})
 	u.broadcaster.StartRecordingToSink(&corev1client.EventSinkImpl{Interface: u.kubeClient.CoreV1().Events("")})
 	defer u.broadcaster.Shutdown()
-	// A new leadership term defends only verdicts written in that term.
+	// Each term starts from the handler's newest verdict replay.
+	u.FlushPending()
 	u.mu.Lock()
 	clear(u.asserted)
+	u.configRefs = nil
+	u.haproxyRefused = false
+	u.verdict = 0
+	u.verdictValid = false
 	u.mu.Unlock()
+	u.leading.Store(true)
+	defer u.Rearm()
+	defer u.leading.Store(false)
+	u.MarkReady()
 	guardCtx, stopGuard := context.WithCancel(ctx)
 	defer stopGuard()
 	go u.runStatusGuard(guardCtx)
@@ -220,6 +240,8 @@ func (u *StatusUpdater) Start(ctx context.Context) error {
 // Start.
 func (u *StatusUpdater) HandleEvent(event busevents.Event) {
 	switch e := event.(type) {
+	case *events.ConfigVerdictReplayedEvent:
+		u.HandleEvent(e.Verdict)
 	case *events.ConfigValidatedEvent:
 		u.handleConfigValidated(u.ctx, e)
 	case *events.ConfigInvalidEvent:
@@ -252,20 +274,18 @@ func (u *StatusUpdater) restoreValidatedAfterPass(ctx context.Context, event *ev
 	if !refused {
 		return
 	}
-	for _, ref := range refs {
-		u.applyStatus(ctx, ref.Namespace, ref.Name,
-			func(status *v1alpha1.HAProxyTemplateConfigStatus) {
-				now := metav1.NewTime(time.Now())
-				status.ObservedGeneration = ref.Generation
-				status.LastValidated = &now
-				status.ValidationStatus = statusValid
-				status.ValidationMessage = "HAProxy accepted the rendered configuration again"
-				status.ValidationErrors = nil
-				setValidatedCondition(status, metav1.ConditionTrue, reasonValidationSucceeded,
-					"HAProxy accepted the rendered configuration again", ref.Generation)
-			},
-			"Updated HAProxyTemplateConfig status to Valid (HAProxy accepted a render again)")
-	}
+	u.applyVerdict(ctx, refs,
+		func(ref events.ConfigSourceRef, status *v1alpha1.HAProxyTemplateConfigStatus) {
+			now := metav1.NewTime(time.Now())
+			status.ObservedGeneration = ref.Generation
+			status.LastValidated = &now
+			status.ValidationStatus = statusValid
+			status.ValidationMessage = "HAProxy accepted the rendered configuration again"
+			status.ValidationErrors = nil
+			setValidatedCondition(status, metav1.ConditionTrue, reasonValidationSucceeded,
+				"HAProxy accepted the rendered configuration again", ref.Generation)
+		},
+		"Updated HAProxyTemplateConfig status to Valid (HAProxy accepted a render again)")
 }
 
 // handleRenderGateCompleted emits a Kubernetes Event for the render gate's
@@ -411,81 +431,67 @@ func refusalCause(event *events.RenderGateCompletedEvent) string {
 
 // handleConfigValidated updates CRD status to reflect successful validation.
 func (u *StatusUpdater) handleConfigValidated(ctx context.Context, event *events.ConfigValidatedEvent) {
-	if event.ActiveSnapshotRestore {
-		return
-	}
-
-	// Skip synthetic bootstrap events
-	if event.Version == syntheticBootstrapVersion {
-		return
-	}
-
-	// Extract the HAProxyTemplateConfig from the event
 	htc, ok := event.TemplateConfig.(*v1alpha1.HAProxyTemplateConfig)
 	if !ok {
 		u.Logger().Debug("ConfigValidatedEvent does not contain HAProxyTemplateConfig, skipping status update",
 			"type", fmt.Sprintf("%T", event.TemplateConfig))
 		return
 	}
-
 	refs := sourceRefsOrFallback(event.Sources, htc)
-	u.cacheConfigRefs(refs)
+	if !u.adoptVerdict(event.VerdictSequence, true, refs) {
+		return
+	}
 
 	// The verdict is a property of the merged set, so every source gets the
 	// same condition; observedGeneration is per object, because it is only
 	// meaningful against that object's own metadata.generation (ADR-0016).
-	for _, ref := range refs {
-		u.applyStatus(ctx, ref.Namespace, ref.Name,
-			func(status *v1alpha1.HAProxyTemplateConfigStatus) {
-				now := metav1.NewTime(time.Now())
-				status.ObservedGeneration = ref.Generation
-				status.LastValidated = &now
-				status.ValidationStatus = statusValid
-				status.ValidationMessage = "Configuration validated successfully"
-				status.ValidationErrors = nil // Clear any previous errors
-				setValidatedCondition(status, metav1.ConditionTrue, reasonValidationSucceeded,
-					"Configuration validated successfully", ref.Generation)
-			},
-			"Updated HAProxyTemplateConfig status to Valid",
-			"version", event.Version)
-	}
+	u.applyVerdict(ctx, refs,
+		func(ref events.ConfigSourceRef, status *v1alpha1.HAProxyTemplateConfigStatus) {
+			now := metav1.NewTime(time.Now())
+			status.ObservedGeneration = ref.Generation
+			status.LastValidated = &now
+			status.ValidationStatus = statusValid
+			status.ValidationMessage = "Configuration validated successfully"
+			status.ValidationErrors = nil
+			setValidatedCondition(status, metav1.ConditionTrue, reasonValidationSucceeded,
+				"Configuration validated successfully", ref.Generation)
+		},
+		"Updated HAProxyTemplateConfig status to Valid",
+		"version", event.Version)
 }
 
 // handleConfigInvalid updates CRD status to reflect validation failure.
 func (u *StatusUpdater) handleConfigInvalid(ctx context.Context, event *events.ConfigInvalidEvent) {
-	// Extract the HAProxyTemplateConfig from the event
 	htc, ok := event.TemplateConfig.(*v1alpha1.HAProxyTemplateConfig)
 	if !ok {
 		u.Logger().Debug("ConfigInvalidEvent does not contain HAProxyTemplateConfig, skipping status update",
 			"type", fmt.Sprintf("%T", event.TemplateConfig))
 		return
 	}
-
 	refs := sourceRefsOrFallback(event.Sources, htc)
-	u.cacheConfigRefs(refs)
+	if !u.adoptVerdict(event.VerdictSequence, false, refs) {
+		return
+	}
 
-	// Flatten validation errors from all validators
 	var allErrors []string
 	for _, errors := range event.ValidationErrors {
 		allErrors = append(allErrors, errors...)
 	}
 
-	for _, ref := range refs {
-		u.applyStatus(ctx, ref.Namespace, ref.Name,
-			func(status *v1alpha1.HAProxyTemplateConfigStatus) {
-				now := metav1.NewTime(time.Now())
-				status.ObservedGeneration = ref.Generation
-				status.LastValidated = &now
-				status.ValidationStatus = statusInvalid
-				status.ValidationMessage = fmt.Sprintf("%d validation error(s)", len(allErrors))
-				status.ValidationErrors = allErrors
-				setValidatedCondition(status, metav1.ConditionFalse, reasonConfigInvalid,
-					validationEventMessage(status), ref.Generation)
-			},
-			"Updated HAProxyTemplateConfig status to Invalid",
-			"version", event.Version,
-			"error_count", len(allErrors))
-	}
+	u.applyVerdict(ctx, refs,
+		func(ref events.ConfigSourceRef, status *v1alpha1.HAProxyTemplateConfigStatus) {
+			now := metav1.NewTime(time.Now())
+			status.ObservedGeneration = ref.Generation
+			status.LastValidated = &now
+			status.ValidationStatus = statusInvalid
+			status.ValidationMessage = fmt.Sprintf("%d validation error(s)", len(allErrors))
+			status.ValidationErrors = allErrors
+			setValidatedCondition(status, metav1.ConditionFalse, reasonConfigInvalid,
+				validationEventMessage(status), ref.Generation)
+		},
+		"Updated HAProxyTemplateConfig status to Invalid",
+		"version", event.Version,
+		"error_count", len(allErrors))
 }
 
 // handleConfigValidationInconclusive reports that the observed generation is
@@ -497,9 +503,10 @@ func (u *StatusUpdater) handleConfigValidationInconclusive(ctx context.Context, 
 			"type", fmt.Sprintf("%T", event.TemplateConfig))
 		return
 	}
-
 	refs := sourceRefsOrFallback(event.Sources, htc)
-	u.cacheConfigRefs(refs)
+	if !u.adoptVerdict(event.VerdictSequence, false, refs) {
+		return
+	}
 
 	var reasons []string
 	for _, validatorName := range slices.Sorted(maps.Keys(event.Reasons)) {
@@ -507,66 +514,67 @@ func (u *StatusUpdater) handleConfigValidationInconclusive(ctx context.Context, 
 	}
 	const message = "Configuration could not be validated yet; the previous configuration keeps running and validation is retried"
 
-	for _, ref := range refs {
-		u.applyStatus(ctx, ref.Namespace, ref.Name,
-			func(status *v1alpha1.HAProxyTemplateConfigStatus) {
-				now := metav1.NewTime(time.Now())
-				status.ObservedGeneration = ref.Generation
-				status.LastValidated = &now
-				status.ValidationStatus = statusUnknown
-				status.ValidationMessage = message
-				status.ValidationErrors = reasons
-				setValidatedCondition(status, metav1.ConditionUnknown, reasonValidationInconclusive,
-					validationEventMessage(status), ref.Generation)
-			},
-			"Updated HAProxyTemplateConfig status to Unknown (validation inconclusive)",
-			"version", event.Version,
-			"retry_in", event.RetryIn)
-	}
+	u.applyVerdict(ctx, refs,
+		func(ref events.ConfigSourceRef, status *v1alpha1.HAProxyTemplateConfigStatus) {
+			now := metav1.NewTime(time.Now())
+			status.ObservedGeneration = ref.Generation
+			status.LastValidated = &now
+			status.ValidationStatus = statusUnknown
+			status.ValidationMessage = message
+			status.ValidationErrors = reasons
+			setValidatedCondition(status, metav1.ConditionUnknown, reasonValidationInconclusive,
+				validationEventMessage(status), ref.Generation)
+		},
+		"Updated HAProxyTemplateConfig status to Unknown (validation inconclusive)",
+		"version", event.Version,
+		"retry_in", event.RetryIn)
 }
 
 // handleHAProxyValidationFailed updates CRD status when HAProxy validation fails.
 // This handles the case where config validation passes (template syntax OK) but
 // the rendered config fails HAProxy's syntax check (haproxy -c).
 func (u *StatusUpdater) handleHAProxyValidationFailed(ctx context.Context, event *events.ValidationFailedEvent) {
-	// Get cached config references (set during handleConfigValidated/handleConfigInvalid)
 	u.mu.Lock()
 	refs := slices.Clone(u.configRefs)
-	u.haproxyRefused = len(refs) > 0
+	// Render results cannot supersede a newer rejected or inconclusive configuration.
+	u.haproxyRefused = u.verdictValid && len(refs) > 0
+	refused := u.haproxyRefused
 	u.mu.Unlock()
 
-	if len(refs) == 0 {
-		u.Logger().Debug("No cached config references, skipping HAProxy validation status update")
+	if !refused {
+		u.Logger().Debug("No valid configuration verdict this term, skipping HAProxy validation status update")
 		return
 	}
 
-	for _, ref := range refs {
-		u.applyStatus(ctx, ref.Namespace, ref.Name,
-			func(status *v1alpha1.HAProxyTemplateConfigStatus) {
-				now := metav1.NewTime(time.Now())
-				status.ObservedGeneration = ref.Generation
-				status.LastValidated = &now
-				status.ValidationStatus = statusInvalid
-				status.ValidationMessage = "HAProxy configuration validation failed"
-				status.ValidationErrors = event.Errors
-				setValidatedCondition(status, metav1.ConditionFalse, reasonHAProxyValidationFailed,
-					"HAProxy configuration validation failed", ref.Generation)
-			},
-			"Updated HAProxyTemplateConfig status to Invalid (HAProxy validation)",
-			"error_count", len(event.Errors))
-	}
+	u.applyVerdict(ctx, refs,
+		func(ref events.ConfigSourceRef, status *v1alpha1.HAProxyTemplateConfigStatus) {
+			now := metav1.NewTime(time.Now())
+			status.ObservedGeneration = ref.Generation
+			status.LastValidated = &now
+			status.ValidationStatus = statusInvalid
+			status.ValidationMessage = "HAProxy configuration validation failed"
+			status.ValidationErrors = event.Errors
+			setValidatedCondition(status, metav1.ConditionFalse, reasonHAProxyValidationFailed,
+				"HAProxy configuration validation failed", ref.Generation)
+		},
+		"Updated HAProxyTemplateConfig status to Invalid (HAProxy validation)",
+		"error_count", len(event.Errors))
 }
 
-// cacheConfigRefs remembers every source of the merged set so HAProxy
-// validation events (which carry no CRD references) can still find the
-// resources to update and the generations they pertain to.
-func (u *StatusUpdater) cacheConfigRefs(refs []events.ConfigSourceRef) {
+func (u *StatusUpdater) adoptVerdict(sequence uint64, valid bool, refs []events.ConfigSourceRef) bool {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	if sequence <= u.verdict {
+		u.Logger().Debug("Skipping a configuration verdict older than the one this term wrote",
+			"verdict", sequence, "newest", u.verdict)
+		return false
+	}
+	u.verdict = sequence
+	u.verdictValid = valid
 	u.configRefs = slices.Clone(refs)
-	// A load rewrites the condition itself, so a verdict that arrives later
-	// has nothing of the previous configuration's failed check to restore.
+	// A passing render must not clear this new verdict.
 	u.haproxyRefused = false
+	return true
 }
 
 // sourceRefsOrFallback returns the event's source set, or the merged object's
@@ -664,31 +672,57 @@ func ReportConfigLoadFailure(
 		"namespace", ref.Namespace, "name", ref.Name, "failure_count", len(failures))
 }
 
-// applyStatus fetches the named HAProxyTemplateConfig, applies mutate to its
-// Status, and writes it back via UpdateStatus. Failures are logged at WARN and
-// swallowed (status updates are best-effort). On success, successMsg is logged
-// at DEBUG with namespace/name plus any extra logFields the caller supplies.
-func (u *StatusUpdater) applyStatus(
+// A newer persisted generation on any source makes the whole verdict stale.
+func (u *StatusUpdater) applyVerdict(
 	ctx context.Context,
-	namespace, name string,
-	mutate func(*v1alpha1.HAProxyTemplateConfigStatus),
+	refs []events.ConfigSourceRef,
+	mutate func(events.ConfigSourceRef, *v1alpha1.HAProxyTemplateConfigStatus),
 	successMsg string,
 	logFields ...any,
 ) {
 	u.writeMu.Lock()
 	defer u.writeMu.Unlock()
 
-	current, err := u.crdClient.HaproxyTemplateICV1alpha1().
-		HAProxyTemplateConfigs(namespace).
-		Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		u.Logger().Warn("Failed to get HAProxyTemplateConfig for status update",
-			"namespace", namespace,
-			"name", name,
-			"error", err)
-		return
+	current := make([]*v1alpha1.HAProxyTemplateConfig, len(refs))
+	for i, ref := range refs {
+		htc, err := u.crdClient.HaproxyTemplateICV1alpha1().
+			HAProxyTemplateConfigs(ref.Namespace).
+			Get(ctx, ref.Name, metav1.GetOptions{})
+		if err != nil {
+			u.Logger().Warn("Failed to get HAProxyTemplateConfig for status update",
+				"namespace", ref.Namespace,
+				"name", ref.Name,
+				"error", err)
+			return
+		}
+		if htc.Status.ObservedGeneration > ref.Generation {
+			u.Logger().Info("Not writing a verdict for an older generation than the status already covers",
+				"namespace", ref.Namespace, "name", ref.Name,
+				"generation", ref.Generation, "observed_generation", htc.Status.ObservedGeneration)
+			return
+		}
+		current[i] = htc
 	}
+	for i, htc := range current {
+		if htc != nil {
+			u.writeStatus(ctx, htc, func(status *v1alpha1.HAProxyTemplateConfigStatus) {
+				mutate(refs[i], status)
+			}, successMsg, logFields...)
+		}
+	}
+}
 
+// writeStatus applies mutate to current's Status and writes it back via
+// UpdateStatus. On success, successMsg is logged at DEBUG with namespace/name
+// plus any extra logFields the caller supplies.
+func (u *StatusUpdater) writeStatus(
+	ctx context.Context,
+	current *v1alpha1.HAProxyTemplateConfig,
+	mutate func(*v1alpha1.HAProxyTemplateConfigStatus),
+	successMsg string,
+	logFields ...any,
+) {
+	namespace, name := current.Namespace, current.Name
 	before := current.Status.DeepCopy()
 	mutate(&current.Status)
 

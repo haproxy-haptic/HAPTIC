@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
+
+	busevents "github.com/haproxy-haptic/HAPTIC/pkg/events"
 )
 
 // ConfigParsedEvent is published when the HAProxyTemplateConfig CRD has been
@@ -179,6 +181,10 @@ type ConfigValidatedEvent struct {
 	// validation and reload consumers must not treat it as a new verdict.
 	ActiveSnapshotRestore bool
 
+	// VerdictSequence orders the verdicts one iteration reaches on the
+	// configuration: a larger value is newer, and zero is not a verdict.
+	VerdictSequence uint64
+
 	// Sources names every config of the merged set, in merge order.
 	Sources []ConfigSourceRef
 
@@ -213,6 +219,9 @@ type ConfigInvalidEvent struct {
 	// ValidationErrors maps validator names to their error messages.
 	ValidationErrors map[string][]string
 
+	// VerdictSequence is as on ConfigValidatedEvent.
+	VerdictSequence uint64
+
 	// Sources names every config of the merged set, in merge order.
 	Sources []ConfigSourceRef
 
@@ -241,7 +250,9 @@ type ConfigValidationInconclusiveEvent struct {
 	// Reasons maps validator names to why they could not reach a verdict.
 	Reasons map[string][]string
 	RetryIn time.Duration
-	Sources []ConfigSourceRef
+	// VerdictSequence is as on ConfigValidatedEvent.
+	VerdictSequence uint64
+	Sources         []ConfigSourceRef
 
 	timestamped
 }
@@ -260,6 +271,31 @@ func NewConfigValidationInconclusiveEvent(version string, templateConfig any, re
 func (e *ConfigValidationInconclusiveEvent) EventType() string {
 	return EventTypeConfigValidationInconclusive
 }
+
+// ConfigVerdict is a ConfigValidatedEvent, ConfigInvalidEvent or
+// ConfigValidationInconclusiveEvent.
+type ConfigVerdict interface {
+	busevents.Event
+	configVerdict()
+}
+
+func (e *ConfigValidatedEvent) configVerdict()              {}
+func (e *ConfigInvalidEvent) configVerdict()                {}
+func (e *ConfigValidationInconclusiveEvent) configVerdict() {}
+
+// ConfigVerdictReplayedEvent restores status without counting or applying a verdict again.
+type ConfigVerdictReplayedEvent struct {
+	Verdict ConfigVerdict
+
+	timestamped
+}
+
+// NewConfigVerdictReplayedEvent creates a new ConfigVerdictReplayedEvent.
+func NewConfigVerdictReplayedEvent(verdict ConfigVerdict) *ConfigVerdictReplayedEvent {
+	return &ConfigVerdictReplayedEvent{Verdict: verdict, timestamped: newTimestamped()}
+}
+
+func (e *ConfigVerdictReplayedEvent) EventType() string { return EventTypeConfigVerdictReplayed }
 
 // ConfigResourceChangedEvent is published when the HAProxyTemplateConfig CRD resource is added, updated, or deleted.
 //

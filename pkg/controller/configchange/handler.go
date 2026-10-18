@@ -89,6 +89,8 @@ type ConfigChangeHandler struct {
 
 	// State replay for leadership transitions (prevents "late subscriber problem")
 	configReplayer *leadership.StateReplayer[*events.ConfigValidatedEvent]
+	// A newer rejection must survive replay of the accepted configuration.
+	verdictReplayer *leadership.StateReplayer[*events.ConfigVerdictReplayedEvent]
 
 	// Debouncing for reinitialization signals
 	// Coalesces rapid CRD config changes to prevent reinitialization from interrupting renders
@@ -182,6 +184,7 @@ type ConfigChangeHandler struct {
 	acceptedCandidate         *ValidatedSnapshot
 	activeReplay              *events.ConfigValidatedEvent
 	credentialsDirty          bool
+	verdicts                  uint64
 }
 
 type validationCandidate struct {
@@ -243,6 +246,7 @@ func NewConfigChangeHandler(
 		configChangeCh:   configChangeCh,
 		validators:       validators,
 		configReplayer:   leadership.NewStateReplayer[*events.ConfigValidatedEvent](eventBus),
+		verdictReplayer:  leadership.NewStateReplayer[*events.ConfigVerdictReplayedEvent](eventBus),
 		debounceInterval: debounceInterval,
 		// Capacity 1 suffices: single-flight means at most one validation
 		// goroutine has a completion to signal, so the send never blocks.
@@ -321,9 +325,12 @@ func (h *ConfigChangeHandler) SetInitialSnapshot(snapshot *ValidatedSnapshot) {
 	activeReplay := events.NewConfigValidatedEvent(
 		snapshot.Config, snapshot.TemplateConfig, snapshot.ConfigVersion, snapshot.CredentialsVersion)
 	activeReplay.Sources = append([]events.ConfigSourceRef(nil), snapshot.Sources...)
+	h.verdicts++
+	activeReplay.VerdictSequence = h.verdicts
 	h.activeReplay = activeReplay
 	h.mu.Unlock()
 	h.configReplayer.Cache(activeReplay)
+	h.verdictReplayer.Cache(events.NewConfigVerdictReplayedEvent(activeReplay))
 }
 
 // EnableReinitialization enables the reinitialization signaling mechanism.
@@ -441,7 +448,20 @@ func (h *ConfigChangeHandler) publishRunningVersionValidated(parsed *events.Conf
 	h.mu.Unlock()
 	validated := events.NewConfigValidatedEvent(config, parsed.TemplateConfig, parsed.Version, credentialsVersion)
 	validated.Sources = append([]events.ConfigSourceRef(nil), parsed.Sources...)
-	h.eventBus.Publish(validated)
+	validated.VerdictSequence = h.nextVerdict()
+	h.publishVerdict(validated)
+}
+
+func (h *ConfigChangeHandler) nextVerdict() uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.verdicts++
+	return h.verdicts
+}
+
+func (h *ConfigChangeHandler) publishVerdict(verdict events.ConfigVerdict) {
+	h.verdictReplayer.Cache(events.NewConfigVerdictReplayedEvent(verdict))
+	h.eventBus.Publish(verdict)
 }
 
 // cleanup performs cleanup when the component is shutting down.
@@ -739,7 +759,8 @@ func (h *ConfigChangeHandler) applyValidationOutcome(outcome validationOutcome) 
 			"validation_errors", outcome.validationErrors)
 		invalidEvent := events.NewConfigInvalidEvent(event.Version, event.TemplateConfig, outcome.validationErrors)
 		invalidEvent.Sources = event.Sources
-		h.eventBus.Publish(invalidEvent)
+		invalidEvent.VerdictSequence = h.nextVerdict()
+		h.publishVerdict(invalidEvent)
 		if h.effectiveReloadDue {
 			h.sendEffectiveReload()
 		}
@@ -753,8 +774,9 @@ func (h *ConfigChangeHandler) applyValidationOutcome(outcome validationOutcome) 
 	validatedEvent := events.NewConfigValidatedEvent(config, event.TemplateConfig, event.Version, h.credentialsVersion())
 	validatedEvent.Sources = event.Sources
 	validatedEvent.CandidateGeneration = outcome.candidate.generation
+	validatedEvent.VerdictSequence = h.nextVerdict()
 	h.configReplayer.Cache(validatedEvent)
-	h.eventBus.Publish(validatedEvent)
+	h.publishVerdict(validatedEvent)
 
 	cfg, ok := config.(*coreconfig.Config)
 	if !ok || outcome.rawConfig == nil {
@@ -797,7 +819,8 @@ func (h *ConfigChangeHandler) scheduleValidationRetry(outcome validationOutcome)
 	inconclusive := events.NewConfigValidationInconclusiveEvent(
 		event.Version, event.TemplateConfig, outcome.validationErrors, h.retryBackoff)
 	inconclusive.Sources = event.Sources
-	h.eventBus.Publish(inconclusive)
+	inconclusive.VerdictSequence = h.nextVerdict()
+	h.publishVerdict(inconclusive)
 }
 
 // startValidationRetry re-validates the candidate whose validation was
@@ -1175,15 +1198,9 @@ func (h *ConfigChangeHandler) sendReload(reload *ReloadRequest) {
 	}
 }
 
-// handleBecameLeader handles BecameLeaderEvent by re-publishing the last validated config.
-//
-// This ensures ConfigPublisher (which starts subscribing only after becoming leader)
-// receives the current validated config state, even if validation occurred before leadership
-// was acquired.
-//
-// This prevents the "late subscriber problem" where leader-only components miss events
-// that were published before they started subscribing.
+// Replay the newest verdict first so older accepted state cannot replace it.
 func (h *ConfigChangeHandler) handleBecameLeader(_ *events.BecameLeaderEvent) {
+	h.verdictReplayer.Replay()
 	event, ok := h.configReplayer.Get()
 	if !ok {
 		h.logger.Debug("Became leader but no validated config available yet, skipping state replay")
