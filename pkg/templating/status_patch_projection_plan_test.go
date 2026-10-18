@@ -407,7 +407,7 @@ func TestStatusPatchProjectionPlanBulkRejectsInvalidEntriesAndOwnership(t *testi
 				{Group: "routes", Entry: "001", Projection: projection},
 				{Group: "routes", Entry: "001", Projection: projection},
 			},
-			want: "repeats group",
+			want: "repeats an entry in group",
 		},
 	}
 	for _, test := range tests {

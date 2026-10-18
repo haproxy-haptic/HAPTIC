@@ -124,7 +124,7 @@ func NewPlanFromEntries(owner any, entries []PlanEntry) (*PlanRoot, error) {
 		}
 		key := string(planOrderTuple(entry.Group, entry.Entry))
 		if _, duplicate := seen[key]; duplicate {
-			return nil, fmt.Errorf("plan repeats group %q entry %q", entry.Group, entry.Entry)
+			return nil, fmt.Errorf("plan repeats an entry in group %q", entry.Group)
 		}
 		seen[key] = struct{}{}
 		group, err := newPlanGroup(key, entry.Group, entry.Root, entry.Owner)

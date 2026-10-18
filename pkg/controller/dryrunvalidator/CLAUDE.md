@@ -166,7 +166,7 @@ Webhook Admission Request
     ↓
 4. Render HAProxy config
     ├─ Success → Continue
-    └─ Error → SimplifyRenderingError → Deny
+    └─ Error → RenderErrorMessage → Deny
     ↓
 5. Validate HAProxy config with `haproxy -c`
     ├─ Valid → Continue
@@ -198,7 +198,7 @@ func (c *Component) simplifyError(phase string, err error) string {
     }
     switch phase {
     case "render":
-        return dataplane.SimplifyRenderingError(err)
+        return templating.RenderErrorMessage(err)
     case "syntax", "schema", "semantic":
         return dataplane.SimplifyValidationError(err)
     default:
@@ -245,15 +245,9 @@ ADR-0001 settled the analogous question for the renderer; the dry-run validator 
 
 ### Unit Tests
 
-Test error simplification:
-
-```go
-func TestSimplifyRenderingError(t *testing.T) {
-    rawErr := errors.New("failed to render: invalid call to function 'fail': Service not found")
-    simplified := dataplane.SimplifyRenderingError(rawErr)
-    assert.Equal(t, "Service not found", simplified)
-}
-```
+`TestValidateDirect_GovernanceDenialLeadsWithRuleMessage` drives the chart's
+governance snippet through the real render, so it pins the denial text an
+operator sees: the `fail()` message alone.
 
 ### Integration Tests
 

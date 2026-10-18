@@ -156,7 +156,7 @@ func (r *incrementalRenderSession) prepareActivationStage(ctx context.Context) e
 		}
 		active, err := decodeActivationSignature(encoded)
 		if err != nil {
-			return fmt.Errorf("decoding cached incremental activation %q: %w", key.Opaque(), err)
+			return fmt.Errorf("decoding cached incremental activation %s: %w", key, err)
 		}
 		previous[key] = active
 	}
@@ -170,8 +170,8 @@ func (r *incrementalRenderSession) prepareActivationStage(ctx context.Context) e
 	for index := range results {
 		source, namespace, name, ok := parseActivationQueryKey(results[index].Key)
 		if !ok {
-			return fmt.Errorf("incremental activation stage returned an invalid key %q",
-				results[index].Key.Opaque())
+			return fmt.Errorf("incremental activation stage returned an invalid key %s",
+				results[index].Key)
 		}
 		active, err := decodeActivationSignature(results[index].Value)
 		if err != nil {

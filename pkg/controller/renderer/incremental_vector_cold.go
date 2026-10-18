@@ -160,8 +160,8 @@ func (r *incrementalRenderSession) preflightColdVectorQuery(
 	component, source, namespace, name, ok := r.resolveComponentQuery(key)
 	if !ok {
 		return false, false, fmt.Errorf(
-			"incremental component evaluation received non-component query %q",
-			key.Opaque(),
+			"incremental component evaluation received non-component query %s",
+			key,
 		)
 	}
 	if component.resourceProjection {
@@ -178,14 +178,14 @@ func (r *incrementalRenderSession) preflightColdVectorQuery(
 	}
 	if _, pending := r.freshResults[key]; pending {
 		return false, false, fmt.Errorf(
-			"incremental component query %q already has a pending result",
-			key.Opaque(),
+			"incremental component query %s already has a pending result",
+			key,
 		)
 	}
 	if _, pending := r.httpExecuted[key]; pending {
 		return false, false, fmt.Errorf(
-			"incremental component query %q already has pending HTTP effects",
-			key.Opaque(),
+			"incremental component query %s already has pending HTTP effects",
+			key,
 		)
 	}
 	entryPoints[component.entryPoint] = struct{}{}
@@ -387,15 +387,11 @@ func renderColdVectorGroups(
 			var itemErr *templating.IncrementalComponentBatchError
 			if errors.As(err, &itemErr) && itemErr.Index >= 0 && itemErr.Index < len(group.indexes) {
 				query := batch.Query(group.indexes[itemErr.Index])
-				return fmt.Errorf(
-					"incremental cold component vector query %q: %w",
-					query.Key().Opaque(),
-					remapIncrementalTemplateError(
-						group.prepared[itemErr.Index].component.name,
-						group.entryPoint,
-						itemErr.Err,
-					),
-				)
+				return attributeToWatchedObject(query.Key(), remapIncrementalTemplateError(
+					group.prepared[itemErr.Index].component.name,
+					group.entryPoint,
+					itemErr.Err,
+				))
 			}
 			return remapIncrementalTemplateError(
 				group.prepared[0].component.name,
@@ -445,8 +441,8 @@ func (r *incrementalRenderSession) collectColdVectorGroups(
 		component, source, namespace, name, parsed := r.resolveComponentQuery(query.Key())
 		if !parsed {
 			return nil, fmt.Errorf(
-				"incremental cold component vector received non-component query %q",
-				query.Key().Opaque(),
+				"incremental cold component vector received non-component query %s",
+				query.Key(),
 			)
 		}
 		prepared, immediate, err := r.prepareComponentInputs(
@@ -458,28 +454,20 @@ func (r *incrementalRenderSession) collectColdVectorGroups(
 			name,
 		)
 		if err != nil {
-			return nil, fmt.Errorf(
-				"incremental cold component vector query %q: %w",
-				query.Key().Opaque(),
-				err,
-			)
+			return nil, attributeToWatchedObject(query.Key(), err)
 		}
 		if prepared == nil {
 			effects, executed := stagedHTTPExecuted[query.Key()]
 			if !executed {
 				return nil, fmt.Errorf(
-					"incremental cold component vector query %q has no execution record",
-					query.Key().Opaque(),
+					"incremental cold component vector query %s has no execution record",
+					query.Key(),
 				)
 			}
 			delete(stagedHTTPExecuted, query.Key())
 			finalized[index], err = finalizeImmediateColdComponent(query.Key(), immediate, effects)
 			if err != nil {
-				return nil, fmt.Errorf(
-					"incremental cold component vector query %q: %w",
-					query.Key().Opaque(),
-					err,
-				)
+				return nil, attributeToWatchedObject(query.Key(), err)
 			}
 			continue
 		}
@@ -512,22 +500,22 @@ func (r *incrementalRenderSession) completeColdVectorRoots(
 		item := finalized[index]
 		if item == nil || item.key != query.Key() {
 			return nil, fmt.Errorf(
-				"incremental cold component vector query %q has an invalid finalized result",
-				query.Key().Opaque(),
+				"incremental cold component vector query %s has an invalid finalized result",
+				query.Key(),
 			)
 		}
 		root, err := query.Complete(item.encoded)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"completing incremental cold component vector query %q: %w",
-				query.Key().Opaque(),
+				"completing incremental cold component vector query %s: %w",
+				query.Key(),
 				err,
 			)
 		}
 		if err := r.authenticateColdFinalizedComponent(item, root); err != nil {
 			return nil, fmt.Errorf(
-				"authenticating incremental cold component vector query %q: %w",
-				query.Key().Opaque(),
+				"authenticating incremental cold component vector query %s: %w",
+				query.Key(),
 				err,
 			)
 		}

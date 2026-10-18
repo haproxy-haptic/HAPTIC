@@ -93,7 +93,7 @@ func (r *Runner) assertDeterministic(
 			return result
 		}
 		result.Passed = false
-		result.Error = fmt.Sprintf("second render failed: %v", dataplane.SimplifyRenderingError(err))
+		result.Error = fmt.Sprintf("second render failed: %v", templating.RenderErrorMessage(err))
 		return result
 	}
 

@@ -24,20 +24,6 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/incremental"
 )
 
-func TestEncodeOpaqueMatchesCanonicalLengthFraming(t *testing.T) {
-	for length := range 1025 {
-		value := make([]byte, length)
-		for index := range value {
-			value[index] = byte(index*131 + length*17)
-		}
-		part := string(value)
-		expected := testOpaqueEncoding("kind", part)
-		require.Equal(t, expected, encodeOpaque("kind", part))
-	}
-
-	require.Equal(t, testOpaqueEncoding("kind", "", ""), encodeOpaque("kind", "", ""))
-}
-
 func TestDecodeOpaqueMatchesCanonicalLengthFraming(t *testing.T) {
 	for length := range 1025 {
 		value := make([]byte, length)
@@ -237,7 +223,7 @@ func TestIncrementalKeyParsersRejectNoncanonicalAliases(t *testing.T) {
 			},
 		},
 		{
-			name: "http leading zero", value: encodeOpaque("http", "01"),
+			name: "http leading zero", value: incremental.EncodeTuple("http", "01"),
 			parse: func(value string) bool {
 				_, ok := parseHTTPInputKey(incremental.NewInputKey(value))
 				return ok
@@ -277,8 +263,8 @@ func overlongLastOpaqueFrame(value string) string {
 	lastPrefixLength := 0
 	for position < len(value) {
 		last = position
-		length, prefixLength, ok := readOpaqueUvarint(value[position:])
-		if !ok || length > uint64(len(value)-position-prefixLength) {
+		length, prefixLength := binary.Uvarint([]byte(value[position:]))
+		if prefixLength <= 0 || length > uint64(len(value)-position-prefixLength) {
 			return value
 		}
 		lastPrefixLength = prefixLength

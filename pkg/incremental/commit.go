@@ -263,7 +263,7 @@ func (s *Session) prepareReplacementCommit() (*graphCommitPlan, []InputRevision,
 func (s *Session) validateNodeChanges() error {
 	for key, entry := range s.nodeChanges {
 		if err := entry.value.validateOwned(s.graph.valueAuthority, key); err != nil {
-			return fmt.Errorf("incremental query %q value: %w", key.id.String(), err)
+			return fmt.Errorf("incremental query %s value: %w", key, err)
 		}
 	}
 	return nil
@@ -408,7 +408,7 @@ func (s *Session) validateReplacementRemovedQueries(
 			return fmt.Errorf("checking removed replacement query dependents: %w", err)
 		}
 		if size != 0 {
-			return fmt.Errorf("removed incremental query %q retains dependents", key.id.String())
+			return fmt.Errorf("removed incremental query %s retains dependents", key)
 		}
 	}
 	return nil
@@ -463,7 +463,7 @@ func (s *Session) applyReplacementCounterDeltas(
 		}
 		next, err := addCountersChecked(counters[change.key], change.delta)
 		if err != nil {
-			return nil, fmt.Errorf("incremental query %q counters: %w", change.key.id.String(), err)
+			return nil, fmt.Errorf("incremental query %s counters: %w", change.key, err)
 		}
 		counters[change.key] = next
 	}
@@ -471,7 +471,7 @@ func (s *Session) applyReplacementCounterDeltas(
 		if _, removed := s.removedQueries[key]; !removed {
 			next, err := addCountersChecked(counters[key], delta)
 			if err != nil {
-				return nil, fmt.Errorf("incremental query %q counters: %w", key.id.String(), err)
+				return nil, fmt.Errorf("incremental query %s counters: %w", key, err)
 			}
 			counters[key] = next
 		}
@@ -530,7 +530,7 @@ func applyIncrementalCommittedInputs(
 			if err == nil {
 				err = fmt.Errorf("changed generation %d exceeds %d", entry.changedAt, plan.generation)
 			}
-			return fmt.Errorf("incremental committed input %q: %w", key.id.String(), err)
+			return fmt.Errorf("incremental committed input %s: %w", key, err)
 		}
 		inputs.Insert([]byte(key.id.String()), entry)
 	}
@@ -597,7 +597,7 @@ func buildIncrementalGraphGeneration(
 	for _, key := range sortedNodeEntryKeys(plan.nodes) {
 		entry, err := sealCommittedNodeEntry(graph, key, plan.nodes[key], plan.generation)
 		if err != nil {
-			return nil, fmt.Errorf("incremental committed query %q: %w", key.id.String(), err)
+			return nil, fmt.Errorf("incremental committed query %s: %w", key, err)
 		}
 		nodes.Insert([]byte(key.id.String()), entry)
 		if entry.dirty {
@@ -841,9 +841,9 @@ func (e *reverseSetEditor) setMembership(dependency dependencyKey, dependent Que
 	}
 	if current == present {
 		if present {
-			return fmt.Errorf("incremental reverse dependency already contains query %q", dependent.id.String())
+			return fmt.Errorf("incremental reverse dependency already contains query %s", dependent)
 		}
-		return fmt.Errorf("incremental reverse dependency does not contain query %q", dependent.id.String())
+		return fmt.Errorf("incremental reverse dependency does not contain query %s", dependent)
 	}
 	if e.pending == nil {
 		e.pending = make(map[dependencyKey]map[string]bool)
@@ -893,7 +893,7 @@ func (e *reverseSetEditor) validateRemovedQueries(removed []QueryKey) error {
 			return fmt.Errorf("checking removed incremental query dependents: %w", err)
 		}
 		if size != 0 {
-			return fmt.Errorf("removed incremental query %q retains dependents", key.id.String())
+			return fmt.Errorf("removed incremental query %s retains dependents", key)
 		}
 		e.roots[dependency] = root
 	}
@@ -946,7 +946,7 @@ func (s *Session) incrementalCounterChanges() (map[QueryKey]NodeCounters, error)
 			current, _ := s.graph.current.counters.Root().Get([]byte(key.id.String()))
 			next, err := addCountersChecked(current, delta)
 			if err != nil {
-				return nil, fmt.Errorf("incremental query %q counters: %w", key.id.String(), err)
+				return nil, fmt.Errorf("incremental query %s counters: %w", key, err)
 			}
 			counters[key] = next
 		}
@@ -1002,10 +1002,10 @@ func addReverseEdges(
 		}
 		next, changed, err := root.Add(authority, reverseScope(dep.key), dependent.id.String())
 		if err != nil {
-			return fmt.Errorf("building incremental reverse dependencies: %w", err)
+			return fmt.Errorf("building incremental reverse dependencies of query %s: %w", dependent, err)
 		}
 		if !changed {
-			return fmt.Errorf("incremental query %q contains a duplicate dependency", dependent.id.String())
+			return fmt.Errorf("incremental query %s contains a duplicate dependency", dependent)
 		}
 		reverse[dep.key] = next
 	}

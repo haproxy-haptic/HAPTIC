@@ -16,6 +16,7 @@ package templating
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -141,4 +142,36 @@ func TestErrorsIs(t *testing.T) {
 			assert.True(t, errors.Is(tt.err, cause), "errors.Is should propagate cause through %T", tt.err)
 		})
 	}
+}
+
+func TestRenderErrorMessage(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		want     string
+	}{
+		{name: "top level", template: `{{ fail("ingress a/b is invalid") }}`, want: "ingress a/b is invalid"},
+		{name: "nested render", template: `{{ render "inner" }}`, want: "inner failed"},
+		{name: "inside a closure", template: `{%% var check = func() { fail("closure failed") }; check() %%}`, want: "closure failed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine, err := New(map[string]string{
+				"outer": tt.template,
+				"inner": `{{ fail("inner failed") }}`,
+			}, &Options{EntryPoints: []string{"outer"}})
+			require.NoError(t, err)
+			_, err = engine.Render(t.Context(), "outer", nil)
+			require.Error(t, err)
+			assert.Equal(t, tt.want, RenderErrorMessage(fmt.Errorf("render failed: %w", err)))
+		})
+	}
+
+	t.Run("not a fail() error", func(t *testing.T) {
+		err := fmt.Errorf("render failed: %w", NewRenderError("outer", errors.New("index out of range")))
+		assert.Equal(t, "render failed: rendering template 'outer': index out of range", RenderErrorMessage(err))
+	})
+	t.Run("nil", func(t *testing.T) {
+		assert.Empty(t, RenderErrorMessage(nil))
+	})
 }

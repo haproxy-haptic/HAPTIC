@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Startup-validation messages describe retrying NotReady pods and stalled rollouts instead of claiming the controller exits on rejection.
 - Configuration changes fetch watched-resource schemas in parallel, reducing validation delays on clusters with slow API-server responses.
 - API discovery timeouts leave configuration validation inconclusive and retry it instead of rejecting templates that use typed fields.
+- Template admission denials show the rule's message; other render errors identify the watched object without exposing encoded cache keys.
 
 ### Security
 
@@ -39,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Changed
 
+- Governance denials identify the rule and watched object.
 - **BREAKING:** `haproxy-haptic.org/config-*`, `haproxy-ingress.github.io/config-*`, `haproxy.org/backend-config-snippet`, and `nginx.ingress.kubernetes.io/configuration-snippet` require `controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig: true`, independent of WAF governance; `waf.ingressPermissions.allowRawHAProxyConfig` can only narrow it. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#upgrading-to-07) before upgrading.
 
 #### Fixed

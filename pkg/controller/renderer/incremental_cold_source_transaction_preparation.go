@@ -193,9 +193,7 @@ func (c *incrementalColdCarrierWaveCoordinator) prepareSourceTransactionChildFra
 			description.item.name,
 		)
 		if err != nil {
-			return nil, fmt.Errorf(
-				"incremental cold source transaction query %q: %w", description.item.queryKey.Opaque(), err,
-			)
+			return nil, attributeToWatchedObject(description.item.queryKey, err)
 		}
 		frame, err := refs.authenticateDetached(
 			description.item.queryKey,
@@ -205,9 +203,7 @@ func (c *incrementalColdCarrierWaveCoordinator) prepareSourceTransactionChildFra
 			description.item.name,
 		)
 		if err != nil {
-			return nil, fmt.Errorf(
-				"incremental cold source transaction query %q: %w", description.item.queryKey.Opaque(), err,
-			)
+			return nil, attributeToWatchedObject(description.item.queryKey, err)
 		}
 		prepared[offset] = incrementalColdSourceTransactionPreparedChild{
 			description: description,
@@ -327,8 +323,8 @@ func (c *incrementalColdCarrierWaveCoordinator) prepareSourceTransactionSharedSo
 	}
 	if !itemInput.found {
 		return nil, fmt.Errorf(
-			"incremental cold source transaction query %q became inactive after its shape was sealed",
-			first.description.item.queryKey.Opaque(),
+			"incremental cold source transaction query %s became inactive after its shape was sealed",
+			first.description.item.queryKey,
 		)
 	}
 	subjectInput, err := first.frame.renderSubject.load(waveCtx, first.reader, first.frame.generation)

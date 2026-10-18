@@ -141,7 +141,10 @@ templateSnippets:
               }
               if en == "true" {
                 var resourceName = tostring(rule["resource"])
-                byResource[resourceName] = append(byResource[resourceName], rulesMap[rname])
+                var named = map[string]any{}
+                for field, value := range rule { named[field] = value }
+                named["name"] = rname
+                byResource[resourceName] = append(byResource[resourceName], named)
                 if tostring(fallback(rule["satisfiedBy"], "")) == "tls" {
                   tlsByResource[resourceName] = true
                 }
@@ -171,10 +174,11 @@ templateSnippets:
           var defaultHTTPS = tostring(props | dig("defaultHTTPS") | fallback(false)) == "true"
           var underAdmission = tostring(renderSubject | dig("mode") | fallback("reconcile")) == "admission"
           var present = func(v any) bool { return v != nil && strip(tostring(v)) != "" }
+          var ruleName = ""
           var violate = func(enf string, custom string, detail string) {
             var message = custom
             if message == "" { message = detail }
-            message = source + " " + ns + "/" + name + " violates org policy: " + message
+            message = source + " " + ns + "/" + name + " violates governance rule '" + ruleName + "': " + message
             if enf == "reject" && underAdmission {
               fail(message)
             } else {
@@ -191,6 +195,7 @@ templateSnippets:
 
           for _, ruleAny := range toSlice(props | dig("rules") | fallback([]any{})) {
             var rule = ruleAny.(map[string]any)
+            ruleName = tostring(rule["name"])
             if len(toSlice(rule["namespaces"])) > 0 && !listsNamespace(rule["namespaces"]) { continue }
             if listsNamespace(rule["exemptNamespaces"]) { continue }
             var enf = tostring(fallback(rule["enforcement"], "reject"))
@@ -590,7 +595,7 @@ validationTests:
                 http:
                   paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
     assertions:
-      - { type: contains, target: rendering_error, pattern: 'ingresses tenant-a/alias violates org policy: host aliases are allowed only in platform namespaces' }
+      - { type: contains, target: rendering_error, pattern: "ingresses tenant-a/alias violates governance rule 'host-alias-regex-platform-only': host aliases are allowed only in platform namespaces" }
 
   test-governance-rule-exempt-namespace-admits-inside:
     _helm_skip_test: '{{ if or (not .Values.controller.templateLibraries.governance.enabled) (not .Values.controller.templateLibraries.hapticAnnotations.enabled) }}true{{ end }}'
@@ -646,7 +651,7 @@ validationTests:
                 http:
                   paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
     assertions:
-      - { type: contains, target: rendering_error, pattern: 'ingresses platform/alias-no-tier violates org policy: must set metadata.labels' }
+      - { type: contains, target: rendering_error, pattern: "ingresses platform/alias-no-tier violates governance rule 'tier': must set metadata.labels" }
 
   test-governance-rule-namespaces-rejects-inside:
     _helm_skip_test: '{{ if not .Values.controller.templateLibraries.governance.enabled }}true{{ end }}'
@@ -675,7 +680,7 @@ validationTests:
                 http:
                   paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
     assertions:
-      - { type: contains, target: rendering_error, pattern: 'ingresses tenant-a/no-tier violates org policy: must set metadata.labels' }
+      - { type: contains, target: rendering_error, pattern: "ingresses tenant-a/no-tier violates governance rule 'tenant-tier': must set metadata.labels" }
 
   test-governance-rule-namespaces-admits-outside:
     _helm_skip_test: '{{ if not .Values.controller.templateLibraries.governance.enabled }}true{{ end }}'

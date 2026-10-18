@@ -55,6 +55,7 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/renderplan"
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/schemafetcher"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores"
+	"github.com/haproxy-haptic/HAPTIC/pkg/templating"
 )
 
 // renderResult is the flat, JSON-friendly shape returned across the JS boundary.
@@ -218,7 +219,7 @@ func hapticRunTestsJS(_ js.Value, _ []js.Value) any {
 	}
 	results, err := warm.runner.RunTests(context.Background(), "")
 	if err != nil {
-		return jsError(dataplane.SimplifyRenderingError(err))
+		return jsError(templating.RenderErrorMessage(err))
 	}
 	return testResultsToJS(results)
 }
@@ -522,7 +523,7 @@ func renderWarm(resourcesYAML []byte) (*renderResult, error) {
 	// than aborting the whole preview render.
 	rendered, err := warm.svc.Render(context.Background(), provider, rendercontext.RenderModeReconcile)
 	if err != nil {
-		return nil, fmt.Errorf("rendering: %s", dataplane.SimplifyRenderingError(err))
+		return nil, fmt.Errorf("rendering: %s", templating.RenderErrorMessage(err))
 	}
 	out, err := materializePreview(rendered)
 	if err != nil {

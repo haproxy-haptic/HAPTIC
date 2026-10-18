@@ -100,39 +100,3 @@ func TestSimplifyValidationError(t *testing.T) {
 		})
 	}
 }
-
-func TestSimplifyRenderingError(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want string
-	}{
-		{
-			name: "nil error",
-			err:  nil,
-			want: "",
-		},
-		{
-			name: "fail function error",
-			err:  errors.New("rendering haproxy.cfg: rendering template 'haproxy.cfg': unable to execute template: invalid call to function 'fail': Service 'api-backend' not found in namespace 'default'"),
-			want: "Service 'api-backend' not found in namespace 'default'",
-		},
-		{
-			name: "fail function with whitespace",
-			err:  errors.New("invalid call to function 'fail': Missing required field   "),
-			want: "Missing required field",
-		},
-		{
-			name: "non-fail error",
-			err:  errors.New("failed to render: undefined variable 'foo'"),
-			want: "failed to render: undefined variable 'foo'",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := SimplifyRenderingError(tt.err)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}

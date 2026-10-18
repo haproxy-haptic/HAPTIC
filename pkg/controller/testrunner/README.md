@@ -114,7 +114,7 @@ The automatic worker count is the smaller of twice `GOMAXPROCS` and one worker p
 
 ## Error Simplification
 
-Rendering and validation errors pass through `dataplane.SimplifyRenderingError` / `dataplane.SimplifyValidationError` before landing in `TestResult.RenderError` / `TestResult.Error`. This surfaces the user-relevant message (`Service 'api' not found in namespace 'default'`) instead of the full Go error chain, matching what the admission webhook emits — so CLI and webhook failure output stay consistent.
+Rendering and validation errors pass through `templating.RenderErrorMessage` / `dataplane.SimplifyValidationError` before landing in `TestResult.RenderError` / `TestResult.Error`. This surfaces the user-relevant message (a template's `fail()` text) instead of the full Go error chain, matching what the admission webhook emits — so CLI and webhook failure output stay consistent.
 
 ## See Also
 

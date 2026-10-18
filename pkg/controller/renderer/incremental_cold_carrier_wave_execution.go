@@ -756,7 +756,7 @@ func (c *incrementalColdCarrierWaveCoordinator) prepareWaveLane(
 			item.name,
 		)
 		if err != nil {
-			return fmt.Errorf("incremental cold carrier wave query %q: %w", item.queryKey.Opaque(), err)
+			return attributeToWatchedObject(item.queryKey, err)
 		}
 		prepared, _, _, err := c.session.prepareComponentInputsDetachedWithSourceFrames(
 			waveCtx,
@@ -768,12 +768,12 @@ func (c *incrementalColdCarrierWaveCoordinator) prepareWaveLane(
 			frames,
 		)
 		if err != nil {
-			return fmt.Errorf("incremental cold carrier wave query %q: %w", item.queryKey.Opaque(), err)
+			return attributeToWatchedObject(item.queryKey, err)
 		}
 		if prepared == nil {
 			return fmt.Errorf(
-				"incremental cold carrier wave query %q became inactive after its shape was sealed",
-				item.queryKey.Opaque(),
+				"incremental cold carrier wave query %s became inactive after its shape was sealed",
+				item.queryKey,
 			)
 		}
 		lane.indexes[itemIndex] = item.batchIndex
@@ -1035,23 +1035,23 @@ func (c *incrementalColdCarrierWaveCoordinator) collectWaveStageResults(
 		fresh := &arena.fresh[resultIndex]
 		if fresh.key != query.Key() || c.completedQueries[batchIndex] {
 			return nil, fmt.Errorf(
-				"incremental cold carrier wave query %q has an invalid finalized result",
-				query.Key().Opaque(),
+				"incremental cold carrier wave query %s has an invalid finalized result",
+				query.Key(),
 			)
 		}
 		if err := validatePendingAuthenticatedFreshComponentResult(fresh, fresh.key); err != nil {
 			return nil, fmt.Errorf(
-				"authenticating pending incremental cold carrier wave query %q: %w",
-				query.Key().Opaque(),
+				"authenticating pending incremental cold carrier wave query %s: %w",
+				query.Key(),
 				err,
 			)
 		}
 		root, err := query.Complete(fresh.encoded)
 		if err != nil {
-			return nil, fmt.Errorf("completing incremental cold carrier wave query %q: %w", query.Key().Opaque(), err)
+			return nil, fmt.Errorf("completing incremental cold carrier wave query %s: %w", query.Key(), err)
 		}
 		if err := c.session.authenticateColdFreshComponent(fresh.key, fresh.encoded, fresh, root); err != nil {
-			return nil, fmt.Errorf("authenticating incremental cold carrier wave query %q: %w", query.Key().Opaque(), err)
+			return nil, fmt.Errorf("authenticating incremental cold carrier wave query %s: %w", query.Key(), err)
 		}
 		stageResults[resultIndex] = incremental.ExactResult{Key: query.Key(), Value: root}
 	}
@@ -1303,11 +1303,8 @@ func (l *incrementalColdCarrierWavesLifecycle) remapErrorLocked(err error) (batc
 		item := l.items[itemErr.Index]
 		component := l.components[itemErr.Index]
 		if component != nil {
-			return item.batchIndex, fmt.Errorf(
-				"incremental cold carrier wave query %q: %w",
-				item.queryKey.Opaque(),
-				remapIncrementalTemplateError(component.name, component.entryPoint, itemErr.Err),
-			)
+			templateErr := remapIncrementalTemplateError(component.name, component.entryPoint, itemErr.Err)
+			return item.batchIndex, attributeToWatchedObject(item.queryKey, templateErr)
 		}
 	}
 	return l.firstBatchIndexLocked(), err

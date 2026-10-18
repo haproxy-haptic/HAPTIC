@@ -164,7 +164,8 @@ type ExactQueryObserver interface {
 	exactQueryObserver()
 }
 
-// QueryFunc computes one immutable value.
+// QueryFunc computes one immutable value. Its error is returned unwrapped, so it
+// names the failing query in its own terms.
 type QueryFunc func(context.Context, Reader) ([]byte, error)
 
 // BatchQuery is one independently tracked query execution in a batch.
@@ -253,7 +254,7 @@ type queryError struct {
 }
 
 func (e *queryError) Error() string {
-	return fmt.Sprintf("incremental query %q failed: %v", e.key.id.String(), e.err)
+	return fmt.Sprintf("incremental query %s failed: %v", e.key, e.err)
 }
 
 func (e *queryError) Unwrap() error {
@@ -273,7 +274,7 @@ type missingInputError struct {
 }
 
 func (e *missingInputError) Error() string {
-	return fmt.Sprintf("incremental query read input %q without an exact snapshot", e.key.id.String())
+	return fmt.Sprintf("incremental query read input %s without an exact snapshot", e.key)
 }
 
 func cloneBytes(value []byte) []byte {

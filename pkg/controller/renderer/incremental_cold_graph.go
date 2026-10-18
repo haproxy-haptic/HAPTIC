@@ -160,7 +160,7 @@ func (r *incrementalRenderSession) coldComponentGraphQueryPending(
 ) (bool, error) {
 	component, source, namespace, name, ok := r.resolveComponentQuery(key)
 	if !ok || component.group != group {
-		return false, fmt.Errorf("incremental cold group %q has invalid query %q", group, key.Opaque())
+		return false, fmt.Errorf("incremental cold group %q has invalid query %s", group, key)
 	}
 	resultCacheKey := resultKey(&component, source, namespace, name)
 	root, cached := r.results.Get(resultCacheKey)
@@ -394,21 +394,21 @@ func (r *incrementalRenderSession) coldCarrierQueryEligible(
 	component, source, namespace, name, ok := r.resolveComponentQuery(key)
 	if !ok {
 		return false, fmt.Errorf(
-			"incremental component carrier received non-component query %q",
-			key.Opaque(),
+			"incremental component carrier received non-component query %s",
+			key,
 		)
 	}
 	if component.resourceProjection {
 		return false, nil
 	}
 	if _, cached := r.results.Get(resultKey(&component, source, namespace, name)); cached {
-		return false, fmt.Errorf("incremental component carrier query %q is already cached", key.Opaque())
+		return false, fmt.Errorf("incremental component carrier query %s is already cached", key)
 	}
 	if _, pending := r.freshResults[key]; pending {
-		return false, fmt.Errorf("incremental component carrier query %q already has a pending result", key.Opaque())
+		return false, fmt.Errorf("incremental component carrier query %s already has a pending result", key)
 	}
 	if _, pending := r.httpExecuted[key]; pending {
-		return false, fmt.Errorf("incremental component carrier query %q has pending HTTP effects", key.Opaque())
+		return false, fmt.Errorf("incremental component carrier query %s has pending HTTP effects", key)
 	}
 	if _, eligible := slices.BinarySearch(templateNames, component.entryPoint); !eligible {
 		return false, nil

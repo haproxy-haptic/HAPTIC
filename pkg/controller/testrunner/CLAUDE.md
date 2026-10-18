@@ -565,20 +565,17 @@ root.
 
 ### Rendering Errors
 
-Rendering errors are simplified using `dataplane.SimplifyRenderingError()`:
+Rendering errors pass through `templating.RenderErrorMessage()`:
 
 ```go
 rendered, err := r.renderWithStores(ctx, engine, stores, validationPaths, httpStore, currentConfig, currentFiles, extraContext)
 if err != nil {
-    result.RenderError = dataplane.SimplifyRenderingError(err)
-    // Result is marked as failed, error is user-friendly
+    result.RenderError = templating.RenderErrorMessage(err)
 }
 ```
 
-**Example**:
-
-- Raw: `failed to render template 'haproxy.cfg': unable to execute template: failed to call function 'fail': Service 'api' not found`
-- Simplified: `Service 'api' not found`
+A render a template stopped with `fail()` reports only the `fail()` message
+(`*templating.FailError`); any other failure keeps its full error text.
 
 ### Validation Errors
 

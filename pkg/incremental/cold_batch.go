@@ -1208,10 +1208,10 @@ func (s *Session) validateFreshColdBatch(keys []QueryKey) error {
 			return fmt.Errorf("incremental query has no implementation")
 		}
 		if s.wasQueried(key) {
-			return fmt.Errorf("incremental cold batch query %q was already evaluated", key.id.String())
+			return fmt.Errorf("incremental cold batch query %s was already evaluated", key)
 		}
 		if _, exists := s.nodeChanges[key]; exists {
-			return fmt.Errorf("incremental cold batch query %q already has staged state", key.id.String())
+			return fmt.Errorf("incremental cold batch query %s already has staged state", key)
 		}
 	}
 	return nil

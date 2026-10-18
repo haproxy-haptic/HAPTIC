@@ -252,7 +252,7 @@ func newIncrementalDirectBoundResourceSpecKey(
 		copy(key.keys[:], keys)
 		return key
 	}
-	key.overflow = encodeOpaque("direct-resource-keys", keys...)
+	key.overflow = incremental.EncodeTuple("direct-resource-keys", keys...)
 	return key
 }
 

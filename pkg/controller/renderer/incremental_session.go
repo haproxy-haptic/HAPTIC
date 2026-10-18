@@ -1854,7 +1854,7 @@ func (r *incrementalRenderSession) resolveInput(
 	}
 	spec, ok := parseResourceInputKey(key)
 	if !ok {
-		return incremental.Input{}, fmt.Errorf("incremental input %q has no resolver", key.Opaque())
+		return incremental.Input{}, fmt.Errorf("incremental input %s has no resolver", key)
 	}
 	if catalogErr := r.catalogLoadOrStore(key, &spec); catalogErr != nil {
 		return incremental.Input{}, catalogErr
@@ -3291,7 +3291,7 @@ func (r *incrementalRenderSession) groupComponentBatchQueries(
 		component, source, namespace, name, parsed := r.resolveComponentQuery(queries[index].Key)
 		if !parsed {
 			return nil, fmt.Errorf(
-				"incremental component batch received non-component query %q", queries[index].Key.Opaque(),
+				"incremental component batch received non-component query %s", queries[index].Key,
 			)
 		}
 		if component.resourceProjection {
@@ -3304,11 +3304,7 @@ func (r *incrementalRenderSession) groupComponentBatchQueries(
 				name,
 			)
 			if err != nil {
-				return nil, fmt.Errorf(
-					"incremental component batch query %q: %w",
-					queries[index].Key.Opaque(),
-					err,
-				)
+				return nil, attributeToWatchedObject(queries[index].Key, err)
 			}
 			values[index].Value, values[index].Err = queries[index].NewExactValue(string(encoded))
 			continue
@@ -3322,7 +3318,7 @@ func (r *incrementalRenderSession) groupComponentBatchQueries(
 			name,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("incremental component batch query %q: %w", queries[index].Key.Opaque(), err)
+			return nil, attributeToWatchedObject(queries[index].Key, err)
 		}
 		if prepared == nil {
 			values[index].Value, values[index].Err = queries[index].NewExactValue(string(immediate))
@@ -3357,11 +3353,7 @@ func (r *incrementalRenderSession) runComponentEntryPointBatch(
 		}
 		if err := r.prepareComponentRender(prepareCtx, batch.prepared[index], capabilities, authority); err != nil {
 			queryIndex := batch.indexes[index]
-			return fmt.Errorf(
-				"incremental component batch query %q: %w",
-				queries[queryIndex].Key.Opaque(),
-				err,
-			)
+			return attributeToWatchedObject(queries[queryIndex].Key, err)
 		}
 		items[index] = templating.IncrementalComponentBatchItem{
 			Context:         batch.prepared[index].ctx,
@@ -3376,11 +3368,8 @@ func (r *incrementalRenderSession) runComponentEntryPointBatch(
 		if errors.As(err, &itemErr) && itemErr.Index >= 0 && itemErr.Index < len(batch.indexes) {
 			queryIndex := batch.indexes[itemErr.Index]
 			component := batch.prepared[itemErr.Index].component
-			return fmt.Errorf(
-				"incremental component batch query %q: %w",
-				queries[queryIndex].Key.Opaque(),
-				remapIncrementalTemplateError(component.name, component.entryPoint, itemErr.Err),
-			)
+			templateErr := remapIncrementalTemplateError(component.name, component.entryPoint, itemErr.Err)
+			return attributeToWatchedObject(queries[queryIndex].Key, templateErr)
 		}
 		return err
 	}
@@ -3395,11 +3384,7 @@ func (r *incrementalRenderSession) runComponentEntryPointBatch(
 		encoded, err := r.finishPreparedComponent(batch.prepared[index], texts[index])
 		if err != nil {
 			queryIndex := batch.indexes[index]
-			return fmt.Errorf(
-				"incremental component batch query %q: %w",
-				queries[queryIndex].Key.Opaque(),
-				err,
-			)
+			return attributeToWatchedObject(queries[queryIndex].Key, err)
 		}
 		queryIndex := batch.indexes[index]
 		values[queryIndex].Value, values[queryIndex].Err = queries[queryIndex].NewExactValue(encoded)
@@ -3447,7 +3432,7 @@ func (r *incrementalRenderSession) evaluateComponentQueries(
 		for _, key := range keys {
 			_, ok := r.resolveQueryComponent(key)
 			if !ok {
-				return nil, fmt.Errorf("incremental component evaluation received non-component query %q", key.Opaque())
+				return nil, fmt.Errorf("incremental component evaluation received non-component query %s", key)
 			}
 		}
 		results, err = r.graphSession.EvaluateAllExactBatch(ctx, r.executeComponentBatch, keys...)
@@ -3680,7 +3665,7 @@ func (r *incrementalRenderSession) collectColdGroupAdditions(
 		result := &ownedEvaluated[resultIndex]
 		if err := r.state.graph.ValidateExactValue(result.Key, result.Value); err != nil {
 			return nil, false, fmt.Errorf(
-				"authenticating evaluated incremental result %q: %w", result.Key.Opaque(), err,
+				"authenticating evaluated incremental result %s: %w", result.Key, err,
 			)
 		}
 		fresh := r.freshResults[result.Key]
@@ -3844,8 +3829,8 @@ func (r *incrementalRenderSession) validateColdGroupAdditions(
 		}
 		if err := r.state.graph.ValidateExactValue(addition.evaluated.Key, addition.evaluated.Value); err != nil {
 			return fmt.Errorf(
-				"authenticating prepared incremental result %q: %w",
-				addition.evaluated.Key.Opaque(),
+				"authenticating prepared incremental result %s: %w",
+				addition.evaluated.Key,
 				err,
 			)
 		}
@@ -4000,7 +3985,7 @@ func (r *incrementalRenderSession) applyEvaluatedResult(
 	evaluated *incremental.ExactResult,
 ) error {
 	if err := r.state.graph.ValidateExactValue(evaluated.Key, evaluated.Value); err != nil {
-		return fmt.Errorf("authenticating evaluated incremental result %q: %w", evaluated.Key.Opaque(), err)
+		return fmt.Errorf("authenticating evaluated incremental result %s: %w", evaluated.Key, err)
 	}
 	fresh, err := r.authenticatedFreshResult(evaluated.Key, evaluated.Value)
 	if err != nil {
@@ -4030,7 +4015,7 @@ func (r *incrementalRenderSession) authenticatedFreshResult(
 	}
 	result, err := takeAuthenticatedFreshComponentResult(fresh, key, root)
 	if err != nil {
-		return nil, fmt.Errorf("fresh incremental component result %q: %w", key.Opaque(), err)
+		return nil, fmt.Errorf("fresh incremental component result %s: %w", key, err)
 	}
 	return &result, nil
 }
@@ -4044,7 +4029,7 @@ func (r *incrementalRenderSession) authenticateFreshComponentResult(
 		return nil, false, nil
 	}
 	if err := validateAuthenticatedFreshComponentResult(fresh, key, root); err != nil {
-		return nil, false, fmt.Errorf("fresh incremental component result %q: %w", key.Opaque(), err)
+		return nil, false, fmt.Errorf("fresh incremental component result %s: %w", key, err)
 	}
 	return fresh, true, nil
 }
@@ -4064,7 +4049,7 @@ func (r *incrementalRenderSession) evaluatedResultTarget(
 	definition, source, namespace, objectName, parsed := r.resolveComponentQuery(evaluated.Key)
 	if !parsed {
 		return evaluatedResultTarget{},
-			fmt.Errorf("incremental graph returned an invalid component key %q", evaluated.Key.Opaque())
+			fmt.Errorf("incremental graph returned an invalid component key %s", evaluated.Key)
 	}
 	if definition.group != group {
 		return evaluatedResultTarget{},

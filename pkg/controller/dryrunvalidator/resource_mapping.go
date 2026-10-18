@@ -29,6 +29,7 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/indexer"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores"
+	"github.com/haproxy-haptic/HAPTIC/pkg/templating"
 )
 
 const (
@@ -223,7 +224,7 @@ func (c *Component) simplifyError(phase string, err error) string {
 	}
 	switch phase {
 	case phaseRender:
-		return dataplane.SimplifyRenderingError(err)
+		return templating.RenderErrorMessage(err)
 	case "syntax", "schema", "semantic":
 		return dataplane.SimplifyValidationError(err)
 	default:

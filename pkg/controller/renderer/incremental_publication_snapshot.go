@@ -183,7 +183,7 @@ func incrementalPublicationSnapshotSourceInput(
 	encoded []byte,
 ) incremental.Input {
 	return incremental.Input{
-		Key: incremental.NewInputKey(encodeOpaque(
+		Key: incremental.NewInputKey(incremental.EncodeTuple(
 			"publication-snapshot", group, location, cell, key, rank,
 		)),
 		Revision: exactBytesRevision("publication-snapshot", encoded),
