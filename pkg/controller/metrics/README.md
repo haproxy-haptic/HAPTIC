@@ -9,7 +9,7 @@ User-facing queries, alerting rules, and dashboard templates live in [`docs/site
 
 ## Complete Metric Catalogue
 
-All names are listed exactly as exported. `metrics.go` contains the authoritative list; the `TestMetrics_AllMetricsRegistered` assertion in `metrics_test.go` covers a representative subset (17 of 36) — extend that slice when you add or rename a metric.
+All names are listed exactly as exported. `metrics.go` contains the authoritative list; the `TestMetrics_AllMetricsRegistered` assertion in `metrics_test.go` covers a representative subset (21 of 52) — extend that slice when you add or rename a metric.
 
 ### Reconciliation pipeline
 
@@ -61,8 +61,10 @@ Each agent also exports its own view on the pod's `agent-metrics` port; [monitor
 
 | Metric | Type | Labels | What it tracks |
 |--------|------|--------|----------------|
-| `haptic_validation_total` | counter | — | Render gate verdicts (leader) |
-| `haptic_validation_errors_total` | counter | — | Render gate verdicts that refused or couldn't run |
+| `haptic_validation_total` | counter | — | HAProxy's verdicts on rendered configurations: render gate checks and failed render validations (leader) |
+| `haptic_validation_errors_total` | counter | — | Rendered configurations HAProxy refused or couldn't check (leader) |
+| `haptic_config_validated` | gauge | `status`, `reason` | This replica's view of the `HAProxyTemplateConfig` `Validated` condition: every known status and reason is exported, the current one at `1`, all `0` before the first verdict. Carried across reinitializations |
+| `haptic_config_validation_total` | counter | `result` | This replica's verdicts on its configuration, startup load gate included: `valid`, `invalid`, `inconclusive` (each retry counts). Carried across reinitializations |
 | `haptic_haproxy_checks_total` | counter | `validator`, `result` | `haproxy -c` processes run on this replica |
 | `haptic_haproxy_checks_reused_total` | counter | `validator`, `result` | Checks answered by an identical input set's verdict |
 | `haptic_config_rejected_total` | counter | `validator` | `HAProxyTemplateConfig` loads refused by the config-validation gate, labelled by the validator that rejected it (`basic`, `template`, `jsonpath`, `validationtests`), or `coordinator` when one timed out |
@@ -116,7 +118,9 @@ Each agent also exports its own view on the pod's `agent-metrics` port; [monitor
 
 ## Component
 
-`Component` subscribes to reconciliation, deployment, validation, resource, event-bus, webhook, leader-election, and parser events. Metric updates happen inside the internal `handleEvent` dispatcher — there's no direct caller path into the `Metrics` struct from other components; they emit events and this component records them.
+`Component` subscribes to reconciliation, deployment, validation, resource, event-bus, webhook, leader-election, and parser events, and records them inside the internal `handleEvent` dispatcher. A few callers record directly: the render paths and the render gate, and the startup load gate (`RecordLoadGate`), which runs before the event bus starts.
+
+`haptic_config_validated` follows the events the `StatusUpdater` writes the `Validated` condition from, on every replica. A `ConfigValidatedEvent` without a candidate generation (the running config's startup announcement or a leadership replay) sets `True` only while that config is the newest one parsed and no verdict has replaced it, so a replay never hides a newer `False` or `Unknown`.
 
 ```go
 import (

@@ -15,13 +15,19 @@
 package controller
 
 import (
+	"context"
 	"encoding/base64"
+	"io"
 	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/metrics"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/typebootstrap"
+	coreconfig "github.com/haproxy-haptic/HAPTIC/pkg/core/config"
+	"github.com/haproxy-haptic/HAPTIC/pkg/introspection"
 	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -301,4 +307,23 @@ func TestRecordReinitializationsSurvivesRegistrySwap(t *testing.T) {
 	if got := read(initial); got != 0 {
 		t.Fatalf("first iteration: got %v, want 0", got)
 	}
+}
+
+func TestSetupComponentsContinuesTheConfigValidationSeries(t *testing.T) {
+	previous := metrics.NewMetrics(prometheus.NewRegistry())
+	previous.RecordLoadGate(false)
+	noTypes := func(context.Context, *coreconfig.Config) (*typebootstrap.Result, error) {
+		return &typebootstrap.Result{}, nil
+	}
+
+	setup := setupComponents(t.Context(), introspection.NewRegistry(), &persistentEventDropMetrics{}, previous,
+		noTypes, "haptic-config", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(func() {
+		setup.Cancel()
+		require.NoError(t, setup.ErrGroup.Wait())
+	})
+
+	current := setup.MetricsComponent.Metrics()
+	assert.Equal(t, 1.0, promtestutil.ToFloat64(current.ConfigValidationTotal.WithLabelValues("invalid")))
+	assert.Equal(t, 1.0, promtestutil.ToFloat64(current.ConfigValidated.WithLabelValues("False", "LoadGateFailed")))
 }

@@ -175,20 +175,49 @@ Track HAProxy validation failures with
 
 ## Validation metrics
 
+HAPTIC validates twice. It validates your `HAProxyTemplateConfig` when it loads or changes, and HAProxy checks every configuration rendered from it. `haptic_config_validated` and `haptic_config_validation_total` report the first; `haptic_validation_total` and `haptic_validation_errors_total` report the second.
+
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `haptic_validation_total` | Counter | — | Render gate verdicts on the leader |
-| `haptic_validation_errors_total` | Counter | — | Render gate verdicts that refused the render or couldn't run |
+| `haptic_config_validated` | Gauge | `status`, `reason` | The `Validated` condition of the `HAProxyTemplateConfig` as this replica sees it. Every known `status` and `reason` pair is exported; the current one is `1`, the others `0`. All are `0` until the replica has a verdict. See [config validation state](#config-validation-state). |
+| `haptic_config_validation_total` | Counter | `result` | Verdicts this replica reached on its `HAProxyTemplateConfig`, the startup load gate included. `result` is `valid`, `invalid`, or `inconclusive`. An inconclusive validation is retried with backoff, and each retry counts. |
+| `haptic_validation_total` | Counter | — | HAProxy's verdicts on rendered configurations: render gate checks and failed render validations. Leader-only. |
+| `haptic_validation_errors_total` | Counter | — | Rendered configurations HAProxy refused or couldn't check. Leader-only. A `HAProxyTemplateConfig` that fails or can't finish validation doesn't count here, so this counter stays `0` while your configuration is `Unknown`. |
 | `haptic_haproxy_checks_total` | Counter | `validator`, `result` | `haproxy -c` processes this replica ran, on leader and followers. `validator` is `input` (input acceptance, every render), `render_gate`, `retained`, `http_content`, or `admission`. `result` is `passed`, `refused`, `error`, or `cancelled`. |
 | `haptic_haproxy_checks_reused_total` | Counter | `validator`, `result` | Checks answered without a process, because HAProxy had already judged the identical config, files, flags, and binary. Strict-DNS admission checks are never reused. |
+
+### Config validation state
+
+`haptic_config_validated` has one series per state the `Validated` condition can take:
+
+| `status` | `reason` | Meaning |
+|----------|----------|---------|
+| `True` | `ValidationSucceeded` | The newest configuration passed validation. |
+| `False` | `ConfigInvalid` | A validator rejected the newest configuration. The previous one keeps running. |
+| `False` | `HAProxyValidationFailed` | HAProxy refused a configuration rendered from it. Only the leader reports this state. |
+| `False` | `LoadGateFailed` | The startup load gate rejected the configuration, so the controller can't start with it. |
+| `Unknown` | `ValidationInconclusive` | Validation couldn't reach a verdict, for example because fetching resource schemas timed out. The previous configuration keeps running while HAPTIC retries. |
+
+Every replica validates the configuration itself and reports its own verdict. The leader's series matches the condition it writes on the `HAProxyTemplateConfig`. A follower whose verdict differs from the leader's keeps running its previous configuration, so alert on every replica. The series survive a controller reinitialization.
+
+The labels hold only these values, so each replica exports five series. Read the cause from the condition message and the `HAProxyTemplateConfig` Warning events.
 
 **Key queries:**
 
 ```promql
-# Validation rate
+# Current state per replica
+haptic_config_validated == 1
+
+# Replicas whose newest configuration is not validated
+haptic_config_validated{status="True"} == 0
+
+# Inconclusive validations per second
+rate(haptic_config_validation_total{result="inconclusive"}[5m])
+
+# Render validation rate on the leader
 rate(haptic_validation_total[5m])
 
-# Validation success rate
+# Render validation success rate
 100 * (1 - (
   rate(haptic_validation_errors_total[5m]) /
   rate(haptic_validation_total[5m])
@@ -197,6 +226,21 @@ rate(haptic_validation_total[5m])
 # haproxy -c processes per second, per replica and validator
 sum by (pod, validator) (rate(haptic_haproxy_checks_total[5m]))
 ```
+
+**Alert when the configuration stays unvalidated for 10 minutes:**
+
+```yaml
+- alert: HAProxyControllerConfigNotValidated
+  expr: haptic_config_validated{status="True"} == 0
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "HAProxyTemplateConfig not validated for 10 minutes"
+    description: "Controller {{ $labels.pod }} has not validated its newest HAProxyTemplateConfig for 10m, so the latest change isn't live. Check the HAProxyTemplateConfig's Validated condition and Warning events for the cause."
+```
+
+The expression selects a single series per replica, so the pending period keeps running when the reason changes, for example from `ValidationInconclusive` to `ConfigInvalid`. The chart ships this rule as `HAProxyControllerConfigNotValidated`.
 
 ## Resource metrics
 

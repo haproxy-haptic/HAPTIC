@@ -1294,8 +1294,8 @@ func assessValidationTestsGate(ctx context.Context, t *testing.T, cfg *envconf.C
 	t.Log("Waiting for the gate to reject the config (haptic_config_rejected_total)...")
 	gateLabel := `haptic_config_rejected_total{validator="validationtests"}`
 	ok := pollUntil(ctx, 120*time.Second, 3*time.Second, func() bool {
-		m, mErr := metricsClient.GetMetrics(ctx)
-		return mErr == nil && strings.Contains(m, gateLabel)
+		values, metricsErr := metricsClient.GetMetricValues(ctx, []string{gateLabel})
+		return metricsErr == nil && values[gateLabel] > 0
 	})
 	if !ok {
 		pod, _ := GetControllerPod(ctx, client, namespace)
@@ -1306,12 +1306,12 @@ func assessValidationTestsGate(ctx context.Context, t *testing.T, cfg *envconf.C
 	}
 	t.Log("Gate recorded the rejection in haptic_config_rejected_total")
 
-	// Operator-facing observability: the failure must also surface on
-	// status.validationErrors, naming the failing test.
-	errs, err := GetHAProxyTemplateConfigValidationErrors(ctx, client, namespace, ControllerCRDName)
-	require.NoError(t, err)
-	joined := strings.Join(errs, "\n")
-	assert.Contains(t, joined, "test-gate-canary-must-fail",
+	// Metrics and status consume the rejection event independently.
+	ok = pollUntil(ctx, 120*time.Second, 3*time.Second, func() bool {
+		errs, statusErr := GetHAProxyTemplateConfigValidationErrors(ctx, client, namespace, ControllerCRDName)
+		return statusErr == nil && strings.Contains(strings.Join(errs, "\n"), "test-gate-canary-must-fail")
+	})
+	require.True(t, ok,
 		"status.validationErrors should name the failing validationTest")
 
 	// Controller must still be running on the last-good config.
@@ -1328,8 +1328,8 @@ func assessValidationTestsGate(ctx context.Context, t *testing.T, cfg *envconf.C
 	_, err = EnsureDebugClientReady(ctx, t, client, clientset, namespace, 30*time.Second)
 	require.NoError(t, err)
 	ok = pollUntil(ctx, 120*time.Second, 3*time.Second, func() bool {
-		errs, _ := GetHAProxyTemplateConfigValidationErrors(ctx, client, namespace, ControllerCRDName)
-		return len(errs) == 0
+		errs, statusErr := GetHAProxyTemplateConfigValidationErrors(ctx, client, namespace, ControllerCRDName)
+		return statusErr == nil && len(errs) == 0
 	})
 	assert.True(t, ok, "status.validationErrors should clear once the failing test is removed")
 	return ctx

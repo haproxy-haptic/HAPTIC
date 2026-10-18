@@ -50,6 +50,22 @@ type Component struct {
 	// Queue wait tracking: correlationID → when ReconciliationTriggeredEvent was received
 	triggeredAt map[string]time.Time
 	lastEvents  *templating.RenderedEventSnapshot
+
+	validated configValidatedTracker
+}
+
+// configValidatedTracker derives the Validated state from the events the
+// StatusUpdater writes the condition from.
+type configValidatedTracker struct {
+	// newestVersion is the version of the newest configuration parsed.
+	newestVersion string
+	// verdict is the configuration's own verdict; zero before the first one.
+	verdict configValidatedState
+	// refused is set while HAProxy refuses the leader's renders.
+	refused bool
+	// countedCandidate is the newest candidate generation counted valid, so a
+	// leadership replay of the same verdict does not count again.
+	countedCandidate uint64
 }
 
 // New creates a new metrics component that listens to events.
@@ -87,7 +103,10 @@ func New(metrics *Metrics, eventBus *busevents.EventBus) *Component {
 		events.EventTypeBecameLeader,
 		events.EventTypeLostLeadership,
 		events.EventTypeHAProxyPodRejected,
+		events.EventTypeConfigParsed,
+		events.EventTypeConfigValidated,
 		events.EventTypeConfigInvalid,
+		events.EventTypeConfigValidationInconclusive,
 		events.EventTypeHTTPContentRevoked,
 		events.EventTypeHTTPContentRejected,
 	)
@@ -168,9 +187,10 @@ func (c *Component) handleEvent(event busevents.Event) {
 	case *events.InstanceDeploymentFailedEvent:
 		c.metrics.RecordDeployment(0, false)
 	case *events.RenderGateCompletedEvent:
-		c.metrics.RecordValidation(e.OK)
+		c.handleRenderGateCompleted(e)
 	case *events.ValidationFailedEvent:
 		c.metrics.RecordValidation(false)
+		c.setRefusedByHAProxy(true)
 	case *events.IndexSynchronizedEvent:
 		c.handleIndexSynchronized(e)
 	case *events.ResourceIndexUpdatedEvent:
@@ -187,19 +207,86 @@ func (c *Component) handleEvent(event busevents.Event) {
 		c.metrics.RecordHTTPContentRejected()
 	case *events.HTTPContentRevokedEvent:
 		c.metrics.RecordHTTPContentRevoked()
+	default:
+		c.handleConfigEvent(event)
+	}
+}
+
+func (c *Component) handleRenderGateCompleted(event *events.RenderGateCompletedEvent) {
+	c.metrics.RecordValidation(event.OK)
+	if event.Newest && event.OK {
+		c.setRefusedByHAProxy(false)
+	}
+}
+
+func (c *Component) handleConfigEvent(event busevents.Event) {
+	switch e := event.(type) {
+	case *events.ConfigParsedEvent:
+		c.validated.newestVersion = e.Version
+	case *events.ConfigValidatedEvent:
+		c.handleConfigValidated(e)
 	case *events.ConfigInvalidEvent:
 		c.handleConfigInvalid(e)
+	case *events.ConfigValidationInconclusiveEvent:
+		c.metrics.recordConfigValidation(configValidationInconclusive)
+		c.setConfigVerdict(configInconclusive)
 	}
 }
 
 func (c *Component) handleConfigInvalid(event *events.ConfigInvalidEvent) {
 	// A missing validator verdict is still a coordinator rejection.
 	if len(event.ValidationErrors) == 0 {
-		c.metrics.RecordConfigRejected("coordinator")
+		c.metrics.RecordConfigRejected(configRejectedByCoordinator)
 	}
 	for validator := range event.ValidationErrors {
 		c.metrics.RecordConfigRejected(validator)
 	}
+	c.metrics.recordConfigValidation(configValidationInvalid)
+	c.setConfigVerdict(configInvalid)
+}
+
+// handleConfigValidated applies fresh verdicts. An event without a candidate
+// generation re-announces the running config (startup, leadership replay); it
+// applies only while that config is the newest parsed and nothing judged it.
+func (c *Component) handleConfigValidated(event *events.ConfigValidatedEvent) {
+	tracker := &c.validated
+	if event.ActiveSnapshotRestore {
+		return
+	}
+	if event.CandidateGeneration == 0 {
+		if event.Version == tracker.newestVersion && tracker.verdict == (configValidatedState{}) {
+			c.setConfigVerdict(configValidationSucceeded)
+		}
+		return
+	}
+	if event.CandidateGeneration > tracker.countedCandidate {
+		tracker.countedCandidate = event.CandidateGeneration
+		c.metrics.recordConfigValidation(configValidationValid)
+		c.setConfigVerdict(configValidationSucceeded)
+	}
+}
+
+// setConfigVerdict also ends a HAProxy refusal, as a configuration load
+// rewrites the condition.
+func (c *Component) setConfigVerdict(verdict configValidatedState) {
+	c.validated.verdict = verdict
+	c.validated.refused = false
+	c.metrics.setConfigValidated(verdict)
+}
+
+// setRefusedByHAProxy overlays the verdict while HAProxy refuses the leader's
+// renders. Like the StatusUpdater, it waits for a configuration verdict first.
+func (c *Component) setRefusedByHAProxy(refused bool) {
+	tracker := &c.validated
+	if tracker.refused == refused || tracker.verdict == (configValidatedState{}) {
+		return
+	}
+	tracker.refused = refused
+	if refused {
+		c.metrics.setConfigValidated(configRefusedByHAProxy)
+		return
+	}
+	c.metrics.setConfigValidated(tracker.verdict)
 }
 
 func (c *Component) handleReconciliationStarted(e *events.ReconciliationStartedEvent) {
@@ -243,6 +330,7 @@ func (c *Component) handleLostLeadership(e *events.LostLeadershipEvent) {
 	c.metrics.ResetFleetConvergence()
 	c.metrics.SetRenderWarnings(nil)
 	c.lastEvents = nil
+	c.setRefusedByHAProxy(false)
 }
 
 func (c *Component) handleReconciliationCompleted(event *events.ReconciliationCompletedEvent) {

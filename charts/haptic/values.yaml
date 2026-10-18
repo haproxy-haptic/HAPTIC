@@ -298,6 +298,7 @@ controller:
         fleetDiverged: true
         retainedConfiguration: true
         configRejected: true
+        configNotValidated: true
         configPinned: true
         haproxyPodsRejected: true
         noHAProxyPods: true

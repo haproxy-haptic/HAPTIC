@@ -92,6 +92,16 @@ spec:
             summary: "HAProxyTemplateConfig rejected by the validation gate"
             description: "Validator {{ `{{ $labels.validator }}` }} rejected a config change - the controller is serving the last-good config and the latest change is NOT live"
         {{- end }}
+        {{- if $defaults.configNotValidated }}
+        - alert: HAProxyControllerConfigNotValidated
+          expr: haptic_config_validated{status="True"} == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "HAProxyTemplateConfig not validated for 10 minutes"
+            description: "Controller {{ `{{ $labels.pod }}` }} has not validated its newest HAProxyTemplateConfig for 10m, so the latest change isn't live. Check the HAProxyTemplateConfig's Validated condition and Warning events for the cause."
+        {{- end }}
         {{- if $defaults.configPinned }}
         - alert: HAProxyControllerConfigPinned
           expr: haptic_config_pinned > 0

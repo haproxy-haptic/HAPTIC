@@ -242,8 +242,10 @@ func TestWarmerDoesNotCountAHeldRender(t *testing.T) {
 	h.bus.Publish(events.NewReconciliationTriggeredEvent("resource_change", true))
 	h.waitForRender(t)
 	testutil.AssertNoEvent[busevents.Event](t, h.published, testutil.NoEventTimeout)
-	assert.Equal(t, 0, promtestutil.CollectAndCount(h.metrics.RenderTotal))
-	assert.Equal(t, 0, promtestutil.CollectAndCount(h.metrics.RenderErrors))
+	for _, cacheState := range []string{"cold", "warm", "replay"} {
+		assert.Zero(t, promtestutil.ToFloat64(h.metrics.RenderTotal.WithLabelValues(cacheState)), cacheState)
+		assert.Zero(t, promtestutil.ToFloat64(h.metrics.RenderErrors.WithLabelValues(cacheState)), cacheState)
+	}
 }
 
 // The production sequence on the replica that wins the first election: the

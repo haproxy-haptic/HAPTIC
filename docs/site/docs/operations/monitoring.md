@@ -409,16 +409,18 @@ your application's targets.
 
 ### Shipped alerts
 
-The chart's `PrometheusRule` deploys these fifteen alerts when `controller.monitoring.prometheusRule.enabled: true`. Each is toggled by its own `controller.monitoring.prometheusRule.defaultRules.<key>` flag (all default to `true`):
+The chart's `PrometheusRule` deploys these seventeen alerts when `controller.monitoring.prometheusRule.enabled: true`. Each is toggled by its own `controller.monitoring.prometheusRule.defaultRules.<key>` flag (all default to `true`):
 
 | Alert | Toggle key (`defaultRules.<key>`) | Fires when |
 |-------|-----------------------------------|------------|
+| `HAProxyRetainedConfigurationActive` | `retainedConfiguration` | `haptic_retained_config_active == 1` for 2m |
 | `HAProxyControllerReconciliationErrors` | `reconciliationErrors` | `rate(haptic_reconciliation_errors_total[5m]) > 0` for 5m |
 | `HAProxyControllerDeploymentFailures` | `deploymentFailures` | `rate(haptic_deployment_errors_total[5m]) > 0` for 2m |
 | `HAProxyFleetDiverged` | `fleetDiverged` | `haptic_haproxy_fleet_converged < haptic_haproxy_fleet_size` for 5m |
 | `HAProxyControllerHighQueueDepth` | `highQueueDepth` | p95 `haptic_reconciliation_queue_wait_seconds` over `5s` for 5m |
 | `HAProxyControllerNoLeader` | `leaderElectionLost` | `sum by (namespace, job) (haptic_leader_election_is_leader) == 0` for 1m |
 | `HAProxyControllerConfigRejected` | `configRejected` | `increase(haptic_config_rejected_total[5m]) > 0` for 1m |
+| `HAProxyControllerConfigNotValidated` | `configNotValidated` | `haptic_config_validated{status="True"} == 0` for 10m |
 | `HAProxyControllerConfigPinned` | `configPinned` | `haptic_config_pinned > 0` for 5m |
 | `HAProxyControllerHAProxyPodsRejected` | `haproxyPodsRejected` | `increase(haptic_haproxy_pods_rejected_total[5m]) > 0` for 5m |
 | `HAProxyControllerNoHAProxyPods` | `noHAProxyPods` | `haptic_resource_count{type="haproxy-pods"} < 1` for 5m |
@@ -438,7 +440,7 @@ controller:
     prometheusRule:
       enabled: true
       defaultRules:
-        highQueueDepth: false   # drop a single shipped rule; the other fourteen stay
+        highQueueDepth: false   # drop a single shipped rule; the other sixteen stay
       # Or set `rules:` to a non-empty list to replace ALL default rules with your own:
       # rules:
       #   - alert: MyCustomAlert

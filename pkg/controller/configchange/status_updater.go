@@ -70,17 +70,17 @@ const (
 	// ObservedGeneration field, together with status.observedGeneration, is the
 	// Kubernetes-native way to answer "has the controller processed generation N
 	// of my config?" without coupling the spec to a controller version.
-	conditionValidated = "Validated"
+	conditionValidated = v1alpha1.ConditionTypeValidated
 	// Condition reasons (CamelCase per Kubernetes convention).
-	reasonValidationSucceeded     = "ValidationSucceeded"
-	reasonConfigInvalid           = "ConfigInvalid"
-	reasonValidationInconclusive  = "ValidationInconclusive"
-	reasonHAProxyValidationFailed = "HAProxyValidationFailed"
+	reasonValidationSucceeded     = v1alpha1.ReasonValidationSucceeded
+	reasonConfigInvalid           = v1alpha1.ReasonConfigInvalid
+	reasonValidationInconclusive  = v1alpha1.ReasonValidationInconclusive
+	reasonHAProxyValidationFailed = v1alpha1.ReasonHAProxyValidationFailed
 	// reasonLoadGateFailed marks a config rejected by the fatal startup load gate
 	// (distinct from a live ConfigInvalid): the controller crash-loops fail-closed
 	// until the config is fixed, so an operator seeing this reason knows the pod
 	// is CrashLoopBackOff, not merely that a live reload was rejected.
-	reasonLoadGateFailed = "LoadGateFailed"
+	reasonLoadGateFailed = v1alpha1.ReasonLoadGateFailed
 )
 
 // StatusUpdater updates HAProxyTemplateConfig status based on validation results.

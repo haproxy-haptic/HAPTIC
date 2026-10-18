@@ -224,6 +224,8 @@ type persistentInfra struct {
 	introspectionRun *persistentServerRun
 	metricsRun       *persistentServerRun
 	eventSource      *eventSourceDelegate
+	// lastMetrics is the newest iteration's metrics, which the next continues.
+	lastMetrics *metrics.Metrics
 
 	// The process-owned admission listener stays bound between validator generations.
 	webhookMu     sync.Mutex
@@ -910,6 +912,7 @@ func setupComponents(
 	ctx context.Context,
 	introspectionRegistry *introspection.Registry,
 	eventDropMetrics *persistentEventDropMetrics,
+	previousMetrics *metrics.Metrics,
 	typeBootstrapper validator.TypeBootstrapper,
 	crdName string,
 	logger *slog.Logger,
@@ -926,6 +929,9 @@ func setupComponents(
 	domainMetrics := metrics.NewMetrics(registry)
 	domainMetrics.SetBuildInfo(buildVersionInfo.version, buildVersionInfo.haproxyVersion, buildVersionInfo.goVersion)
 	eventDropMetrics.Attach(domainMetrics)
+	if err := domainMetrics.CarryConfigValidation(previousMetrics); err != nil {
+		logger.Warn("Config validation metrics restart from zero in this iteration", "error", err)
+	}
 	metricsComponent := metrics.New(domainMetrics, bus)
 
 	iterCtx, cancelCause := context.WithCancelCause(ctx)

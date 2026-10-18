@@ -1091,6 +1091,18 @@ type HAProxyTemplateConfigStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// ConditionTypeValidated reports whether the controller accepted the observed
+// generation; the reasons below are the ones it writes with it.
+const (
+	ConditionTypeValidated = "Validated"
+
+	ReasonValidationSucceeded     = "ValidationSucceeded"
+	ReasonConfigInvalid           = "ConfigInvalid"
+	ReasonValidationInconclusive  = "ValidationInconclusive"
+	ReasonHAProxyValidationFailed = "HAProxyValidationFailed"
+	ReasonLoadGateFailed          = "LoadGateFailed"
+)
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:object:root=true
 

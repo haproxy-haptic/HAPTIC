@@ -202,7 +202,8 @@ func startIteration(
 	// The type bootstrapper is also reused by the step-2.5 startup validationTests
 	// gate below, so it's hoisted to a local rather than constructed inline.
 	typeBootstrapper := newIterationTypeBootstrapper(k8sClient, logger)
-	setup := setupComponents(ctx, infra.IntrospectionRegistry, infra.eventDropMetrics, typeBootstrapper, crdName, logger)
+	setup := setupComponents(ctx, infra.IntrospectionRegistry, infra.eventDropMetrics, infra.lastMetrics, typeBootstrapper, crdName, logger)
+	infra.lastMetrics = setup.MetricsComponent.Metrics()
 	setup.AgentTLS = infra.AgentTLS
 	reloadAuthority := newIterationReloadAuthority()
 	startIterationReloadObserver(setup, reloadAuthority)
@@ -383,7 +384,10 @@ func loadAcceptedIterationConfig(
 		return nil, nil, err
 	}
 	if !alreadyValidated {
-		if err := validateInitialConfig(setup.IterCtx, cfg, bundle, k8sClient, typeBootstrapper, infra.loadGateBudget(), logger); err != nil {
+		err := validateInitialConfig(setup.IterCtx, cfg, bundle, k8sClient, typeBootstrapper, infra.loadGateBudget(), logger)
+		// The event bus isn't running yet, so the load gate reports directly.
+		setup.MetricsComponent.Metrics().RecordLoadGate(err == nil)
+		if err != nil {
 			return nil, nil, fmt.Errorf("initial HAProxyTemplateConfig %q failed validation on load: %w", crdName, err)
 		}
 	}
