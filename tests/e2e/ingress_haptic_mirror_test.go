@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
@@ -46,6 +47,23 @@ func readEchoPodLogs(ctx context.Context, namespace, labelSelector string) (stri
 	return stdout.String(), nil
 }
 
+// waitForEchoPodLogsToContain waits until every marker appears in the logs
+// readEchoPodLogs returns.
+func waitForEchoPodLogsToContain(ctx context.Context, namespace, labelSelector string, markers ...string) error {
+	return testutil.WaitForCondition(ctx, testutil.FastWaitConfig(), func(c context.Context) (bool, error) {
+		logs, err := readEchoPodLogs(c, namespace, labelSelector)
+		if err != nil {
+			return false, err
+		}
+		for _, marker := range markers {
+			if !strings.Contains(logs, marker) {
+				return false, fmt.Errorf("marker %q is not in the logs of %s", marker, labelSelector)
+			}
+		}
+		return true, nil
+	})
+}
+
 // TestHapticMirrorTarget exercises fire-and-forget request mirroring driven by
 // the native `haproxy-haptic.org/mirror-target` Ingress annotation, end to end
 // through the SPOA hub mirror plugin (v0.6.0+ arg_targets contract). The
@@ -63,8 +81,8 @@ func readEchoPodLogs(ctx context.Context, namespace, labelSelector string) (stri
 // ealen/echo-server is stateless, so the only observable is the mirror pod's
 // stdout. We verify:
 //
-//  1. Positive: a request to `mirrorHost` at a unique marker path is copied to
-//     the mirror backend (the marker appears in echo-mirror's logs).
+//  1. Positive: every request to `mirrorHost`, each at its own marker path, is
+//     copied to the mirror backend (each marker appears in echo-mirror's logs).
 //  2. Negative (host-gating): a request to a DIFFERENT host is NOT mirrored.
 //     Proven deterministically with a barrier — after the non-mirror request we
 //     send a later request to `mirrorHost` and wait for ITS marker to land at
@@ -81,6 +99,8 @@ func TestHapticMirrorTarget(t *testing.T) {
 		mirrorHost    = "ingress-haptic-mirror.localdev.me"
 		nonMirrorHost = "ingress-haptic-mirror-off.localdev.me"
 		mirrorLabel   = "app=echo-mirror"
+		// The chart default of spoaHub.plugins.mirror.targetTimeoutMs.
+		mirrorTargetBudget = 2 * time.Second
 	)
 
 	feature := features.New("Ingress: haproxy-haptic.org/mirror-target copies matching requests to the mirror backend").
@@ -111,28 +131,23 @@ func TestHapticMirrorTarget(t *testing.T) {
 				},
 			})
 
+			// The plugin sends each copy once from the HAProxy pod and drops it
+			// if the target can't answer within its budget (#403).
+			waitForHAProxyPodsToReach(ctx, t, client, mirrorTarget+"/hm-ready-"+ns, mirrorTargetBudget)
+
 			// Unique per-test markers so parallel tests / prior runs can't
 			// pollute the grep. The namespace name is unique per test.
-			posMarker := "/hm-pos-" + ns
+			posMarkers := []string{"/hm-pos-0-" + ns, "/hm-pos-1-" + ns, "/hm-pos-2-" + ns}
 			barrierMarker := "/hm-barrier-" + ns
 			negMarker := "/hm-neg-" + ns
 
-			// (1) Positive: drive a few requests through the primary at the
-			// marker path; each returns 200 from the primary regardless of the
-			// mirror (fire-and-forget). Send several so a single best-effort
-			// mirror drop can't flake the assertion.
-			for i := 0; i < 3; i++ {
-				httpclient.New(t).GET(mirrorHost, posMarker).ExpectOK(t)
+			// (1) Positive: every request through the primary is copied. Each
+			// returns 200 from the primary regardless of the mirror.
+			for _, marker := range posMarkers {
+				httpclient.New(t).GET(mirrorHost, marker).ExpectOK(t)
 			}
-			if err := testutil.WaitForCondition(ctx, testutil.FastWaitConfig(), func(c context.Context) (bool, error) {
-				logs, err := readEchoPodLogs(c, ns, mirrorLabel)
-				if err != nil {
-					return false, err
-				}
-				return strings.Contains(logs, posMarker), nil
-			}); err != nil {
-				t.Fatalf("request to %s was not mirrored to %s within timeout (marker %q never reached the mirror backend): %v",
-					mirrorHost, mirrorTarget, posMarker, err)
+			if err := waitForEchoPodLogsToContain(ctx, ns, mirrorLabel, posMarkers...); err != nil {
+				t.Fatalf("requests to %s were not all mirrored to %s: %v", mirrorHost, mirrorTarget, err)
 			}
 
 			// (2) Negative: a request to a different host must not be mirrored.
@@ -145,14 +160,8 @@ func TestHapticMirrorTarget(t *testing.T) {
 			// Barrier: a later mirror-host request whose landing proves the
 			// mirror pipeline has drained past the non-mirror request above.
 			httpclient.New(t).GET(mirrorHost, barrierMarker).ExpectOK(t)
-			if err := testutil.WaitForCondition(ctx, testutil.FastWaitConfig(), func(c context.Context) (bool, error) {
-				logs, err := readEchoPodLogs(c, ns, mirrorLabel)
-				if err != nil {
-					return false, err
-				}
-				return strings.Contains(logs, barrierMarker), nil
-			}); err != nil {
-				t.Fatalf("barrier request to %s did not reach the mirror backend (marker %q): %v", mirrorHost, barrierMarker, err)
+			if err := waitForEchoPodLogsToContain(ctx, ns, mirrorLabel, barrierMarker); err != nil {
+				t.Fatalf("barrier request to %s was not mirrored: %v", mirrorHost, err)
 			}
 
 			logs, err := readEchoPodLogs(ctx, ns, mirrorLabel)
