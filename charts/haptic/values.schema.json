@@ -563,6 +563,15 @@
                       },
                       "additionalProperties": false
                     },
+                    "ingressPermissions": {
+                      "type": "object",
+                      "properties": {
+                        "allowRawHAProxyConfig": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "prometheusExporter": {
                       "type": "object",
                       "properties": {

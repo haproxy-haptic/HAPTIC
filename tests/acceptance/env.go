@@ -323,8 +323,8 @@ func CleanupControllerEnvironment(ctx context.Context, t *testing.T, cfg klient.
 	// Check if we should preserve the namespace for debugging
 	if ShouldKeepNamespace() {
 		t.Logf("Keeping namespace %s (KEEP_NAMESPACE=true)", namespace)
-		t.Logf("To inspect: kubectl --context kind-haproxy-test get pods -n %s", namespace)
-		t.Logf("To cleanup: kubectl --context kind-haproxy-test delete namespace %s", namespace)
+		t.Logf("To inspect: kubectl --context kind-%s get pods -n %s", ClusterName, namespace)
+		t.Logf("To cleanup: kubectl --context kind-%s delete namespace %s", ClusterName, namespace)
 		return ctx
 	}
 

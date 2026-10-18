@@ -46,7 +46,7 @@ Set backend timeouts, load balancing, connection limits, and health checks.
 | `haproxy-haptic.org/agent-check-port` | Enables the agent check on the given port (1-65535) via `agent-check` and `agent-port`; required by the other `agent-check-*` keys. |
 | `haproxy-haptic.org/agent-check-send` | Sets the string sent to the agent check via `agent-send`; requires `agent-check-port`. |
 | `haproxy-haptic.org/check` | Toggles server health checks; `off` emits `no-check` so servers aren't health-checked. |
-| `haproxy-haptic.org/config-backend` | Injects raw, operator-authored HAProxy directives verbatim into the `backend` section. Intended for trusted configuration, not request data. |
+| `haproxy-haptic.org/config-backend` | Injects raw, operator-authored HAProxy directives verbatim into the `backend` section. Rejected unless [`ingressPermissions.allowRawHAProxyConfig`](../operations/security.md#raw-configuration-annotations) is `true`. |
 | `haproxy-haptic.org/fullconn` | Emits `fullconn <n>` on the backend. HAProxy uses this threshold to scale each server's `minconn`/`maxconn` range as backend load rises. For a hard per-server cap, use `maxconn-server`. |
 | `haproxy-haptic.org/health-check-fall` | Sets the failed-check count before a server is marked down via `fall`. |
 | `haproxy-haptic.org/health-check-interval` | Sets the health-check interval via `inter`; ignored when `check` is `off`. |
@@ -263,9 +263,9 @@ HTTP→HTTPS and host redirects (reload-free maps), HSTS, SSL passthrough, a def
 | Annotation | Behavior |
 |------------|----------|
 | `haproxy-haptic.org/root-redirect` | Redirects requests for the host root path (`/`) to the given sub-path. |
-| `haproxy-haptic.org/config-defaults` | Injects raw operator-authored directives verbatim into the `defaults` section. |
-| `haproxy-haptic.org/config-frontend` | Injects raw operator-authored directives into every frontend, before routing. |
-| `haproxy-haptic.org/config-global` | Injects raw operator-authored HAProxy directives verbatim into the `global` section. |
+| `haproxy-haptic.org/config-defaults` | Injects raw operator-authored directives verbatim into the `defaults` section. Rejected unless [`ingressPermissions.allowRawHAProxyConfig`](../operations/security.md#raw-configuration-annotations) is `true`. |
+| `haproxy-haptic.org/config-frontend` | Injects raw operator-authored directives into every frontend, before routing. Rejected unless [`ingressPermissions.allowRawHAProxyConfig`](../operations/security.md#raw-configuration-annotations) is `true`. |
+| `haproxy-haptic.org/config-global` | Injects raw operator-authored HAProxy directives verbatim into the `global` section. Rejected unless [`ingressPermissions.allowRawHAProxyConfig`](../operations/security.md#raw-configuration-annotations) is `true`. |
 | `haproxy-haptic.org/default-backend` | Routes requests that match the host but none of its configured paths to a named Service as a catch-all backend pool, using the Service's first port. Produces no backend, and no error, when the Service or its first port can't be resolved. |
 | `haproxy-haptic.org/default-backend-redirect` | Redirects requests that match the host but no path to the given URL. |
 | `haproxy-haptic.org/default-backend-redirect-code` | Sets the status code for `default-backend-redirect` (default `302`). |

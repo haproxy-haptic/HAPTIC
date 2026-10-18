@@ -1087,6 +1087,16 @@ controller:
         # Override by setting shardCountOverride to a specific value:
         # shardCountOverride: 8
         # HAProxy bind ports are defined in haproxy.ports (referenced by templates)
+        ingressPermissions:
+          # Accept annotations whose value is inserted into haproxy.cfg verbatim:
+          # haproxy-haptic.org/config-*, haproxy-ingress.github.io/config-*,
+          # haproxy.org/backend-config-snippet, and
+          # nginx.ingress.kubernetes.io/configuration-snippet. Their directives
+          # can affect every host and read HAProxy's files, TLS keys included.
+          # While WAF governance is active, waf.ingressPermissions must allow
+          # them too. See
+          # https://haproxy-haptic.org/docs/latest/operations/security/#raw-configuration-annotations
+          allowRawHAProxyConfig: false
         annotationCompatibility:
           basicAuth:
             passwordHashValidation:
@@ -1239,6 +1249,7 @@ controller:
             # Permit route authors to supply arbitrary WAF rules through the
             # native before/after annotations or vendor SecLang snippets.
             allowCustomRules: false
+            # Can only narrow extraContext.ingressPermissions.allowRawHAProxyConfig.
             allowRawHAProxyConfig: false
           # Bounds for arbitrary SecLang supplied by Ingress annotations. These
           # always apply, even when the reusable policy catalog is disabled, so

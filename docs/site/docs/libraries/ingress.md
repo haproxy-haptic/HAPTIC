@@ -387,7 +387,8 @@ the HTTP listener.
 ### Backend config snippet
 
 Use `haproxy-haptic.org/config-backend` for trusted, operator-authored backend
-directives. See the [native annotation reference](haptic-annotations.md#backend-tuning).
+directives. HAPTIC rejects it unless raw configuration annotations are enabled; see
+[Raw configuration annotations](../operations/security.md#raw-configuration-annotations) and the [native annotation reference](haptic-annotations.md#backend-tuning).
 The equivalent `haproxy.org/backend-config-snippet` requires the opt-in
 [haproxytech library](haproxytech.md).
 

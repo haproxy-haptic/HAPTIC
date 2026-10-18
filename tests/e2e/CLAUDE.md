@@ -93,6 +93,10 @@ KEEP_NAMESPACE=true make test-e2e
 
 ```
 
+`E2E_IMAGE_TAG=mine SKIP_DOCKER_BUILD=1` installs `haptic:mine-haproxyX.Y`,
+tagged from an image you built with `IMAGE_TAG=mine make docker-build`, instead
+of the shared `haptic:test`.
+
 The defaults remain `haptic-e2e`, `/tmp/haproxy-e2e-kubeconfig`, the `kind`
 Docker network, and host ports `31080`, `31443`, and `31404`. The custom-cluster
 variables are an internal seam for a caller that owns and verifies the Docker

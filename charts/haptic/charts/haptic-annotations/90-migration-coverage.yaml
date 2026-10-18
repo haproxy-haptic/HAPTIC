@@ -178,7 +178,7 @@ _migrationCoverage:
         note: "on/off toggle; false → serverOpts.checkDirective=no-check so servers aren't health-checked."
       haproxy-haptic.org/config-backend:
         status: supported
-        note: "Injects raw, operator-authored HAProxy directives verbatim into the `backend` section. Intended for trusted configuration, not request data."
+        note: "Injects raw, operator-authored HAProxy directives verbatim into the `backend` section. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`."
       haproxy-haptic.org/compress-algorithm:
         status: supported
         note: "Response compression algorithm (default gzip; deflate/raw-deflate). brotli/zstd fail loud — unavailable in the community HAProxy build."
@@ -190,13 +190,13 @@ _migrationCoverage:
         note: "Comma-separated MIME types to compress (default a standard text/JSON/XML/SVG set)."
       haproxy-haptic.org/config-defaults:
         status: supported
-        note: "Raw operator-authored directives injected verbatim into the defaults section."
+        note: "Raw operator-authored directives injected verbatim into the defaults section. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`."
       haproxy-haptic.org/config-frontend:
         status: supported
-        note: "Raw operator-authored directives injected at frontend-extra-* (before routing) into every frontend."
+        note: "Raw operator-authored directives injected at frontend-extra-* (before routing) into every frontend. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`."
       haproxy-haptic.org/config-global:
         status: supported
-        note: "Injects raw operator-authored HAProxy directives verbatim into the `global` section."
+        note: "Injects raw operator-authored HAProxy directives verbatim into the `global` section. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`."
       haproxy-haptic.org/backend-connection-header:
         status: supported
         note: "Overrides the `Connection` header sent to the backend server."

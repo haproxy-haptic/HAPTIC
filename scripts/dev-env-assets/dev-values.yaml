@@ -96,6 +96,9 @@ controller:
         diagnostics:
           routingHeaders:
             enabled: true  # Enable introspection headers for development
+        # ingress-demo.yaml uses raw configuration annotations.
+        ingressPermissions:
+          allowRawHAProxyConfig: true
         # Keep reusable policies available for interactive dogfooding. The demo
         # intentionally authorizes all annotation-family escape hatches.
         waf:

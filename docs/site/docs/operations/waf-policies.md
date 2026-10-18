@@ -194,8 +194,10 @@ snippet can affect other routes.
 
 Grant `allowCustomRules` only to trusted policy authors: SecLang can disable or
 rewrite rules. `allowRawHAProxyConfig` grants configuration-administrator
-capabilities. Enforcement overrides and complete WAF opt-outs have separate
-permissions; granting one doesn't grant the other.
+capabilities and takes effect only while `extraContext.ingressPermissions.allowRawHAProxyConfig`
+is also `true`; see [Raw configuration annotations](security.md#raw-configuration-annotations).
+Enforcement overrides and complete WAF opt-outs have separate permissions;
+granting one doesn't grant the other.
 
 ## Self-service namespaced policies
 

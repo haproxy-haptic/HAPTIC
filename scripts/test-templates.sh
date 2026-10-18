@@ -217,6 +217,7 @@ if ! helm template "$CHART_DIR" \
     --set defaultSSLCertificate.secretName=regression-custom-rsa-cert \
     --set defaultSSLCertificate.ecdsaSecretName=regression-custom-ecdsa-cert \
     --set 'controller.config.templatingSettings.extraContext.tls.sessionTickets.enabled=true' \
+    --set 'controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig=true' \
     --set 'controller.config.templatingSettings.extraContext.governance.enabled=true' \
     --set 'controller.config.templatingSettings.extraContext.governance.rules[0].resource=ingresses' \
     --set-string "controller.config.templatingSettings.extraContext.governance.rules[0].path=metadata.annotations['haproxy-haptic.org/waf-policy']" \
@@ -308,6 +309,26 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     "$CONTROLLER_BIN" validate --file "$INGRESS_CONFIG" "${SCHEMA_DIR_ARGS[@]}" \
         --test test-ingress-duplicate-backend-different-ports || FULL_RC=$?
     rm -f "$INGRESS_CONFIG"
+fi
+
+# Every declared annotation must keep raw HAProxy directives out of haproxy.cfg
+# unless extraContext.ingressPermissions.allowRawHAProxyConfig allows them.
+if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
+    echo -e "${YELLOW}Probing every annotation for raw HAProxy configuration...${NC}" >&2
+    PROBE_CONFIG=$(mktemp /tmp/haptic-raw-probe-XXXXXX.yaml)
+    PROBE_RESULTS=$(mktemp /tmp/haptic-raw-probe-XXXXXX.json)
+    PROBE_LOG=$(mktemp /tmp/haptic-raw-probe-XXXXXX.log)
+    if ! PROBE_COUNT=$(python3 "$PROJECT_ROOT/scripts/raw-annotation-probe.py" generate "$TEMP_CONFIG" "$PROBE_CONFIG"); then
+        FULL_RC=1
+    else
+        "$CONTROLLER_BIN" validate --file "$PROBE_CONFIG" "${SCHEMA_DIR_ARGS[@]}" --output json \
+            > "$PROBE_RESULTS" 2> "$PROBE_LOG" || true
+        if ! python3 "$PROJECT_ROOT/scripts/raw-annotation-probe.py" report "$PROBE_RESULTS" "$PROBE_COUNT"; then
+            tail -20 "$PROBE_LOG" >&2
+            FULL_RC=1
+        fi
+    fi
+    rm -f "$PROBE_CONFIG" "$PROBE_RESULTS" "$PROBE_LOG"
 fi
 
 if ! single_test_requested "$@"; then

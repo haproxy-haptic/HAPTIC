@@ -99,7 +99,11 @@ func initializeE2ERuntime() error {
 		return fmt.Errorf("SPOA_TAG: %w", err)
 	}
 	ChartHAProxyVersion = runtimeImages.HAProxyVersion
-	ControllerImageName = "haptic:test-haproxy" + ChartHAProxyVersion
+	ControllerImageTag = os.Getenv("HAPTIC_E2E_IMAGE_TAG")
+	if ControllerImageTag == "" {
+		ControllerImageTag = "test"
+	}
+	ControllerImageName = "haptic:" + ControllerImageTag + "-haproxy" + ChartHAProxyVersion
 	fmt.Fprintf(os.Stderr, "e2e: chart HAProxy image %s\n", runtimeImages.HAProxy)
 	e2eCluster, err = e2ecluster.Load()
 	if err != nil {
@@ -820,7 +824,7 @@ func helmInstallChart(ctx context.Context, caBundleB64 string) (context.Context,
 		"--create-namespace",
 		"--wait",
 		"--values", valuesFile.Name(),
-		"--set", "controller.image.tag=test",
+		"--set", "controller.image.tag=" + ControllerImageTag,
 		// haproxyVersion gates two things in the chart: the controller image
 		// tag suffix (`<image.tag>-haproxy<haproxyVersion>`, e.g.
 		// "test-haproxy3.0") and the haproxy:VERSION sidecar image. The

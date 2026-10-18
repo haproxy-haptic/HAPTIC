@@ -39,14 +39,19 @@ import (
 )
 
 func TestAnnotationInputIsolation(t *testing.T) {
-	testEnv.Test(t, buildIngressInputIsolationFeature("annotation", "haproxy.org/auth-type", "invalid-auth-type"))
+	testEnv.Test(t, buildIngressInputIsolationFeature("annotation", "haproxy.org/auth-type", "invalid-auth-type", false))
 }
 
 func TestSnippetInputIsolation(t *testing.T) {
-	testEnv.Test(t, buildIngressInputIsolationFeature("snippet", "haproxy-haptic.org/config-backend", "invalid-haproxy-directive"))
+	testEnv.Test(t, buildIngressInputIsolationFeature("snippet", "haproxy-haptic.org/config-backend", "invalid-haproxy-directive", true))
 }
 
-func buildIngressInputIsolationFeature(name, annotation, invalid string) types.Feature {
+// A valid directive, so only extraContext.ingressPermissions rejects it.
+func TestRawConfigInputIsolation(t *testing.T) {
+	testEnv.Test(t, buildIngressInputIsolationFeature("raw-config", "haproxy-haptic.org/config-backend", "http-request set-header X-Raw-Probe 1", false))
+}
+
+func buildIngressInputIsolationFeature(name, annotation, invalid string, allowRawHAProxyConfig bool) types.Feature {
 	return features.New("Invalid Ingress "+name+" isolation").
 		Setup(setupControllerEnv("test-isolate-"+name, func(o *ControllerEnvironmentOptions) { o.SkipCRDAndDeployment = true })).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
@@ -54,7 +59,7 @@ func buildIngressInputIsolationFeature(name, annotation, invalid string) types.F
 			// Existing invalid inputs must be isolated when the controller and webhook first start.
 			return setupIsolationInputs(ctx, t, cfg, func(ingress *networkingv1.Ingress) {
 				ingress.Annotations[annotation] = invalid
-			}, false)
+			}, false, allowRawHAProxyConfig)
 		}).
 		Assess("rejected Ingress permits independent changes and recovers after repair", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
@@ -190,7 +195,7 @@ func buildFetchedListInputIsolationFeature() types.Feature {
 		Setup(setupControllerEnv("test-isolate-http", func(o *ControllerEnvironmentOptions) { o.SkipCRDAndDeployment = true })).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
-			return setupIsolationInputs(ctx, t, cfg, nil, true)
+			return setupIsolationInputs(ctx, t, cfg, nil, true, false)
 		}).
 		Assess("invalid list retains accepted content while independent updates advance", assessFetchedListIsolation).
 		Teardown(cleanupIsolationEnvironment).Feature()

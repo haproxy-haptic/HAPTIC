@@ -297,10 +297,8 @@ validationTests:
 
   test-haptic-config-injection:
     description: haproxy-haptic.org config-global/config-defaults/config-frontend inject raw directives verbatim into their sections
-    # Self-contained w.r.t. WAF governance: raw-config injection is gated by
-    # allowRawHAProxyConfig once any WAF policy activates governance. Set it here
-    # so this test passes whether or not the deployment defines a policy.
-    extraContext: {waf: {ingressPermissions: {allowRawHAProxyConfig: true}}}
+    # WAF governance narrows the global switch once a policy activates it, so pin both.
+    extraContext: {ingressPermissions: {allowRawHAProxyConfig: true}, waf: {ingressPermissions: {allowRawHAProxyConfig: true}}}
     fixtures:
       ingresses:
         - apiVersion: networking.k8s.io/v1
@@ -362,3 +360,33 @@ validationTests:
         target: haproxy.cfg
         pattern: '(?m)^  # haptic/config-frontend\n  # Ingress: default/a-first\n  http-request set-header X-Haptic-Order first\n  # Ingress: default/z-last\n  http-request set-header X-Haptic-Order last$'
         expected: "3"
+
+  test-haptic-config-raw-waf-permission-dormant:
+    description: waf.ingressPermissions.allowRawHAProxyConfig=false applies only while WAF governance is active.
+    extraContext:
+      ingressPermissions: {allowRawHAProxyConfig: true}
+      waf:
+        dispatch: {mode: opt-in}
+        ingressPermissions: {allowRawHAProxyConfig: false}
+        policies:
+          defaultPolicy: ""
+          inline: {__replace__: true}
+          configMapRefs: {__replace__: true}
+          selfService: {enabled: false}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: dormant-waf
+            annotations:
+              haproxy-haptic.org/config-frontend: "http-request set-header X-Haptic-Raw dormant"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: dormant-waf.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^  # Ingress: default/dormant-waf\n  http-request set-header X-Haptic-Raw dormant$'}

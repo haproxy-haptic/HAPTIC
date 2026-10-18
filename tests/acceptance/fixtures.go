@@ -772,7 +772,7 @@ func NewControllerDeployment(namespace, crdName, secretName, serviceAccountName 
 					Containers: []corev1.Container{
 						{
 							Name:  "controller",
-							Image: "haptic:test",
+							Image: ControllerImageName,
 							Env: []corev1.EnvVar{
 								{
 									Name:  "CRD_NAME",

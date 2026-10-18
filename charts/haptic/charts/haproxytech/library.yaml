@@ -2814,8 +2814,9 @@ _migrationCoverage:
         status: dropped
         note: Inert; servers are named after their pods (ADR-0011), so there is no slot pool to size. Setting it emits an UnsupportedAnnotation Warning Event.
       haproxy.org/backend-config-snippet:
-        status: supported
-        note: Raw HAProxy directives injected into the backend section.
+        status: different
+        note: Raw HAProxy directives injected into the backend section. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`.
+        doc: annotation-support
       haproxy.org/ssl-passthrough:
         status: supported
         note: SNI-based TCP passthrough; HTTP-level annotations don't apply to passthrough hosts.

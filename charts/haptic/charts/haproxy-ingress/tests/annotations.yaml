@@ -185,7 +185,7 @@ validationTests:
 
   test-haproxy-ingress-config-backend-snippet:
     description: HAProxy-Ingress config-backend annotation injects directives
-    extraContext: {waf: {ingressPermissions: {allowRawHAProxyConfig: true}}}
+    extraContext: {ingressPermissions: {allowRawHAProxyConfig: true}, waf: {ingressPermissions: {allowRawHAProxyConfig: true}}}
     fixtures:
       ingresses:
         - apiVersion: networking.k8s.io/v1

@@ -800,10 +800,12 @@ annotations:
     http-send-name-header X-Backend-Server
 ```
 
-HAPTIC inserts the snippet verbatim and checks the resulting configuration with
-`haproxy -c` before deployment. Admission rejects syntax errors. Valid syntax
-doesn't establish that the directives are safe; restrict snippet access to
-trusted authors.
+HAPTIC rejects the annotation unless
+`controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig`
+is `true`; see [Raw configuration annotations](../operations/security.md#raw-configuration-annotations). It inserts the snippet verbatim and checks
+the resulting configuration with `haproxy -c` before deployment. Admission
+rejects syntax errors. Valid syntax doesn't establish that the directives are
+safe.
 
 ### `haproxy.org/send-proxy-protocol`
 

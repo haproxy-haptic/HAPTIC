@@ -136,18 +136,21 @@ _migrationCoverage:
         status: supported
         note: Enforced as a 413 via a reload-free map entry; "0" means unlimited.
       haproxy-ingress.github.io/config-backend:
-        status: supported
-        note: Raw HAProxy directives injected into the backend section (already HAProxy syntax in this source controller).
+        status: different
+        note: Raw HAProxy directives injected into the backend section (already HAProxy syntax in this source controller). Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`.
+        doc: annotation-support
       haproxy-ingress.github.io/config-frontend:
         status: different
-        note: Injected into HAPTIC's shared HTTP frontend (before routing), not a per-Ingress frontend — directives apply process-wide; deduplication is the operator's responsibility.
+        note: Injected into HAPTIC's shared HTTP frontend (before routing), not a per-Ingress frontend — directives apply process-wide; deduplication is the operator's responsibility. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`.
         doc: annotation-support
       haproxy-ingress.github.io/config-global:
-        status: supported
-        note: Raw HAProxy directives injected into the global section.
+        status: different
+        note: Raw HAProxy directives injected into the global section. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`.
+        doc: annotation-support
       haproxy-ingress.github.io/config-defaults:
-        status: supported
-        note: Raw HAProxy directives injected into the defaults section.
+        status: different
+        note: Raw HAProxy directives injected into the defaults section. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`.
+        doc: annotation-support
       # --- Path type ---
       haproxy-ingress.github.io/path-type:
         status: different

@@ -67,8 +67,9 @@ func TestAllAcceptanceParallel(t *testing.T) {
 		// Error scenarios tests
 		buildInvalidHAProxyConfigFeature(),
 		buildBasicAuthInputIsolationFeature(),
-		buildIngressInputIsolationFeature("annotation", "haproxy.org/auth-type", "invalid-auth-type"),
-		buildIngressInputIsolationFeature("snippet", "haproxy-haptic.org/config-backend", "invalid-haproxy-directive"),
+		buildIngressInputIsolationFeature("annotation", "haproxy.org/auth-type", "invalid-auth-type", false),
+		buildIngressInputIsolationFeature("snippet", "haproxy-haptic.org/config-backend", "invalid-haproxy-directive", true),
+		buildIngressInputIsolationFeature("raw-config", "haproxy-haptic.org/config-backend", "http-request set-header X-Raw-Probe 1", false),
 		buildFetchedListInputIsolationFeature(),
 		buildCredentialsMissingFeature(),
 		buildControllerCrashRecoveryFeature(),

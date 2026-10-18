@@ -173,6 +173,9 @@ controller:
         diagnostics:
           routingHeaders:
             enabled: true  # Enable introspection headers for development
+        # TestIngressAnnotations renders every library's raw configuration annotations.
+        ingressPermissions:
+          allowRawHAProxyConfig: true
         # Exercise one-annotation reusable WAF policies in the e2e suite.
         waf:
           # The e2e suite deliberately exercises every legacy/vendor escape

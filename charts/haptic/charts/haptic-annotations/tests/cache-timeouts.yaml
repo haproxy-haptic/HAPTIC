@@ -86,6 +86,8 @@ validationTests:
           enabled: true
         haproxy:
           responseTimeoutMs: 2000
+      ingressPermissions:
+        allowRawHAProxyConfig: true
       waf:
         ingressPermissions:
           allowRawHAProxyConfig: true
@@ -135,6 +137,8 @@ validationTests:
           enabled: true
         haproxy:
           responseTimeoutMs: 2000
+      ingressPermissions:
+        allowRawHAProxyConfig: true
       waf:
         ingressPermissions:
           allowRawHAProxyConfig: true
@@ -172,6 +176,8 @@ validationTests:
           enabled: true
         haproxy:
           responseTimeoutMs: 2000
+      ingressPermissions:
+        allowRawHAProxyConfig: true
       waf:
         ingressPermissions:
           allowRawHAProxyConfig: true
@@ -209,6 +215,8 @@ validationTests:
           enabled: true
         haproxy:
           responseTimeoutMs: 2000
+      ingressPermissions:
+        allowRawHAProxyConfig: true
       waf:
         ingressPermissions:
           allowRawHAProxyConfig: true
@@ -246,6 +254,8 @@ validationTests:
           enabled: true
         haproxy:
           responseTimeoutMs: 2000
+      ingressPermissions:
+        allowRawHAProxyConfig: true
       waf:
         ingressPermissions:
           allowRawHAProxyConfig: true
@@ -285,6 +295,8 @@ validationTests:
           enabled: true
         haproxy:
           responseTimeoutMs: 2000
+      ingressPermissions:
+        allowRawHAProxyConfig: true
       waf:
         ingressPermissions:
           allowRawHAProxyConfig: true
@@ -323,6 +335,8 @@ validationTests:
           enabled: true
         haproxy:
           responseTimeoutMs: 2000
+      ingressPermissions:
+        allowRawHAProxyConfig: true
       waf:
         ingressPermissions:
           allowRawHAProxyConfig: true

@@ -108,35 +108,10 @@ var waf = extraContext | dig("waf") | fallback(map[string]any{})
 var policies = (waf | dig("policies") | fallback(map[string]any{})).(map[string]any)
 var defaultPolicy = tostring(policies | dig("defaultPolicy") | fallback(""))
 var allIngresses = tostring(waf | dig("dispatch", "mode") | fallback("opt-in")) == "default-on" || defaultPolicy != ""
-var governanceEnabled = len((policies | dig("inline") | fallback(map[string]any{})).(map[string]any)) > 0 ||
-  len((policies | dig("configMapRefs") | fallback(map[string]any{})).(map[string]any)) > 0 ||
-  defaultPolicy != "" || allIngresses ||
-  tostring(policies | dig("selfService", "enabled") | fallback(false)) == "true"
-var checkRawConfig = governanceEnabled
-var ingressPermissions = (waf | dig("ingressPermissions") | fallback(map[string]any{})).(map[string]any)
-var allowRawAny, allowRawSet = ingressPermissions["allowRawHAProxyConfig"]
-if allowRawSet && tostring(allowRawAny) == "true" { checkRawConfig = false }
 for _, ingress := range resources.ingresses.List() {
   var policy = ingress.Metadata.Annotations["haproxy-haptic.org/waf-policy"]
   var mode = ingress.Metadata.Annotations["haproxy-haptic.org/waf-mode"]
-  var rawConfig = false
-  if checkRawConfig {
-    for _, key := range []string{
-      "haproxy-haptic.org/config-global",
-      "haproxy-haptic.org/config-defaults",
-      "haproxy-haptic.org/config-frontend",
-      "haproxy-haptic.org/config-backend",
-      "haproxy-ingress.github.io/config-global",
-      "haproxy-ingress.github.io/config-defaults",
-      "haproxy-ingress.github.io/config-frontend",
-      "haproxy-ingress.github.io/config-backend",
-      "haproxy.org/backend-config-snippet",
-      "nginx.ingress.kubernetes.io/configuration-snippet",
-    } {
-      if strip(ingress.Metadata.Annotations[key]) != "" { rawConfig = true }
-    }
-  }
-  if allIngresses || strip(policy) != "" || strip(mode) != "" || rawConfig {
+  if allIngresses || strip(policy) != "" || strip(mode) != "" {
     legacy[ingress.Metadata.Namespace + "/" + ingress.Metadata.Name] = policy
   }
 }
@@ -433,33 +408,6 @@ func TestHapticAnnotationsWAFPublicationsStayChangeLocalAndTransactional(t *test
 	fixture.requireDifferential(t, fixture.renderAndCommit(t), "count=25\ndefault/subject updated")
 	fixture.config.TemplatingSettings.ExtraContext["waf"] = map[string]any{}
 	fixture.requireDifferential(t, fixture.renderAndCommit(t), "count=1\ndefault/subject updated")
-
-	assertHapticAnnotationsWAFRawConfigPermissions(t, fixture)
-}
-
-func assertHapticAnnotationsWAFRawConfigPermissions(
-	t *testing.T,
-	fixture *hapticAnnotationsHSTSFixture,
-) {
-	t.Helper()
-	fixture.update(t, hapticAnnotationsHSTSIngressResource("unrelated-07", map[string]string{
-		"haproxy-haptic.org/config-backend": "http-request set-header X-Test value",
-	}, "unrelated-07.example", "v3"))
-	fixture.requireDifferential(t, fixture.renderAndCommit(t), "count=1\ndefault/subject updated")
-	fixture.config.TemplatingSettings.ExtraContext["waf"] = map[string]any{
-		"policies": map[string]any{
-			"inline": map[string]any{"baseline": map[string]any{}},
-		},
-	}
-	fixture.requireDifferential(t, fixture.renderAndCommit(t), "count=2\ndefault/subject updated")
-	fixture.config.TemplatingSettings.ExtraContext["waf"] = map[string]any{
-		"policies": map[string]any{
-			"inline": map[string]any{"baseline": map[string]any{}},
-		},
-		"ingressPermissions": map[string]any{"allowRawHAProxyConfig": true},
-	}
-	fixture.requireDifferential(t, fixture.renderAndCommit(t), "count=1\ndefault/subject updated")
-	fixture.config.TemplatingSettings.ExtraContext["waf"] = map[string]any{}
 
 	fixture.delete(t, "subject")
 	fixture.requireDifferential(t, fixture.renderAndCommit(t), "count=0")
