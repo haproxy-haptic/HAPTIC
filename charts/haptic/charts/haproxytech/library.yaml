@@ -2277,10 +2277,7 @@ validationTests:
     assertions:
       - type: haproxy_valid
       - {type: contains, target: haproxy.cfg, pattern: "default-server no-check"}
-      # Scoped to this test's own backend. A bare `default-server check` matches
-      # any OTHER backend that legitimately health-checks — the Varnish cache
-      # tier does — which made this assertion true only while the cache tier
-      # happened to be disabled, and a load-gate crash-loop once it wasn't.
+      # Scope to this backend; optional libraries can enable health checks elsewhere.
       - type: not_contains
         target: haproxy.cfg
         pattern: 'backend default_nocheck-ingress_svc_echo_80 from haptic-be-\w+\n\s+guid [^\n]*\n\s+default-server check'

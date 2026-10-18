@@ -1,19 +1,19 @@
-#
-# Gateway API release's schema bundle: the resolution removes every test
 # Tests STRIPPED from the effective config when validating against this
-# This bundle is the NO-GATEWAY-API profile (no gateway CRDs at all —
+# Gateway API release's schema bundle: the resolution removes every test
+# whose `requires` names an unserved resource and every test whose
 # `requiresFields` names a field this schema generation lacks (the typed
-# and the test would fail the fail-closed load gate — issue #59's
-# becomes Ready and everything else routes. The harness in
-# crash-loop). Stripping is feature-absence, not a bug: the controller
-# exactly what a plain-Ingress cluster looks like). Every gateway feature
 # fixture wrap would prune the field, the feature would never activate,
+# and the test would fail the fail-closed load gate, as in issue #59).
+# Stripping is feature-absence, not a bug: the controller
+# becomes Ready and everything else routes. The harness in
 # scripts/test-templates.sh requires ZERO failing tests AND the actual
-# stale entry both fail CI).
 # stripped set to match this file EXACTLY (a newly-stripped test or a
+# stale entry both fail CI).
+#
+# This bundle is the NO-GATEWAY-API profile (no gateway CRDs at all —
+# exactly what a plain-Ingress cluster looks like). Every gateway feature
 # strips atomically together with its tests via resource-level requires;
 # the base/ingress suite must pass untouched.
-# whose `requires` names an unserved resource and every test whose
 test-backendtlspolicy-ancestor-deduplicated-across-route-kinds
 test-backendtlspolicy-ancestor-falls-back-to-target-without-routes
 test-backendtlspolicy-ancestor-follows-backend-ref-namespace

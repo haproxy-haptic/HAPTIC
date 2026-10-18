@@ -13,18 +13,9 @@
 // limitations under the License.
 
 // Package configtest runs a HAProxyTemplateConfig's embedded validationTests
-// against an already-built engine, bounded by a timeout. It is the single source
-// of truth shared by the two places the controller gates on validationTests:
-//
-//   - the daemon load gate (pkg/controller/validator.ValidationTestsValidator),
-//     which refuses to load a config whose tests fail; and
-//   - the admission webhook (pkg/controller/webhook.ConfigValidator), which
-//     refuses to ADMIT such a config so it never enters etcd.
-//
-// Running the identical check in both places is what makes them consistent: a
-// config the webhook admits will load — there's no "admitted but later
-// rejected" gap that would leave a latent bad config to crash-loop the next
-// fresh controller pod.
+// against an already-built engine, bounded by a timeout. It backs
+// pkg/controller/validator.RunValidationTestsSync, which both the startup load
+// gate and the live config-change gate run.
 package configtest
 
 import (

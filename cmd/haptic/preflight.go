@@ -1,16 +1,3 @@
-// Package main — `haptic preflight`.
-//
-// Renders the bundled chart with an operator's OWN values and runs the checks
-// the controller runs on startup, before anything reaches the cluster.
-//
-// The chart's CI can only prove the DEFAULTS work; it never sees an operator's
-// values.yaml. So the first thing that evaluates them is the load gate, which
-// is fail-closed — making a bad configuration a crash-looping controller rather
-// than a failed deploy. This moves that verdict into the pipeline.
-//
-// In-process on purpose: the chart, the renderer and the load gate all live in
-// this binary, so a pipeline needs neither helm nor yq, and the chart validated
-// is the one shipped in the image being deployed.
 package main
 
 import (
@@ -65,7 +52,7 @@ var preflightCmd = &cobra.Command{
 		"load gate against the result: structural validation, effective-config resolution " +
 		"and the bundled validationTests (which include `haproxy -c`).\n\n" +
 		"Exits non-zero when the configuration would not load, so a delivery pipeline " +
-		"fails instead of the controller crash-looping.\n\n" +
+		"fails instead of new controller pods staying NotReady.\n\n" +
 		"The chart's own CI can only prove the DEFAULTS work — it never sees your values, " +
 		"and several checks only fail once a feature is switched on.",
 	RunE: runPreflight,
@@ -157,14 +144,11 @@ func runPreflight(_ *cobra.Command, _ []string) error {
 	validateConfigFiles = []string{tmp.Name()}
 	results, err := validateAndReport(ctx, schemas, logger)
 	if err != nil {
-		// Only a verdict on the configuration reads as one. Nil results means
-		// the gate never ran (no cluster, bad schemas) — saying "would
-		// crash-loop" there sends an operator hunting a config bug that isn't
-		// there.
+		// Nil results mean the gate never reached a verdict on the configuration.
 		if results == nil {
 			return fmt.Errorf("the check could not run, so this configuration is unverified: %w", err)
 		}
-		return fmt.Errorf("this configuration would not load — deploying it would crash-loop the controller: %w", err)
+		return fmt.Errorf("this configuration would not load — new controller pods would stay NotReady and the rollout would stall: %w", err)
 	}
 
 	if err := checkRenderedSidecarConfigs(ctx, manifests, results); err != nil {

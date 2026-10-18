@@ -1,18 +1,18 @@
-#
-# Gateway API release's schema bundle: the resolution removes every test
-# Resource strips: listenersets, tcproutes, tlsroutes (absent from v1.4
 # Tests STRIPPED from the effective config when validating against this
-# `requiresFields` names a field this schema generation lacks (the typed
-# and the test would fail the fail-closed load gate — issue #59's
-# becomes Ready and everything else routes. The harness in
-# crash-loop). Stripping is feature-absence, not a bug: the controller
-# fixture wrap would prune the field, the feature would never activate,
-# scripts/test-templates.sh requires ZERO failing tests AND the actual
-# spec.tls frontend/backend mTLS (v1.6 experimental).
-# stale entry both fail CI).
-# standard). Field strips: HTTPRoute CORS (standard since v1.6) and Gateway
-# stripped set to match this file EXACTLY (a newly-stripped test or a
+# Gateway API release's schema bundle: the resolution removes every test
 # whose `requires` names an unserved resource and every test whose
+# `requiresFields` names a field this schema generation lacks (the typed
+# fixture wrap would prune the field, the feature would never activate,
+# and the test would fail the fail-closed load gate, as in issue #59).
+# Stripping is feature-absence, not a bug: the controller
+# becomes Ready and everything else routes. The harness in
+# scripts/test-templates.sh requires ZERO failing tests AND the actual
+# stripped set to match this file EXACTLY (a newly-stripped test or a
+# stale entry both fail CI).
+#
+# Resource strips: listenersets, tcproutes, tlsroutes (absent from v1.4
+# standard). Field strips: HTTPRoute CORS (standard since v1.6) and Gateway
+# spec.tls frontend/backend mTLS (v1.6 experimental).
 test-backendtlspolicy-ancestor-from-tlsroute
 test-backendtlspolicy-tcproute-missing-ca-rejects
 test-backendtlspolicy-tcproute-reencrypts

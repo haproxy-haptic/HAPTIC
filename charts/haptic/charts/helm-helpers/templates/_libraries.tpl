@@ -88,8 +88,8 @@ string otherwise), driven by the explicit `templateLibraries.gateway.experimenta
 value. Experimental-only HTTPRoute fields (sessionPersistence / GEP-1619, retry /
 GEP-1731) only exist when experimental-install.yaml is applied, so validationTests
 asserting the directives those fields drive use this in their `_helm_skip_test`
-predicate — otherwise they fail (and, with the fatal load gate, crash-loop the
-controller) on a standard-channel cluster where the snippets correctly emit nothing.
+predicate — otherwise they fail (and, with the fatal load gate, keep the
+controller from starting) on a standard-channel cluster where the snippets correctly emit nothing.
 
 Why a value and not Helm .Capabilities: as of Gateway API v1.6 the Standard and
 Experimental installs ship an IDENTICAL CRD set (TCPRoute, ListenerSet, UDPRoute

@@ -198,7 +198,7 @@ func (f *fieldSet) FieldServed(apiVersion, resources, fieldPath string) (bool, e
 // TestResolveEffective_RequiresFields pins the field-level stripping: a test
 // whose requiresFields names a field absent from the RESOLVED schema
 // generation strips even though the resource itself is served — the exact
-// gap that crash-looped the controller on Gateway API v1.1/v1.4 clusters
+// gap that kept the controller from starting on Gateway API v1.1/v1.4 clusters
 // (issue #59), where resource-level requires can never fire.
 func TestResolveEffective_RequiresFields(t *testing.T) {
 	baseCfg := func() *Config {

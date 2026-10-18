@@ -319,7 +319,7 @@ templateSnippets:
             `gtw_tcp_<ns>_<name>_<ruleIdx>` — the name is keyed by route+rule,
             not port. Emitting the backend once per port would declare the
             same `backend` name twice, which HAProxy 3.3+ rejects as a fatal
-            parse error (crash-looping config load). Emit each unique backend
+            parse error. Emit each unique backend
             exactly once; the per-port frontends (frontends-700) all forward
             to the shared backend, which is correct — the same Service:port
             is simply reachable on multiple listener ports. -#}

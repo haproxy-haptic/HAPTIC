@@ -1345,12 +1345,8 @@ validationTests:
 
   test-proxy-protocol-https-bind-disabled:
     description: >-
-      Negative control for test-proxy-protocol-https-bind. Sets enabled=false
-      explicitly rather than leaning on the chart default: per-test extraContext
-      deep-merges into the operator's, so an operator who turns proxyProtocol on
-      would otherwise fail this test and crash-loop on the load gate. Scoped to
-      `bind *:<port> accept-proxy` because the ssl-loopback path binds a unix
-      socket with accept-proxy on every render.
+      Pins PROXY protocol off independently of operator values; the SSL loopback
+      still uses accept-proxy on its Unix socket.
     extraContext: {proxyProtocol: {enabled: false}}
     fixtures:
       ingresses:

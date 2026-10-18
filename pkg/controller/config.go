@@ -228,7 +228,7 @@ func validateInitialConfig(
 // the HAProxyTemplateConfig status (via configchange.ReportConfigLoadFailure). It
 // builds a throwaway CRD client because the event-driven status path isn't wired
 // at load-gate time, and never returns an error — a status write must not mask or
-// delay the fail-closed crash-loop.
+// delay the load failure.
 func reportLoadGateFailure(ctx context.Context, k8sClient *client.Client, bundle *InitialConfigBundle, failures []string, logger *slog.Logger) {
 	crdClient, err := versioned.NewForConfig(k8sClient.RestConfig())
 	if err != nil {

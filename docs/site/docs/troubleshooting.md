@@ -186,6 +186,7 @@ or `Insufficient memory`, compare node capacity with the
 | Cause | Check | Solution |
 |-------|-------|----------|
 | Missing configuration or library | `kubectl get haproxytemplateconfig,haproxytemplatelibrary -n "$HAPTIC_NAMESPACE"` | Check failed Helm or GitOps Jobs; restore the configuration through the release workflow. |
+| Configuration fails the startup load gate | `kubectl get haproxytemplateconfig -n "$HAPTIC_NAMESPACE"` shows `Invalid`, and the logs repeat `Controller iteration failed, retrying` with the failing check. The pod stays NotReady and restarts each time its startup probe runs out. | Fix the configuration through the release workflow. The pod's next attempt loads it. |
 | Missing or invalid agent identity | Controller logs name a missing Secret, key, or certificate error | Follow [agent certificate recovery](operations/agent-certificates.md#default-renewal). For externally managed credentials, restore them from their issuer or credential source. |
 | Permission denied | Logs name a verb and resource | Compare your ServiceAccount grants with the [required permissions](operations/security.md#rbac). |
 
@@ -201,7 +202,7 @@ kubectl describe pods -n "$HAPTIC_NAMESPACE" -l app.kubernetes.io/instance=hapti
 
 | Container | Next check |
 | --- | --- |
-| Controller | Logs for configuration-load, template, or validation errors; the controller must load a valid configuration before it can become ready. |
+| Controller | Logs for configuration-load, template, or validation errors; the controller must load a valid configuration before it can become ready. For a configuration that fails the startup load gate, see [Controller not starting](#controller-not-starting). |
 | HAProxy | Agent and HAProxy logs for a failed first deployment. The bootstrap configuration returns `503` on `/ready` until a rendered configuration runs. |
 | Validator | Its logs and socket configuration; see [custom validators](operations/pluggable-validators.md#troubleshooting). |
 | Custom sidecar | Its own readiness probe, logs, resource limits, and mounts. |

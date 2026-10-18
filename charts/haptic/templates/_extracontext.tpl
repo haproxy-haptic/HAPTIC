@@ -11,7 +11,7 @@
        This lives in HELM, not in the Scriggo render, on purpose. A validationTest
        may legitimately set `extraContext.vector: null` to exercise the
        sidecar-less path, so the same check at render time would fail the LOAD
-       GATE on a good config and crash-loop the controller. Here it is an install
+       GATE on a good config and keep the controller from starting. Here it is an install
        error instead: loud, immediate, and impossible to hit at runtime. */ -}}
 {{- $tracingCtx := dig "tracing" dict $configuredExtraContext }}
 {{- $otlpEndpoint := dig "otlp" "endpoint" "" $tracingCtx }}

@@ -76,10 +76,7 @@ const (
 	reasonConfigInvalid           = v1alpha1.ReasonConfigInvalid
 	reasonValidationInconclusive  = v1alpha1.ReasonValidationInconclusive
 	reasonHAProxyValidationFailed = v1alpha1.ReasonHAProxyValidationFailed
-	// reasonLoadGateFailed marks a config rejected by the fatal startup load gate
-	// (distinct from a live ConfigInvalid): the controller crash-loops fail-closed
-	// until the config is fixed, so an operator seeing this reason knows the pod
-	// is CrashLoopBackOff, not merely that a live reload was rejected.
+	// A starting pod retries rejected configuration and stays NotReady.
 	reasonLoadGateFailed = v1alpha1.ReasonLoadGateFailed
 )
 
@@ -621,16 +618,8 @@ func statusEqualIgnoringTimestamps(a, b *v1alpha1.HAProxyTemplateConfigStatus) b
 	return apiequality.Semantic.DeepEqual(normalize(a), normalize(b))
 }
 
-// ReportConfigLoadFailure best-effort writes an Invalid status
-// (observedGeneration, Validated=False with reason LoadGateFailed, and the
-// failing tests) onto the HAProxyTemplateConfig when the fatal startup load gate
-// rejects it — BEFORE the controller returns the error and crash-loops. The load
-// gate stays fail-closed (the caller still fails the iteration → CrashLoopBackOff
-// → a rolling upgrade stalls on the old good pods); this only makes the reason
-// visible via `kubectl get/describe haproxytemplateconfig` instead of buried in a
-// crash-looping pod's logs. Called synchronously from the iteration because the
-// event-driven StatusUpdater has not started yet at load-gate time. Every error
-// is logged and swallowed — reporting must never mask the load failure.
+// ReportConfigLoadFailure reports rejection before StatusUpdater starts.
+// Reporting errors never mask the load failure; the pod stays NotReady and retries.
 func ReportConfigLoadFailure(
 	ctx context.Context,
 	crdClient versioned.Interface,
@@ -671,7 +660,7 @@ func ReportConfigLoadFailure(
 		return
 	}
 
-	logger.Info("Reported startup load-gate failure on HAProxyTemplateConfig status; controller stays fail-closed (crash-loop) until the config is fixed",
+	logger.Info("Reported the startup load-gate rejection on HAProxyTemplateConfig status; this pod stays NotReady and retries until the config passes",
 		"namespace", ref.Namespace, "name", ref.Name, "failure_count", len(failures))
 }
 
