@@ -19,6 +19,9 @@ _fx:
     nginx: false
     haproxyIngress: false
     haproxytech: true
+  rawConfigDisabled: &rawConfigDisabled
+    ingressPermissions: {allowRawHAProxyConfig: false}
+    annotationLibraries: {haptic: true, nginx: true, haproxyIngress: true, haproxytech: true}
 
 _helm_load: {enable: '{{ .Values.controller.templateLibraries.ingressAnnotationsCompat.enabled }}'}
 
@@ -1747,6 +1750,80 @@ templateSnippets:
         }
       %%}
 
+  # The only gate for annotations rendered as raw HAProxy configuration; the
+  # raw-annotation probe in scripts/test-templates.sh fails on one it misses.
+  features-951-raw-haproxy-config-permission:
+    requires: [ingresses]
+    incremental:
+      whenAnyPathExists:
+        - metadata.annotations['haproxy-haptic.org/config-global']
+        - metadata.annotations['haproxy-haptic.org/config-defaults']
+        - metadata.annotations['haproxy-haptic.org/config-frontend']
+        - metadata.annotations['haproxy-haptic.org/config-backend']
+        - metadata.annotations['haproxy-ingress.github.io/config-global']
+        - metadata.annotations['haproxy-ingress.github.io/config-defaults']
+        - metadata.annotations['haproxy-ingress.github.io/config-frontend']
+        - metadata.annotations['haproxy-ingress.github.io/config-backend']
+        - metadata.annotations['haproxy.org/backend-config-snippet']
+        - metadata.annotations['nginx.ingress.kubernetes.io/configuration-snippet']
+      bindingsTemplate: |-
+        {%- import "util-waf-governance" for WafGovernance -%}
+        {%%
+          var permissions, permissionsOK = (extraContext | dig("ingressPermissions") | fallback(map[string]any{})).(map[string]any)
+          if !permissionsOK { fail("extraContext.ingressPermissions must be a map.") }
+          for _, field := range keys(permissions) {
+            if field != "allowRawHAProxyConfig" {
+              fail("extraContext.ingressPermissions contains unknown field '" + field + "'. Valid fields: allowRawHAProxyConfig.")
+            }
+          }
+          var allowed, allowedOK = (permissions["allowRawHAProxyConfig"] | fallback(false)).(bool)
+          if !allowedOK { fail("extraContext.ingressPermissions.allowRawHAProxyConfig must be a boolean.") }
+          var deniedBy = ""
+          if !allowed {
+            deniedBy = "extraContext.ingressPermissions.allowRawHAProxyConfig=false disables raw HAProxy configuration annotations, whose directives can affect every host this controller serves"
+          } else {
+            var gov = map[string]any{}
+            var _ = WafGovernance(gov)
+            if !gov["allowRawHAProxyConfig"].(bool) {
+              deniedBy = "WAF governance disables raw HAProxy configuration annotations with extraContext.waf.ingressPermissions.allowRawHAProxyConfig=false, because raw directives can bypass WAF enforcement for other routes"
+            }
+          }
+          // A disabled family's annotations are inert. Without annotationLibraries, check every family.
+          var families = map[string][]any{
+            "haptic": {"haproxy-haptic.org/config-global", "haproxy-haptic.org/config-defaults", "haproxy-haptic.org/config-frontend", "haproxy-haptic.org/config-backend"},
+            "haproxyIngress": {"haproxy-ingress.github.io/config-global", "haproxy-ingress.github.io/config-defaults", "haproxy-ingress.github.io/config-frontend", "haproxy-ingress.github.io/config-backend"},
+            "haproxytech": {"haproxy.org/backend-config-snippet"},
+            "nginx": {"nginx.ingress.kubernetes.io/configuration-snippet"},
+          }
+          var enabledLibraries = extraContext | dig("annotationLibraries")
+          var annotations = []any{}
+          for _, family := range keys(families) {
+            if enabledLibraries == nil || tostring(enabledLibraries | dig(family) | fallback(false)) == "true" {
+              annotations = append(annotations, families[family]...)
+            }
+          }
+          var bindings = map[string]any{}
+          if deniedBy != "" && len(annotations) > 0 {
+            bindings["ingresses"] = map[string]any{"deniedBy": deniedBy, "annotations": annotations}
+          }
+          show toJSON(bindings)
+        %%}
+    template: |-
+      {%%
+        var values = to_str_map(dig(item, "metadata", "annotations"))
+        var present = []string{}
+        for _, annotation := range toSlice(props | dig("annotations")) {
+          if strip(values[tostring(annotation)]) != "" {
+            present = append(present, "'" + tostring(annotation) + "'")
+          }
+        }
+        var fix = "Remove the annotation."
+        if len(present) > 1 { fix = "Remove these annotations." }
+        if len(present) > 0 {
+          fail("Ingress " + dig_string(item, "", "metadata", "namespace") + "/" + dig_string(item, "", "metadata", "name") + " sets " + join(present, ", ") + ", but " + tostring(props | dig("deniedBy")) + ". " + fix)
+        }
+      %%}
+
 # The conflict tests drive the guard via extraContext.annotationLibraries, so its
 # gating logic is exercised regardless of which vendor libraries are merged; they
 # use plugin-free features so none depends on a SPOA plugin.
@@ -2032,3 +2109,119 @@ validationTests:
       - type: contains
         target: events
         pattern: "Warning AnnotationFamilyConflict networking.k8s.io/v1 Ingress default/same-timeout:"
+
+  test-raw-haproxy-config-disabled-rejected:
+    description: >-
+      With allowRawHAProxyConfig=false (the default), raw configuration
+      annotations fail every render, not only admission, so input isolation
+      withholds the Ingress instead of serving it partially.
+    extraContext: *rawConfigDisabled
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: raw-native
+            annotations:
+              haproxy-haptic.org/config-frontend: "http-request deny"
+              haproxy-haptic.org/config-backend: "http-request return status 200 file /etc/haproxy/ssl/default-ssl-cert.pem"
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: raw-native.example.com
+                http: *httpRoot
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "Ingress default/raw-native sets 'haproxy-haptic\\.org/config-frontend', 'haproxy-haptic\\.org/config-backend', but extraContext\\.ingressPermissions\\.allowRawHAProxyConfig=false disables raw HAProxy configuration annotations, whose directives can affect every host this controller serves\\. Remove these annotations\\."
+
+  test-raw-haproxy-config-disabled-vendor-rejected:
+    description: The same switch rejects each vendor family's raw configuration annotation.
+    extraContext: *rawConfigDisabled
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: raw-vendor
+            annotations:
+              haproxy-ingress.github.io/config-global: "maxconn 1"
+              haproxy.org/backend-config-snippet: "http-request deny"
+              nginx.ingress.kubernetes.io/configuration-snippet: "http-request deny"
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: raw-vendor.example.com
+                http: *httpRoot
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "Ingress default/raw-vendor sets 'haproxy-ingress\\.github\\.io/config-global', 'haproxy\\.org/backend-config-snippet', 'nginx\\.ingress\\.kubernetes\\.io/configuration-snippet', but extraContext\\.ingressPermissions\\.allowRawHAProxyConfig=false"
+
+  test-raw-haproxy-config-disabled-other-ingresses-render:
+    description: >-
+      While raw configuration annotations are disabled, Ingresses without
+      them, and raw annotations that hold only whitespace, still render.
+    extraContext: *rawConfigDisabled
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: plain
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: plain.example.com
+                http: *httpRoot
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: blank-raw
+            annotations:
+              haproxy-haptic.org/config-frontend: "  "
+              haproxy-ingress.github.io/config-defaults: "\n"
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: blank-raw.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: map:path-prefix.map, pattern: "(?m)^plain\\.example\\.com/ "}
+      - {type: contains, target: map:path-prefix.map, pattern: "(?m)^blank-raw\\.example\\.com/ "}
+
+  test-raw-haproxy-config-disabled-family-inert:
+    description: A raw annotation of a disabled annotation library has no effect, so it isn't rejected.
+    extraContext:
+      ingressPermissions: {allowRawHAProxyConfig: false}
+      annotationLibraries: {haptic: true, nginx: false, haproxyIngress: false, haproxytech: false}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: inert-raw
+            annotations:
+              nginx.ingress.kubernetes.io/configuration-snippet: "# inert"
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: inert-raw.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+
+  test-raw-haproxy-config-unknown-permission-rejected:
+    description: A misspelled ingressPermissions field fails the render instead of leaving raw annotations disabled silently.
+    extraContext:
+      ingressPermissions: {allowRawHaproxyConfig: true}
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "extraContext\\.ingressPermissions contains unknown field 'allowRawHaproxyConfig'\\. Valid fields: allowRawHAProxyConfig\\."

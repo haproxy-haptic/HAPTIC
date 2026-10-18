@@ -5,6 +5,48 @@ you plan to deploy. Each section lists configuration changes and the steps neede
 to keep your existing routes working. For routine chart upgrades, see
 [Upgrading with Helm](deploying-with-helm.md#upgrading).
 
+## Upgrading to 0.7
+
+0.7 rejects raw HAProxy configuration annotations by default. These annotations
+insert their value into `haproxy.cfg` verbatim:
+
+- `haproxy-haptic.org/config-global`, `config-defaults`, `config-frontend`, and `config-backend`
+- `haproxy-ingress.github.io/config-global`, `config-defaults`, `config-frontend`, and `config-backend`
+- `haproxy.org/backend-config-snippet`
+- `nginx.ingress.kubernetes.io/configuration-snippet`
+
+After the upgrade, an Ingress that sets one of them gets an `InputRejected`
+Warning Event and isn't served until you remove the annotation. An annotation of
+an annotation library you haven't enabled has no effect and isn't rejected.
+
+### Check for raw configuration annotations
+
+List the Ingresses that set a raw configuration annotation:
+
+```bash
+kubectl get ingress --all-namespaces -o json | jq -r '.items[] | select(any(.metadata.annotations // {} | to_entries[]; (.key | test("^((haproxy-haptic\\.org|haproxy-ingress\\.github\\.io)/config-(global|defaults|frontend|backend)|haproxy\\.org/backend-config-snippet|nginx\\.ingress\\.kubernetes\\.io/configuration-snippet)$")) and (.value | test("\\S")))) | "\(.metadata.namespace)/\(.metadata.name)"'
+```
+
+If the command prints nothing, follow the normal
+[Helm upgrade procedure](deploying-with-helm.md#upgrading).
+
+If it prints Ingresses, either remove the annotations from them before you
+upgrade, or keep the previous behavior by adding this value to your Helm values:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        ingressPermissions:
+          allowRawHAProxyConfig: true
+```
+
+Keep the previous behavior only if everyone who can edit an Ingress in a watched
+namespace may also edit the HAProxy configuration. While WAF governance is
+active, `waf.ingressPermissions.allowRawHAProxyConfig` must also be `true`, as
+in 0.6. See [Raw configuration annotations](operations/security.md#raw-configuration-annotations).
+
 ## Upgrading to 0.6
 
 0.6 requires Kubernetes 1.35 or newer, removes HAProxy 3.1, and moves the chart

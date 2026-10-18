@@ -138,7 +138,10 @@ annotations:
 ### `nginx.ingress.kubernetes.io/configuration-snippet`
 
 Insert HAProxy directives into the backend section. Existing nginx directives
-must be rewritten in HAProxy syntax; HAPTIC doesn't translate them.
+must be rewritten in HAProxy syntax; HAPTIC doesn't translate them. HAPTIC
+rejects the annotation unless
+`controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig`
+is `true`; see [Raw configuration annotations](../operations/security.md#raw-configuration-annotations).
 
 ```yaml
 annotations:

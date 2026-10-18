@@ -1165,7 +1165,7 @@ validationTests:
       - {type: not_contains, target: haproxy.cfg, pattern: '!\{ src 10\.0\.0\.0/8'}
   test-nginx-ingress-config-snippet:
     description: Nginx Ingress configuration-snippet injects raw directives
-    extraContext: {waf: {ingressPermissions: {allowRawHAProxyConfig: true}}}
+    extraContext: {ingressPermissions: {allowRawHAProxyConfig: true}, waf: {ingressPermissions: {allowRawHAProxyConfig: true}}}
     fixtures:
       ingresses:
         - apiVersion: networking.k8s.io/v1

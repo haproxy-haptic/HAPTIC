@@ -1398,8 +1398,9 @@ validationTests:
 
   test-haptic-waf-strict-native-raw-config-rejected:
     _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
-    description: native raw frontend injection cannot short-circuit an immutable WAF baseline
+    description: native raw frontend injection cannot short-circuit an immutable WAF baseline, even with raw annotations allowed globally
     extraContext:
+      ingressPermissions: {allowRawHAProxyConfig: true}
       waf:
         ingressPermissions: {allowPolicySelection: true, allowRawHAProxyConfig: false}
         policies: *policiesRootInline
@@ -1423,11 +1424,12 @@ validationTests:
       - { type: contains, target: rendering_error, pattern: "config-frontend.*allowRawHAProxyConfig=false.*bypass WAF enforcement" }
 
   test-haptic-waf-strict-vendor-raw-config-rejected:
-    # The raw-annotation rejection is raised by the native scan (it checks the
-    # vendor config-* annotations directly), so no vendor library is required.
+    # ingress-annotations-compat raises the rejection, so the vendor library only needs to count as enabled.
     _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
-    description: vendor raw defaults injection cannot affect an immutable WAF baseline
+    description: vendor raw defaults injection cannot affect an immutable WAF baseline, even with raw annotations allowed globally
     extraContext:
+      annotationLibraries: {haproxyIngress: true}
+      ingressPermissions: {allowRawHAProxyConfig: true}
       waf:
         ingressPermissions: {allowPolicySelection: true, allowRawHAProxyConfig: false}
         policies: *policiesRootInline
@@ -1449,6 +1451,33 @@ validationTests:
                     - { path: /, pathType: Prefix, backend: { service: { name: app, port: { number: 80 } } } }
     assertions:
       - { type: contains, target: rendering_error, pattern: "config-defaults.*allowRawHAProxyConfig=false.*bypass WAF enforcement" }
+
+  test-haptic-waf-raw-config-permission-cannot-lift-switch:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: an active WAF baseline that allows raw configuration can't lift extraContext.ingressPermissions.allowRawHAProxyConfig=false
+    extraContext:
+      ingressPermissions: {allowRawHAProxyConfig: false}
+      waf:
+        ingressPermissions: {allowPolicySelection: true, allowRawHAProxyConfig: true}
+        policies: *policiesRootInline
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: waf-raw-allowed
+            annotations:
+              haproxy-haptic.org/config-frontend: "http-request allow"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: waf-raw-allowed.example.com
+                http:
+                  paths:
+                    - { path: /, pathType: Prefix, backend: { service: { name: app, port: { number: 80 } } } }
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "Ingress default/waf-raw-allowed sets 'haproxy-haptic\\.org/config-frontend', but extraContext\\.ingressPermissions\\.allowRawHAProxyConfig=false disables" }
 
   # ---------------------------------------------------------------------------
   # Namespaced self-service policy authoring (waf.policies.selfService).

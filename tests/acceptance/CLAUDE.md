@@ -475,6 +475,15 @@ Use `TEST_RUN_PATTERN` to select acceptance tests without editing the recipe:
 make test-acceptance TEST_RUN_PATTERN='^TestBasicAuthInputIsolation$'
 ```
 
+To leave the shared `haptic:test` image and `haproxy-test` cluster alone, build
+your own image and name your own cluster:
+
+```bash
+IMAGE_TAG=mine make docker-build
+SKIP_DOCKER_BUILD=1 HAPTIC_ACCEPTANCE_IMAGE=haptic:mine HAPTIC_ACCEPTANCE_CLUSTER_NAME=haptic-mine \
+  make test-acceptance TEST_RUN_PATTERN='^TestBasicAuthInputIsolation$'
+```
+
 The Make targets automatically:
 
 1. Build the Docker image with the correct `:test` tag

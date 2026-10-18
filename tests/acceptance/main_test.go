@@ -174,7 +174,7 @@ func getKindNodeImage() string {
 func localAcceptanceCluster(ctx context.Context) (*kindutil.Cluster, error) {
 	runner := process.Executor{}
 	environment := kindutil.DockerEnvironment(os.Getenv)
-	resumed, found, err := kindutil.ResumeCluster(ctx, runner, "haproxy-test", environment)
+	resumed, found, err := kindutil.ResumeCluster(ctx, runner, ClusterName, environment)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func localAcceptanceCluster(ctx context.Context) (*kindutil.Cluster, error) {
 	if kubeconfig == "" {
 		kubeconfig = filepath.Join(artifacts, "kubeconfig")
 	}
-	owned, err := kindutil.NewCluster(runner, &kindutil.ClusterOptions{Name: "haproxy-test", Kubeconfig: kubeconfig, Artifacts: artifacts, Environment: environment, ReadyTimeout: 5 * time.Minute})
+	owned, err := kindutil.NewCluster(runner, &kindutil.ClusterOptions{Name: ClusterName, Kubeconfig: kubeconfig, Artifacts: artifacts, Environment: environment, ReadyTimeout: 5 * time.Minute})
 	if err != nil {
 		return nil, err
 	}

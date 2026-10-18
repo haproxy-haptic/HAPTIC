@@ -54,7 +54,7 @@ _migrationCoverage:
         note: Sends PROXY protocol v2 to the backend.
       nginx.ingress.kubernetes.io/configuration-snippet:
         status: different
-        note: Injected verbatim into the backend section — the value must contain HAProxy directives, not nginx configuration; existing nginx snippets need rewriting.
+        note: Injected verbatim into the backend section — the value must contain HAProxy directives, not nginx configuration; existing nginx snippets need rewriting. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`.
         doc: annotation-support
       nginx.ingress.kubernetes.io/upstream-hash-by:
         status: supported
@@ -740,9 +740,9 @@ _migrationCoverage:
       - keys:
         - name: allow-snippet-annotations
           default: 'false'
-        setting: Governance rules that reject raw-configuration annotations, shown below
-        status: different
-        note: HAPTIC accepts raw HAProxy configuration annotations by default.
+        setting: '`extraContext.ingressPermissions.allowRawHAProxyConfig` (`false`)'
+        status: supported
+        note: Also covers the raw configuration annotations of the other annotation libraries. See [raw configuration annotations](operations/security.md#raw-configuration-annotations).
       - keys:
         - name: main-snippet
         - name: http-snippet

@@ -123,7 +123,6 @@ templateSnippets:
           var governanceEnabled = gov["governanceEnabled"].(bool)
           var allowPolicySelection = gov["allowPolicySelection"].(bool)
           var allowEnforcementOverride = gov["allowEnforcementOverride"].(bool)
-          var allowRawHAProxyConfig = gov["allowRawHAProxyConfig"].(bool)
           var selfServiceEnabled = gov["selfServiceEnabled"].(bool)
           var dispatchDefaultEnforcement = dispatch | dig("defaultEnforcement") | fallback("deny") | tostring()
           var limitsAny = policies | dig("limits")
@@ -701,7 +700,6 @@ templateSnippets:
           result["governanceEnabled"] = governanceEnabled
           result["allowPolicySelection"] = allowPolicySelection
           result["allowEnforcementOverride"] = allowEnforcementOverride
-          result["allowRawHAProxyConfig"] = allowRawHAProxyConfig
           result["selfServiceEnabled"] = selfServiceEnabled
           result["dispatchDefaultEnforcement"] = dispatchDefaultEnforcement
           result["dispatchMode"] = dispatchMode

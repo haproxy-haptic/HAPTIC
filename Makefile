@@ -488,11 +488,13 @@ test-agent-docker: ## Run the agent docker suite (real HAProxy + agent container
 	HAPROXY_VERSION=$(HAPROXY_VERSION) $(GO) tool gotestsum --junitfile report-agent-docker.xml --format testname -- \
 		-tags=agentdocker -v -timeout 20m -count=1 ./tests/agent/...
 
-test-acceptance: docker-build-test ## Run acceptance tests (builds image, creates kind cluster)
+test-acceptance: $(if $(SKIP_DOCKER_BUILD),,docker-build-test) ## Run acceptance tests (builds image, creates kind cluster)
 	@echo "Running acceptance tests..."
 	@echo "Note: This will create a kind cluster and may take several minutes"
 	@echo "Environment variables:"
 	@echo "  KIND_NODE_IMAGE - Kind node image (default: kindest/node:v1.32.0)"
+	@echo "  HAPTIC_ACCEPTANCE_CLUSTER_NAME - Kind cluster name (default: haproxy-test)"
+	@echo "  HAPTIC_ACCEPTANCE_IMAGE - Controller image; set with SKIP_DOCKER_BUILD=1 (default: haptic:test)"
 	$(GO) test -tags=acceptance -count=1 -v -timeout 15m $(if $(TEST_RUN_PATTERN),-run '$(TEST_RUN_PATTERN)',) ./tests/acceptance/...
 
 test-acceptance-parallel: docker-build-test ## Run acceptance tests in parallel (faster, shared cluster)
@@ -774,6 +776,8 @@ test-e2e-profile: ## Run the feature and interaction tests for HAPTIC_E2E_PROFIL
 	printf '%s\n' "$$TEST_RUN_PATTERN" > debug-logs/e2e-test-selection.txt; \
 	TEST_RUN_PATTERN="$$TEST_RUN_PATTERN" $(MAKE) test-e2e
 
+E2E_IMAGE_TAG ?= test
+
 test-e2e: check-source-hash $(if $(SKIP_DOCKER_BUILD),,docker-build-test docker-build-varnish) ## Run full-stack e2e tests (self-contained — kind + helm install + fixtures)
 	@echo "Running e2e tests..."
 	@# The chart composes its image tag as "<image.tag>-haproxy<haproxyVersion>".
@@ -782,7 +786,7 @@ test-e2e: check-source-hash $(if $(SKIP_DOCKER_BUILD),,docker-build-test docker-
 	@# for so the chart's auto-matching contract holds end-to-end.
 	@# CI sets SKIP_DOCKER_BUILD=1 and pre-tags from the registry-pulled image,
 	@# so this re-tag is a no-op there.
-	docker tag haptic:test haptic:test-haproxy$(HAPROXY_VERSION)
+	docker tag haptic:$(E2E_IMAGE_TAG) haptic:$(E2E_IMAGE_TAG)-haproxy$(HAPROXY_VERSION)
 	@cluster_name="$${HAPTIC_E2E_CLUSTER_NAME:-haptic-e2e}"; \
 		echo "Note: This creates kind cluster '$$cluster_name', helm-installs the chart, deploys fixtures."
 	@echo "Environment variables:"
@@ -792,6 +796,7 @@ test-e2e: check-source-hash $(if $(SKIP_DOCKER_BUILD),,docker-build-test docker-
 	@echo "  KEEP_NAMESPACE      - Keep test namespaces after failure for debugging (default: false)"
 	@echo "  SKIP_CLUSTER_CREATE - CI mode: assume cluster already exists; skip kind create"
 	@echo "  SKIP_DOCKER_BUILD   - CI mode: assume haptic:test-haproxyX.Y already loaded"
+	@echo "  E2E_IMAGE_TAG       - Install haptic:<tag>-haproxyX.Y, tagged from haptic:<tag> (default: test)"
 	@echo "  TEST_RUN_PATTERN    - Run specific tests matching pattern"
 	@echo "  HAPTIC_E2E_EXTRA_VALUES - Additional Helm values file, after the selected test profile"
 	@echo "  HAPTIC_E2E_EXTRA_SET - Extra helm --set pairs, ';'-separated. Match CI's shape"
@@ -802,13 +807,13 @@ test-e2e: check-source-hash $(if $(SKIP_DOCKER_BUILD),,docker-build-test docker-
 	@echo "                        i.e. nproc), which auto-scales to the host. Verified stable"
 	@echo "                        from 4 up through 16 on a 16-core box. Override with"
 	@echo "                        PARALLEL=N for constrained environments"
-	@controller_rollout_id="$$(docker image inspect --format '{{.Id}}' haptic:test-haproxy$(HAPROXY_VERSION))"; \
-	controller_binary_sha256="$$(docker run --rm --entrypoint sha256sum haptic:test-haproxy$(HAPROXY_VERSION) /usr/local/bin/haptic | awk '{print $$1}')"; \
-	controller_source_hash="$$(docker run --rm --entrypoint /usr/local/bin/haptic haptic:test-haproxy$(HAPROXY_VERSION) version | awk '$$1 == "Source" && $$2 == "Hash:" {print $$3}')"; \
-	if ! printf '%s\n' "$$controller_rollout_id" | grep -Eq '^sha256:[0-9a-f]{64}$$'; then echo "Controller image haptic:test-haproxy$(HAPROXY_VERSION) has invalid ID '$$controller_rollout_id'; rebuild it with make docker-build-test."; exit 1; fi; \
-	if ! printf '%s\n' "$$controller_binary_sha256" | grep -Eq '^[0-9a-f]{64}$$'; then echo "Controller binary digest '$$controller_binary_sha256' is invalid; rebuild haptic:test-haproxy$(HAPROXY_VERSION)."; exit 1; fi; \
+	@controller_rollout_id="$$(docker image inspect --format '{{.Id}}' haptic:$(E2E_IMAGE_TAG)-haproxy$(HAPROXY_VERSION))"; \
+	controller_binary_sha256="$$(docker run --rm --entrypoint sha256sum haptic:$(E2E_IMAGE_TAG)-haproxy$(HAPROXY_VERSION) /usr/local/bin/haptic | awk '{print $$1}')"; \
+	controller_source_hash="$$(docker run --rm --entrypoint /usr/local/bin/haptic haptic:$(E2E_IMAGE_TAG)-haproxy$(HAPROXY_VERSION) version | awk '$$1 == "Source" && $$2 == "Hash:" {print $$3}')"; \
+	if ! printf '%s\n' "$$controller_rollout_id" | grep -Eq '^sha256:[0-9a-f]{64}$$'; then echo "Controller image haptic:$(E2E_IMAGE_TAG)-haproxy$(HAPROXY_VERSION) has invalid ID '$$controller_rollout_id'; rebuild it with make docker-build-test."; exit 1; fi; \
+	if ! printf '%s\n' "$$controller_binary_sha256" | grep -Eq '^[0-9a-f]{64}$$'; then echo "Controller binary digest '$$controller_binary_sha256' is invalid; rebuild haptic:$(E2E_IMAGE_TAG)-haproxy$(HAPROXY_VERSION)."; exit 1; fi; \
 	if [ "$$controller_source_hash" != "$(SOURCE_HASH)" ]; then echo "Controller image source hash '$$controller_source_hash' does not match local source hash '$(SOURCE_HASH)'; rebuild it with make docker-build-test."; exit 1; fi; \
-	HAPTIC_EXPECTED_CONTROLLER_ROLLOUT_ID="$$controller_rollout_id" HAPTIC_EXPECTED_CONTROLLER_BINARY_SHA256="$$controller_binary_sha256" HAPTIC_EXPECTED_SOURCE_HASH=$(SOURCE_HASH) HAPTIC_HAPROXY_VERSION=$(HAPROXY_VERSION) $(GO) test -count=$(or $(COUNT),1) -mod=readonly -tags=e2e -v -timeout 30m $(if $(PARALLEL),-parallel $(PARALLEL)) $(if $(TEST_RUN_PATTERN),-run "$(TEST_RUN_PATTERN)") ./tests/e2e/...
+	HAPTIC_EXPECTED_CONTROLLER_ROLLOUT_ID="$$controller_rollout_id" HAPTIC_EXPECTED_CONTROLLER_BINARY_SHA256="$$controller_binary_sha256" HAPTIC_EXPECTED_SOURCE_HASH=$(SOURCE_HASH) HAPTIC_HAPROXY_VERSION=$(HAPROXY_VERSION) HAPTIC_E2E_IMAGE_TAG=$(E2E_IMAGE_TAG) $(GO) test -count=$(or $(COUNT),1) -mod=readonly -tags=e2e -v -timeout 30m $(if $(PARALLEL),-parallel $(PARALLEL)) $(if $(TEST_RUN_PATTERN),-run "$(TEST_RUN_PATTERN)") ./tests/e2e/...
 
 test-helm-defaults: $(if $(HELM_DEFAULTS_IMAGE),,docker-build-test) ## Install the default chart in kind and run its deployment smoke tests
 	@# Local runs must test this worktree's controller against this worktree's

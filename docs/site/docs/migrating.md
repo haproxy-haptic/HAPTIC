@@ -332,7 +332,7 @@ rather than fleet-wide: a [governance rule](operations/governance.md) with a
 | `whitelist-source-range`, `denylist-source-range` | Governance default for `haproxy-haptic.org/allowlist-source-range` or `haproxy-haptic.org/denylist-source-range` | supported |  |
 | `custom-http-errors` | Override `400.http` … `504.http` under `controller.config.files` | **different** | Replaces the error pages HAProxy generates; error responses from backends pass through unchanged unless the Ingress sets the [`custom-http-errors` annotation](libraries/nginx-ingress.md#nginxingresskubernetesiocustom-http-errors). See [general files](template-files.md#general-files). |
 | `server-tokens` (`false`), `allow-backend-server-header` (`false`) | — | **different** | Every response carries `Server: haptic`, without a version, replacing any backend `Server` header. |
-| `allow-snippet-annotations` (`false`) | Governance rules that reject raw-configuration annotations, shown below | **different** | HAPTIC accepts raw HAProxy configuration annotations by default. |
+| `allow-snippet-annotations` (`false`) | `extraContext.ingressPermissions.allowRawHAProxyConfig` (`false`) | supported | Also covers the raw configuration annotations of the other annotation libraries. See [raw configuration annotations](operations/security.md#raw-configuration-annotations). |
 | `main-snippet`, `http-snippet`, `server-snippet` | `controller.config.templateSnippets` at a base-library [extension point](libraries/base.md#available-extension-points) | **different** | The content must be HAProxy configuration; rewrite nginx snippets. |
 | `log-format-upstream`, `log-format-escape-json` | `extraContext.accessLog.fields` | **different** | The access log is JSON with a fixed core field set. You add fields; you can't redefine the format. See [access logging](operations/access-logging.md). |
 | `access-log-path`, `enable-syslog`, `syslog-host`, `syslog-port` | `extraContext.accessLog.targets` | supported |  |
@@ -372,35 +372,21 @@ controller:
               default: "1m"
 ```
 
-To reject raw configuration the way `allow-snippet-annotations: "false"` does,
-add one rule per raw-configuration annotation. A rule with `pattern: '^$'`
-rejects any non-empty value:
+HAPTIC rejects `configuration-snippet` by default, as ingress-nginx does with
+`allow-snippet-annotations: "false"`. If your Ingresses use it and everyone who
+can edit an Ingress in a watched namespace may also edit the HAProxy
+configuration, accept raw configuration annotations:
 
 ```yaml
 controller:
   config:
     templatingSettings:
       extraContext:
-        governance:
-          rules:
-            no-config-backend:
-              enabled: true
-              resource: ingresses
-              path: metadata.annotations['haproxy-haptic.org/config-backend']
-              pattern: '^$'
-              message: Raw HAProxy configuration annotations aren't allowed.
-            no-configuration-snippet:
-              enabled: true
-              resource: ingresses
-              path: metadata.annotations['nginx.ingress.kubernetes.io/configuration-snippet']
-              pattern: '^$'
-              message: Raw HAProxy configuration annotations aren't allowed.
+        ingressPermissions:
+          allowRawHAProxyConfig: true
 ```
 
-Add the same rule for `haproxy-haptic.org/config-global`,
-`haproxy-haptic.org/config-defaults`, and `haproxy-haptic.org/config-frontend`.
-The admission webhook rejects a new or edited Ingress that violates a rule.
-Existing Ingresses keep serving and receive a `GovernanceViolation` Warning Event.
+See [Raw configuration annotations](operations/security.md#raw-configuration-annotations).
 
 ### TCP and UDP services
 

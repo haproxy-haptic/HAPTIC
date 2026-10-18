@@ -3,6 +3,7 @@
 # sections (complements the existing config-backend snippet).
 _fx:
   rawConfigContext: &rawConfigContext
+    ingressPermissions: {allowRawHAProxyConfig: true}
     waf:
       ingressPermissions: {allowRawHAProxyConfig: true}
   httpRoot: &httpRoot

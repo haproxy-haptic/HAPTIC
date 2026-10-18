@@ -8,7 +8,6 @@ templateSnippets:
         {%- var _ = WafGovernance(gov) -%}
         {{- toJSON(map[string]any{"ingresses": map[string]any{
           "allIngresses": gov["dispatchMode"] == "default-on" || tostring(gov["defaultPolicy"]) != "",
-          "checkRawConfig": gov["governanceEnabled"].(bool) && !gov["allowRawHAProxyConfig"].(bool),
         }}) -}}
       group: haptic-waf-ingresses
       effects: [publishValue]
@@ -30,29 +29,7 @@ templateSnippets:
             {%- nativeWAF = true -%}
           {%- end -%}
         {%- end -%}
-        {%- var checkRawConfig = props["checkRawConfig"].(bool) -%}
-        {%- var rawConfig = false -%}
-        {%- if checkRawConfig -%}
-          {%- for _, key := range []string{
-            "haproxy-haptic.org/config-global",
-            "haproxy-haptic.org/config-defaults",
-            "haproxy-haptic.org/config-frontend",
-            "haproxy-haptic.org/config-backend",
-            "haproxy-ingress.github.io/config-global",
-            "haproxy-ingress.github.io/config-defaults",
-            "haproxy-ingress.github.io/config-frontend",
-            "haproxy-ingress.github.io/config-backend",
-            "haproxy.org/backend-config-snippet",
-            "nginx.ingress.kubernetes.io/configuration-snippet",
-          } -%}
-            {%- var value = ingress.Metadata.Annotations[key] -%}
-            {%- if strip(value) != "" -%}
-              {%- annotations[key] = value -%}
-              {%- rawConfig = true -%}
-            {%- end -%}
-          {%- end -%}
-        {%- end -%}
-        {%- if props["allIngresses"].(bool) || nativeWAF || rawConfig -%}
+        {%- if props["allIngresses"].(bool) || nativeWAF -%}
           {%- for _, key := range []string{
             "haproxy-haptic.org/backend-protocol",
             "nginx.ingress.kubernetes.io/backend-protocol",
@@ -93,7 +70,6 @@ templateSnippets:
           var governanceEnabled = catalog["governanceEnabled"].(bool)
           var allowPolicySelection = catalog["allowPolicySelection"].(bool)
           var allowEnforcementOverride = catalog["allowEnforcementOverride"].(bool)
-          var allowRawHAProxyConfig = catalog["allowRawHAProxyConfig"].(bool)
           var selfServiceEnabled = catalog["selfServiceEnabled"].(bool)
           var dispatchDefaultEnforcement = catalog["dispatchDefaultEnforcement"].(string)
           var dispatchMode = catalog["dispatchMode"].(string)
@@ -137,28 +113,6 @@ templateSnippets:
             var resourceID = ns + "/" + name
             var annotations = to_str_map(ingressRecord["annotations"])
             var ingress = ingressRecord["resource"]
-            if governanceEnabled && !allowRawHAProxyConfig {
-              var rawConfigAnnotation = ""
-              for _, annotationName := range []string{
-                "haproxy-haptic.org/config-global",
-                "haproxy-haptic.org/config-defaults",
-                "haproxy-haptic.org/config-frontend",
-                "haproxy-haptic.org/config-backend",
-                "haproxy-ingress.github.io/config-global",
-                "haproxy-ingress.github.io/config-defaults",
-                "haproxy-ingress.github.io/config-frontend",
-                "haproxy-ingress.github.io/config-backend",
-                "haproxy.org/backend-config-snippet",
-                "nginx.ingress.kubernetes.io/configuration-snippet",
-              } {
-                if strip(annotations[annotationName]) != "" && rawConfigAnnotation == "" {
-                  rawConfigAnnotation = annotationName
-                }
-              }
-              if rawConfigAnnotation != "" {
-                fail("Ingress " + resourceID + " sets raw HAProxy annotation '" + rawConfigAnnotation + "', but WAF governance disables all Ingress-authored raw configuration with extraContext.waf.ingressPermissions.allowRawHAProxyConfig=false. Raw frontend/defaults/global directives can bypass WAF enforcement for other routes; enable this only when every Ingress writer is a trusted HAProxy configuration administrator.")
-              }
-            }
             var mode = strip(annotations["haproxy-haptic.org/waf-mode"])
             var requestedPolicy = strip(annotations["haproxy-haptic.org/waf-policy"])
             var policy = ""

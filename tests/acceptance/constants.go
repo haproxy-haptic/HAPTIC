@@ -16,6 +16,8 @@
 
 package acceptance
 
+import "os"
+
 // CRD and API constants.
 const (
 	// HAProxyTemplateConfigAPIVersion is the API version for HAProxyTemplateConfig resources.
@@ -26,10 +28,20 @@ const (
 
 	// CRDDirectory is the path to the CRD manifests relative to the test directory.
 	CRDDirectory = "../../charts/haptic/crds/"
-
-	// ControllerImageName is the Docker image name used for acceptance tests.
-	ControllerImageName = "haptic:test"
 )
+
+// ControllerImageName and ClusterName let a run use its own image and kind cluster.
+var (
+	ControllerImageName = envOrDefault("HAPTIC_ACCEPTANCE_IMAGE", "haptic:test")
+	ClusterName         = envOrDefault("HAPTIC_ACCEPTANCE_CLUSTER_NAME", "haproxy-test")
+)
+
+func envOrDefault(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
 
 // RequiredCRDs lists the CRDs that must be installed for acceptance tests.
 var RequiredCRDs = []string{

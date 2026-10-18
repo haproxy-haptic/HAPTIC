@@ -280,7 +280,7 @@ annotations:
 
 ## Raw configuration injection
 
-The four `config-*` annotations inject operator-authored HAProxy directives verbatim into a configuration section. HAPTIC validates the resulting config before deploying it, but the directives are yours — a typo fails the render.
+The four `config-*` annotations inject operator-authored HAProxy directives verbatim into a configuration section. HAPTIC rejects them unless `controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`; see [Raw configuration annotations](../operations/security.md#raw-configuration-annotations). HAPTIC validates the resulting config before deploying it, but the directives are yours — a typo fails the render.
 
 ### `haproxy-ingress.github.io/config-backend`
 

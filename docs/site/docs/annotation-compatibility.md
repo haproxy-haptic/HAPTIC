@@ -48,6 +48,10 @@ capabilities, see the [HAPTIC annotation reference](./libraries/haptic-annotatio
 | Raw backend config | `backend-config-snippet` | `config-backend` | `configuration-snippet` |
 | Raw global / frontend / defaults config | — | `config-global`, `config-frontend`, `config-defaults` | — |
 
+HAPTIC rejects the raw config annotations unless
+`controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig`
+is `true`; see [Raw configuration annotations](operations/security.md#raw-configuration-annotations).
+
 For the complete per-annotation reference with examples and generated HAProxy configuration output, see the library docs:
 
 - [haproxytech library →](./libraries/haproxytech.md)
@@ -104,7 +108,7 @@ The library classifies 141 `nginx.ingress.kubernetes.io/*` annotations: 56 suppo
 | `nginx.ingress.kubernetes.io/backend-protocol` | Behaviour differs | HTTP, HTTPS, `GRPC` and `GRPCS` map to HAProxy server options; `AJP` and `FCGI` have no HAProxy equivalent and fail the render with an error. |
 | `nginx.ingress.kubernetes.io/canary-weight-total` | Not carried over | The weight base is fixed at 100. |
 | `nginx.ingress.kubernetes.io/client-body-buffer-size` | Not carried over | HAProxy holds request bodies in tune.bufsize-sized memory buffers and never spools them to disk; see proxy-request-buffering. |
-| `nginx.ingress.kubernetes.io/configuration-snippet` | Behaviour differs | Injected verbatim into the backend section — the value must contain HAProxy directives, not nginx configuration; existing nginx snippets need rewriting. |
+| `nginx.ingress.kubernetes.io/configuration-snippet` | Behaviour differs | Injected verbatim into the backend section — the value must contain HAProxy directives, not nginx configuration; existing nginx snippets need rewriting. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`. |
 | `nginx.ingress.kubernetes.io/cors-allow-credentials` | Behaviour differs | The header is only sent when explicitly "true" — ingress-nginx defaults it to true. |
 | `nginx.ingress.kubernetes.io/custom-headers` | Not carried over | Response headers from a ConfigMap aren't read; set them with custom-response-headers. |
 | `nginx.ingress.kubernetes.io/custom-http-errors` | Behaviour differs | Upstream responses with a listed status are replaced by a snapshot of the default backend's page — JSON when the client's first Accept entry is application/json, HTML otherwise. Per-request headers (X-Original-URI, X-Request-ID, X-Service-Name, …) can't influence the page. A changed page is served after the next refresh (extraContext.nginxCustomHTTPErrorsRefreshInterval, default 5m) plus a render and rollout, with one hitless reload. HAProxy's own error responses keep the chart's error pages. |
@@ -169,7 +173,7 @@ The library classifies 141 `nginx.ingress.kubernetes.io/*` annotations: 56 suppo
 ## Differences from haproxy-ingress {#haproxy-ingress}
 
 <!-- BEGIN generated: migration-coverage haproxy-ingress -->
-The library classifies 92 `haproxy-ingress.github.io/*` annotations: 62 supported, 28 with behaviour differences, 2 not carried over, 0 failing.
+The library classifies 92 `haproxy-ingress.github.io/*` annotations: 59 supported, 31 with behaviour differences, 2 not carried over, 0 failing.
 
 | Annotation | Status | What to check |
 |------------|--------|---------------|
@@ -184,7 +188,10 @@ The library classifies 92 `haproxy-ingress.github.io/*` annotations: 62 supporte
 | `haproxy-ingress.github.io/auth-tls-verify-client` | Behaviour differs | "on"→required; "optional"/"optional_no_ca"→optional (HAProxy has no verify-but-accept-invalid mode); other values fail the render. |
 | `haproxy-ingress.github.io/auth-url` | Behaviour differs | External auth via the SPOA hub external-auth plugin, which (unlike the nginx-ingress library) **isn't** auto-enabled — enable spoaHub.plugins.external-auth, otherwise the auth is silently not enforced. |
 | `haproxy-ingress.github.io/backend-protocol` | Behaviour differs | h1, h2, h1-ssl and h2-ssl are accepted (h1-ssl/h2-ssl enable TLS); other values fail the render — note this is a different value set from ingress-nginx's `HTTP/HTTPS/GRPC/GRPCS`. |
-| `haproxy-ingress.github.io/config-frontend` | Behaviour differs | Injected into HAPTIC's shared HTTP frontend (before routing), not a per-Ingress frontend — directives apply process-wide; deduplication is the operator's responsibility. |
+| `haproxy-ingress.github.io/config-backend` | Behaviour differs | Raw HAProxy directives injected into the backend section (already HAProxy syntax in this source controller). Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`. |
+| `haproxy-ingress.github.io/config-defaults` | Behaviour differs | Raw HAProxy directives injected into the defaults section. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`. |
+| `haproxy-ingress.github.io/config-frontend` | Behaviour differs | Injected into HAPTIC's shared HTTP frontend (before routing), not a per-Ingress frontend — directives apply process-wide; deduplication is the operator's responsibility. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`. |
+| `haproxy-ingress.github.io/config-global` | Behaviour differs | Raw HAProxy directives injected into the global section. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`. |
 | `haproxy-ingress.github.io/default-backend-redirect-code` | Behaviour differs | Default 302; an invalid code fails the render. |
 | `haproxy-ingress.github.io/denylist-source-range` | Behaviour differs | Host-scoped — only gates rules with an explicit host; invalid CIDRs fail the render. |
 | `haproxy-ingress.github.io/docs` | Not carried over | A pointer to jcmoraisjr/haproxy-ingress documentation, not a configuration key; not read. |
@@ -208,7 +215,7 @@ The library classifies 92 `haproxy-ingress.github.io/*` annotations: 62 supporte
 ## Differences from HAProxy Technologies {#haproxytech}
 
 <!-- BEGIN generated: migration-coverage haproxytech -->
-The library classifies 56 `haproxy.org/*` annotations: 37 supported, 14 with behaviour differences, 5 not carried over, 0 failing.
+The library classifies 56 `haproxy.org/*` annotations: 36 supported, 15 with behaviour differences, 5 not carried over, 0 failing.
 
 | Annotation | Status | What to check |
 |------------|--------|---------------|
@@ -216,6 +223,7 @@ The library classifies 56 `haproxy.org/*` annotations: 37 supported, 14 with beh
 | `haproxy.org/auth-realm` | Behaviour differs | Default "Protected-Content" (matching the upstream controller); spaces in the realm are replaced with dashes, as upstream does. |
 | `haproxy.org/auth-secret` | Behaviour differs | Secret format is one key per username with a base64(hash) value — different from ingress-nginx's htpasswd. By default only bcrypt, SHA-256/SHA-512 crypt and yescrypt hashes are accepted; `$1$` (MD5-crypt) is refused. A missing Secret makes the route serve 503 until it appears, and writing such an Ingress is rejected by the admission webhook. |
 | `haproxy.org/auth-type` | Behaviour differs | Only "basic-auth" is supported; other values fail the render (note the value differs from ingress-nginx's "basic"). |
+| `haproxy.org/backend-config-snippet` | Behaviour differs | Raw HAProxy directives injected into the backend section. Rejected unless `extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`. |
 | `haproxy.org/blacklist` | Behaviour differs | Deprecated alias of deny-list, honoured only when deny-list is absent; host-scoped. |
 | `haproxy.org/cookie-persistence-no-dynamic` | Behaviour differs | Static (non-dynamic) cookie stickiness; setting it together with cookie-persistence fails the render. |
 | `haproxy.org/deny-list` | Behaviour differs | Host-scoped source-IP denylist — only gates rules with an explicit host; invalid CIDRs fail the render. |

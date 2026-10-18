@@ -104,10 +104,14 @@ var runtimeImages kindutil.ChartImages
 // ChartHAProxyVersion is resolved from the chart before suite setup.
 var ChartHAProxyVersion string
 
-// ControllerImageName is the docker image tag the chart installs.
-// docker-build-test produces "haptic:test"; the e2e Makefile target
-// re-tags it with the haproxy-version suffix the chart expects.
+// ControllerImageName is the docker image the chart installs:
+// haptic:<ControllerImageTag>-haproxy<version>, which the e2e Makefile target
+// tags from haptic:<ControllerImageTag>.
 var ControllerImageName string
+
+// ControllerImageTag is the chart's controller.image.tag, "test" unless
+// HAPTIC_E2E_IMAGE_TAG names a run's own image.
+var ControllerImageTag string
 
 // ChartHAProxyServiceHTTPPort is the HAProxy Service port installed by the
 // active profile. The cache profile intentionally differs from the pod's port

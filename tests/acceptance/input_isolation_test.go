@@ -34,6 +34,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/e2e-framework/klient"
@@ -57,6 +58,7 @@ defaults
   timeout server 50s
 
 {{ render "global-top-500-haproxytech-ingress-auth" }}
+{{ render "features-951-raw-haproxy-config-permission" }}
 
 frontend http_front
   bind :8080
@@ -93,10 +95,10 @@ func buildBasicAuthInputIsolationFeature() types.Feature {
 
 func setupBasicAuthIsolation(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 	t.Helper()
-	return setupIsolationInputs(ctx, t, cfg, nil, false)
+	return setupIsolationInputs(ctx, t, cfg, nil, false, false)
 }
 
-func setupIsolationInputs(ctx context.Context, t *testing.T, cfg *envconf.Config, mutate func(*networkingv1.Ingress), fetchedList bool) context.Context {
+func setupIsolationInputs(ctx context.Context, t *testing.T, cfg *envconf.Config, mutate func(*networkingv1.Ingress), fetchedList, allowRawHAProxyConfig bool) context.Context {
 	t.Helper()
 	namespace, err := GetNamespaceFromContext(ctx)
 	require.NoError(t, err)
@@ -121,6 +123,9 @@ func setupIsolationInputs(ctx context.Context, t *testing.T, cfg *envconf.Config
 	require.NoError(t, client.Resources().Create(ctx, endpoints))
 	config := NewHAProxyTemplateConfigBuilder(namespace, ControllerCRDName, ControllerSecretName).WithTemplate(isolationAcceptanceTemplate).Build()
 	config.Spec.TemplateSnippets = isolationChartSnippets(ctx, t, namespace)
+	if allowRawHAProxyConfig {
+		config.Spec.TemplatingSettings.ExtraContext = runtime.RawExtension{Raw: []byte(`{"ingressPermissions":{"allowRawHAProxyConfig":true}}`)}
+	}
 	// The shipped backend snippet consumes its caller's ingress variable.
 	snippetName := "backend-directives-900-haptic-config-backend"
 	config.Spec.HAProxyConfig.Template = strings.Replace(config.Spec.HAProxyConfig.Template, `{{ render "backend-directives-900-haptic-config-backend" }}`, config.Spec.TemplateSnippets[snippetName].Template, 1)
@@ -172,7 +177,11 @@ func isolationChartSnippets(ctx context.Context, t *testing.T, namespace string)
 	output, err := exec.CommandContext(ctx, "helm", "template", "isolation", "../../charts/haptic", "--namespace", namespace, "--set", "controller.templateLibraries.haproxytech.enabled=true").Output()
 	require.NoError(t, err)
 	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(output), 4096)
-	wanted := map[string]bool{"global-top-500-haproxytech-ingress-auth": true, "haproxytech-auth-userlist-publications": true, "util-config-injection-kind": true, "backend-directives-900-haptic-config-backend": true}
+	wanted := map[string]bool{
+		"global-top-500-haproxytech-ingress-auth": true, "haproxytech-auth-userlist-publications": true, "util-config-injection-kind": true,
+		"backend-directives-900-haptic-config-backend": true, "features-951-raw-haproxy-config-permission": true,
+		"util-waf-governance": true, "util-policy-waf-governance": true,
+	}
 	result := map[string]haproxyv1alpha1.TemplateSnippet{}
 	for {
 		var document struct {

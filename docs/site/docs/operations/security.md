@@ -254,7 +254,55 @@ annotations.
 
 Most annotation values reach the config as validated or escaped data: CIDR-list annotations are parsed as CIDRs, and header, cookie, SNI, and rewrite-target values are checked against a strict character set that rejects control characters, so they can't break out of their directive and inject arbitrary HAProxy config. Invalid values reject the proposed resource change. If a watched change prevents complete configuration validation, [input isolation](input-isolation.md) keeps its previous validated revision while independent valid changes continue.
 
-The `*-config-snippet` annotations (`haproxy.org/backend-config-snippet`, `nginx.ingress.kubernetes.io/configuration-snippet`, and the like) are the deliberate exception: their value is inserted into the rendered config verbatim. Anyone who can create or edit an Ingress in a watched namespace can therefore inject arbitrary HAProxy directives. Treat Ingress edit permission in watched namespaces as equivalent to HAProxy config access, and restrict it with RBAC accordingly.
+[Raw configuration annotations](#raw-configuration-annotations) are the exception, and HAPTIC rejects them by default.
+
+### Raw configuration annotations
+
+These annotations insert their value into `haproxy.cfg` verbatim:
+
+| Prefix | Annotations |
+|---|---|
+| `haproxy-haptic.org/` | `config-global`, `config-defaults`, `config-frontend`, `config-backend` |
+| `haproxy-ingress.github.io/` | `config-global`, `config-defaults`, `config-frontend`, `config-backend` |
+| `haproxy.org/` | `backend-config-snippet` |
+| `nginx.ingress.kubernetes.io/` | `configuration-snippet` |
+
+Their directives can affect every host the controller serves. The backend
+annotations aren't narrower: a backend directive can serve any file HAProxy can
+read, TLS private keys included, and the value can start a new `global` or
+`defaults` section.
+
+By default, the admission webhook denies a new or edited Ingress that sets one
+of these annotations. An Ingress that already carries one is
+[rejected](input-isolation.md): it gets an `InputRejected` Warning Event and
+keeps its previous validated revision, or stays inactive if it has none. Other
+Ingresses keep serving. An annotation of a disabled annotation library has no
+effect and isn't rejected.
+
+To accept raw configuration annotations, set:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        ingressPermissions:
+          allowRawHAProxyConfig: true
+```
+
+Set it only if everyone who can create or edit an Ingress in a watched namespace
+may also edit the HAProxy configuration.
+
+While [WAF governance](waf-policies.md#require-a-policy-on-every-ingress) is
+active, `extraContext.waf.ingressPermissions.allowRawHAProxyConfig` must also be
+`true`. Neither setting can accept what the other rejects:
+
+| `ingressPermissions.allowRawHAProxyConfig` | WAF governance | `waf.ingressPermissions.allowRawHAProxyConfig` | Raw configuration annotations |
+|---|---|---|---|
+| `false` (default) | Active or inactive | `true` or `false` | Rejected |
+| `true` | Inactive | `true` or `false` (ignored) | Accepted |
+| `true` | Active | `false` (default) | Rejected |
+| `true` | Active | `true` | Accepted |
 
 ### Host aliases claim hostnames
 
@@ -441,6 +489,7 @@ Before exposing a HAPTIC deployment to production traffic:
 - [ ] Default mutual TLS retained, with failed certificate-renewal Jobs monitored. If you supply external certificates, monitor their expiry and manage CA rotation.
 - [ ] RBAC that limits `pods/portforward` access to loopback-only `/debug/*` endpoints.
 - [ ] Watched-resource selectors scoped to the namespaces you intend to serve.
+- [ ] `extraContext.ingressPermissions.allowRawHAProxyConfig` left `false` unless every Ingress writer may edit the HAProxy configuration.
 - [ ] Release namespace labelled with `pod-security.kubernetes.io/enforce=restricted`.
 - [ ] NetworkPolicy allowing DNS, Kubernetes API, agent traffic, and any configured HTTP resources.
 - [ ] Audit policy in place for `HAProxyTemplateConfig` changes.

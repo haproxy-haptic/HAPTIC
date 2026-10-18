@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Raw HAProxy configuration annotations are rejected by default. Any Ingress writer in a watched namespace could otherwise change the configuration for every host, or read HAProxy's TLS keys through a backend directive.
+
+### Helm chart
+
+#### Changed
+
+- **BREAKING:** `haproxy-haptic.org/config-*`, `haproxy-ingress.github.io/config-*`, `haproxy.org/backend-config-snippet`, and `nginx.ingress.kubernetes.io/configuration-snippet` require `controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig: true`, independent of WAF governance; `waf.ingressPermissions.allowRawHAProxyConfig` can only narrow it. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#upgrading-to-07) before upgrading.
+
+#### Fixed
+
+- WAF governance's `allowRawHAProxyConfig: false` also rejects raw configuration annotations when the `hapticAnnotations` library is disabled.
+
 ## [0.6.0] - 2026-10-18
 
 HAPTIC 0.6 moves to GitHub, requires Kubernetes 1.35 or newer, and drops
