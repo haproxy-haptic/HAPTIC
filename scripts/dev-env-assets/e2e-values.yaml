@@ -226,6 +226,14 @@ controller:
           {%- end %}
 
     templateSnippets:
+      frontend-extra-100-forwarded-headers-test:
+        template: |
+          acl operator_forwarded_headers req.hdr(Host) -m beg xfwd-operator.
+          http-request set-src hdr_ip(X-Operator-Source) if operator_forwarded_headers { req.hdr(X-Operator-Source) -m found }
+          http-request set-header X-Forwarded-Host %[req.hdr(Host)] if operator_forwarded_headers !{ req.hdr(X-Forwarded-Host) -m found }
+          http-request set-header X-Forwarded-Port 9443 if operator_forwarded_headers !{ req.hdr(X-Forwarded-Port) -m found }
+          http-request set-header X-Forwarded-Proto operator if operator_forwarded_headers
+          http-request set-header X-Forwarded-For 198.51.100.9 if operator_forwarded_headers
       # Hook into frontend routing to check header against blocklist
       # Uses "frontend-filters-*" naming convention to be auto-included by base.yaml
       frontend-filters-http-store-demo:

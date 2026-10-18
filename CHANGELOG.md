@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Fixed
 
+- Forwarded-header sanitization preserves `X-Forwarded-Host`, `-Port`, and `-Proto` written by operator `frontend-extra-*` snippets.
 - A snippet at an extension point now starts on its own line whether or not its template begins or ends with a newline. Before, a `frontend-extra-*` or other snippet without a leading newline could join the previous line and fail validation.
 - WAF governance's `allowRawHAProxyConfig: false` also rejects raw configuration annotations when the `hapticAnnotations` library is disabled.
 - Reduce Helm release storage by keeping generated defaults in the helper subchart.

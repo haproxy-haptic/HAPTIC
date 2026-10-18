@@ -352,6 +352,13 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     rm -f "$SNIPPET_CONFIG"
 fi
 
+if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
+    echo -e "${YELLOW}Validating operator forwarded headers after client sanitization...${NC}" >&2
+    HAPTIC_TEMPLATE_VALUES="$PROJECT_ROOT/tests/fixtures/forwarded-headers/values.yaml" \
+        "$0" --test test-operator-forwarded-headers-after-sanitization \
+        --test test-operator-forwarded-headers-trusted-proxies || FULL_RC=$?
+fi
+
 if ! single_test_requested "$@"; then
     # Access-log coverage invariant: every frontend the chart renders must carry a
     # log-format, or that frontend silently falls back to `option httplog` from

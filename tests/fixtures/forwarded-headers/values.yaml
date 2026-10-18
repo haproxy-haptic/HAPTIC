@@ -1,0 +1,48 @@
+controller:
+  config:
+    templateSnippets:
+      frontend-extra-100-operator-forwarded:
+        template: |
+          http-request set-header X-Forwarded-Host %[req.hdr(Host)] unless { req.hdr(X-Forwarded-Host) -m found }
+          http-request set-header X-Forwarded-Port 9443 unless { req.hdr(X-Forwarded-Port) -m found }
+          http-request set-header X-Forwarded-Proto operator
+    validationTests:
+      test-operator-forwarded-headers-after-sanitization:
+        fixtures: &forwardedFixtures
+          ingresses:
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata: {namespace: default, name: forwarded}
+              spec:
+                ingressClassName: haptic
+                tls:
+                  - hosts: [forwarded.example.com]
+                    secretName: shared-tls
+                rules:
+                  - host: forwarded.example.com
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend: {service: {name: echo, port: {number: 80}}}
+        assertions:
+          - type: haproxy_valid
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-Host\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Host %\[req\.hdr\(Host\)\] unless \{ req\.hdr\(X-Forwarded-Host\) -m found \}\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Proto %\[ssl_fc,iif\(https,http\)\]\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-Port\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Port 9443 unless \{ req\.hdr\(X-Forwarded-Port\) -m found \}\n[ \t]+http-request set-header X-Forwarded-Proto operator\n'
+            expected: "3"
+      test-operator-forwarded-headers-trusted-proxies:
+        extraContext:
+          forwardedHeaders:
+            trustedProxies: ["192.0.2.0/24"]
+        fixtures: *forwardedFixtures
+        assertions:
+          - type: haproxy_valid
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-Host unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-Port unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Host %\[req\.hdr\(Host\)\] unless \{ req\.hdr\(X-Forwarded-Host\) -m found \}\n'
+            expected: "3"
