@@ -39,14 +39,7 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/schemafetcher"
 )
 
-// typeBootstrapFetchTimeout bounds the entire bootstrap's wall-clock
-// cost, discovery included. The bundled chart's bootstrap is about
-// five apiserver round trips deep (150 ms at a 25 ms round trip,
-// #410), so the deadline only fires when the apiserver is degraded,
-// at which point the deadline-exceeded error fails the iteration
-// startup with a clear signal for operators (no silent degradation
-// to envelope-only types; see typebootstrap.Bootstrap's fail-closed
-// contract).
+// typeBootstrapFetchTimeout bounds the whole bootstrap, discovery included; it is about five round trips deep (#410).
 const typeBootstrapFetchTimeout = 2 * time.Second
 
 // typedRendererWiring carries the two outputs the renderer needs
@@ -178,12 +171,6 @@ func RunTypeBootstrap(
 		}, nil
 	}
 
-	// Cap the bootstrap's wall-clock cost so a slow apiserver can't
-	// stall Stage 5 indefinitely. Every request below, discovery
-	// included, honours ctx. Deadline-exceeded surfaces as a hard
-	// bootstrap error (Bootstrap is fail-closed) — iteration
-	// startup aborts with a clear signal rather than running with
-	// silently degraded typed access.
 	ctx, cancel := context.WithTimeout(ctx, typeBootstrapFetchTimeout)
 	defer cancel()
 

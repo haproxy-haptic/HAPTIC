@@ -170,21 +170,7 @@ func Bootstrap(ctx context.Context, cfg Config) (*Result, error) {
 		return result, err
 	}
 	res := failure.resource
-	// Hard failure: template authors using typed access
-	// (gw.Spec.X, route.Status.Y) need the guarantee that
-	// every declared watched resource resolved to its real
-	// schema. Falling back to envelope-only typed access
-	// for a subset of resources would silently break
-	// templates whose chart predates the schema-fetch
-	// failure, which is exactly the regression mode this
-	// pipeline exists to prevent.
-	//
-	// Surface the failure to operators via a hard boot
-	// error so the cluster's RBAC / CRD installation /
-	// apiserver health gets investigated. Recording the
-	// per-resource cause in result.Errors keeps it
-	// available for debug surfaces (status CRD, log) that
-	// want to enumerate which resource broke.
+	// Fail closed: envelope-only types for some resources would silently break typed templates.
 	result.Errors[res.Name] = failure.err
 	cfg.Logger.Error("Typebootstrap: schema acquisition failed for resource — failing iteration startup",
 		"resource", res.Name,
