@@ -56,6 +56,7 @@ func buildLeaderElectionTwoReplicasFeature() types.Feature {
 		Setup(setupLeaderElectionTwoReplicas).
 		Assess("Exactly one leader elected", assessExactlyOneLeader).
 		Assess("Leader deploys configs", assessLeaderDeploysConfigs).
+		Teardown(teardownControllerEnv).
 		Feature()
 }
 
@@ -303,6 +304,7 @@ func buildLeaderElectionFailoverFeature() types.Feature {
 		Setup(setupLeaderElectionFailover).
 		Assess("Initial leader elected", assessInitialLeaderElected).
 		Assess("Failover on leader deletion", assessFailoverOnLeaderDeletion).
+		Teardown(teardownControllerEnv).
 		Feature()
 }
 
