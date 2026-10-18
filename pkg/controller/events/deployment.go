@@ -846,6 +846,14 @@ type DeploymentCancelRequestEvent struct {
 	Correlation
 }
 
+// DeploymentCancelRequestEvent reasons.
+const (
+	// DeploymentCancelReasonEndpointAuthorityChanged supersedes the deploy: its
+	// pod set is not the fleet any more and the replacement set is deployed next.
+	DeploymentCancelReasonEndpointAuthorityChanged = "endpoint_authority_changed"
+	DeploymentCancelReasonTimeout                  = "deployment_timeout"
+)
+
 // NewDeploymentCancelRequestEvent creates a new DeploymentCancelRequestEvent.
 func NewDeploymentCancelRequestEvent(deploymentID, reason string, opts ...CorrelationOption) *DeploymentCancelRequestEvent {
 	return &DeploymentCancelRequestEvent{

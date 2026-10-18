@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration changes fetch watched-resource schemas in parallel, reducing validation delays on clusters with slow API-server responses.
 - API discovery timeouts leave configuration validation inconclusive and retry it instead of rejecting templates that use typed fields.
 - Template admission denials show the rule's message; other render errors identify the watched object without exposing encoded cache keys.
+- A deployment cancelled because the HAProxy pod set changed no longer logs `context canceled` errors, emits `ApplyFailed` Pod events, or counts in `haptic_deployment_errors_total` for its in-flight pods ([#430](https://github.com/haproxy-haptic/HAPTIC/issues/430)).
 
 ### Security
 

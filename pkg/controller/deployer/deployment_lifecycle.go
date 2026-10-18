@@ -16,9 +16,27 @@ package deployer
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/events"
 )
+
+// errDeploymentSuperseded cancels a deploy whose pod set was replaced; the
+// replacement deploy follows, so its pods' cancelled applies are not failures.
+var errDeploymentSuperseded = fmt.Errorf("deployment superseded: %w", context.Canceled)
+
+func cancelCause(reason string) error {
+	if reason == events.DeploymentCancelReasonEndpointAuthorityChanged {
+		return errDeploymentSuperseded
+	}
+	return nil
+}
+
+// superseded reports whether err is the deliberate cancellation of a superseded deploy.
+func superseded(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) && errors.Is(context.Cause(ctx), errDeploymentSuperseded)
+}
 
 func (c *Component) flushPendingCancellationRequests() {
 	for {
@@ -53,17 +71,18 @@ func (c *Component) beginDeployment(ctx context.Context, deploymentID, correlati
 		c.cancelMu.Unlock()
 		return nil, nil, false
 	}
-	deployCtx, cancel := context.WithCancel(ctx)
+	deployCtx, cancel := context.WithCancelCause(ctx)
 	c.activeDeploymentID = deploymentID
 	c.activeCorrelationID = correlationID
 	c.activeCancelFunc = cancel
 	c.deploymentDone = make(chan struct{})
 	if c.pendingCancellation == deploymentID {
-		cancel()
+		cancel(c.pendingCancelCause)
 	}
 	c.pendingCancellation = ""
+	c.pendingCancelCause = nil
 	c.cancelMu.Unlock()
-	return deployCtx, cancel, true
+	return deployCtx, func() { cancel(nil) }, true
 }
 
 // Drain ends this term's deployments and returns once the one in flight has
@@ -96,6 +115,7 @@ func (c *Component) handleDeploymentCancelRequest(event *events.DeploymentCancel
 
 	if c.activeDeploymentID == "" || c.activeCancelFunc == nil {
 		c.pendingCancellation = event.DeploymentID
+		c.pendingCancelCause = cancelCause(event.Reason)
 		c.Logger().Debug("Queued cancel request for a deployment that has not started",
 			"requested_deployment_id", event.DeploymentID,
 			"reason", event.Reason)
@@ -104,6 +124,7 @@ func (c *Component) handleDeploymentCancelRequest(event *events.DeploymentCancel
 
 	if c.activeDeploymentID != event.DeploymentID {
 		c.pendingCancellation = event.DeploymentID
+		c.pendingCancelCause = cancelCause(event.Reason)
 		c.Logger().Debug("Queued cancel request for the next deployment",
 			"requested_deployment_id", event.DeploymentID,
 			"active_deployment_id", c.activeDeploymentID,
@@ -116,8 +137,7 @@ func (c *Component) handleDeploymentCancelRequest(event *events.DeploymentCancel
 		"correlation_id", c.activeCorrelationID,
 		"reason", event.Reason)
 
-	// Cancel the deployment context
-	c.activeCancelFunc()
+	c.activeCancelFunc(cancelCause(event.Reason))
 }
 
 // cancelActiveDeployment cancels any active deployment regardless of its ID.
@@ -135,7 +155,7 @@ func (c *Component) cancelActiveDeployment(reason string) {
 		"correlation_id", c.activeCorrelationID,
 		"reason", reason)
 
-	c.activeCancelFunc()
+	c.activeCancelFunc(nil)
 
 	// Wait for deployment to complete if deploymentDone channel exists
 	done := c.deploymentDone

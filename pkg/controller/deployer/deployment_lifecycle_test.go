@@ -28,7 +28,7 @@ func installFakeDeployment(c *Component, deploymentID string) (cancelInvoked, do
 	c.cancelMu.Lock()
 	c.activeDeploymentID = deploymentID
 	c.activeCorrelationID = "trace-" + deploymentID
-	c.activeCancelFunc = func() {
+	c.activeCancelFunc = func(error) {
 		// Non-blocking send so multiple cancel calls don't deadlock.
 		select {
 		case cancelInvoked <- struct{}{}:
@@ -58,6 +58,7 @@ func TestHandleDeploymentCancelRequest(t *testing.T) {
 		require.True(t, begun)
 		defer cancel()
 		assert.ErrorIs(t, ctx.Err(), context.Canceled)
+		assert.NotErrorIs(t, context.Cause(ctx), errDeploymentSuperseded)
 		assert.Empty(t, c.pendingCancellation)
 	})
 
@@ -104,6 +105,7 @@ func TestHandleDeploymentCancelRequest(t *testing.T) {
 		require.True(t, begun)
 		defer cancel()
 		assert.ErrorIs(t, ctx.Err(), context.Canceled)
+		assert.ErrorIs(t, context.Cause(ctx), errDeploymentSuperseded)
 	})
 }
 
@@ -230,7 +232,7 @@ func TestCancelActiveDeployment(t *testing.T) {
 		c.cancelMu.Lock()
 		c.activeDeploymentID = "x"
 		c.activeCorrelationID = "x"
-		c.activeCancelFunc = func() { cancelInvoked <- struct{}{} }
+		c.activeCancelFunc = func(error) { cancelInvoked <- struct{}{} }
 		c.deploymentDone = nil // explicitly nil
 		c.cancelMu.Unlock()
 
