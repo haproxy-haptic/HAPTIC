@@ -12,10 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `on_own_lines(render_glob "prefix-*")` template function: renders the matching snippets so that each starts on a new line.
 - Metrics:
     - `haptic_config_validated{status,reason}`: each replica's `Validated` condition, one series per state, so an alert can match a configuration stuck at `Unknown` or `False`.
     - `haptic_config_validation_total{result}`: `valid`, `invalid`, and `inconclusive` verdicts on the `HAProxyTemplateConfig`, the startup load gate included. `haptic_validation_errors_total` counts only HAProxy's verdicts on rendered configurations.
+- `on_own_lines(render_glob "prefix-*")` template function: renders the matching snippets so that each starts on a new line.
 
 ### Changed
 
