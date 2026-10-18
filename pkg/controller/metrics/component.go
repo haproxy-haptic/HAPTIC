@@ -274,11 +274,10 @@ func (c *Component) setConfigVerdict(verdict configValidatedState) {
 	c.metrics.setConfigValidated(verdict)
 }
 
-// setRefusedByHAProxy overlays the verdict while HAProxy refuses the leader's
-// renders. Like the StatusUpdater, it waits for a configuration verdict first.
+// Render failures override only an accepted configuration verdict.
 func (c *Component) setRefusedByHAProxy(refused bool) {
 	tracker := &c.validated
-	if tracker.refused == refused || tracker.verdict == (configValidatedState{}) {
+	if tracker.refused == refused || tracker.verdict != configValidationSucceeded {
 		return
 	}
 	tracker.refused = refused

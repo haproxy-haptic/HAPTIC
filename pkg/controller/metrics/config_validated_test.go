@@ -129,8 +129,8 @@ func validated(version string, candidateGeneration uint64) *events.ConfigValidat
 	return event
 }
 
-func invalid(version string) *events.ConfigInvalidEvent {
-	return events.NewConfigInvalidEvent(version, nil, map[string][]string{"template": {"unexpected EOF"}})
+func invalidV2() *events.ConfigInvalidEvent {
+	return events.NewConfigInvalidEvent("v2", nil, map[string][]string{"template": {"unexpected EOF"}})
 }
 
 func inconclusive(version string) *events.ConfigValidationInconclusiveEvent {
@@ -182,7 +182,7 @@ func TestConfigValidated_TrueUnknownTrue(t *testing.T) {
 func TestConfigValidated_TrueFalse(t *testing.T) {
 	f := newValidatedFixture(t)
 
-	f.handle(parsed("v1"), announced("v1"), parsed("v2"), invalid("v2"))
+	f.handle(parsed("v1"), announced("v1"), parsed("v2"), invalidV2())
 
 	f.requireState(validatedInvalid)
 	f.requireOutcomes(0, 1, 0)
@@ -195,7 +195,7 @@ func TestConfigValidated_ReannouncementsDoNotOverrideAVerdict(t *testing.T) {
 	f.handle(events.NewBecameLeaderEvent("replica"), announced("v1"))
 	f.requireState(validatedInconclusive)
 
-	f.handle(invalid("v2"), announced("v2"))
+	f.handle(invalidV2(), announced("v2"))
 	f.requireState(validatedInvalid)
 
 	f.handle(parsed("v3"), validated("v3", 2), validated("v3", 2))
@@ -239,6 +239,35 @@ func TestConfigValidated_HAProxyRefusalOnTheLeader(t *testing.T) {
 	f.requireState(validatedInconclusive)
 }
 
+func TestConfigValidated_RenderVerdictPreservesNewerConfigVerdict(t *testing.T) {
+	tests := []struct {
+		name    string
+		verdict events.ConfigVerdict
+		want    string
+	}{
+		{name: "invalid", verdict: invalidV2(), want: validatedInvalid},
+		{name: "inconclusive", verdict: inconclusive("v2"), want: validatedInconclusive},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newValidatedFixture(t)
+			f.handle(parsed("v1"), announced("v1"), events.NewBecameLeaderEvent("replica"))
+			f.handle(parsed("v2"), tt.verdict)
+			f.requireState(tt.want)
+
+			f.handle(events.NewValidationFailedEvent([]string{"unknown keyword"}, 1, "test"))
+			f.requireState(tt.want)
+			f.handle(events.NewRenderGateCompletedEvent("plan-2", true, false, true, "", false, 1))
+			f.requireState(tt.want)
+
+			before := gatherSeries(t, f.registry, "haptic_config_validation_total", "result")
+			f.handle(events.NewConfigVerdictReplayedEvent(tt.verdict), announced("v1"))
+			f.requireState(tt.want)
+			require.Equal(t, before, gatherSeries(t, f.registry, "haptic_config_validation_total", "result"))
+		})
+	}
+}
+
 func TestConfigValidated_LoadGate(t *testing.T) {
 	f := newValidatedFixture(t)
 
@@ -256,7 +285,7 @@ func TestConfigValidated_LoadGate(t *testing.T) {
 
 func TestConfigValidated_CarriedIntoTheNextIterationsRegistry(t *testing.T) {
 	previous := newValidatedFixture(t)
-	previous.handle(parsed("v1"), announced("v1"), parsed("v2"), invalid("v2"), parsed("v3"), inconclusive("v3"))
+	previous.handle(parsed("v1"), announced("v1"), parsed("v2"), invalidV2(), parsed("v3"), inconclusive("v3"))
 
 	next := newValidatedFixture(t)
 	require.NoError(t, next.metrics.CarryConfigValidation(previous.metrics))
