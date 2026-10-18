@@ -833,7 +833,16 @@ The controller updates the status field with validation results:
 | `conditions` | `[]Condition` | Standard `metav1.Condition` list. The controller writes exactly one type, `Validated`. |
 
 The `Validated` condition carries `observedGeneration`. Compare it with
-`metadata.generation` before relying on the result: `kubectl wait --for=condition=Validated` alone can succeed on a condition from an older generation. Its reasons are `ValidationSucceeded`, `ConfigInvalid`, `HAProxyValidationFailed`, `LoadGateFailed`, and `ValidationInconclusive`. `LoadGateFailed` means the fatal startup load gate rejected the config, so the pod is in `CrashLoopBackOff` rather than merely having a rejected live reload. `ValidationInconclusive` (condition status `Unknown`) means the controller couldn't validate the generation yet, for example because the API server didn't return the watched resources' schemas in time: the previous configuration keeps running and the controller validates the generation again with backoff, up to every 30 seconds, until it's accepted or rejected.
+`metadata.generation` before relying on the result: `kubectl wait --for=condition=Validated` alone can succeed on a condition from an older generation. Its reasons are `ValidationSucceeded`, `ConfigInvalid`, `HAProxyValidationFailed`, `LoadGateFailed`, and `ValidationInconclusive`.
+
+`LoadGateFailed` means a starting controller pod's load gate rejected the config.
+That pod keeps retrying and stays NotReady, so a rolling upgrade stalls on the
+old pods. The kubelet restarts it each time its startup probe runs out
+(5 minutes by default). If an old pod also rejects the config while leading,
+it writes its own `ConfigInvalid` verdict back, so the reason can alternate
+between the two.
+
+`ValidationInconclusive` (condition status `Unknown`) means the controller couldn't validate the generation yet, for example because the API server didn't return the watched resources' schemas in time. The previous configuration keeps running, and the controller validates the generation again with backoff, up to every 30 seconds, until it's accepted or rejected.
 
 Each controller replica exports its view of the condition as the `haptic_config_validated` metric, so you can alert on a configuration that stays `False` or `Unknown`. See [config validation state](operations/metrics-reference.md#config-validation-state).
 
@@ -965,7 +974,7 @@ The CRD includes OpenAPI schema validation that checks:
 Additional validation occurs when:
 
 1. **Pre-rollout Helm hook** - the chart's `pre-install`/`pre-upgrade` Job runs `haptic preflight`, which renders the chart from your values and runs the embedded tests before Helm applies the release workloads and configuration
-2. **Controller startup** - the load gate runs the embedded tests before the controller serves; a failure crash-loops the new pod instead of replacing a working one
+2. **Controller startup** - the load gate runs the embedded tests before the controller serves; on a failure the new pod retries and never becomes Ready, so it doesn't replace a working one
 3. **Live config change** - the same suite re-runs on every config change; a failure is refused and the last-good config keeps serving
 4. **CLI command** - `haptic validate` runs tests locally
 

@@ -341,7 +341,7 @@ if ! single_test_requested "$@"; then
     # Varnish cache tier adds haptic_cache_origin, Gateway listeners add per-port
     # frontends), and validationTests also run as the controller's FATAL load gate
     # against the operator's own values — so a count baked into the shipped CR would
-    # crash-loop a controller for enabling an unrelated feature. Here it is a
+    # block every new controller pod for enabling an unrelated feature. Here it is a
     # repo-side check against a render we control, which is exactly what catches a
     # new frontend added without wiring the log-format into it.
     echo -e "${YELLOW}Checking access-log coverage (every frontend has a log-format)...${NC}" >&2
@@ -730,7 +730,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     # validationTest: operators are documented to opt in by contributing a
     # log-fields-* snippet for txn.hub.coraza.data, and validationTests are also
     # the controller's fatal load gate against the operator's own config — so as
-    # a test this would crash-loop the controller of anyone who followed the
+    # a test this would block the controller of anyone who followed the
     # documentation. Reuses the coverage render above, which is ours.
     echo -e "${YELLOW}Checking matched WAF request data is not in the default log-format...${NC}" >&2
     WAFDATA_CONFIG=$(mktemp /tmp/haptic-wafdata-XXXXXX.yaml)
@@ -953,7 +953,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     fi
     echo -e "${YELLOW}PROXY-protocol profile: full validation pass...${NC}" >&2
     if ! "$CONTROLLER_BIN" validate --file "$PROXY_PROTOCOL_CONFIG" "${SCHEMA_DIR_ARGS[@]}" "$@"; then
-        echo -e "${RED}PROXY-protocol profile: tests that pass with the opt-in OFF must also pass with it ON — the load gate crash-loops the controller otherwise${NC}" >&2
+        echo -e "${RED}PROXY-protocol profile: tests that pass with the opt-in OFF must also pass with it ON — the load gate keeps the controller from starting otherwise${NC}" >&2
         FULL_RC=1
     fi
 fi
@@ -999,8 +999,8 @@ fi
 # assertion that pins a release-derived value — the namespace itself, the
 # fullname, anything from .Release — passes here and fails on every install that
 # is not in `default`. These tests run on the operator's own config through the
-# fail-closed load gate, so that is not a red test: it is a crash-looping
-# controller. This profile is what catches it; it shipped once.
+# fail-closed load gate, so that is not a red test: it is a controller that
+# never starts. This profile is what catches it; it shipped once.
 if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     NS_CONFIG=$(mktemp /tmp/haptic-ns-config-XXXXXX.yaml)
     trap 'rm -f "$TEMP_CONFIG" "$RATE_LIMIT_CONFIG" "$PROXY_PROTOCOL_CONFIG" "$TRACING_CONFIG" "$NS_CONFIG"' EXIT
@@ -1019,7 +1019,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     fi
     echo -e "${YELLOW}Non-default namespace: full validation pass...${NC}" >&2
     if ! "$CONTROLLER_BIN" validate --file "$NS_CONFIG" "${SCHEMA_DIR_ARGS[@]}" "$@"; then
-        echo -e "${RED}Tests that pass in namespace 'default' must pass in any namespace — an assertion on a release-derived value crash-loops the controller everywhere else${NC}" >&2
+        echo -e "${RED}Tests that pass in namespace 'default' must pass in any namespace — an assertion on a release-derived value keeps the controller from starting everywhere else${NC}" >&2
         FULL_RC=1
     fi
     rm -f "$NS_CONFIG"
@@ -1057,7 +1057,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     fi
     echo -e "${YELLOW}WAF configMapRefs profile: full validation pass...${NC}" >&2
     if ! "$CONTROLLER_BIN" validate --file "$WAF_REFS_CONFIG" "${SCHEMA_DIR_ARGS[@]}" "$@"; then
-        echo -e "${RED}WAF configMapRefs profile: tests that pass without a catalog source must also pass with one — the load gate crash-loops the controller otherwise${NC}" >&2
+        echo -e "${RED}WAF configMapRefs profile: tests that pass without a catalog source must also pass with one — the load gate keeps the controller from starting otherwise${NC}" >&2
         FULL_RC=1
     fi
     rm -f "$WAF_REFS_CONFIG"
@@ -1072,7 +1072,7 @@ fi
 # lacks), and require:
 #   (a) ZERO failing tests — with field-level stripping in place, every test
 #       that would fail on that schema generation must have been stripped
-#       instead (a failure here is exactly the load-gate crash-loop of
+#       instead (a failure here is exactly the load-gate failure of
 #       issue #59); and
 #   (b) the set of STRIPPED tests (the validate CLI's "⊘ <name> stripped:"
 #       lines) to EXACTLY match the bundle's allowlist

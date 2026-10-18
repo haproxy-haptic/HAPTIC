@@ -254,9 +254,9 @@ func TestStatusUpdater_HandleConfigValidated_Success(t *testing.T) {
 }
 
 // TestReportConfigLoadFailure covers the synchronous startup path: when the
-// fatal load gate rejects the config, the iteration writes an Invalid status
+// load gate rejects the config, the iteration writes an Invalid status
 // (observedGeneration + Validated=False/LoadGateFailed + the failing tests)
-// before crash-looping, so operators can see WHY via kubectl.
+// before it fails and retries, so operators can see WHY via kubectl.
 func TestReportConfigLoadFailure(t *testing.T) {
 	htc := newHTC()
 	crdClient := crdclientfake.NewSimpleClientset(htc)

@@ -92,8 +92,8 @@ tests:
   # Trace-export guards. Both live in HELM rather than in the Scriggo render, and
   # that placement is the point: a validationTest legitimately pins individual
   # extraContext keys, so the same cross-key check at render time would fail the
-  # LOAD GATE on a good config and crash-loop the controller instead of refusing
-  # an install.
+  # LOAD GATE on a good config and keep the controller from starting instead of
+  # refusing an install.
   - it: should refuse an OTLP endpoint without the vector sidecar
     template: haproxytemplateconfig.yaml
     set:

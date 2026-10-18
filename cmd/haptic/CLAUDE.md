@@ -69,7 +69,7 @@ apiVersion/kind), the shape hand-written fixtures use.
 
 Renders the bundled chart with the operator's **own** values file(s) and runs
 the load gate over the result, so a bad configuration fails the pipeline instead
-of crash-looping the controller. Chart CI only ever proves the *defaults* work.
+of leaving new controller pods NotReady. Chart CI only ever proves the *defaults* work.
 
 Renders in-process through `renderChart`, then
 reuses `validateAndReport` so `preflight` and `validate` cannot drift into

@@ -3708,10 +3708,7 @@ validationTests:
       Every HTTP frontend emits the core JSON field set, the log target drops the
       syslog prefix so records are parseable as-is, and no log-time-illegal
       sample expression reaches a log-format.
-    # Pinned off: one assertion below asserts the correlation-only trace_id
-    # extraction, which is the tracing-DISABLED form. Inherited, it would fail for
-    # any operator who enabled tracing — and a failing validationTest fails the
-    # load gate, which crash-loops the controller.
+    # Pin tracing off: this test checks correlation-only trace IDs.
     extraContext: {tracing: {enabled: false}}
     fixtures:
       ingresses:
@@ -3788,19 +3785,8 @@ validationTests:
 
   test-access-log-every-frontend-has-a-format:
     description: >-
-      Every frontend this fixture renders carries the JSON log-format, and no
-      frontend is left on the old text directives.
-
-      Assertions are anchored to frontend NAMES rather than counting frontends,
-      deliberately: validationTests also run as the controller's fatal load gate
-      against the operator's own values, so a count would depend on which
-      frontend-adding features that deployment happens to enable — enabling the
-      Varnish cache tier (which adds haptic_cache_origin) would then crash-loop a
-      controller over a test that has nothing to do with caching. The frontends
-      other libraries own are asserted in those libraries' own tests
-      (haptic-annotations' cache-origin, gateway's per-port TCP frontends), and
-      scripts/test-templates.sh carries the repo-side count invariant that catches
-      a NEW frontend rendered without a log-format.
+      Checks base frontends by name because optional libraries add frontends;
+      scripts/test-templates.sh checks the total.
     fixtures:
       ingresses:
         - apiVersion: networking.k8s.io/v1
@@ -4377,12 +4363,8 @@ validationTests:
 
   test-proxy-protocol-http-bind-disabled:
     description: >-
-      Negative control for test-proxy-protocol-http-bind. Sets enabled=false
-      explicitly rather than leaning on the chart default: per-test extraContext
-      deep-merges into the operator's, so an operator who turns proxyProtocol on
-      would otherwise fail this test and crash-loop on the load gate. The
-      pattern is scoped to `bind *:<port> accept-proxy` because the h1/h2c
-      loopback frontends always carry accept-proxy on their unix sockets.
+      Pins PROXY protocol off independently of operator values; Unix-socket
+      loopbacks still use accept-proxy.
     extraContext: {proxyProtocol: {enabled: false}}
     fixtures:
       ingresses:

@@ -15,7 +15,9 @@
 package controller
 
 import (
+	"context"
 	"crypto/x509"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -23,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/testutil"
 	"github.com/haproxy-haptic/HAPTIC/pkg/introspection"
 	"github.com/haproxy-haptic/HAPTIC/pkg/transportsecurity/tlstest"
 	pkgwebhook "github.com/haproxy-haptic/HAPTIC/pkg/webhook"
@@ -115,6 +118,29 @@ func healthy(entries map[string]introspection.ComponentHealth) bool {
 		}
 	}
 	return true
+}
+
+func TestStartupLoadFailureRetriesWithoutBecomingReady(t *testing.T) {
+	f := &probeFixture{infra: &persistentInfra{}}
+	f.installWebhookServer(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	attempts := 0
+
+	err := runIterations(ctx, testutil.NewTestLogger(), 0, func() error {
+		attempts++
+		id := f.infra.NoteIterationStart()
+		f.infra.NoteAttemptReturned(id)
+		require.True(t, healthy(f.infra.livenessHealth()))
+		require.False(t, healthy(f.infra.readinessHealth()))
+		if attempts == 3 {
+			cancel()
+		}
+		return errors.New("validationTests failed")
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 3, attempts)
 }
 
 // A configuration reload that keeps failing past the grace window must not

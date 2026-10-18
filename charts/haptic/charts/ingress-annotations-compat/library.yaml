@@ -2082,7 +2082,7 @@ validationTests:
     description: >-
       With renderMode unset (the daemon load gate default), a cross-family
       timeout conflict warns rather than failing, so a pre-existing conflict
-      can't crash-loop the controller at startup.
+      can't fail the load gate at startup.
     extraContext:
       annotationLibraries: *annotationlibrariesHapticNginx2
     fixtures:
