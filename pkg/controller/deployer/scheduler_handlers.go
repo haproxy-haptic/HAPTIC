@@ -429,7 +429,7 @@ func (s *DeploymentScheduler) performPodsDiscovered(ctx context.Context, event *
 	if cancelledDeploymentID != "" {
 		s.eventBus.Publish(events.NewDeploymentCancelRequestEvent(
 			cancelledDeploymentID,
-			"endpoint_authority_changed",
+			events.DeploymentCancelReasonEndpointAuthorityChanged,
 			events.WithCorrelation(cancelledCorrelationID, cancelledDeploymentID),
 		))
 	}

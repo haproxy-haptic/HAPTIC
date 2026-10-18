@@ -303,7 +303,7 @@ func (s *DeploymentScheduler) checkDeploymentTimeout(_ context.Context) {
 	if activeDeploymentID != "" {
 		s.eventBus.Publish(events.NewDeploymentCancelRequestEvent(
 			activeDeploymentID,
-			"deployment_timeout",
+			events.DeploymentCancelReasonTimeout,
 			events.WithCorrelation(activeCorrelationID, activeDeploymentID),
 		))
 	}

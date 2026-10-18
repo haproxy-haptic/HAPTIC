@@ -451,9 +451,7 @@ func (c *Component) deployToPod(
 	state *deploymentState,
 ) {
 	if ctx.Err() != nil {
-		c.Logger().Debug("Skipping endpoint deployment - context cancelled",
-			"pod", endpoint.PodName, "error", ctx.Err())
-		atomic.AddInt32(&state.failureCount, 1)
+		c.abandonEndpoint(ctx, endpoint, state)
 		return
 	}
 
@@ -466,6 +464,8 @@ func (c *Component) deployToPod(
 		atomic.AddInt32(&state.convergedCount, 1)
 	case errors.Is(err, errStaleEpoch):
 		c.standDown(state, endpoint, err)
+	case superseded(ctx, err):
+		c.abandonEndpoint(ctx, endpoint, state)
 	case err != nil:
 		c.handleEndpointFailure(endpoint, err, durationMs, event, state, request)
 	// An apply that reports an error did not do what it was asked, whether or
@@ -476,6 +476,13 @@ func (c *Component) deployToPod(
 	default:
 		c.handleEndpointSuccess(endpoint, outcome, durationMs, event, state, request)
 	}
+}
+
+// abandonEndpoint counts a pod the cancelled deploy did not bring to the
+// render; the cancellation itself is logged where it is requested.
+func (c *Component) abandonEndpoint(ctx context.Context, endpoint *dataplane.Endpoint, state *deploymentState) {
+	c.Logger().Debug("Endpoint deployment cancelled", "pod", endpoint.PodName, "cause", context.Cause(ctx))
+	atomic.AddInt32(&state.failureCount, 1)
 }
 
 // standDown stops dispatching: another controller holds a higher leader epoch,

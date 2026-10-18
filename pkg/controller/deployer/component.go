@@ -131,13 +131,14 @@ type Component struct {
 
 	// Deployment cancellation support
 	cancelMu            sync.Mutex
-	activeDeploymentID  string                 // Event ID of the active DeploymentScheduledEvent
-	activeCorrelationID string                 // Trace correlation of the active deployment
-	activeCancelFunc    context.CancelFunc     // Cancel function for active deployment
-	deploymentDone      chan struct{}          // Signals when deployment goroutine completes
-	pendingCancellation string                 // Exact deployment cancelled before its handler starts
-	draining            bool                   // Set by Drain: the term starts no further deployment
-	cancelEventChan     <-chan busevents.Event // Out-of-band control subscription
+	activeDeploymentID  string                  // Event ID of the active DeploymentScheduledEvent
+	activeCorrelationID string                  // Trace correlation of the active deployment
+	activeCancelFunc    context.CancelCauseFunc // Cancel function for active deployment
+	deploymentDone      chan struct{}           // Signals when deployment goroutine completes
+	pendingCancellation string                  // Exact deployment cancelled before its handler starts
+	pendingCancelCause  error                   // Cause pendingCancellation is cancelled with
+	draining            bool                    // Set by Drain: the term starts no further deployment
+	cancelEventChan     <-chan busevents.Event  // Out-of-band control subscription
 }
 
 // New creates a new Deployer component.
@@ -201,6 +202,7 @@ func (c *Component) Start(ctx context.Context) error {
 	c.flushPendingCancellationRequests()
 	c.cancelMu.Lock()
 	c.pendingCancellation = ""
+	c.pendingCancelCause = nil
 	c.draining = false
 	c.cancelMu.Unlock()
 
