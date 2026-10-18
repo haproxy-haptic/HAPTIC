@@ -38,11 +38,10 @@ type CRDGetter interface {
 // ErrNoCRD reports that no CRD serves a GroupVersionKind.
 var ErrNoCRD = errors.New("no CRD serves the resource")
 
-// OpenAPIV3Provider returns the cluster's OpenAPI v3 spec for a
-// GroupVersion. Wraps client-go's [openapi3.Root].GVSpec so tests
-// can stub the call without standing up a fake discovery client.
+// OpenAPIV3Provider returns the components of the cluster's OpenAPI v3
+// document for a GroupVersion, or nil when the document has none.
 type OpenAPIV3Provider interface {
-	GVSpec(ctx context.Context, gv schema.GroupVersion) (*spec3.OpenAPI, error)
+	GVComponents(ctx context.Context, gv schema.GroupVersion) (*spec3.Components, error)
 }
 
 // ClusterFetcher resolves schemas against the cluster. It tries CRDs
@@ -62,8 +61,8 @@ type ClusterFetcher struct {
 	crds    CRDGetter
 	openapi OpenAPIV3Provider
 
-	crdCache coalescingCache[schema.GroupVersionKind, *apiextensionsv1.CustomResourceDefinition]
-	gvSpecs  coalescingCache[schema.GroupVersion, *spec3.OpenAPI]
+	crdCache          coalescingCache[schema.GroupVersionKind, *apiextensionsv1.CustomResourceDefinition]
+	gvComponentsCache coalescingCache[schema.GroupVersion, *spec3.Components]
 }
 
 // NewClusterFetcher returns a [ClusterFetcher] that uses the supplied
@@ -178,36 +177,26 @@ func (f *ClusterFetcher) fetchFromCRDs(ctx context.Context, gvk schema.GroupVers
 // in compiles to nothing.
 //
 // The components map is shared by reference across all calls for
-// the same GV: same spec3.OpenAPI value is cached per-GV in
-// gvSpecs. Callers must NOT mutate it.
+// the same GV: the same spec3.Components value is cached per-GV in
+// gvComponentsCache. Callers must NOT mutate it.
 func (f *ClusterFetcher) fetchFromOpenAPI(ctx context.Context, gvk schema.GroupVersionKind) (*spec.Schema, map[string]spec.Schema, error) {
-	gvSpec, err := f.gvSpec(ctx, gvk.GroupVersion())
+	gvComponents, err := f.gvComponents(ctx, gvk.GroupVersion())
 	if err != nil {
 		return nil, nil, &ErrSchemaNotAvailable{GVK: gvk, Cause: err}
 	}
-	if gvSpec == nil {
-		// The provider returned no spec and no error — treat the
-		// same as a NotFound, so callers fall back to the generic
-		// envelope. Providers that want to flag this as transient
-		// should return an explicit error from GVSpec instead.
+	if gvComponents == nil {
 		return nil, nil, &ErrSchemaNotAvailable{GVK: gvk, Cause: errNotFound}
-	}
-	if gvSpec.Components == nil {
-		return nil, nil, &ErrSchemaNotAvailable{
-			GVK:   gvk,
-			Cause: fmt.Errorf("OpenAPI v3 spec for %s has no components", gvk.GroupVersion()),
-		}
 	}
 	// Build a map[string]spec.Schema from the spec3 components for
 	// the converter (whose Components signature takes value types
 	// rather than pointers — matches the OpenAPI v3 wire form).
-	components := make(map[string]spec.Schema, len(gvSpec.Components.Schemas))
-	for name, ptr := range gvSpec.Components.Schemas {
+	components := make(map[string]spec.Schema, len(gvComponents.Schemas))
+	for name, ptr := range gvComponents.Schemas {
 		if ptr != nil {
 			components[name] = *ptr
 		}
 	}
-	for _, sch := range gvSpec.Components.Schemas {
+	for _, sch := range gvComponents.Schemas {
 		if !schemaMatchesGVK(sch, gvk) {
 			continue
 		}
@@ -216,9 +205,9 @@ func (f *ClusterFetcher) fetchFromOpenAPI(ctx context.Context, gvk schema.GroupV
 	return nil, nil, &ErrSchemaNotAvailable{GVK: gvk, Cause: errNotFound}
 }
 
-func (f *ClusterFetcher) gvSpec(ctx context.Context, gv schema.GroupVersion) (*spec3.OpenAPI, error) {
-	return f.gvSpecs.get(ctx, gv, func(ctx context.Context) (*spec3.OpenAPI, error) {
-		return f.openapi.GVSpec(ctx, gv)
+func (f *ClusterFetcher) gvComponents(ctx context.Context, gv schema.GroupVersion) (*spec3.Components, error) {
+	return f.gvComponentsCache.get(ctx, gv, func(ctx context.Context) (*spec3.Components, error) {
+		return f.openapi.GVComponents(ctx, gv)
 	})
 }
 

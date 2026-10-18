@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"sync"
 
+	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/kube-openapi/pkg/validation/spec"
 
@@ -129,11 +131,8 @@ type Result struct {
 // chart can keep booting with reduced typing rather than refusing
 // to start.
 //
-// Concurrency note: this currently runs sequentially. The fetcher
-// already coalesces concurrent calls per GroupVersion / CRD, and the number of watched resources is small (≤20 on
-// any cluster we've seen), so parallelising the loop here doesn't
-// pay off. If a future controller grows the resource count by an
-// order of magnitude this becomes worth revisiting.
+// Resources resolve concurrently, so the wall-clock cost is the slowest
+// resource's apiserver round trips rather than the sum over all of them.
 func Bootstrap(ctx context.Context, cfg Config) (*Result, error) {
 	if cfg.Fetcher == nil {
 		return nil, errors.New("typebootstrap: Fetcher is required")
@@ -148,53 +147,77 @@ func Bootstrap(ctx context.Context, cfg Config) (*Result, error) {
 		Errors: make(map[string]error, 0),
 	}
 
-	for _, res := range cfg.Resources {
-		if err := ctx.Err(); err != nil {
-			// Boot cancelled mid-loop. Surface the cancellation —
-			// it's never useful to continue iterating once the
-			// containing controller iteration is being torn down.
-			return result, err
-		}
+	named := make([]*Resource, 0, len(cfg.Resources))
+	for i := range cfg.Resources {
+		res := &cfg.Resources[i]
 		if res.Name == "" {
 			result.Errors[res.Name] = errors.New("watched resource has empty Name")
 			cfg.Logger.Warn("Typebootstrap: skipping watched resource with empty name",
 				"gvk", res.GVK.String())
 			continue
 		}
-
-		typ, err := bootstrapOne(ctx, &cfg, &res)
-		if err != nil {
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return result, context.Cause(ctx)
-			}
-			// Hard failure: template authors using typed access
-			// (gw.Spec.X, route.Status.Y) need the guarantee that
-			// every declared watched resource resolved to its real
-			// schema. Falling back to envelope-only typed access
-			// for a subset of resources would silently break
-			// templates whose chart predates the schema-fetch
-			// failure, which is exactly the regression mode this
-			// pipeline exists to prevent.
-			//
-			// Surface the failure to operators via a hard boot
-			// error so the cluster's RBAC / CRD installation /
-			// apiserver health gets investigated. Recording the
-			// per-resource cause in result.Errors keeps it
-			// available for debug surfaces (status CRD, log) that
-			// want to enumerate which resource broke.
-			result.Errors[res.Name] = err
-			cfg.Logger.Error("Typebootstrap: schema acquisition failed for resource — failing iteration startup",
-				"resource", res.Name,
-				"gvk", res.GVK.String(),
-				"error", err)
-			return result, fmt.Errorf("schema acquisition failed for watched resource %q (%s): %w",
-				res.Name, res.GVK, err)
-		}
-		result.Types[res.Name] = typ
-		result.Kinds[res.Name] = res.GVK.Kind
+		named = append(named, res)
 	}
 
-	return result, nil
+	err := bootstrapAll(ctx, &cfg, named, result)
+	var failure *resourceFailure
+	switch {
+	case err == nil:
+		return result, nil
+	case errors.Is(ctx.Err(), context.Canceled):
+		return result, context.Cause(ctx)
+	case !errors.As(err, &failure):
+		return result, err
+	}
+	res := failure.resource
+	// Fail closed: envelope-only types for some resources would silently break typed templates.
+	result.Errors[res.Name] = failure.err
+	cfg.Logger.Error("Typebootstrap: schema acquisition failed for resource — failing iteration startup",
+		"resource", res.Name,
+		"gvk", res.GVK.String(),
+		"error", failure.err)
+	return result, fmt.Errorf("schema acquisition failed for watched resource %q (%s): %w",
+		res.Name, res.GVK, failure.err)
+}
+
+// maxConcurrentFetches bounds one bootstrap's in-flight schema fetches so a
+// config with many watched resources doesn't burst the apiserver.
+const maxConcurrentFetches = 16
+
+// resourceFailure carries the resource whose schema acquisition failed.
+type resourceFailure struct {
+	resource *Resource
+	err      error
+}
+
+func (f *resourceFailure) Error() string { return f.err.Error() }
+
+// bootstrapAll resolves every resource into result. The first failure,
+// a *resourceFailure, cancels the others.
+func bootstrapAll(ctx context.Context, cfg *Config, resources []*Resource, result *Result) error {
+	var mu sync.Mutex
+	group, fetchCtx := errgroup.WithContext(ctx)
+	group.SetLimit(maxConcurrentFetches)
+	for _, res := range resources {
+		if fetchCtx.Err() != nil {
+			break
+		}
+		group.Go(func() error {
+			typ, err := bootstrapOne(fetchCtx, cfg, res)
+			if err != nil {
+				return &resourceFailure{resource: res, err: err}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			result.Types[res.Name] = typ
+			result.Kinds[res.Name] = res.GVK.Kind
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return err
+	}
+	return ctx.Err()
 }
 
 // bootstrapOne is the single-resource path extracted from Bootstrap

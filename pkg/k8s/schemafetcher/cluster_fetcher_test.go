@@ -77,14 +77,18 @@ func newStubOpenAPI() *stubOpenAPIV3Provider {
 	}
 }
 
-func (s *stubOpenAPIV3Provider) GVSpec(_ context.Context, gv schema.GroupVersion) (*spec3.OpenAPI, error) {
+func (s *stubOpenAPIV3Provider) GVComponents(_ context.Context, gv schema.GroupVersion) (*spec3.Components, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.callCount[gv]++
 	if err := s.errs[gv]; err != nil {
 		return nil, err
 	}
-	return s.specs[gv], nil
+	doc, ok := s.specs[gv]
+	if !ok {
+		doc = &spec3.OpenAPI{}
+	}
+	return doc.Components, nil
 }
 
 // crdFixture builds a single-version CRD with the supplied schema —
@@ -367,10 +371,10 @@ func TestClusterFetcher_CRDReadContextCancellationDoesNotPoisonCache(t *testing.
 		"second caller must re-attempt GetCRD — context-scoped failures must not poison the cache")
 }
 
-// TestClusterFetcher_GVSpecCachedPerGV verifies the per-GroupVersion
+// TestClusterFetcher_GVComponentsCachedPerGV verifies the per-GroupVersion
 // cache. Fetching multiple Kinds in the same GroupVersion must
-// trigger exactly one GVSpec call.
-func TestClusterFetcher_GVSpecCachedPerGV(t *testing.T) {
+// trigger exactly one GVComponents call.
+func TestClusterFetcher_GVComponentsCachedPerGV(t *testing.T) {
 	openapi := newStubOpenAPI()
 	gv := schema.GroupVersion{Group: "g", Version: "v1"}
 	openapi.specs[gv] = &spec3.OpenAPI{
