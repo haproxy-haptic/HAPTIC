@@ -176,7 +176,7 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 		if patched == nil {
 			return
 		}
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), testutil.SlowWaitConfig().Timeout)
 		defer cancel()
 		operation := "remove"
 		if existed {
