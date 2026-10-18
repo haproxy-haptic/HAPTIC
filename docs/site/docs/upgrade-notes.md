@@ -40,7 +40,7 @@ new HAProxy series on the chart you already run. To select 3.4:
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.6.0-rc.2 --namespace haptic --reuse-values \
+  --version 0.6.0 --namespace haptic --reuse-values \
   --set-string haproxyVersion=3.4 \
   --set-string haproxy.image.tag= --set-string controller.image.tag=
 ```
@@ -49,7 +49,7 @@ To select 3.2:
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.6.0-rc.2 --namespace haptic --reuse-values \
+  --version 0.6.0 --namespace haptic --reuse-values \
   --set-string haproxyVersion=3.2 \
   --set-string haproxy.image.tag= --set-string controller.image.tag=
 ```
