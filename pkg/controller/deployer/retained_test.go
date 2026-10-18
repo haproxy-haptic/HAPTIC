@@ -225,6 +225,59 @@ func installRetainedTestIntent(c *Component, store RetainedIntentStore) *retaine
 	return recovery
 }
 
+// claimIntentAhead holds an intent claimed at epoch ahead, the way the
+// retained-state Lease outlives a recreated leader Lease.
+type claimIntentAhead struct {
+	retainedTestIntent
+	ahead  uint64
+	claims []uint64
+}
+
+func (s *claimIntentAhead) ClaimDeploymentAuthority(_ context.Context, authority *configpublisher.DeploymentAuthority) error {
+	s.claims = append(s.claims, authority.Epoch)
+	if authority.Epoch <= s.ahead {
+		return &configpublisher.IntentEpochAheadError{Epoch: s.ahead}
+	}
+	return nil
+}
+
+func claimingDeployer(fence *fixedFence, store RetainedIntentStore) *Component {
+	c := createTestDeployer(testutil.NewTestBus())
+	c.fence = fence
+	template := &v1.HAProxyTemplateConfig{}
+	template.Name, template.Namespace, template.UID = "haptic", "haptic", "template-uid"
+	c.retained = &retainedRecovery{store: store, deployer: c, template: template, leaseName: "haptic"}
+	return c
+}
+
+// An intent that outranks the term's epoch is lifted past the way an
+// outranking pod is, and the claim then lands at the new epoch.
+func TestClaimLiftsTheEpochPastAnOutrankingDeploymentIntent(t *testing.T) {
+	fence := &fixedFence{epoch: 1}
+	store := &claimIntentAhead{ahead: 5}
+	c := claimingDeployer(fence, store)
+
+	require.NoError(t, c.claimRetainedAuthority(t.Context()))
+
+	assert.Equal(t, []uint64{5}, fence.reclaims())
+	assert.Equal(t, []uint64{1, 6}, store.claims)
+	assert.Equal(t, uint64(6), c.retained.currentAuthority().Epoch)
+}
+
+// When a newer leader owns the Lease, Reclaim refuses and the term claims nothing.
+func TestClaimStaysRefusedWhileANewerLeaderOwnsTheIntent(t *testing.T) {
+	fence := &fixedFence{epoch: 1, reclaimErr: errors.New("the lease is held at a newer epoch")}
+	store := &claimIntentAhead{ahead: 5}
+	c := claimingDeployer(fence, store)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+
+	require.Error(t, c.claimRetainedAuthority(ctx))
+
+	assert.Nil(t, c.retained.currentAuthority())
+	assert.Equal(t, []uint64{1}, store.claims)
+}
+
 func TestRetainedCheckpointFollowsIntentNotAcknowledgementOrder(t *testing.T) {
 	bus := newTestBus(t)
 	older, olderPlan := retainedTestConfig(t, "10.0.0.1")

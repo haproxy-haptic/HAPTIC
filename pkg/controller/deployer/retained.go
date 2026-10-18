@@ -96,11 +96,11 @@ func (c *Component) claimRetainedAuthority(ctx context.Context) error {
 		return nil
 	}
 	r := c.retained
-	authority := configpublisher.DeploymentAuthority{Namespace: r.template.Namespace, Name: r.template.Name, UID: r.template.UID, Epoch: c.leaderEpoch(), Claim: rand.Text(), Standalone: c.fence == nil, LeaseName: r.leaseName, Identity: c.identity()}
+	authority := configpublisher.DeploymentAuthority{Namespace: r.template.Namespace, Name: r.template.Name, UID: r.template.UID, Claim: rand.Text(), Standalone: c.fence == nil, LeaseName: r.leaseName, Identity: c.identity()}
 	if err := wait.PollUntilContextCancel(ctx, time.Second, true, func(ctx context.Context) (bool, error) {
 		attemptCtx, cancel := context.WithTimeout(ctx, timeouts.KubernetesAPITimeout)
 		defer cancel()
-		if err := r.store.ClaimDeploymentAuthority(attemptCtx, &authority); err != nil {
+		if err := c.claimAuthority(attemptCtx, &authority); err != nil {
 			c.Logger().Warn("Deployment authority is unavailable; HAProxy updates are paused", "error", err)
 			return false, nil
 		}
@@ -110,6 +110,24 @@ func (c *Component) claimRetainedAuthority(ctx context.Context) error {
 	}
 	r.authority.Store(&authority)
 	return nil
+}
+
+// claimAuthority lifts the epoch past an intent that outranks it the way an
+// outranking pod does: Reclaim refuses unless the counter regressed.
+func (c *Component) claimAuthority(ctx context.Context, authority *configpublisher.DeploymentAuthority) error {
+	authority.Epoch = c.leaderEpoch()
+	err := c.retained.store.ClaimDeploymentAuthority(ctx, authority)
+	var ahead *configpublisher.IntentEpochAheadError
+	if c.fence == nil || !errors.As(err, &ahead) {
+		return err
+	}
+	if _, err := c.fence.Reclaim(ctx, ahead.Epoch); err != nil {
+		return fmt.Errorf("%w: %w", ahead, err)
+	}
+	c.Logger().Warn("The leader epoch had regressed below the deployment intent, reclaimed it",
+		"intent_epoch", ahead.Epoch, "epoch", c.leaderEpoch())
+	authority.Epoch = c.leaderEpoch()
+	return c.retained.store.ClaimDeploymentAuthority(ctx, authority)
 }
 
 func (c *Component) checkRetainedAuthority(ctx context.Context) error {
