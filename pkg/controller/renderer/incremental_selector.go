@@ -439,7 +439,7 @@ func (r *coldIncrementalRenderer) requireGroupDependencies(group, scope string) 
 }
 
 func incrementalSelectorInputKey(group, cell, key string) incremental.InputKey {
-	return incremental.NewInputKey(encodeOpaque("publication-selector", group, cell, key))
+	return incremental.NewInputKey(incremental.EncodeTuple("publication-selector", group, cell, key))
 }
 
 func parseIncrementalSelectorInputKey(key incremental.InputKey) (incrementalSelectorIdentity, bool) {
@@ -451,7 +451,7 @@ func parseIncrementalSelectorInputKey(key incremental.InputKey) (incrementalSele
 }
 
 func incrementalSelectorValuesInputKey(group, cell string) incremental.InputKey {
-	return incremental.NewInputKey(encodeOpaque("publication-selector-values", group, cell))
+	return incremental.NewInputKey(incremental.EncodeTuple("publication-selector-values", group, cell))
 }
 
 func parseIncrementalSelectorValuesInputKey(key incremental.InputKey) (incrementalSelectorIdentity, bool) {
@@ -463,7 +463,7 @@ func parseIncrementalSelectorValuesInputKey(key incremental.InputKey) (increment
 }
 
 func incrementalSelectorCountInputKey(group, cell string) incremental.InputKey {
-	return incremental.NewInputKey(encodeOpaque("publication-selector-count", group, cell))
+	return incremental.NewInputKey(incremental.EncodeTuple("publication-selector-count", group, cell))
 }
 
 func parseIncrementalSelectorCountInputKey(key incremental.InputKey) (incrementalSelectorIdentity, bool) {

@@ -27,6 +27,7 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/rendercontext"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/typebootstrap"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
+	"github.com/haproxy-haptic/HAPTIC/pkg/incremental"
 	k8sstore "github.com/haproxy-haptic/HAPTIC/pkg/k8s/store"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores"
 	"github.com/haproxy-haptic/HAPTIC/pkg/templating"
@@ -47,9 +48,13 @@ func TestIncrementalComponentErrorsUseConfiguredName(t *testing.T) {
 			} else {
 				service := NewRenderService(&RenderServiceConfig{Engine: engine, Config: cfg, Logger: slog.Default()})
 				_, err = service.Render(t.Context(), provider, rendercontext.RenderModeReconcile)
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "routes default/route: ")
 			}
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "rendering template 'policy-check': component failed")
+			assert.NotContains(t, err.Error(), "query")
+			assert.Equal(t, "component failed", templating.RenderErrorMessage(err))
 			assert.NotContains(t, err.Error(), helpers.IncrementalEntryPointName("policy-check"))
 			assertIncrementalRenderErrorRetained(t, err, helpers.IncrementalEntryPointName("policy-check"))
 		})
@@ -130,4 +135,29 @@ func incrementalErrorResource() map[string]any {
 			"name":      "route",
 		},
 	}
+}
+
+func TestAttributeToWatchedObject(t *testing.T) {
+	component := &incrementalComponent{name: "policy-check"}
+	cause := errors.New("boom")
+	namespaced := attributeToWatchedObject(componentQueryKey(component, "routes", "default", "route"), cause)
+	assert.Equal(t, "routes default/route: boom", namespaced.Error())
+	assert.ErrorIs(t, namespaced, cause)
+	assert.Equal(t, "routes default/route: boom",
+		attributeToWatchedObject(activationQueryKey("routes", "default", "route"), cause).Error())
+	assert.Equal(t, "routes other/route: boom",
+		attributeToWatchedObject(derivedProjectionQueryKey("routes", "other", "route"), cause).Error())
+
+	clusterScoped := attributeToWatchedObject(componentQueryKey(component, "classes", "", "haptic"), cause)
+	assert.Equal(t, "classes haptic: boom", clusterScoped.Error())
+
+	unknown := attributeToWatchedObject(incremental.NewQueryKey(incremental.EncodeTuple("other", "a\x00b")), cause)
+	assert.Equal(t, `incremental query other("a\x00b"): boom`, unknown.Error())
+}
+
+func TestDescribeIncrementalGroupLocation(t *testing.T) {
+	id := incrementalGroupInstanceID{component: "status", source: "routes", namespace: "default", name: "route"}
+	location := string(incrementalGroupLocationKey(id, 3))
+	assert.Equal(t, "3 of status for routes default/route", describeIncrementalGroupLocation(location))
+	assert.Equal(t, `"\x00"`, describeIncrementalGroupLocation("\x00"))
 }

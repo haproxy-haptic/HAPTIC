@@ -738,13 +738,13 @@ func (r *incrementalRenderSession) verifyBackendPlanResultCache(
 	r.results.Root().Walk(func(key []byte, encoded incremental.ExactValueRoot) bool {
 		identity, ok := parseResultKey(key)
 		if !ok {
-			walkErr = fmt.Errorf("incremental result cache has invalid key %q", key)
+			walkErr = fmt.Errorf("incremental result cache has invalid key %s", incremental.DescribeTuple(string(key)))
 			return true
 		}
 		component, exists := r.state.components[identity.component]
 		if !exists {
 			if _, planGroup := planGroups[identity.group]; planGroup {
-				walkErr = fmt.Errorf("incremental backendPlan result %q has an unknown component", key)
+				walkErr = fmt.Errorf("incremental backendPlan result %s has an unknown component", incremental.DescribeTuple(string(key)))
 				return true
 			}
 			return false
@@ -753,7 +753,7 @@ func (r *incrementalRenderSession) verifyBackendPlanResultCache(
 			return false
 		}
 		if component.group != identity.group {
-			walkErr = fmt.Errorf("incremental backendPlan result %q has the wrong group", key)
+			walkErr = fmt.Errorf("incremental backendPlan result %s has the wrong group", incremental.DescribeTuple(string(key)))
 			return true
 		}
 		if err := r.verifyGroupIndexResult(

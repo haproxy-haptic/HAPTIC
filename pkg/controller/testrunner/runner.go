@@ -451,7 +451,7 @@ func (r *Runner) runSingleTest(ctx context.Context, testName string, test *confi
 }
 
 func recordRenderFailure(result *TestResult, err error) {
-	result.RenderError = dataplane.SimplifyRenderingError(err)
+	result.RenderError = templating.RenderErrorMessage(err)
 	result.Assertions = append(result.Assertions, AssertionResult{
 		Type:        "rendering",
 		Description: "Template rendering failed",
@@ -533,7 +533,7 @@ func (r *Runner) assertDeploymentRenders(ctx context.Context, test *config.Valid
 		result.Passed = false
 		result.Error = fmt.Sprintf("This test's fixtures fail to render with the deployment's extraContext, "+
 			"so a cluster holding such resources stops reconciling: %s. Fix the value the error names.",
-			dataplane.SimplifyRenderingError(err))
+			templating.RenderErrorMessage(err))
 		return result
 	}
 	// The same bytes get the same verdict, which the test's own haproxy_valid gave.

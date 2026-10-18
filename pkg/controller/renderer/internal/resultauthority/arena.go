@@ -718,8 +718,8 @@ func validateArenaOwnerRoot[V any, M comparable](
 	same, err := ownerRoot.SameRoot(slot.root)
 	if err != nil || !same {
 		return fmt.Errorf(
-			"fresh incremental component result %q has a different stored authoritative root",
-			slot.key.Opaque(),
+			"fresh incremental component result %s has a different stored authoritative root",
+			slot.key,
 		)
 	}
 	return nil
@@ -733,8 +733,8 @@ func validateArenaRequestedRoot[V any, M comparable](
 	same, err := root.SameRoot(slot.root)
 	if err != nil || !same {
 		return fmt.Errorf(
-			"fresh incremental component result %q does not match its authoritative root",
-			key.Opaque(),
+			"fresh incremental component result %s does not match its authoritative root",
+			key,
 		)
 	}
 	return nil

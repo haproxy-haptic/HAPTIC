@@ -63,7 +63,7 @@ func newIncrementalColdCarrierGraphSchedule(
 				return nil, fmt.Errorf("incremental cold carrier graph group %q has an unknown query", group)
 			}
 			if _, duplicate := seen[key]; duplicate {
-				return nil, fmt.Errorf("incremental cold carrier graph query %q belongs to multiple groups", key.Opaque())
+				return nil, fmt.Errorf("incremental cold carrier graph query %s belongs to multiple groups", key)
 			}
 			seen[key] = struct{}{}
 		}
@@ -179,7 +179,7 @@ func selectIncrementalColdCarrierLanes(
 			return nil, fmt.Errorf("incremental cold carrier graph repeats batch item %d", lane.batchIndex)
 		}
 		if _, duplicate := seenQueries[lane.queryKey]; duplicate {
-			return nil, fmt.Errorf("incremental cold carrier graph repeats query %q", lane.queryKey.Opaque())
+			return nil, fmt.Errorf("incremental cold carrier graph repeats query %s", lane.queryKey)
 		}
 		seenIndexes[lane.batchIndex] = struct{}{}
 		seenQueries[lane.queryKey] = struct{}{}
@@ -255,16 +255,16 @@ func (r *incrementalRenderSession) groupColdGraphStageResults(
 		component, ok := r.resolveQueryComponent(results[index].Key)
 		if !ok {
 			return nil, fmt.Errorf(
-				"incremental cold graph stage %d returned invalid query %q",
+				"incremental cold graph stage %d returned invalid query %s",
 				stageNumber,
-				results[index].Key.Opaque(),
+				results[index].Key,
 			)
 		}
 		if _, expected := expectedGroups[component.group]; !expected {
 			return nil, fmt.Errorf(
-				"incremental cold graph stage %d returned query %q from group %q",
+				"incremental cold graph stage %d returned query %s from group %q",
 				stageNumber,
-				results[index].Key.Opaque(),
+				results[index].Key,
 				component.group,
 			)
 		}

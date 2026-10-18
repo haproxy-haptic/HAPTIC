@@ -119,7 +119,7 @@ func (r *incrementalRenderSession) currentBindings() (map[string]incrementalBind
 	r.bindings.Root().Walk(func(key []byte, props string) bool {
 		component, source, ok := parseBindingKey(key)
 		if !ok {
-			walkErr = fmt.Errorf("incremental binding has an invalid key %q", key)
+			walkErr = fmt.Errorf("incremental binding has an invalid key %s", incremental.DescribeTuple(string(key)))
 			return true
 		}
 		if _, exists := r.state.components[component]; !exists {

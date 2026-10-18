@@ -82,9 +82,10 @@ var compErr *templating.CompilationError     // syntax error; has TemplateName +
 var renderErr *templating.RenderError        // runtime failure during Render
 var timeoutErr *templating.RenderTimeoutError // ctx deadline exceeded
 var notFoundErr *templating.TemplateNotFoundError // unknown name; has .AvailableTemplates
+var failErr *templating.FailError            // a template called fail(); .Message is its text
 ```
 
-Always check with `errors.As`; the wrapped `.Cause` carries the underlying Scriggo diagnostic.
+Always check with `errors.As`; the wrapped `.Cause` carries the underlying Scriggo diagnostic. `RenderErrorMessage(err)` returns the `fail()` message alone, which is what an operator-facing surface shows.
 
 ## What Ships Inside
 

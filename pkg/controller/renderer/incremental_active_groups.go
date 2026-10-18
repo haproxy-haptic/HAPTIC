@@ -19,6 +19,8 @@ import (
 	"fmt"
 
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
+
+	"github.com/haproxy-haptic/HAPTIC/pkg/incremental"
 )
 
 type incrementalActiveGroupIndex struct {
@@ -48,11 +50,11 @@ func incrementalActiveGroupInstanceKey(
 	component *incrementalComponent,
 	source, namespace, name string,
 ) []byte {
-	return []byte(encodeOpaque("active-group", component.group, component.name, source, namespace, name))
+	return []byte(incremental.EncodeTuple("active-group", component.group, component.name, source, namespace, name))
 }
 
 func incrementalActiveGroupPrefix(group string) []byte {
-	return []byte(encodeOpaque("active-group", group))
+	return []byte(incremental.EncodeTuple("active-group", group))
 }
 
 func incrementalActiveGroupExists(instances *iradix.Node[struct{}], group string) bool {

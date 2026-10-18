@@ -375,7 +375,7 @@ func addNode(authority *Authority, current *node, value string) (*node, bool, er
 		return newNode(authority, value, nil, nil), true, nil
 	}
 	if err := validateNode(authority, current); err != nil {
-		return nil, false, fmt.Errorf("validating node %q before adding %q: %w", current.key, value, err)
+		return nil, false, fmt.Errorf("validating node before adding a value: %w", err)
 	}
 	switch strings.Compare(value, current.key) {
 	case -1:
@@ -451,7 +451,7 @@ func rebalance(authority *Authority, current *node) (*node, bool, error) {
 	case 2:
 		left := current.left
 		if err := validateNode(authority, left); err != nil {
-			return nil, false, fmt.Errorf("rebalancing left child %q: %w", left.key, err)
+			return nil, false, fmt.Errorf("rebalancing left child: %w", err)
 		}
 		if balanceFactor(left) < 0 {
 			rotated, err := rotateLeft(authority, left)
@@ -462,13 +462,13 @@ func rebalance(authority *Authority, current *node) (*node, bool, error) {
 		}
 		rotated, err := rotateRight(authority, current)
 		if err != nil {
-			return nil, false, fmt.Errorf("rotating %q right: %w", current.key, err)
+			return nil, false, fmt.Errorf("rotating right: %w", err)
 		}
 		return rotated, true, nil
 	case -2:
 		right := current.right
 		if err := validateNode(authority, right); err != nil {
-			return nil, false, fmt.Errorf("rebalancing right child %q: %w", right.key, err)
+			return nil, false, fmt.Errorf("rebalancing right child: %w", err)
 		}
 		if balanceFactor(right) > 0 {
 			rotated, err := rotateRight(authority, right)
@@ -479,7 +479,7 @@ func rebalance(authority *Authority, current *node) (*node, bool, error) {
 		}
 		rotated, err := rotateLeft(authority, current)
 		if err != nil {
-			return nil, false, fmt.Errorf("rotating %q left: %w", current.key, err)
+			return nil, false, fmt.Errorf("rotating left: %w", err)
 		}
 		return rotated, true, nil
 	default:

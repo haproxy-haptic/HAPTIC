@@ -26,6 +26,7 @@ import (
 	"slices"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
+	"github.com/haproxy-haptic/HAPTIC/pkg/incremental"
 )
 
 type incrementalBinding struct {
@@ -78,7 +79,7 @@ func decodeIncrementalResourceProjection(props []byte) (*incrementalResourceProj
 	}
 	digest := sha256.Sum256(props)
 	projection.digest = hex.EncodeToString(digest[:])
-	projection.identity = encodeOpaque("resource-projection-binding", projection.digest, string(props))
+	projection.identity = incremental.EncodeTuple("resource-projection-binding", projection.digest, string(props))
 	return &projection, nil
 }
 

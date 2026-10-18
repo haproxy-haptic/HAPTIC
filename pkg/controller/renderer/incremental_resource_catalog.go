@@ -212,7 +212,7 @@ func (c *incrementalResourceCatalog) presenceLocked(
 	}
 	if mutation, changed := shard.changes[key]; changed {
 		if !mutation.validFor(c, key) {
-			return false, fmt.Errorf("incremental resource catalog entry %q has invalid provenance", key.Opaque())
+			return false, fmt.Errorf("incremental resource catalog entry %s has invalid provenance", key)
 		}
 		return mutation.state == incrementalResourceCatalogPresent, nil
 	}
@@ -243,7 +243,7 @@ func (r *incrementalRenderSession) catalogGet(
 	spec, valid := canonicalResourceCatalogKey(key)
 	if !valid {
 		return resourceInputSpec{}, false,
-			fmt.Errorf("incremental resource catalog key %q has invalid provenance", key.Opaque())
+			fmt.Errorf("incremental resource catalog key %s has invalid provenance", key)
 	}
 	catalog, err := r.authenticatedCatalog()
 	if err != nil {
@@ -264,7 +264,7 @@ func (r *incrementalRenderSession) catalogLoadOrStore(
 	candidate *resourceInputSpec,
 ) error {
 	if resourceInputKey(candidate) != key {
-		return fmt.Errorf("incremental resource catalog candidate %q has invalid provenance", key.Opaque())
+		return fmt.Errorf("incremental resource catalog candidate %s has invalid provenance", key)
 	}
 	catalog, err := r.authenticatedCatalog()
 	if err != nil {
@@ -294,7 +294,7 @@ func (r *incrementalRenderSession) catalogInsert(
 	spec *resourceInputSpec,
 ) error {
 	if resourceInputKey(spec) != key {
-		return fmt.Errorf("incremental resource catalog candidate %q has invalid provenance", key.Opaque())
+		return fmt.Errorf("incremental resource catalog candidate %s has invalid provenance", key)
 	}
 	catalog, err := r.authenticatedCatalog()
 	if err != nil {
@@ -311,7 +311,7 @@ func (r *incrementalRenderSession) catalogInsert(
 
 func (r *incrementalRenderSession) catalogDelete(key incremental.InputKey) error {
 	if _, valid := canonicalResourceCatalogKey(key); !valid {
-		return fmt.Errorf("incremental resource catalog key %q has invalid provenance", key.Opaque())
+		return fmt.Errorf("incremental resource catalog key %s has invalid provenance", key)
 	}
 	catalog, err := r.authenticatedCatalog()
 	if err != nil {
@@ -351,12 +351,12 @@ func catalogChangesHavePrefix(
 		for key, mutation := range catalog.shards.values[index].changes {
 			if !mutation.validFor(catalog, key) {
 				return false, fmt.Errorf(
-					"incremental resource catalog entry %q has invalid provenance", key.Opaque(),
+					"incremental resource catalog entry %s has invalid provenance", key,
 				)
 			}
 			if _, valid := canonicalResourceCatalogKey(key); !valid {
 				return false, fmt.Errorf(
-					"incremental resource catalog entry %q has invalid provenance", key.Opaque(),
+					"incremental resource catalog entry %s has invalid provenance", key,
 				)
 			}
 			if mutation.state == incrementalResourceCatalogPresent &&
@@ -379,7 +379,7 @@ func catalogBaseHasPrefix(
 		_, valid := canonicalResourceCatalogKey(key)
 		if !valid {
 			walkErr = fmt.Errorf(
-				"incremental resource catalog entry %q has invalid provenance", key.Opaque(),
+				"incremental resource catalog entry %s has invalid provenance", key,
 			)
 			return true
 		}
@@ -387,7 +387,7 @@ func catalogBaseHasPrefix(
 		if mutation, changed := shard.changes[key]; changed {
 			if !mutation.validFor(catalog, key) {
 				walkErr = fmt.Errorf(
-					"incremental resource catalog entry %q has invalid provenance", key.Opaque(),
+					"incremental resource catalog entry %s has invalid provenance", key,
 				)
 				return true
 			}
@@ -416,12 +416,12 @@ func (r *incrementalRenderSession) catalogCommit() (*incrementalResourceCatalogS
 		for key, mutation := range catalog.shards.values[index].changes {
 			if !mutation.validFor(catalog, key) {
 				return nil, fmt.Errorf(
-					"incremental resource catalog entry %q has invalid provenance", key.Opaque(),
+					"incremental resource catalog entry %s has invalid provenance", key,
 				)
 			}
 			if _, valid := canonicalResourceCatalogKey(key); !valid {
 				return nil, fmt.Errorf(
-					"incremental resource catalog entry %q has invalid provenance", key.Opaque(),
+					"incremental resource catalog entry %s has invalid provenance", key,
 				)
 			}
 			switch mutation.state {
@@ -431,7 +431,7 @@ func (r *incrementalRenderSession) catalogCommit() (*incrementalResourceCatalogS
 				txn.Delete([]byte(key.Opaque()))
 			default:
 				return nil, fmt.Errorf(
-					"incremental resource catalog entry %q has invalid provenance", key.Opaque(),
+					"incremental resource catalog entry %s has invalid provenance", key,
 				)
 			}
 		}

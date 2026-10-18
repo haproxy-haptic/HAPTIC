@@ -516,7 +516,7 @@ func (s *Session) invalidateQuery(
 	dirtyEntries map[QueryKey]nodeEntry,
 ) (bool, error) {
 	if s.wasQueried(key) {
-		return false, fmt.Errorf("incremental input invalidated query %q after it was evaluated", key.id.String())
+		return false, fmt.Errorf("incremental input invalidated query %s after it was evaluated", key)
 	}
 	entry, exists, err := s.currentNode(key)
 	if err != nil || !exists || entry.dirty {
@@ -826,8 +826,8 @@ func buildReplacementReverseRoots(
 			values := dependents[dependency.key]
 			if len(values) > 0 && values[len(values)-1] == key.id.String() {
 				return nil, fmt.Errorf(
-					"incremental query %q contains a duplicate dependency",
-					key.id.String(),
+					"incremental query %s contains a duplicate dependency",
+					key,
 				)
 			}
 			dependents[dependency.key] = append(values, key.id.String())
@@ -981,10 +981,10 @@ func (s *Session) stageNodeChange(key QueryKey, entry *nodeEntry) error {
 			key.id.String(),
 		)
 		if err != nil {
-			return fmt.Errorf("staging incremental reverse dependency: %w", err)
+			return fmt.Errorf("staging incremental reverse dependency of query %s: %w", key, err)
 		}
 		if !changed {
-			return fmt.Errorf("incremental staged reverse dependency already contains query %q", key.id.String())
+			return fmt.Errorf("incremental staged reverse dependency already contains query %s", key)
 		}
 		s.stagedReverse[dependency.key] = next
 	}
@@ -1012,10 +1012,10 @@ func (s *Session) unstageNodeChange(key QueryKey) error {
 			key.id.String(),
 		)
 		if err != nil {
-			return fmt.Errorf("unstaging incremental reverse dependency: %w", err)
+			return fmt.Errorf("unstaging incremental reverse dependency of query %s: %w", key, err)
 		}
 		if !changed {
-			return fmt.Errorf("incremental staged reverse dependency does not contain query %q", key.id.String())
+			return fmt.Errorf("incremental staged reverse dependency does not contain query %s", key)
 		}
 		size, err := next.Len(s.graph.reverseAuthority, reverseScope(dependency.key))
 		if err != nil {

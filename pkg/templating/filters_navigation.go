@@ -16,7 +16,6 @@ package templating
 
 import (
 	"context"
-	"errors"
 	"maps"
 	"reflect"
 	"slices"
@@ -88,7 +87,7 @@ func getSharedContext(env native.Env) *SharedContext {
 //	{{ fail("Service not found") }}
 //	{% if !service %}{{ fail("Service is required") }}{% end %}
 func scriggoFail(env native.Env, msg string) string {
-	env.Stop(errors.New(msg))
+	env.Stop(&FailError{Message: msg})
 	return "" // Never reached - env.Stop() halts execution
 }
 

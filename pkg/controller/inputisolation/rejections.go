@@ -23,6 +23,7 @@ import (
 
 	k8sstore "github.com/haproxy-haptic/HAPTIC/pkg/k8s/store"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores"
+	"github.com/haproxy-haptic/HAPTIC/pkg/templating"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -33,7 +34,7 @@ func (s *Service) describeRejections(ctx context.Context, groups []changeGroup, 
 	for _, group := range groups {
 		for _, alias := range slices.Sorted(maps.Keys(group.changes)) {
 			for _, change := range group.changes[alias] {
-				rejection := Rejection{Store: alias, Namespace: change.Namespace(), Name: change.Name(), Deleted: change.Deleted(), Reason: group.reason.Error(), revision: change.Revision()}
+				rejection := Rejection{Store: alias, Namespace: change.Namespace(), Name: change.Name(), Deleted: change.Deleted(), Reason: templating.RenderErrorMessage(group.reason), revision: change.Revision()}
 				branch := candidate[alias]
 				if change.Deleted() {
 					branch = base[alias]

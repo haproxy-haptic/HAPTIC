@@ -175,39 +175,3 @@ func simplifySchemaError(errStr string) string {
 
 	return simplified
 }
-
-// SimplifyRenderingError extracts meaningful error messages from template rendering failures.
-//
-// Handles template-level validation errors from the fail() function which are buried
-// in the template engine's execution stack trace.
-//
-// Input format:
-//
-//	"failed to render haproxy.cfg: failed to render template 'haproxy.cfg': unable to execute template: ... invalid call to function 'fail': <message>"
-//
-// Output: "<message>" (the user-provided error message from fail() call)
-//
-// If the error doesn't match this pattern (e.g., syntax errors, missing variables),
-// returns the original error string.
-func SimplifyRenderingError(err error) string {
-	if err == nil {
-		return ""
-	}
-
-	errStr := err.Error()
-
-	// Look for the fail() function error pattern
-	// This is the marker that indicates a template-level validation error
-	marker := "invalid call to function 'fail': "
-	_, after, ok := strings.Cut(errStr, marker)
-	if !ok {
-		// Not a fail() error, return original (could be syntax error, missing variable, etc.)
-		return errStr
-	}
-
-	// Extract everything after the marker (the user-provided message)
-	message := after
-
-	// The message should be the last part of the error chain, but may have trailing whitespace
-	return strings.TrimSpace(message)
-}

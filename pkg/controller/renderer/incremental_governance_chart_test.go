@@ -21,7 +21,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -187,6 +189,72 @@ func TestGovernanceChartRuleNamespaceScopeReevaluatesWarmItems(t *testing.T) {
 
 	cfg.TemplatingSettings.ExtraContext = governanceChartScopedContext(map[string]any{"namespaces": []any{"default"}})
 	assert.Equal(t, []string{"unowned"}, violators(), "rule limited to the item's namespace")
+}
+
+// #412: the denial named the batch query by its encoded key, and that key
+// carried uvarint length prefixes, which are control characters.
+func TestGovernanceChartAdmissionDenialCarriesNoQueryKey(t *testing.T) {
+	const want = "ingresses x7-raw/x7-raw violates governance rule 'no-raw-config': " +
+		"raw HAProxy configuration from Ingresses is not allowed"
+	for _, warm := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cold graph", true: "warm graph"}[warm], func(t *testing.T) {
+			cfg := &config.Config{
+				Dataplane: testDataplaneConfig(),
+				TemplatingSettings: config.TemplatingSettings{ExtraContext: map[string]any{
+					"governance": map[string]any{
+						"enabled":          true,
+						"exemptNamespaces": []any{},
+						"rules": map[string]any{"no-raw-config": map[string]any{
+							"enabled":  true,
+							"resource": "ingresses",
+							"path":     "metadata.annotations['haproxy-haptic.org/config-frontend']",
+							"pattern":  "^$",
+							"message":  "raw HAProxy configuration from Ingresses is not allowed",
+						}},
+					},
+				}},
+				WatchedResources: map[string]config.WatchedResource{
+					"ingresses": {
+						APIVersion: "networking.k8s.io/v1",
+						Resources:  "ingresses",
+						IndexBy:    []string{"metadata.namespace", "metadata.name"},
+					},
+				},
+				TemplateSnippets: map[string]config.TemplateSnippet{
+					governanceChartSnippetName: loadGovernanceChartSnippet(t),
+				},
+				HAProxyConfig: config.HAProxyConfig{Template: `{{ render "features-960-governance" }}`},
+			}
+			declarations := helpers.BuildAdditionalDeclarations(cfg, &typebootstrap.Result{
+				Types:  map[string]reflect.Type{},
+				Kinds:  map[string]string{},
+				Errors: map[string]error{},
+			})
+			engine, err := helpers.NewEngineFromConfigWithOptions(cfg, nil, nil, declarations, helpers.EngineOptions{})
+			require.NoError(t, err)
+			service := NewRenderService(&RenderServiceConfig{Engine: engine, Config: cfg, Logger: slog.Default()})
+			ingresses := k8sstore.NewMemoryStore(2)
+			provider := stores.NewRealStoreProvider(map[string]stores.Store{"ingresses": ingresses})
+			raw := governanceChartResource("x7-raw", nil)
+			raw["metadata"].(map[string]any)["namespace"] = "x7-raw"
+			raw["metadata"].(map[string]any)["annotations"] = map[string]any{
+				"haproxy-haptic.org/config-frontend": "http-request deny",
+			}
+			if warm {
+				require.NoError(t, ingresses.Add(governanceChartResource("compliant", nil), []string{"default", "compliant"}))
+				renderAndCommitGovernanceChart(t, service, provider)
+			}
+			require.NoError(t, ingresses.Add(raw, []string{"x7-raw", "x7-raw"}))
+
+			_, err = service.Render(t.Context(), provider, rendercontext.RenderModeAdmission,
+				rendercontext.WithAdmissionSubject("ingresses", "x7-raw", "x7-raw"))
+
+			require.Error(t, err)
+			assert.False(t, strings.ContainsFunc(err.Error(), unicode.IsControl), "%q", err.Error())
+			assert.NotContains(t, err.Error(), "query")
+			assert.Contains(t, err.Error(), "ingresses x7-raw/x7-raw: rendering template 'features-960-governance': "+want)
+		})
+	}
 }
 
 func governanceChartScopedContext(scope map[string]any) map[string]any {

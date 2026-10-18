@@ -160,7 +160,7 @@ for i := 0; i < 1000; i++ {
 
 ### Error Types
 
-Four distinct error types for clear error handling (`pkg/templating/errors.go` is authoritative):
+Five distinct error types for clear error handling (`pkg/templating/errors.go` is authoritative):
 
 ```go
 // CompilationError - template has syntax errors
@@ -188,6 +188,13 @@ type TemplateNotFoundError struct {
 type RenderTimeoutError struct {
     TemplateName string
     Cause        error
+}
+
+// FailError - a template called fail(); Message is its operator-facing text.
+// RenderErrorMessage(err) returns Message alone, which is what admission
+// denials and validation-test output show.
+type FailError struct {
+    Message string
 }
 ```
 

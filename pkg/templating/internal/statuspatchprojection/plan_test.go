@@ -403,7 +403,7 @@ func TestNewPlanFromEntriesRejectsInvalidLocationsAndOwnership(t *testing.T) {
 				{Group: "group", Entry: "entry", Root: root, Owner: projectionOwner},
 				{Group: "group", Entry: "entry", Root: root, Owner: projectionOwner},
 			},
-			want: "repeats group",
+			want: "repeats an entry in group",
 		},
 	}
 	for _, test := range tests {

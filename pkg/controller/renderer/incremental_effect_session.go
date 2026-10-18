@@ -344,7 +344,7 @@ func (r *incrementalRenderSession) derivedStageGroupRun(
 	component, ok := r.resolveQueryComponent(results[start].Key)
 	if !ok {
 		return "", 0, fmt.Errorf(
-			"incremental derived stage returned an invalid component key %q", results[start].Key.Opaque(),
+			"incremental derived stage returned an invalid component key %s", results[start].Key,
 		)
 	}
 	if !component.deriveResource {
@@ -355,7 +355,7 @@ func (r *incrementalRenderSession) derivedStageGroupRun(
 		next, parsed := r.resolveQueryComponent(results[end].Key)
 		if !parsed {
 			return "", 0, fmt.Errorf(
-				"incremental derived stage returned an invalid component key %q", results[end].Key.Opaque(),
+				"incremental derived stage returned an invalid component key %s", results[end].Key,
 			)
 		}
 		if !next.deriveResource {
@@ -521,7 +521,7 @@ func (r *incrementalRenderSession) replaceDerivations(
 		entry := &oldResult.Derivations[index]
 		current, exists := r.derived.Get(derivedKey(entry.Identity))
 		if !exists || !current.matches(entry) {
-			return fmt.Errorf("incremental derived resource cache does not match result %q", key)
+			return fmt.Errorf("incremental derived resource cache does not match result %s", incremental.DescribeTuple(string(key)))
 		}
 		r.derived.Delete(derivedKey(entry.Identity))
 	}

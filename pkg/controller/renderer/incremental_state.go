@@ -571,6 +571,20 @@ func bindingPreviousOutputUsage(
 }
 
 func (s *incrementalRenderState) definition(key incremental.QueryKey) (incremental.QueryFunc, bool) {
+	run, ok := s.unattributedDefinition(key)
+	if !ok {
+		return nil, false
+	}
+	return func(ctx context.Context, reader incremental.Reader) ([]byte, error) {
+		value, err := run(ctx, reader)
+		if err != nil {
+			return nil, attributeToWatchedObject(key, err)
+		}
+		return value, nil
+	}, true
+}
+
+func (s *incrementalRenderState) unattributedDefinition(key incremental.QueryKey) (incremental.QueryFunc, bool) {
 	if source, namespace, name, ok := parseActivationQueryKey(key); ok {
 		if len(s.activations[source]) == 0 {
 			return nil, false
@@ -611,86 +625,10 @@ func (s *incrementalRenderState) definition(key incremental.QueryKey) (increment
 
 type incrementalRunContextKey struct{}
 
-func encodeOpaque(kind string, parts ...string) string {
-	encodedLen := opaqueFrameEncodedLen(kind)
-	for _, part := range parts {
-		encodedLen += opaqueFrameEncodedLen(part)
-	}
-	var encoded strings.Builder
-	encoded.Grow(encodedLen)
-	writeOpaqueFrame(&encoded, kind)
-	for _, part := range parts {
-		writeOpaqueFrame(&encoded, part)
-	}
-	return encoded.String()
-}
-
-func opaqueFrameEncodedLen(value string) int {
-	return opaqueUvarintLen(uint64(len(value))) + len(value)
-}
-
-func opaqueUvarintLen(value uint64) int {
-	length := 1
-	for value >= 0x80 {
-		value >>= 7
-		length++
-	}
-	return length
-}
-
-func writeOpaqueFrame(encoded *strings.Builder, value string) {
-	var prefix [binary.MaxVarintLen64]byte
-	length := binary.PutUvarint(prefix[:], uint64(len(value)))
-	encoded.Write(prefix[:length])
-	encoded.WriteString(value)
-}
-
-type opaqueDecoder struct {
-	value    string
-	position int
-}
-
-func newOpaqueDecoder(value, kind string) (opaqueDecoder, bool) {
-	decoder := opaqueDecoder{value: value}
-	decodedKind, ok := decoder.next()
+func newOpaqueDecoder(value, kind string) (incremental.TupleDecoder, bool) {
+	decoder := incremental.NewTupleDecoder(value)
+	decodedKind, ok := decoder.Next()
 	return decoder, ok && kind != "" && decodedKind == kind
-}
-
-func (d *opaqueDecoder) next() (string, bool) {
-	if d == nil || d.position < 0 || d.position >= len(d.value) {
-		return "", false
-	}
-	length, prefixLength, ok := readOpaqueUvarint(d.value[d.position:])
-	if !ok || length > math.MaxInt {
-		return "", false
-	}
-	size := int(length)
-	if size > len(d.value)-d.position-prefixLength {
-		return "", false
-	}
-	start := d.position + prefixLength
-	end := start + size
-	d.position = end
-	return d.value[start:end], true
-}
-
-func (d *opaqueDecoder) done() bool {
-	return d != nil && d.position == len(d.value)
-}
-
-func readOpaqueUvarint(value string) (decoded uint64, prefixLength int, ok bool) {
-	for index := 0; index < binary.MaxVarintLen64 && index < len(value); index++ {
-		current := value[index]
-		if index == binary.MaxVarintLen64-1 && current > 1 {
-			return 0, 0, false
-		}
-		decoded |= uint64(current&0x7f) << (index * 7)
-		if current < 0x80 {
-			length := index + 1
-			return decoded, length, opaqueUvarintLen(decoded) == length
-		}
-	}
-	return 0, 0, false
 }
 
 func decodeOpaque(value, kind string, decoded []string) bool {
@@ -699,16 +637,16 @@ func decodeOpaque(value, kind string, decoded []string) bool {
 		return false
 	}
 	for index := range decoded {
-		decoded[index], ok = decoder.next()
+		decoded[index], ok = decoder.Next()
 		if !ok {
 			return false
 		}
 	}
-	return decoder.done()
+	return decoder.Done()
 }
 
 func componentQueryKey(component *incrementalComponent, source, namespace, name string) incremental.QueryKey {
-	return incremental.NewQueryKey(encodeOpaque("component", component.name, source, namespace, name))
+	return incremental.NewQueryKey(incremental.EncodeTuple("component", component.name, source, namespace, name))
 }
 
 func componentQueryKeyMatches(
@@ -725,12 +663,12 @@ func opaqueMatches(value, kind string, parts ...string) bool {
 		return false
 	}
 	for _, part := range parts {
-		actual, exists := decoder.next()
+		actual, exists := decoder.Next()
 		if !exists || actual != part {
 			return false
 		}
 	}
-	return decoder.done()
+	return decoder.Done()
 }
 
 func parseComponentQueryKey(key incremental.QueryKey) (component, source, namespace, name string, ok bool) {
@@ -742,7 +680,7 @@ func parseComponentQueryKey(key incremental.QueryKey) (component, source, namesp
 }
 
 func activationQueryKey(source, namespace, name string) incremental.QueryKey {
-	return incremental.NewQueryKey(encodeOpaque("activation", source, namespace, name))
+	return incremental.NewQueryKey(incremental.EncodeTuple("activation", source, namespace, name))
 }
 
 func parseActivationQueryKey(key incremental.QueryKey) (source, namespace, name string, ok bool) {
@@ -754,11 +692,11 @@ func parseActivationQueryKey(key incremental.QueryKey) (source, namespace, name 
 }
 
 func memberKey(source, namespace, name string) []byte {
-	return []byte(encodeOpaque("member", source, namespace, name))
+	return []byte(incremental.EncodeTuple("member", source, namespace, name))
 }
 
 func memberPrefix(source string) []byte {
-	return []byte(encodeOpaque("member", source))
+	return []byte(incremental.EncodeTuple("member", source))
 }
 
 func parseMemberKey(key []byte) (namespace, name string, ok bool) {
@@ -770,7 +708,7 @@ func parseMemberKey(key []byte) (namespace, name string, ok bool) {
 }
 
 func resultKey(component *incrementalComponent, source, namespace, name string) []byte {
-	return []byte(encodeOpaque("result", component.group, component.name, source, namespace, name))
+	return []byte(incremental.EncodeTuple("result", component.group, component.name, source, namespace, name))
 }
 
 type incrementalResultIdentity struct {
@@ -796,7 +734,7 @@ func parseResultKey(key []byte) (incrementalResultIdentity, bool) {
 }
 
 func bindingKey(component, source string) []byte {
-	return []byte(encodeOpaque("binding", component, source))
+	return []byte(incremental.EncodeTuple("binding", component, source))
 }
 
 func parseBindingKey(key []byte) (component, source string, ok bool) {
@@ -808,7 +746,7 @@ func parseBindingKey(key []byte) (component, source string, ok bool) {
 }
 
 func bindingInputKey(component, source string) incremental.InputKey {
-	return incremental.NewInputKey(encodeOpaque("binding-input", component, source))
+	return incremental.NewInputKey(incremental.EncodeTuple("binding-input", component, source))
 }
 
 func parseBindingInputKey(key incremental.InputKey) (component, source string, ok bool) {
@@ -820,7 +758,7 @@ func parseBindingInputKey(key incremental.InputKey) (component, source string, o
 }
 
 func renderSubjectInputKey(source, namespace, name string) incremental.InputKey {
-	return incremental.NewInputKey(encodeOpaque("render-subject", source, namespace, name))
+	return incremental.NewInputKey(incremental.EncodeTuple("render-subject", source, namespace, name))
 }
 
 func parseRenderSubjectInputKey(key incremental.InputKey) (source, namespace, name string, ok bool) {
@@ -832,7 +770,7 @@ func parseRenderSubjectInputKey(key incremental.InputKey) (source, namespace, na
 }
 
 func deriveOwnerInputKey(source string) incremental.InputKey {
-	return incremental.NewInputKey(encodeOpaque("derive-owner", source))
+	return incremental.NewInputKey(incremental.EncodeTuple("derive-owner", source))
 }
 
 func parseDeriveOwnerInputKey(key incremental.InputKey) (string, bool) {
@@ -844,7 +782,7 @@ func parseDeriveOwnerInputKey(key incremental.InputKey) (string, bool) {
 }
 
 func derivedProjectionQueryKey(source, namespace, name string) incremental.QueryKey {
-	return incremental.NewQueryKey(encodeOpaque("derived", source, namespace, name))
+	return incremental.NewQueryKey(incremental.EncodeTuple("derived", source, namespace, name))
 }
 
 func parseDerivedProjectionQueryKey(key incremental.QueryKey) (source, namespace, name string, ok bool) {
@@ -856,7 +794,7 @@ func parseDerivedProjectionQueryKey(key incremental.QueryKey) (source, namespace
 }
 
 func derivedKey(identity rendercontext.DerivedResourceIdentity) []byte {
-	return []byte(encodeOpaque("derived-value", identity.Resource, identity.Namespace, identity.Name))
+	return []byte(incremental.EncodeTuple("derived-value", identity.Resource, identity.Namespace, identity.Name))
 }
 
 func exactBytesRevision(kind string, value []byte) incremental.Revision {
@@ -886,7 +824,7 @@ func buildResourceInputKey(spec *resourceInputSpec) incremental.InputKey {
 	case resourceInputIdentity:
 		parts = append(parts, spec.namespace, spec.name)
 	}
-	return incremental.NewInputKey(encodeOpaque("resource", parts...))
+	return incremental.NewInputKey(incremental.EncodeTuple("resource", parts...))
 }
 
 func sealResourceInputSpec(spec *resourceInputSpec) resourceInputSpec {
@@ -919,7 +857,7 @@ func (c *resourceInputKeyCache) matches(spec *resourceInputSpec) bool {
 }
 
 func resourceInputPrefix(resourceType string) []byte {
-	return []byte(encodeOpaque("resource", resourceType))
+	return []byte(incremental.EncodeTuple("resource", resourceType))
 }
 
 func (s *incrementalRenderState) acquireHTTPInput(
@@ -1669,14 +1607,14 @@ func countHTTPRefs(tree *iradix.Tree[*iradix.Tree[incrementalHTTPEffect]]) (map[
 }
 
 func httpInputKey(id uint64) incremental.InputKey {
-	return incremental.NewInputKey(encodeOpaque("http", strconv.FormatUint(id, 10)))
+	return incremental.NewInputKey(incremental.EncodeTuple("http", strconv.FormatUint(id, 10)))
 }
 
 func httpInputRevision(source httpstore.SourceID, snapshot *httpstore.ContentSnapshot) incremental.Revision {
 	if snapshot == nil {
 		return incremental.Revision{}
 	}
-	return incremental.NewRevision(encodeOpaque(
+	return incremental.NewRevision(incremental.EncodeTuple(
 		"http-observation",
 		strconv.FormatUint(uint64(source), 10),
 		strconv.FormatUint(uint64(snapshot.Observation), 10),
@@ -1688,7 +1626,7 @@ func scratchHTTPRevision(snapshot *httpstore.ContentSnapshot) incremental.Revisi
 	if snapshot == nil {
 		return incremental.Revision{}
 	}
-	return incremental.NewRevision(encodeOpaque(
+	return incremental.NewRevision(incremental.EncodeTuple(
 		"http-scratch",
 		strconv.FormatBool(snapshot.Found),
 		snapshot.Content,
@@ -1700,18 +1638,18 @@ func parseResourceInputKey(key incremental.InputKey) (resourceInputSpec, bool) {
 	if !ok {
 		return resourceInputSpec{}, false
 	}
-	resourceType, resourceTypeOK := decoder.next()
-	scope, scopeOK := decoder.next()
+	resourceType, resourceTypeOK := decoder.Next()
+	scope, scopeOK := decoder.Next()
 	if !resourceTypeOK || !scopeOK {
 		return resourceInputSpec{}, false
 	}
 	spec := resourceInputSpec{resourceType: resourceType, scope: resourceInputScope(scope)}
 	switch spec.scope {
 	case resourceInputList:
-		return spec, decoder.done()
+		return spec, decoder.Done()
 	case resourceInputGet:
-		for !decoder.done() {
-			value, exists := decoder.next()
+		for !decoder.Done() {
+			value, exists := decoder.Next()
 			if !exists {
 				return resourceInputSpec{}, false
 			}
@@ -1719,9 +1657,9 @@ func parseResourceInputKey(key incremental.InputKey) (resourceInputSpec, bool) {
 		}
 		return spec, len(spec.keys) > 0
 	case resourceInputIdentity:
-		namespace, namespaceOK := decoder.next()
-		name, nameOK := decoder.next()
-		if !namespaceOK || !nameOK || name == "" || !decoder.done() {
+		namespace, namespaceOK := decoder.Next()
+		name, nameOK := decoder.Next()
+		if !namespaceOK || !nameOK || name == "" || !decoder.Done() {
 			return resourceInputSpec{}, false
 		}
 		spec.namespace, spec.name = namespace, name
@@ -1735,7 +1673,7 @@ func storeRevision(source stores.RevisionSource, revision stores.Revision) incre
 	if source == 0 || revision == "" {
 		return incremental.Revision{}
 	}
-	return incremental.NewRevision(encodeOpaque("store-revision", fmt.Sprint(uint64(source)), string(revision)))
+	return incremental.NewRevision(incremental.EncodeTuple("store-revision", fmt.Sprint(uint64(source)), string(revision)))
 }
 
 func cloneGroupIndexes(source map[string]*incrementalGroupIndex) map[string]*incrementalGroupIndex {

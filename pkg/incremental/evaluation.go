@@ -790,7 +790,7 @@ func (s *Session) executeQuery(
 		return nodeEntry{}, reader.err
 	}
 	if err != nil {
-		return nodeEntry{}, &queryError{key: key, err: err}
+		return nodeEntry{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nodeEntry{}, err

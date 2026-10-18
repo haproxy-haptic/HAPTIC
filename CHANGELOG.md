@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Startup-validation messages describe retrying NotReady pods and stalled rollouts instead of claiming the controller exits on rejection.
 - Configuration changes fetch watched-resource schemas in parallel, reducing validation delays on clusters with slow API-server responses.
 - API discovery timeouts leave configuration validation inconclusive and retry it instead of rejecting templates that use typed fields.
+- Template admission denials show the rule's message; other render errors identify the watched object without exposing encoded cache keys.
 
 ### Security
 
@@ -41,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Changed
 
+- Governance denials identify the rule and watched object.
 - **BREAKING:** `haproxy-haptic.org/config-*`, `haproxy-ingress.github.io/config-*`, `haproxy.org/backend-config-snippet`, and `nginx.ingress.kubernetes.io/configuration-snippet` require `controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig: true`, independent of WAF governance; `waf.ingressPermissions.allowRawHAProxyConfig` can only narrow it. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#upgrading-to-07) before upgrading.
 - **BREAKING:** Every HTTP frontend replaces a client-sent `X-Forwarded-For` with the client address, sets `X-Forwarded-Proto` to `https` or `http`, and drops a client-sent `X-Forwarded-Host` and `X-Forwarded-Port`. Behind an L7 load balancer, [list it in `trustedProxies`](./docs/site/docs/upgrade-notes.md#upgrading-to-07); `trustedProxies: ["0.0.0.0/0", "::/0"]` restores the old `X-Forwarded-For` handling.
 - **BREAKING:** haproxy-ingress: `haproxy-ingress.github.io/forwardfor: add` replaces the client's `X-Forwarded-For` and `update` appends to it, as upstream does; HAPTIC had them the other way round. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#3-check-haproxy-ingressgithubioforwardfor) before upgrading.

@@ -246,30 +246,30 @@ func incrementalPreparedPlanBootstrapInstanceFor(
 ) (instance incrementalPreparedPlanBootstrapInstance, include bool, err error) {
 	identity, ok := parseResultKey(key)
 	if !ok {
-		return instance, false, fmt.Errorf("incremental result cache has invalid key %q", key)
+		return instance, false, fmt.Errorf("incremental result cache has invalid key %s", incremental.DescribeTuple(string(key)))
 	}
 	component, componentExists := components[identity.component]
 	if componentExists && component.backendPlan &&
 		(component.group != identity.group || !incrementalPreparedPlanTracksGroup(trackedGroups, identity.group)) {
-		return instance, false, fmt.Errorf("incremental backendPlan result %q has the wrong group", key)
+		return instance, false, fmt.Errorf("incremental backendPlan result %s has the wrong group", incremental.DescribeTuple(string(key)))
 	}
 	if !incrementalPreparedPlanTracksGroup(trackedGroups, identity.group) {
 		return instance, false, nil
 	}
 	if !componentExists || component.name != identity.component || component.group != identity.group {
-		return instance, false, fmt.Errorf("incremental backendPlan result %q has an invalid component", key)
+		return instance, false, fmt.Errorf("incremental backendPlan result %s has an invalid component", incremental.DescribeTuple(string(key)))
 	}
 	expectedKey := resultKey(&component, identity.source, identity.namespace, identity.name)
 	if !bytes.Equal(key, expectedKey) {
-		return instance, false, fmt.Errorf("incremental backendPlan result %q has a noncanonical identity", key)
+		return instance, false, fmt.Errorf("incremental backendPlan result %s has a noncanonical identity", incremental.DescribeTuple(string(key)))
 	}
 	queryKey := componentQueryKey(&component, identity.source, identity.namespace, identity.name)
 	if err := validator.ValidateExactValue(queryKey, root); err != nil {
-		return instance, false, fmt.Errorf("authenticating incremental backendPlan result %q: %w", key, err)
+		return instance, false, fmt.Errorf("authenticating incremental backendPlan result %s: %w", incremental.DescribeTuple(string(key)), err)
 	}
 	encoded, err := root.String()
 	if err != nil {
-		return instance, false, fmt.Errorf("reading incremental backendPlan result %q: %w", key, err)
+		return instance, false, fmt.Errorf("reading incremental backendPlan result %s: %w", incremental.DescribeTuple(string(key)), err)
 	}
 	id := incrementalGroupInstanceID{
 		component: identity.component,

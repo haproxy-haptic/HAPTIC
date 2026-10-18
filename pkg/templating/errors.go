@@ -1,6 +1,9 @@
 package templating
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // CompilationError represents a template compilation failure.
 // This error occurs during template initialization when the template
@@ -78,6 +81,29 @@ func (e *RenderTimeoutError) Error() string {
 // Unwrap returns the underlying cause for error unwrapping.
 func (e *RenderTimeoutError) Unwrap() error {
 	return e.Cause
+}
+
+// FailError is the error fail() stops a render with. Message is the template's
+// text for the operator.
+type FailError struct {
+	Message string
+}
+
+// Error implements the error interface.
+func (e *FailError) Error() string {
+	return e.Message
+}
+
+// RenderErrorMessage returns the message a template passed to fail(), or err's
+// full text when the render failed for another reason.
+func RenderErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if failErr, ok := errors.AsType[*FailError](err); ok {
+		return failErr.Message
+	}
+	return err.Error()
 }
 
 // Helper functions for creating errors with actionable context

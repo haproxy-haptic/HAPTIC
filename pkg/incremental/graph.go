@@ -284,10 +284,10 @@ func NewWithProviderOptions(
 			return nil, fmt.Errorf("incremental query key is empty")
 		}
 		if definition.Run == nil {
-			return nil, fmt.Errorf("incremental query %q has no implementation", definition.Key.id.String())
+			return nil, fmt.Errorf("incremental query %s has no implementation", definition.Key)
 		}
 		if _, exists := runs[definition.Key]; exists {
-			return nil, fmt.Errorf("incremental query %q is defined more than once", definition.Key.id.String())
+			return nil, fmt.Errorf("incremental query %s is defined more than once", definition.Key)
 		}
 		runs[definition.Key] = definition.Run
 	}
@@ -715,10 +715,10 @@ func buildCommittedInputTree(
 		}
 		entry, err := sealCommittedInputEntry(inputs[key])
 		if err != nil {
-			return nil, fmt.Errorf("incremental committed input %q: %w", key.id.String(), err)
+			return nil, fmt.Errorf("incremental committed input %s: %w", key, err)
 		}
 		if entry.changedAt > generation {
-			return nil, fmt.Errorf("incremental committed input %q changed after its generation", key.id.String())
+			return nil, fmt.Errorf("incremental committed input %s changed after its generation", key)
 		}
 		entries[index] = persistenttree.Entry[committedInputEntry]{Key: key.id.String(), Value: entry}
 	}
@@ -735,7 +735,7 @@ func buildCommittedNodeTree(
 	for index, key := range keys {
 		entry, err := sealCommittedNodeEntry(graph, key, nodes[key], generation)
 		if err != nil {
-			return nil, fmt.Errorf("incremental committed query %q: %w", key.id.String(), err)
+			return nil, fmt.Errorf("incremental committed query %s: %w", key, err)
 		}
 		entries[index] = persistenttree.Entry[committedNodeEntry]{Key: key.id.String(), Value: entry}
 	}

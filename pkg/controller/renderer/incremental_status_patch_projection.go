@@ -231,11 +231,11 @@ func newIncrementalPreparedStatusPatchCall(
 	}
 	patch, err := decodeIncrementalStatusPatchProjectionCall(call)
 	if err != nil {
-		return nil, fmt.Errorf("preparing incremental statusPatch call at %q: %w", location, err)
+		return nil, fmt.Errorf("preparing incremental statusPatch call %s: %w", describeIncrementalGroupLocation(location), err)
 	}
 	projection, err := templating.NewStatusPatchProjection([]templating.StatusPatch{patch})
 	if err != nil {
-		return nil, fmt.Errorf("preparing incremental statusPatch call at %q: %w", location, err)
+		return nil, fmt.Errorf("preparing incremental statusPatch call %s: %w", describeIncrementalGroupLocation(location), err)
 	}
 	prepared := &incrementalPreparedStatusPatchCall{
 		authority: authority, location: location,
@@ -359,7 +359,9 @@ func (i *incrementalGroupIndex) compiledStatusPatchProjection() (*templating.Sta
 			return true
 		}
 		if err := validateIncrementalPreparedStatusPatchCall(indexed.prepared, i.memo.authority, indexed.location); err != nil {
-			projectionErr = fmt.Errorf("reading incremental statusPatch projection at %q: %w", indexed.location, err)
+			projectionErr = fmt.Errorf(
+				"reading incremental statusPatch projection for call %s: %w", describeIncrementalGroupLocation(indexed.location), err,
+			)
 			return true
 		}
 		parts = append(parts, indexed.prepared.projection)

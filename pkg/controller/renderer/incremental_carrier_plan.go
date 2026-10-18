@@ -112,7 +112,7 @@ func (r *incrementalRenderSession) planColdComponentCarrierKeys(
 			return nil, errors.New("incremental cold carrier query key is empty")
 		}
 		if index > 0 && ordered[index-1] == key {
-			return nil, fmt.Errorf("incremental cold carrier query %q is duplicated", key.Opaque())
+			return nil, fmt.Errorf("incremental cold carrier query %s is duplicated", key)
 		}
 		query, err := r.resolveIncrementalCarrierQuery(index, key)
 		if err != nil {
@@ -130,8 +130,8 @@ func (r *incrementalRenderSession) resolveIncrementalCarrierQuery(
 	component, source, namespace, name, ok := r.resolveComponentQuery(queryKey)
 	if !ok {
 		return incrementalCarrierQuery{}, fmt.Errorf(
-			"incremental cold carrier received non-component query %q",
-			queryKey.Opaque(),
+			"incremental cold carrier received non-component query %s",
+			queryKey,
 		)
 	}
 	return incrementalCarrierQuery{
@@ -183,8 +183,8 @@ func validateIncrementalCarrierQueries(
 		indexes[query.batchIndex] = struct{}{}
 		if _, duplicate := queryKeys[query.queryKey]; duplicate {
 			return nil, fmt.Errorf(
-				"incremental carrier query %q is duplicated",
-				query.queryKey.Opaque(),
+				"incremental carrier query %s is duplicated",
+				query.queryKey,
 			)
 		}
 		queryKeys[query.queryKey] = struct{}{}
@@ -192,21 +192,21 @@ func validateIncrementalCarrierQueries(
 		canonical := topology.components[query.componentName]
 		if canonical == nil {
 			return nil, fmt.Errorf(
-				"incremental carrier query %q has an unknown component",
-				query.queryKey.Opaque(),
+				"incremental carrier query %s has an unknown component",
+				query.queryKey,
 			)
 		}
 		if query.source == "" || query.name == "" ||
 			!componentQueryKeyMatches(query.queryKey, canonical, query.source, query.namespace, query.name) {
 			return nil, fmt.Errorf(
-				"incremental carrier query %q has invalid resource identity",
-				query.queryKey.Opaque(),
+				"incremental carrier query %s has invalid resource identity",
+				query.queryKey,
 			)
 		}
 		if canonical.source != "" && canonical.source != query.source {
 			return nil, fmt.Errorf(
-				"incremental carrier query %q uses source %q, want %q",
-				query.queryKey.Opaque(),
+				"incremental carrier query %s uses source %q, want %q",
+				query.queryKey,
 				query.source,
 				canonical.source,
 			)

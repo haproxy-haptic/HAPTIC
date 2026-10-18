@@ -285,7 +285,7 @@ func planIncrementalColdCarrierWaveLane(
 		return fmt.Errorf("incremental cold carrier wave repeats batch item %d", lane.batchIndex)
 	}
 	if _, duplicate := seenQueries[lane.queryKey]; duplicate {
-		return fmt.Errorf("incremental cold carrier wave repeats query %q", lane.queryKey.Opaque())
+		return fmt.Errorf("incremental cold carrier wave repeats query %s", lane.queryKey)
 	}
 	seenIndexes[lane.batchIndex] = struct{}{}
 	seenQueries[lane.queryKey] = struct{}{}
@@ -413,7 +413,7 @@ func indexIncrementalColdCarrierGraphQueries(
 			}
 			if _, duplicate := queryGroups[key]; duplicate {
 				return nil, nil, fmt.Errorf(
-					"incremental cold carrier wave query %q belongs to multiple groups", key.Opaque(),
+					"incremental cold carrier wave query %s belongs to multiple groups", key,
 				)
 			}
 			queryGroups[key] = group
@@ -724,7 +724,7 @@ func collectIncrementalColdCarrierLaneSources(
 			return fmt.Errorf("incremental cold carrier wave repeats batch item %d", item.batchIndex)
 		}
 		if _, duplicate := seenQueries[item.queryKey]; duplicate {
-			return fmt.Errorf("incremental cold carrier wave repeats query %q", item.queryKey.Opaque())
+			return fmt.Errorf("incremental cold carrier wave repeats query %s", item.queryKey)
 		}
 		seenIndexes[item.batchIndex] = struct{}{}
 		seenQueries[item.queryKey] = struct{}{}
