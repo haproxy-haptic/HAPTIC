@@ -422,7 +422,7 @@ type WatchedResource struct {
 	// Example: "spec.ingressClassName=haproxy-internal"
 	FieldSelector string `yaml:"field_selector,omitempty"`
 
-	// Namespaces restricts the watch to these namespaces; empty watches all.
+	// Namespaces restricts the watch; nil watches all, and an empty list is invalid.
 	// A template lookup into an unlisted namespace fails the render.
 	Namespaces []string `yaml:"namespaces,omitempty"`
 

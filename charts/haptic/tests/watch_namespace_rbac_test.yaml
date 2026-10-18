@@ -73,6 +73,47 @@ tests:
           path: spec.watchedResources.secrets.namespacesSetting
           value: controller.rbac.releaseNamespaceSecretsOnly
 
+  - it: scopes an aliased core Secret watch without restricting a custom resource named secrets
+    set:
+      controller.rbac.releaseNamespaceSecretsOnly: true
+      controller.config.watchedResources.certificates:
+        apiVersion: v1
+        resources: secrets
+        indexBy: ["metadata.namespace", "metadata.name"]
+      controller.config.watchedResources.customSecrets:
+        apiVersion: example.io/v1
+        resources: secrets
+        indexBy: ["metadata.namespace", "metadata.name"]
+    asserts:
+      - template: clusterrole.yaml
+        notContains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [secrets]
+            verbs: ["get", "list", "watch"]
+      - template: clusterrole.yaml
+        contains:
+          path: rules
+          content:
+            apiGroups: [example.io]
+            resources: [secrets]
+            verbs: ["get", "list", "watch"]
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        equal:
+          path: spec.watchedResources.certificates.namespaces
+          value: [haptic]
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        equal:
+          path: spec.watchedResources.certificates.namespacesSetting
+          value: controller.rbac.releaseNamespaceSecretsOnly
+      - template: haproxytemplateconfig.yaml
+        documentSelector: {path: kind, value: HAProxyTemplateConfig}
+        notExists:
+          path: spec.watchedResources.customSecrets.namespaces
+
   - it: grants an operator-scoped watch only in its namespaces, with its status rule
     set:
       controller.config.watchedResources.widgets:

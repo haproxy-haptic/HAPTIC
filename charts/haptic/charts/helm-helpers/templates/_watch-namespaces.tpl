@@ -1,20 +1,27 @@
 {{/*
-haptic.applySecretScope limits the union's secrets watch to the release
-namespace when controller.rbac.releaseNamespaceSecretsOnly is on. The
-ClusterRole, the namespaced watch Roles, and the config's watchedResources all
-read the union, so the RBAC grant and the watch scope come from this one value.
-Args: [union dict, root context].
+haptic.applySecretScope scopes core Secret watches by resource, including aliases.
+Args: [watch union, root context].
 */}}
 {{- define "haptic.applySecretScope" -}}
 {{- $union := index . 0 -}}
 {{- $root := index . 1 -}}
 {{- if $root.Values.controller.rbac.releaseNamespaceSecretsOnly -}}
-  {{- with (index $union "secrets") -}}
-    {{- if hasKey . "namespaces" -}}
-      {{- fail "controller.config.watchedResources.secrets.namespaces and controller.rbac.releaseNamespaceSecretsOnly both set the Secret watch's namespaces, so one would silently win. Remove controller.config.watchedResources.secrets.namespaces." -}}
+  {{- range $name, $resource := $union -}}
+    {{- $coreSecret := false -}}
+    {{- if eq $resource.resources "secrets" -}}
+      {{- range $version := (include "haptic.candidateVersionsOf" $resource | fromJsonArray) -}}
+        {{- if and (kindIs "string" $version) (not (contains "/" $version)) -}}
+          {{- $coreSecret = true -}}
+        {{- end -}}
+      {{- end -}}
     {{- end -}}
-    {{- $_ := set . "namespaces" (list $root.Release.Namespace) -}}
-    {{- $_ := set . "namespacesSetting" "controller.rbac.releaseNamespaceSecretsOnly" -}}
+    {{- if $coreSecret -}}
+      {{- if hasKey $resource "namespaces" -}}
+        {{- fail (printf "controller.config.watchedResources.%s.namespaces and controller.rbac.releaseNamespaceSecretsOnly both set the Secret watch's namespaces, so one would silently win. Remove controller.config.watchedResources.%s.namespaces." $name $name) -}}
+      {{- end -}}
+      {{- $_ := set $resource "namespaces" (list $root.Release.Namespace) -}}
+      {{- $_ := set $resource "namespacesSetting" "controller.rbac.releaseNamespaceSecretsOnly" -}}
+    {{- end -}}
   {{- end -}}
   {{- $default := $root.Values.defaultSSLCertificate -}}
   {{- if and $default.enabled $default.namespace (ne $default.namespace $root.Release.Namespace) -}}
