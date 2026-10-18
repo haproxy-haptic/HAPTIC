@@ -29,9 +29,10 @@ receive no apply or reload. A new pod becomes Ready only when HAProxy loads the
 configuration; a rejected apply leaves it NotReady.
 
 Recovery requires the latest recorded deployment and every configured HAProxy pod
-to agree. Before applying a configuration, the leader records its identity on the
-Kubernetes Lease. If a newer deployment started but its checkpoint wasn't saved,
-an older checkpoint can't start replacement pods. A partial rollout, an unreachable
+to agree. Before applying a configuration, the leader records the configuration's
+identity on the `<controller.configName>-retained-state` Lease
+(`haptic-config-retained-state` by default). If a newer deployment started but its checkpoint wasn't
+saved, an older checkpoint can't start replacement pods. A partial rollout, an unreachable
 pod, or disagreement with the checkpoint leaves new pods NotReady until rendering
 recovers or the newest checkpoint can be verified. Planned and sudden leader changes
 use the same checks.
@@ -166,7 +167,8 @@ with `haproxy.keda` or `haproxy.replicaCount`.
 
 <a id="rbac-requirements"></a>
 
-The chart grants the Lease permissions needed for leader election.
+The chart grants the Lease permissions needed for leader election and for the
+leader's deployment record.
 
 ## Monitoring leadership
 
@@ -185,6 +187,9 @@ kubectl get lease -n haptic haptic -o yaml
 # spec:
 #   holderIdentity: haptic-controller-7d9f8b4c6d-abc12
 ```
+
+The list also shows the `-retained-state` Lease, which holds the leader's
+deployment record and has no holder.
 
 ### View leadership status in logs
 

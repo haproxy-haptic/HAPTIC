@@ -195,7 +195,7 @@ func retainedChartFleet(ctx context.Context, t *testing.T, namespace string) (*a
 	require.NotNil(t, bootstrap)
 	for _, containers := range [][]corev1.Container{deployment.Spec.Template.Spec.Containers, deployment.Spec.Template.Spec.InitContainers} {
 		for i := range containers {
-			containers[i].Image = "haptic:test"
+			containers[i].Image = ControllerImageName
 			containers[i].ImagePullPolicy = corev1.PullNever
 		}
 	}
@@ -397,9 +397,11 @@ func (f *retainedFleet) dumpOnFailure(ctx context.Context, t *testing.T) {
 		t.Logf("    agent state (err %v): %s", err, state)
 		f.dumpLogs(ctx, t, pod, "agent", 50)
 	}
-	lease, err := Clientset().CoordinationV1().Leases(f.namespace).Get(ctx, "haptic-leader", metav1.GetOptions{})
-	if err == nil {
-		t.Logf("=== Lease holder %v, annotations %v", ptr.Deref(lease.Spec.HolderIdentity, ""), lease.Annotations)
+	for _, name := range []string{"haptic-leader", ControllerCRDName + "-retained-state"} {
+		lease, err := Clientset().CoordinationV1().Leases(f.namespace).Get(ctx, name, metav1.GetOptions{})
+		if err == nil {
+			t.Logf("=== Lease %s holder %v, annotations %v", name, ptr.Deref(lease.Spec.HolderIdentity, ""), lease.Annotations)
+		}
 	}
 	events, err := Clientset().CoreV1().Events(f.namespace).List(ctx, metav1.ListOptions{FieldSelector: "type=Warning"})
 	if err == nil {

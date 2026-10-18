@@ -30,10 +30,7 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  # Leader-election Lease and the fencing epoch annotation stamped on it, both in
-  # the controller's own namespace (POD_NAMESPACE) — a Role, not a ClusterRole,
-  # since the Lease never lives elsewhere. create on first acquire; get+update to
-  # renew and to bump/reclaim the epoch.
+  # Leader election and retained-state Leases both live in POD_NAMESPACE.
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "create", "update"]

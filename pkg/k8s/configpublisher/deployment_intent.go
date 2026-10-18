@@ -31,7 +31,10 @@ import (
 
 const kindTemplateConfig = "HAProxyTemplateConfig"
 
+// Releases 0.5 and 0.6 stored this annotation on the leader Lease (ADR-0033).
 const deploymentIntentAnnotation = "haproxy-haptic.org/deployment-intent"
+
+const leaderEpochAnnotation = "haptic.io/leader-epoch"
 
 // DeploymentAuthority binds one writer to the template UID and leadership term.
 type DeploymentAuthority struct {
@@ -49,38 +52,84 @@ type deploymentIntent struct {
 	UID      types.UID `json:"uid"`
 	Epoch    uint64    `json:"epoch"`
 	Claim    string    `json:"claim"`
+	Holder   string    `json:"holder,omitempty"`
 	PlanID   string    `json:"planID,omitempty"`
 	Checksum string    `json:"checksum,omitempty"`
 }
 
-// ClaimDeploymentAuthority fences previous writers without changing the last intent.
+// ErrDeploymentAuthorityLost reports that the leader Lease or the intent names
+// a newer term.
+var ErrDeploymentAuthorityLost = errors.New("deployment authority belongs to a newer controller term")
+
+// IntentEpochAheadError means a newer term claimed the intent or the leader epoch regressed.
+type IntentEpochAheadError struct {
+	Epoch uint64
+}
+
+func (e *IntentEpochAheadError) Error() string {
+	return fmt.Sprintf("the deployment intent was claimed at leader epoch %d, above this term's", e.Epoch)
+}
+
+// ClaimDeploymentAuthority fences previous writers without changing the last
+// intent, and moves an intent a 0.5 or 0.6 leader left on the leader Lease.
 func (p *Publisher) ClaimDeploymentAuthority(ctx context.Context, authority *DeploymentAuthority) error {
 	if authority.Claim == "" {
 		return errors.New("deployment authority has no claim")
 	}
-	return p.updateDeploymentIntent(ctx, authority, func(status *deploymentIntent) error {
-		if !authority.Standalone && status.Epoch > authority.Epoch {
-			return errors.New("deployment authority belongs to a newer controller term")
+	return retry.OnError(retry.DefaultRetry, retriableWrite, func() error {
+		var leader *coordinationv1.Lease
+		if !authority.Standalone {
+			var err error
+			if leader, err = p.leaderLease(ctx, authority); err != nil {
+				return err
+			}
 		}
-		if status.UID != authority.UID {
-			*status = deploymentIntent{UID: authority.UID}
+		legacy, hasLegacy := p.legacyDeploymentIntent(leader, authority.UID)
+		if err := p.writeDeploymentIntent(ctx, authority, func(status *deploymentIntent) error {
+			if status.UID != authority.UID {
+				*status = deploymentIntent{UID: authority.UID}
+			}
+			if !authority.Standalone && status.Epoch > authority.Epoch {
+				return &IntentEpochAheadError{Epoch: status.Epoch}
+			}
+			if legacy != nil {
+				status.PlanID, status.Checksum = legacy.PlanID, legacy.Checksum
+			}
+			status.Epoch, status.Claim, status.Holder = authority.Epoch, authority.Claim, authority.Identity
+			return nil
+		}); err != nil {
+			return err
 		}
-		status.Epoch, status.Claim = authority.Epoch, authority.Claim
-		return nil
+		if !hasLegacy {
+			return nil
+		}
+		// Only once the retained-state Lease holds it, and by compare-and-swap on
+		// the Lease whose holder and epoch were checked above.
+		delete(leader.Annotations, deploymentIntentAnnotation)
+		_, err := p.k8sClient.CoordinationV1().Leases(authority.Namespace).Update(ctx, leader, metav1.UpdateOptions{})
+		return err
 	})
 }
 
-// RecordDeploymentIntent must succeed before the first apply for this output.
+// RecordDeploymentIntent must succeed before the first apply for this output (ADR-0033).
 func (p *Publisher) RecordDeploymentIntent(ctx context.Context, authority *DeploymentAuthority, planID, checksum string) error {
 	if planID == "" || checksum == "" {
 		return errors.New("deployment intent has no output identity")
 	}
-	return p.updateDeploymentIntent(ctx, authority, func(status *deploymentIntent) error {
-		if status.UID != authority.UID || status.Claim != authority.Claim {
-			return errors.New("deployment authority changed before apply")
+	return retry.OnError(retry.DefaultRetry, retriableWrite, func() error {
+		if err := p.confirmLeadership(ctx, authority); err != nil {
+			return err
 		}
-		status.Epoch, status.PlanID, status.Checksum = authority.Epoch, planID, checksum
-		return nil
+		if err := p.writeDeploymentIntent(ctx, authority, func(status *deploymentIntent) error {
+			if status.UID != authority.UID || status.Claim != authority.Claim {
+				return errors.New("deployment authority changed before apply")
+			}
+			status.Epoch, status.PlanID, status.Checksum = authority.Epoch, planID, checksum
+			return nil
+		}); err != nil {
+			return err
+		}
+		return p.confirmLeadership(ctx, authority)
 	})
 }
 
@@ -102,8 +151,10 @@ func (p *Publisher) CheckDeploymentAuthority(ctx context.Context, authority *Dep
 	return err
 }
 
+// claimedDeploymentIntent reads the intent before the leader Lease: a newer term
+// bumps the epoch before it claims, so the second read sees any claim the first missed.
 func (p *Publisher) claimedDeploymentIntent(ctx context.Context, authority *DeploymentAuthority) (deploymentIntent, error) {
-	lease, err := p.deploymentLease(ctx, authority, false)
+	lease, err := p.intentLease(ctx, authority, false)
 	if err != nil {
 		return deploymentIntent{}, err
 	}
@@ -112,48 +163,46 @@ func (p *Publisher) claimedDeploymentIntent(ctx context.Context, authority *Depl
 		return status, err
 	}
 	if status.UID != authority.UID || status.Claim != authority.Claim {
-		return status, errors.New("deployment authority belongs to a newer controller term")
+		return status, ErrDeploymentAuthorityLost
 	}
-	return status, nil
+	return status, p.confirmLeadership(ctx, authority)
 }
 
-func (p *Publisher) updateDeploymentIntent(ctx context.Context, authority *DeploymentAuthority, update func(*deploymentIntent) error) error {
-	return retry.OnError(retry.DefaultRetry, retriableWrite, func() error {
-		lease, err := p.deploymentLease(ctx, authority, true)
-		if err != nil {
-			return err
-		}
-		status, err := readDeploymentIntent(lease, authority)
-		if err != nil {
-			return err
-		}
-		if err := update(&status); err != nil {
-			return err
-		}
-		encoded, err := json.Marshal(status)
-		if err != nil {
-			return err
-		}
-		if lease.Annotations[deploymentIntentAnnotation] == string(encoded) {
-			return nil
-		}
-		if lease.Annotations == nil {
-			lease.Annotations = map[string]string{}
-		}
-		lease.Annotations[deploymentIntentAnnotation] = string(encoded)
-		_, err = p.k8sClient.CoordinationV1().Leases(authority.Namespace).Update(ctx, lease, metav1.UpdateOptions{})
+// writeDeploymentIntent is one compare-and-swap on the retained-state Lease.
+func (p *Publisher) writeDeploymentIntent(ctx context.Context, authority *DeploymentAuthority, update func(*deploymentIntent) error) error {
+	lease, err := p.intentLease(ctx, authority, true)
+	if err != nil {
 		return err
-	})
+	}
+	status, err := readDeploymentIntent(lease, authority)
+	if err != nil {
+		return err
+	}
+	if err := update(&status); err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	if lease.Annotations[deploymentIntentAnnotation] == string(encoded) {
+		return nil
+	}
+	if lease.Annotations == nil {
+		lease.Annotations = map[string]string{}
+	}
+	lease.Annotations[deploymentIntentAnnotation] = string(encoded)
+	_, err = p.k8sClient.CoordinationV1().Leases(authority.Namespace).Update(ctx, lease, metav1.UpdateOptions{})
+	return err
 }
 
-func (p *Publisher) deploymentLease(ctx context.Context, authority *DeploymentAuthority, create bool) (*coordinationv1.Lease, error) {
-	name := authority.LeaseName
-	if authority.Standalone {
-		name = stableResourceName(authority.Name, "-retained-state", authority.Name)
-	}
+// intentLease is the template's retained-state Lease. Only the deployer writes
+// it, so the elector stays the only writer of the leader Lease.
+func (p *Publisher) intentLease(ctx context.Context, authority *DeploymentAuthority, create bool) (*coordinationv1.Lease, error) {
+	name := stableResourceName(authority.Name, "-retained-state", authority.Name)
 	client := p.k8sClient.CoordinationV1().Leases(authority.Namespace)
 	lease, err := client.Get(ctx, name, metav1.GetOptions{})
-	if apierrors.IsNotFound(err) && create && authority.Standalone {
+	if apierrors.IsNotFound(err) && create {
 		lease, err = client.Create(ctx, &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: authority.Namespace, OwnerReferences: []metav1.OwnerReference{{APIVersion: apiVersionV1Alpha1, Kind: kindTemplateConfig, Name: authority.Name, UID: authority.UID, Controller: ptr.To(true)}},
 		}}, metav1.CreateOptions{})
@@ -161,17 +210,57 @@ func (p *Publisher) deploymentLease(ctx context.Context, authority *DeploymentAu
 	if err != nil {
 		return nil, err
 	}
-	if authority.Standalone {
-		if !ownedByTemplate(lease, authority.Name, authority.UID) {
-			return nil, errors.New("retained-state Lease has a foreign owner")
-		}
-	} else {
-		epoch, err := strconv.ParseUint(lease.Annotations["haptic.io/leader-epoch"], 10, 64)
-		if err != nil || epoch != authority.Epoch || lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != authority.Identity {
-			return nil, errors.New("deployment authority belongs to a newer controller term")
-		}
+	if !ownedByTemplate(lease, authority.Name, authority.UID) {
+		return nil, errors.New("retained-state Lease has a foreign owner")
 	}
 	return lease, nil
+}
+
+// leaderLease reads the leader-election Lease, provided it names this term.
+func (p *Publisher) leaderLease(ctx context.Context, authority *DeploymentAuthority) (*coordinationv1.Lease, error) {
+	lease, err := p.k8sClient.CoordinationV1().Leases(authority.Namespace).Get(ctx, authority.LeaseName, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	epoch, err := strconv.ParseUint(lease.Annotations[leaderEpochAnnotation], 10, 64)
+	if err != nil || epoch != authority.Epoch || lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != authority.Identity {
+		return nil, ErrDeploymentAuthorityLost
+	}
+	return lease, nil
+}
+
+func (p *Publisher) confirmLeadership(ctx context.Context, authority *DeploymentAuthority) error {
+	if authority.Standalone {
+		return nil
+	}
+	_, err := p.leaderLease(ctx, authority)
+	return err
+}
+
+// legacyDeploymentIntent is the intent a 0.5 or 0.6 leader left on the leader
+// Lease, which supersedes the retained-state Lease's (ADR-0033). Needed while an
+// upgrade or rollback can involve 0.6, as TestUpgradedLeaderKeepsTheDeploymentIntentOfAnEarlierRelease pins.
+func (p *Publisher) legacyDeploymentIntent(leader *coordinationv1.Lease, uid types.UID) (adopt *deploymentIntent, present bool) {
+	if leader == nil {
+		return nil, false
+	}
+	encoded, present := leader.Annotations[deploymentIntentAnnotation]
+	if !present {
+		return nil, false
+	}
+	var legacy deploymentIntent
+	if err := json.Unmarshal([]byte(encoded), &legacy); err != nil {
+		p.logger.Warn("Discarding an unreadable deployment intent from the leader Lease; retained recovery stays unavailable until the next deployment",
+			"lease", leader.Name, "error", err)
+		return &deploymentIntent{}, true
+	}
+	if legacy.UID != uid {
+		return nil, true
+	}
+	if legacy.PlanID == "" && legacy.Checksum == "" && legacy.Claim != "" && legacy.Epoch > 0 {
+		return nil, true
+	}
+	return &legacy, true
 }
 
 func readDeploymentIntent(lease *coordinationv1.Lease, authority *DeploymentAuthority) (deploymentIntent, error) {

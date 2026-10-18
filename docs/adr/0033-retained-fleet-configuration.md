@@ -72,12 +72,15 @@ before dispatch. This keeps an invalid cold render from superseding the durable
 intent before any worker can load it. After the first accepted render, the existing
 asynchronous render gate behavior remains unchanged (ADR-0022).
 
-Before the first agent apply, atomically record the output plan ID and content
-checksum on the leader Lease. The update checks the Lease holder, fencing epoch,
-and resource version together. A new leader claims its writer identity while
-preserving the last deployment intent. A delayed previous leader cannot overwrite
-that intent after takeover. Lease renewals preserve the annotation. Without leader
-election, an owned retained-state Lease preserves the same record across restarts.
+Before the first agent apply, record the output plan ID and content checksum on
+the retained-state Lease that the `HAProxyTemplateConfig` owns. The record names
+the term's claim, holder identity, and fencing epoch, and the leader-election
+Lease must still name that holder and epoch before and after the write. A new
+leader claims its writer identity while preserving the last deployment intent. A
+delayed previous leader cannot overwrite that intent after the new claim. The same
+Lease holds the record with and without leader election, so it survives restarts
+in both modes. [Deployment intent storage](#deployment-intent-storage) explains
+why it is not on the leader-election Lease.
 
 Recording intent before apply closes the interval between a pod loading new bytes
 and the publisher saving its acknowledgement. If intent names a newer output but
@@ -86,6 +89,54 @@ checkpoint, even if every old pod has disappeared. A failed or interrupted newer
 apply therefore sacrifices replacement capacity until rendering recovers; it never
 makes an older checkpoint eligible again. A normal successful render can establish
 a fresh deployment intent through the usual validation and deployment path.
+
+### Deployment intent storage
+
+Releases 0.5 and 0.6 kept the intent on the leader-election Lease. One
+compare-and-swap then checked holder, epoch, and claim together, and one read
+returned all of them. It also made every deployment a second writer of the Lease
+client-go renews: an intent write between a renewal's read and its update failed
+the renewal, which client-go logs as `Failed to update lease` at ERROR, and spent
+one of the attempts that fit into `renewDeadline` (issue #413). While a term holds
+the leader-election Lease, only the elector writes it; the epoch claim writes it
+once per term, and `Reclaim` only after the counter regressed.
+
+The intent lives on the retained-state Lease instead. Each guarantee moves as
+follows:
+
+- **Writers.** A record is a compare-and-swap on the retained-state Lease that
+  requires this term's claim, with a read of the leader-election Lease before and
+  after it that requires this holder and epoch. A claim's compare-and-swap refuses
+  a stored epoch above the term's. A newer term increments the epoch before it
+  claims, so a record whose write follows that claim fails the claim check, and
+  one whose second read follows the takeover or the increment fails that read;
+  the deposed term then does not apply. Unlike the single-object write in 0.6,
+  an intent can land after a successor bumps the epoch but before it claims
+  the retained-state Lease. The second leadership read refuses the apply,
+  but the successor preserves that intent. Recovery then refuses older
+  checkpoints until a fresh render succeeds. This can delay recovery; it cannot
+  make an older checkpoint eligible.
+- **Readers.** Recovery and the drain check read the intent before the
+  leader-election Lease. Since the epoch increment precedes the claim, a claim
+  the first read misses shows in the second, so both reads pass exactly when one
+  read of both objects at the time of the second would have.
+- **Epoch regression.** The retained-state Lease outlives a recreated
+  leader-election Lease, whose counter restarts. A claim that meets a higher
+  stored epoch calls `Reclaim`, which lifts the epoch only while the
+  leader-election Lease names this holder at the epoch it claimed, as for an
+  outranking pod. Before, recreating the Lease discarded the intent with it.
+- **Upgrade.** Each claim reads the copy a 0.5 or 0.6 leader left on the
+  leader-election Lease. Every claim removes that copy, so a copy that is present
+  was written by an older-version leader after the last claim. A valid claim
+  with no plan preserves the retained intent: that leader recorded no deployment.
+  For the same template UID a recorded plan supersedes the retained intent. The
+  claim writes it to the retained-state Lease, and only then removes the copy, by compare-and-swap on
+  the leader-election Lease whose holder and epoch it checked. An unreadable copy
+  adopts no plan. After a rollback to 0.6, the older controller ignores the
+  retained-state Lease and refuses every checkpoint until it deploys.
+
+No check is removed. The Role already grants get, create, and update on Leases in
+the release namespace, which standalone mode used for the same Lease.
 
 ### Recovery and agreement
 
@@ -148,8 +199,8 @@ same-replica hand-over. While the term still renews the Lease, the scheduler
 dispatches no plan other than the last one it dispatched, completed or timed
 out, and waits for that deployment and its pending-reload follow-ups, because a
 paced reload confirms the worker receipt only on the follow-up. The deployer
-then starts no further deployment, waits for any in flight, and re-reads the
-Lease to confirm that holder, epoch, and claim are still its own. Only then does
+then starts no further deployment, waits for any in flight, and re-reads both
+Leases to confirm that holder, epoch, and claim are still its own. Only then does
 the publisher handle every event already delivered and publish the newest
 acknowledged receipt past the throttle, through the normal checkpoint path and
 publication latch. The drain runs under the term's context, which ends when
@@ -277,5 +328,13 @@ the checkpoint the intent names. `TestDrainPublishesNothingAfterAnotherReplicaTo
 proves that a term whose Lease another replica claimed writes no `HAProxyCfg`.
 `TestSchedulerDrainFollowsUpThePendingReloadAndDispatchesNoNewerPlan` covers a
 stop during a paced reload.
+`TestDeploymentIntentWritesNeverFailALeaseRenewal` runs the real client-go
+elector against a fake API server that enforces resource versions, and records
+an intent ahead of every renewal update; no renewal may fail.
+`TestUpgradedLeaderKeepsTheDeploymentIntentOfAnEarlierRelease` leaves the intent
+where 0.6 kept it and requires the next leader to recover the checkpoint it
+names. Unit tests cover a deposed term recording before and during its
+successor's takeover, a delayed claim, a recreated leader-election Lease, and
+moving, dropping, and superseding the copy on the leader-election Lease.
 `TestLeaderChangeReloadsNothing` remains the normal failover regression. Full
 merge-train validation is required before merge.
