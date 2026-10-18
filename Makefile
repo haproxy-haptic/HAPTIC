@@ -1211,10 +1211,10 @@ verify-generate: ## Verify generated code (CRDs, DeepCopy) is up-to-date
 	@# running this with a freshly regenerated (but not yet committed) type threw
 	@# that work away and left the tree unbuildable. CI runs on a fresh checkout,
 	@# so there is nothing there worth reverting either.
-	@if ! git diff --quiet --exit-code -- charts/haptic/crds/ charts/haptic/files/default-values.json 'pkg/apis/**/zz_generated.*.go' '$(SCHEMA_DIR)/haproxy-haptic.org_*.yaml'; then \
+	@if ! git diff --quiet --exit-code -- charts/haptic/crds/ charts/haptic/charts/helm-helpers/files/default-values.json 'pkg/apis/**/zz_generated.*.go' '$(SCHEMA_DIR)/haproxy-haptic.org_*.yaml'; then \
 		echo ""; \
 		echo "ERROR: Generated files are out of date:"; \
-		git diff --stat -- charts/haptic/crds/ charts/haptic/files/default-values.json 'pkg/apis/**/zz_generated.*.go' '$(SCHEMA_DIR)/haproxy-haptic.org_*.yaml'; \
+		git diff --stat -- charts/haptic/crds/ charts/haptic/charts/helm-helpers/files/default-values.json 'pkg/apis/**/zz_generated.*.go' '$(SCHEMA_DIR)/haproxy-haptic.org_*.yaml'; \
 		echo ""; \
 		echo "The regenerated files have been left in place — commit them."; \
 		exit 1; \
@@ -1226,7 +1226,7 @@ verify-generate: ## Verify generated code (CRDs, DeepCopy) is up-to-date
 generate: generate-crds generate-deepcopy generate-clientset generate-chart-defaults ## Run all code generation
 
 generate-chart-defaults: ## Copy the chart's default values to where its templates can read them
-	yq -o json -I0 '... comments=""' charts/haptic/values.yaml > charts/haptic/files/default-values.json
+	yq -o json -I0 '... comments=""' charts/haptic/values.yaml > charts/haptic/charts/helm-helpers/files/default-values.json
 
 generate-crds: ## Generate CRD manifests from Go types
 	@echo "Generating CRD manifests..."

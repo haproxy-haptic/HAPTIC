@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Raw HAProxy configuration annotations are rejected by default. Any Ingress writer in a watched namespace could otherwise change the configuration for every host, or read HAProxy's TLS keys through a backend directive.
-- Clients can no longer forge the client address or scheme a backend sees: HAPTIC replaces a client-sent `X-Forwarded-For` instead of appending to it, and sets `X-Forwarded-Proto` ([#406](https://github.com/haproxy-haptic/HAPTIC/issues/406)).
+- By default, HAPTIC replaces client-sent `X-Forwarded-For` and `X-Forwarded-Proto` to prevent forged client addresses and schemes ([#406](https://github.com/haproxy-haptic/HAPTIC/issues/406)).
 
 ### Helm chart
 
@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Fixed
 
 - WAF governance's `allowRawHAProxyConfig: false` also rejects raw configuration annotations when the `hapticAnnotations` library is disabled.
+- Reduce Helm release storage by keeping generated defaults in the helper subchart.
 - `haproxy-haptic.org/forwardfor` and `haproxy-ingress.github.io/forwardfor`: `add` and `update` no longer send the client address twice, and `ifmissing` and `ignore` no longer append it to the client's header.
 - haproxytech: `haproxy.org/forwarded-for: "false"` forwards the client's `X-Forwarded-For` unchanged; it was ignored.
 

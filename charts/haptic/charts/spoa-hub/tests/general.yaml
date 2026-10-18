@@ -135,6 +135,42 @@ validationTests:
       - {type: contains, target: file:spoe.conf, pattern: "args auth_url=var\\(txn.auth_url\\)"}
       - {type: contains, target: file:spoe.conf, pattern: "spoe-group check-auth-group"}
 
+  test-spoa-hub-frontend-filters-newline-after-forwardfor:
+    _helm_skip_test: '{{ if semverCompare "<3.1" .Values.haproxyVersion }}true{{ else }}false{{ end }}'
+    description: Forwarded-header rules and the SPOE filter render on separate lines.
+    extraContext:
+      haproxyVersion: "3.2"
+      spoaHub: *spoahubEnabledHaproxy
+    fixtures:
+      services:
+        - apiVersion: v1
+          kind: Service
+          metadata: {namespace: default, name: ff-svc}
+          spec:
+            ports:
+              - port: 80
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ff-ingress
+            annotations:
+              haproxy.org/forwarded-for: "true"
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: ff.example.com
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend: {service: {name: ff-svc, port: {number: 80}}}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^[ \t]+filter spoe engine '}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^[ \t]+http-request add-header X-Forwarded-For %\[src\]'}
+
   test-spoa-hub-mode-tcp-on-haproxy-3-0:
     description: "On HAProxy 3.0 the `spop` proxy mode doesn't exist (introduced in 3.1). The chart must auto-fall-back the spoa-hub backend to `mode tcp` — both transports work with the SPOE filter; mode spop is just..."
     extraContext:
