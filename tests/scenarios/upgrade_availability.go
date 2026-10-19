@@ -11,6 +11,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -126,7 +127,9 @@ func (u *upgrade) trafficProbePod(ctx context.Context) (*corev1.Pod, error) {
 		ObjectMeta: metav1.ObjectMeta{Name: "upgrade-continuous-traffic", Namespace: s.Namespace},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
+			// The guarantee covers steady clients; a CPU-starved probe pauses past the drain's quiet period.
 			Containers: []corev1.Container{{Name: "probe", Image: image,
+				Resources:    corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: apiresource.MustParse("250m")}},
 				Command:      []string{"/bin/sh", "-c", upgradeProbeScript, "sh", urlHost(service.Spec.ClusterIP)},
 				VolumeMounts: []corev1.VolumeMount{{Name: "tls", MountPath: "/tls", ReadOnly: true}},
 			}},
