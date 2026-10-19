@@ -161,6 +161,54 @@ coverage; they are not permission to build a feature on Lua. Generic upstream
 schemas and operator-file transport remain generic. Do not expand exemptions or
 disable the check to introduce Lua.
 
+## Complexity Must Pay for Itself (RULE #5)
+
+**Judge the total cost of a change against the problem actually observed, not each
+step's local correctness.** "It's correct" does not mean "it's worth it." "Do the proper
+fix" means proportionate, not exhaustive.
+
+Run this gate before writing code for any fix or feature that adds a watch, API call,
+permission, background loop, fallback path, config knob, or dependency on another
+component. Run it again each time the same fix grows; judge the cumulative diff.
+Write the answers in the plan or PR as numbers or yes/no.
+
+| # | Question | Questionable when |
+|---|---|---|
+| 1 | How often, and with what impact, has the problem been seen outside a test that forces it? | Only test-forced or theoretical |
+| 2 | Has the user already accepted this risk (issue, ADR, CLAUDE.md)? | Yes, and not reopened |
+| 3 | Which common deployment paths does it fix, and which does it miss? | Misses the common ones |
+| 4 | Do comparable projects do this? If none does, why not? | None does, and no reason is known |
+| 5 | New permissions, credentials, egress, or attack surface? | Any on a data-plane pod |
+| 6 | New failure, fallback, or degraded modes? | Two or more |
+| 7 | New config knobs? | Any that exists only to tune or disable this |
+| 8 | New coupling to other components, kinds, or external systems? | Any outside HAPTIC's ownership |
+| 9 | Cost at fleet scale (API calls, watches, memory, CPU), back-of-envelope? | Grows per data-plane pod, or with nodes |
+| 10 | Do upgrade, rollback, and disable stay clean? | No, or untested |
+| 11 | Does a smaller fix, a documented limitation, or no change suffice? | Yes |
+
+Questions 1–4 and 11 weigh the benefit; 5–10 weigh the cost. **If a benefit answer and
+a cost answer are both questionable, stop before building.** Present the user with the
+observed problem, the cost answers, the cheaper options (including documenting the
+limitation), and your recommendation. Building first and asking afterwards is not
+asking. Otherwise record the answers and proceed: the gate is not a reason to hand
+ordinary code decisions back to the user.
+
+**This does not relax RULE #2.** Declining to add mechanism for a rare, accepted risk
+does not weaken validation. Loosening a check to make it pass still does. A test that
+asserts more than the product guarantees may be aligned to the documented guarantee
+only with the user's explicit consent, stated in the PR. Where a validation guarantee is
+at stake, RULE #2 wins: cost is not an argument there.
+
+Provenance: #224 accepted the ~45 ms connection-refusal window between HAProxy's soft
+stop and kube-proxy deprogramming. #449 then added a routing-aware drain to close a
+narrower case: EndpointSlice and Service watches, cluster-wide Node listing, polling
+every node's kube-proxy healthz, a pod API token with RBAC and egress, and a dozen
+fallback modes. It missed the common production paths, caused a rollback regression
+(#451), and none of about 20 surveyed projects does anything similar. Each step was
+judged locally correct; the total was never weighed. Removed on 2026-10-19.
+
+Rationale and sources: [docs/agents/complexity-gate.md](docs/agents/complexity-gate.md).
+
 ## Coding Standards
 
 ### Naming
