@@ -26,6 +26,24 @@ instructions apply to every agent and future session.
 - Rebase only for a conflict or another concrete requirement. Post-merge CI
   tests the combined code; routine rebases invalidate CI and review evidence.
 
+## While a pull request is in CI
+
+Waiting is only useful while the pull request can still merge.
+
+- On every check, read `mergeable` and `mergeStateStatus` as well as the jobs.
+  When the pull request conflicts, rebase and push right away; a run on a
+  conflicting head can't merge.
+- Start investigating the first failed job at once: its log, its artifacts,
+  and a local reproduction. Don't wait for the rest of the run or for
+  `verified`.
+- Prepare and gate the fix locally while the run continues, then push it once.
+- If `verified` failed only because it read an incomplete job inventory or a
+  GitHub API error while every job passed, rerun the whole run once after the
+  incident clears. A failed-only rerun can't pass: the receipt requires every
+  job from one attempt.
+- While nothing has failed and the pull request is mergeable, use the wait for
+  open verification instead of idling.
+
 ## Before merging
 
 1. Read every Gitar review, thread, and summary for the final source SHA. Fix
