@@ -32,7 +32,7 @@ while :; do
       exit 1
     fi
   done
-  printf 'OK HTTP HTTPS\n'
+  printf 'OK HTTP HTTPS at %s\n' "$(date -u +%FT%T.%NZ)"
   if [ -e /tmp/haptic-upgrade-stop ]; then
     printf 'COMPLETE\n'
     exit 0
