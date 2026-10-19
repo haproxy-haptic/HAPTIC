@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -99,9 +100,6 @@ func (c *Cluster) Create(ctx context.Context, image string) error {
 	if image != "" {
 		args = append(args, "--image", image)
 	}
-	if c.ReadyTimeout > 0 {
-		args = append(args, "--wait", c.ReadyTimeout.String())
-	}
 	if _, err = c.run(ctx, "kind", args...); err != nil {
 		return err
 	}
@@ -119,7 +117,13 @@ func (c *Cluster) Create(ctx context.Context, image string) error {
 	if result, err := c.Client("").Run(ctx, nil, "cluster-info"); err != nil {
 		return fmt.Errorf("kind API unavailable: %w: %s", err, result.Stderr)
 	}
-	return c.Blackhole(ctx)
+	if err := c.Blackhole(ctx); err != nil {
+		return err
+	}
+	if nodes, err = c.ownedNodes(ctx); err != nil {
+		return err
+	}
+	return c.installKindnet(ctx, nodes)
 }
 
 func (c *Cluster) reserveKubeconfig() error {
@@ -232,7 +236,11 @@ func hasOwnerMount(identity nodeIdentity, owner string) bool {
 }
 
 func (c *Cluster) run(ctx context.Context, name string, args ...string) (process.Result, error) {
-	result, err := c.runner.Run(ctx, &process.Command{Name: name, Args: args, Env: maps.Clone(c.Environment)})
+	return c.runInput(ctx, nil, name, args...)
+}
+
+func (c *Cluster) runInput(ctx context.Context, input io.Reader, name string, args ...string) (process.Result, error) {
+	result, err := c.runner.Run(ctx, &process.Command{Name: name, Args: args, Env: maps.Clone(c.Environment), Stdin: input})
 	if err != nil {
 		return result, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(result.Stderr))
 	}

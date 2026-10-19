@@ -33,6 +33,7 @@ func ownedKindConfig(input []byte, owner, dockerHost string) ([]byte, error) {
 	if len(config.Nodes) == 0 {
 		config.Nodes = []kindconfig.Node{{Role: kindconfig.ControlPlaneRole}}
 	}
+	config.Networking.DisableDefaultCNI = true
 	if err := markOwnedNodes(&config, owner); err != nil {
 		return nil, err
 	}

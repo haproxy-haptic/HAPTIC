@@ -4,3 +4,9 @@ kind_blackhole_synthetic_backends() {
   repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   "$repo/scripts/test-infra.sh" blackhole-backends --cluster "$1"
 }
+
+kind_install_kindnet() {
+  local repo
+  repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  "$repo/scripts/test-infra.sh" install-kindnet --cluster "$1"
+}
