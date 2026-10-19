@@ -40,9 +40,9 @@ Waiting is only useful while the pull request can still merge.
   `verified`.
 - Prepare and gate the fix locally while the run continues, then push it once.
 - If `verified` failed only because it read an incomplete job inventory or a
-  GitHub API error while every job passed, rerun the whole run once after the
-  incident clears. A failed-only rerun can't pass: the receipt requires every
-  job from one attempt.
+  GitHub API error while every job passed, rerun it once after the incident
+  clears. If the receipt then reports jobs of an earlier attempt as missing,
+  rerun the whole run once instead.
 - While nothing has failed and the pull request is mergeable, use the wait for
   open verification instead of idling.
 
