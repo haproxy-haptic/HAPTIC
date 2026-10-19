@@ -33,7 +33,7 @@ const (
 	PathHealthz = "/healthz"
 	PathReadyz  = "/readyz"
 	// PathDrain is served on the drain unix socket only: it holds the preStop
-	// hook until the worker sees no new connection for the quiet period.
+	// hook until nothing routes new connections to the pod (ADR-0037).
 	PathDrain = "/drain"
 )
 

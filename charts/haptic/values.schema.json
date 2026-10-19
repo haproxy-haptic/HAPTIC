@@ -2197,6 +2197,11 @@
             "enabled": {
               "type": "boolean"
             },
+            "kubeProxyHealthzPort": {
+              "type": "integer",
+              "maximum": 65535,
+              "minimum": 0
+            },
             "maxWaitSeconds": {
               "type": "integer"
             },
@@ -2363,6 +2368,12 @@
             },
             "extraIngress": {
               "type": "array"
+            },
+            "kubeProxyCIDRs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "additionalProperties": false

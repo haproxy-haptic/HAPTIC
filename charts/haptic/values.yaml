@@ -1772,16 +1772,25 @@ haproxy:
   # Termination: kubelet stops HAProxy with SIGUSR1, HAProxy's own soft stop
   # (listeners unbind, in-flight connections finish, hardStopAfter caps the
   # drain). Before that signal the HAProxy container's preStop hook waits on the
-  # agent's drain socket until no new connection has reached the pod for
-  # quietPeriodSeconds, which is when kube-proxy has stopped routing to it, and
-  # never longer than maxWaitSeconds. The agent, spoa-hub and vector are native
-  # sidecars, stopped only after HAProxy exited from the same grace budget:
-  # maxWaitSeconds plus hardStopAfter plus their shutdown must fit in
-  # terminationGracePeriodSeconds.
+  # agent's drain socket until no Service routes new connections to the pod and
+  # no new connection reached it for quietPeriodSeconds, and never longer than
+  # maxWaitSeconds. The agent reads the routing from the pod's EndpointSlices and
+  # from kube-proxy's healthz on every node: kube-proxy must have synced the
+  # pod's removal everywhere. Where kube-proxy is replaced or its healthz is
+  # unreachable, the agent logs a warning and the quiet period alone decides:
+  # https://haproxy-haptic.org/docs/latest/haproxy-deployment/#pod-termination
+  # The agent, spoa-hub and vector are native sidecars, stopped only after
+  # HAProxy exited from the same grace budget: maxWaitSeconds plus
+  # hardStopAfter plus their shutdown must fit in terminationGracePeriodSeconds.
   drain:
     enabled: true
     quietPeriodSeconds: 2
     maxWaitSeconds: 10
+    # kube-proxy's healthz port on every node. 0 turns the routing check off
+    # (no API token, RBAC or extra egress): the quiet period alone then ends the
+    # drain and connections are refused when clients pause while kube-proxy
+    # still routes to the pod.
+    kubeProxyHealthzPort: 10256  # @schema minimum: 0; maximum: 65535
   # Container lifecycle hooks for the HAProxy container; when set they replace
   # the drain hook.
   lifecycle: {}  # @schema skipProperties; additionalProperties: true
@@ -1892,6 +1901,12 @@ haproxy:
     allowedSources: []
     # Extra ingress rules merged into the NetworkPolicy as-is.
     extraIngress: []
+    # Node addresses whose kube-proxy healthz (haproxy.drain.kubeProxyHealthzPort)
+    # the drain may read. The API-server egress the drain also needs follows
+    # controller.networkPolicy.egress.kubernetesApi.
+    kubeProxyCIDRs:
+      - 0.0.0.0/0
+      - "::/0"
     # Additional custom egress rules
     # Default egress rules allow DNS and backend service connections
     # Use this to add additional egress restrictions
