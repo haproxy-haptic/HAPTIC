@@ -11,3 +11,7 @@ starting or retrying CI, or merging. CI savings never authorize an unverified me
 optional features, and per-thread scripts. Follow [No Lua features](CLAUDE.md#no-lua-features-rule-4);
 passing tests or benchmarks does not authorize an exception. Carry this constraint
 into every delegated task.
+
+**Weigh total cost before adding mechanism.** Apply the [complexity gate](CLAUDE.md#complexity-must-pay-for-itself-rule-5)
+before building; when it says "questionable", present cost and benefit to the user
+instead of building.
