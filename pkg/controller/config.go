@@ -334,18 +334,11 @@ func logSpecOverrides(overrides []conversion.SpecOverride, logger *slog.Logger) 
 }
 
 // finalizeConfigLoad marks config as loaded for health checks and records
-// the initial CRD / credentials-Secret resource versions so the bootstrap
-// watcher events (which the watcher fires the moment it observes existing
-// resources at iteration startup) don't trigger a redundant reinitialization
-// loop. The handler still triggers reinitialization on later events whose
-// version differs — that's how CRD changes and credentials rotation reach
-// the iteration restart, going through the same configChangeCh path.
-func finalizeConfigLoad(state *configState, setup *componentSetup, crdVersion, credentialsVersion string) {
+// the initial CRD resource version so the watcher's bootstrap event doesn't
+// trigger a redundant reinitialization loop.
+func finalizeConfigLoad(state *configState, setup *componentSetup, crdVersion string) {
 	state.SetLoaded()
 	setup.ConfigChangeHandler.SetInitialConfigVersion(crdVersion)
-	if credentialsVersion != "" {
-		setup.ConfigChangeHandler.SetInitialCredentialsVersion(credentialsVersion)
-	}
 }
 
 // extractSecretData extracts the raw data map from a Kubernetes Secret resource.

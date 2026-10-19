@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The config publisher logs API calls cancelled by its own shutdown or reinitialization at INFO instead of WARN; other failures stay at WARN ([#444](https://github.com/haproxy-haptic/HAPTIC/issues/444)).
 - Waiting for the render gate's first verdict after a start or configuration change logs at INFO instead of WARN; holding renders after a failed verdict stays at WARN ([#445](https://github.com/haproxy-haptic/HAPTIC/issues/445)).
 - A controller could stop deploying, leaving HAProxy pods unready, when the render gate's verdict reached the deployment scheduler before the render it named. Each component now receives an event before any reaction to it.
+- A Helm upgrade or any other update to the credentials Secret that leaves `dataplane_username` and `dataplane_password` unchanged no longer restarts the controller iteration. Every chart-version upgrade did, which briefly doubled controller memory during the rollout and could OOMKill large installs ([#456](https://github.com/haproxy-haptic/HAPTIC/issues/456)).
 
 ### Security
 

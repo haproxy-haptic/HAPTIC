@@ -39,7 +39,7 @@ stringData:
 
 **In** — `SecretResourceChangedEvent{Resource}` from a `SingleWatcher` that points at the Secret selected by `--secret-name` / `SECRET_NAME`. The `resourceVersion` is read from the unstructured resource by the loader itself; there's no separate version field on the event.
 
-**Out** — `CredentialsUpdatedEvent{Credentials, SecretVersion}` on success. Failures are logged directly because no component coordinates on them.
+**Out** — `CredentialsUpdatedEvent{Credentials, SecretVersion}` on success, for every Secret update including label-only ones; `configchange` restarts the iteration only when the credentials differ from the active ones. Failures are logged directly because no component coordinates on them.
 
 ## See Also
 
