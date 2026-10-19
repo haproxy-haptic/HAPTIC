@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.0] - 2026-10-20
 
-HAPTIC 0.7 closes two ways an Ingress writer or a client could influence what
-other routes see: raw HAProxy configuration annotations now need an explicit
-opt-in, and every HTTP frontend replaces client-sent forwarded headers. Chart
-upgrades roll the controller to the new image before applying new templates.
+HAPTIC 0.7 hardens two trust boundaries: raw HAProxy configuration annotations,
+which let an Ingress writer change the configuration for every host, need an
+explicit opt-in, and every HTTP frontend replaces client-sent forwarded headers,
+so clients can't forge their address. Chart upgrades roll the controller to the
+new image before applying new templates.
 
 **Before upgrading:** check your Ingresses for raw configuration annotations and
 `haproxy-ingress.github.io/forwardfor`, and list any L7 proxies in front of
