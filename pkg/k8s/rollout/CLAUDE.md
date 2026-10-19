@@ -13,3 +13,7 @@ never expose or proxy loopback-only `/debug/*` as part of this utility.
 
 Release the image patch's managedFields entry right after patching; a retained owner
 makes the release tool's next server-side apply (upgrade or rollback) conflict.
+A retried hook can find its own patch applied with old Pods still running: release
+ownership again and wait; Pods on the previous image are a rollout, not a retag.
+Guard metadata patches with a `resourceVersion` value (409, retried), never a JSON
+Patch `test` op (422, not retried).

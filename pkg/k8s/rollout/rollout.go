@@ -52,6 +52,10 @@ func (p *Plan) Run(ctx context.Context) error {
 		return fmt.Errorf("controller Deployment %s is paused; resume it before preparing the upgrade", p.Deployment.Name)
 	}
 	if current.Image == p.Image && current.ImagePullPolicy == p.PullPolicy {
+		// A retried preparation finds its own patch applied but possibly still owned.
+		if err := p.releaseOwnership(ctx); err != nil {
+			return err
+		}
 		return p.wait(ctx, true)
 	}
 	if replicas(p.Deployment) == 0 {
@@ -70,7 +74,7 @@ func (p *Plan) Run(ctx context.Context) error {
 	}
 	p.Deployment = updated
 	if err := p.releaseOwnership(ctx); err != nil {
-		return fmt.Errorf("release image ownership on Deployment %s: %w", p.Deployment.Name, err)
+		return err
 	}
 	return p.wait(ctx, false)
 }
@@ -79,7 +83,7 @@ func (p *Plan) Run(ctx context.Context) error {
 // old value makes the release tool's next server-side apply, such as a rollback, conflict.
 func (p *Plan) releaseOwnership(ctx context.Context) error {
 	deployments := p.Client.AppsV1().Deployments(p.Deployment.Namespace)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current, err := deployments.Get(ctx, p.Deployment.Name, metav1.GetOptions{})
 		if err != nil {
 			return err
@@ -97,8 +101,10 @@ func (p *Plan) releaseOwnership(ctx context.Context) error {
 		if len(kept) == len(current.ManagedFields) || len(kept) == 0 {
 			return nil
 		}
+		// A resourceVersion in the patched object makes a concurrent write a retryable
+		// Conflict; a failed JSON Patch "test" op is a non-retryable Invalid.
 		patch, err := json.Marshal([]map[string]any{
-			{"op": "test", "path": "/metadata/resourceVersion", "value": current.ResourceVersion},
+			{"op": "replace", "path": "/metadata/resourceVersion", "value": current.ResourceVersion},
 			{"op": "replace", "path": "/metadata/managedFields", "value": kept},
 		})
 		if err != nil {
@@ -111,6 +117,10 @@ func (p *Plan) releaseOwnership(ctx context.Context) error {
 		p.Deployment = updated
 		return nil
 	})
+	if err != nil {
+		return fmt.Errorf("release image ownership on Deployment %s: %w", p.Deployment.Name, err)
+	}
+	return nil
 }
 
 func (p *Plan) wait(ctx context.Context, unchangedImage bool) error {

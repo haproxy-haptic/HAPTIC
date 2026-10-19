@@ -136,15 +136,29 @@ func (s *Session) finishTrafficProbe(ctx context.Context, name string) error {
 		if err != nil {
 			return testutil.PollFailed, err
 		}
-		switch pod.Status.Phase {
-		case corev1.PodSucceeded:
-			return testutil.PollSucceeded, nil
-		case corev1.PodFailed:
-			return testutil.PollFailed, errors.New("continuous HTTP/HTTPS probe failed before its final pair")
-		default:
-			return testutil.PollPending, nil
-		}
+		return probeExit(&pod)
 	})
+}
+
+var errProbeFailed = errors.New("continuous HTTP/HTTPS probe failed before its final pair")
+
+// probeExit reads the container's own exit: kubelet can report the terminal
+// pod phase many seconds after the container stopped.
+func probeExit(pod *corev1.Pod) (testutil.PollResult, error) {
+	for i := range pod.Status.ContainerStatuses {
+		status := &pod.Status.ContainerStatuses[i]
+		if status.Name != "probe" || status.State.Terminated == nil {
+			continue
+		}
+		if status.State.Terminated.ExitCode != 0 {
+			return testutil.PollFailed, errProbeFailed
+		}
+		return testutil.PollSucceeded, nil
+	}
+	if pod.Status.Phase == corev1.PodFailed {
+		return testutil.PollFailed, errProbeFailed
+	}
+	return testutil.PollPending, nil
 }
 
 func (u *upgrade) rollbackBaseline(ctx context.Context) error {

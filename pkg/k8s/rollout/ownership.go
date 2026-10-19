@@ -73,6 +73,13 @@ func (p *Plan) VerifyUnchangedImage(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if container := Container(pod.Spec.Containers, p.Container); p.pods[pod.UID] && (container == nil || container.Image != p.Image) {
+			// An interrupted preparation already changed the image; Run's wait proves each replacement.
+			return nil
+		}
+	}
 	verified := int32(0)
 	for i := range pods.Items {
 		pod := &pods.Items[i]

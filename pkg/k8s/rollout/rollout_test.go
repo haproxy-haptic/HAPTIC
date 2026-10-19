@@ -232,3 +232,52 @@ func TestPlanReleasesImageOwnershipToTheReleaseTool(t *testing.T) {
 	assert.Equal(t, []metav1.ManagedFieldsEntry{{Manager: "helm", Operation: metav1.ManagedFieldsOperationApply}}, deployment.ManagedFields,
 		"a retained owner conflicts with the release tool's next apply, including rollback")
 }
+
+func TestReleaseOwnershipRetriesAConcurrentDeploymentWrite(t *testing.T) {
+	plan, client, _ := rolloutFixture()
+	plan.Deployment.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: "helm"}, {Manager: FieldManager}}
+	_, err := client.AppsV1().Deployments("test").Update(t.Context(), plan.Deployment, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	attempts := 0
+	client.PrependReactor("patch", "deployments", func(action ktesting.Action) (bool, runtime.Object, error) {
+		var ops []map[string]any
+		require.NoError(t, json.Unmarshal(action.(ktesting.PatchAction).GetPatch(), &ops))
+		assert.Equal(t, map[string]any{"op": "replace", "path": "/metadata/resourceVersion", "value": ops[0]["value"]}, ops[0],
+			"only a resourceVersion precondition turns a concurrent status write into a retryable Conflict")
+		attempts++
+		if attempts == 1 {
+			return true, nil, apierrors.NewConflict(schema.GroupResource{Resource: "deployments"}, "controller", errors.New("status updated"))
+		}
+		return false, nil, nil
+	})
+	require.NoError(t, plan.releaseOwnership(t.Context()))
+	assert.Equal(t, 2, attempts)
+	deployment, err := client.AppsV1().Deployments("test").Get(t.Context(), "controller", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, []metav1.ManagedFieldsEntry{{Manager: "helm"}}, deployment.ManagedFields)
+}
+
+func TestRetriedPreparationWaitsForItsOwnInterruptedRollout(t *testing.T) {
+	plan, client, pod := rolloutFixture()
+	plan.Deployment.ManagedFields = []metav1.ManagedFieldsEntry{{Manager: "helm"}, {Manager: FieldManager}}
+	_, err := client.AppsV1().Deployments("test").Update(t.Context(), plan.Deployment, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	old := pod.DeepCopy()
+	old.Name, old.UID = "old", "old"
+	old.Spec.Containers[0].Image = "released"
+	_, err = client.CoreV1().Pods("test").Create(t.Context(), old, metav1.CreateOptions{})
+	require.NoError(t, err)
+	plan.ReadIdentity = func(_ context.Context, target *corev1.Pod) (buildinfo.Identity, error) {
+		if target.UID == old.UID {
+			return buildinfo.Identity{}, nil
+		}
+		return candidateIdentity, nil
+	}
+	require.NoError(t, plan.VerifyUnchangedImage(t.Context()), "a Pod still on the released image is a rollout in progress, not a retag")
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, plan.Run(ctx), context.DeadlineExceeded, "the old watcher keeps preparation waiting")
+	deployment, err := client.AppsV1().Deployments("test").Get(t.Context(), "controller", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, []metav1.ManagedFieldsEntry{{Manager: "helm"}}, deployment.ManagedFields)
+}
