@@ -133,10 +133,9 @@ logs, metric responses, and terminal status. The mutable upstream backend image
 is recorded by its actual runtime digest. The local SPOA bundle is checked
 against `versions-spoa.env` before and after measurement.
 
-The runner sets Kind's network daemon memory limit to 256 MiB because its Pod
-cache exceeds the bundled 50 MiB limit during the scale workload. It records the
-daemon's settings and identity, and rejects runs where the daemon restarts,
-becomes unready, or is replaced during a scenario.
+The runner records the network daemon's (calico-node) settings and identity, and
+rejects runs where the daemon restarts, becomes unready, or is replaced during a
+scenario.
 
 Before accepting artifacts, the runner scans for raw and base64 forms of live
 Secret values at least eight bytes long. Only the controller-owned SSL Secret's

@@ -34,6 +34,12 @@ func ownedKindConfig(input []byte, owner, dockerHost string) ([]byte, error) {
 		config.Nodes = []kindconfig.Node{{Role: kindconfig.ControlPlaneRole}}
 	}
 	config.Networking.DisableDefaultCNI = true
+	if config.Networking.PodSubnet == "" {
+		config.Networking.PodSubnet = PodSubnet
+	}
+	if config.Networking.PodSubnet != PodSubnet {
+		return nil, fmt.Errorf("kind podSubnet %s must equal the CNI's IP pool %s", config.Networking.PodSubnet, PodSubnet)
+	}
 	if err := markOwnedNodes(&config, owner); err != nil {
 		return nil, err
 	}

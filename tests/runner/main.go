@@ -177,8 +177,8 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	if len(args) > 0 && args[0] == "blackhole-backends" {
 		return runBlackhole(ctx, args[1:])
 	}
-	if len(args) > 0 && args[0] == "install-kindnet" {
-		return runInstallKindnet(ctx, args[1:])
+	if len(args) > 0 && args[0] == "install-cni" {
+		return runInstallCNI(ctx, args[1:])
 	}
 	options, err := parseOptions(args)
 	if err != nil {

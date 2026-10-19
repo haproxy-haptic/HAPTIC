@@ -14,16 +14,16 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/tests/process"
 )
 
-func runInstallKindnet(ctx context.Context, args []string) error {
-	flags := flag.NewFlagSet("install-kindnet", flag.ContinueOnError)
+func runInstallCNI(ctx context.Context, args []string) error {
+	flags := flag.NewFlagSet("install-cni", flag.ContinueOnError)
 	name := flags.String("cluster", "", "existing Kind cluster created with disableDefaultCNI")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if *name == "" || flags.NArg() != 0 {
-		return errors.New("install-kindnet requires --cluster <name>")
+		return errors.New("install-cni requires --cluster <name>")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	return kindutil.InstallKindnetCluster(ctx, process.Executor{}, *name, kindutil.DockerEnvironment(os.Getenv), 3*time.Minute)
+	return kindutil.InstallCNICluster(ctx, process.Executor{}, *name, kindutil.DockerEnvironment(os.Getenv))
 }

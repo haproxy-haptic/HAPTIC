@@ -19,7 +19,7 @@ assert_eq 120 "$(bash -c 'source "$1"; duration_seconds 2m' bash "$runner")"
 assert_eq 3600 "$(bash -c 'source "$1"; duration_seconds 1h' bash "$runner")"
 
 cat > "$tmp/network-pod.json" <<'EOF'
-{"items":[{"metadata":{"uid":"network-pod"},"status":{"phase":"Running","containerStatuses":[{"name":"kindnet-cni","containerID":"containerd://network","ready":true,"restartCount":0,"state":{"running":{}}}]}}]}
+{"items":[{"metadata":{"uid":"network-pod"},"status":{"phase":"Running","containerStatuses":[{"name":"calico-node","containerID":"containerd://network","ready":true,"restartCount":0,"state":{"running":{}}}]}}]}
 EOF
 bash -c 'source "$1"; network_pod_identity' bash "$runner" < "$tmp/network-pod.json" > "$tmp/network-identity.json"
 assert_eq network-pod "$(jq -r '.[0].uid' "$tmp/network-identity.json")"

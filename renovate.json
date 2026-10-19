@@ -198,15 +198,26 @@
     },
     {
       "customType": "regex",
-      "description": "kindnet image in the CNI manifest every test Kind cluster installs. Both containers carry the same tag and digest.",
+      "description": "Calico images in the CNI manifest every test Kind cluster installs.",
       "managerFilePatterns": [
-        "/^tests/kindutil/kindnet\\.yaml$/"
+        "/^tests/kindutil/calico\\.yaml$/"
       ],
       "matchStrings": [
-        "registry\\.k8s\\.io/networking/kindnet:(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+        "image: (?<depName>quay\\.io/calico/[a-z-]+):(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Upstream Calico version in the CNI manifest header; TestCalicoManifest requires it to equal the image tags.",
+      "managerFilePatterns": [
+        "/^tests/kindutil/calico\\.yaml$/"
+      ],
+      "matchStrings": [
+        "^# Calico (?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+) "
       ],
       "datasourceTemplate": "docker",
-      "depNameTemplate": "registry.k8s.io/networking/kindnet"
+      "depNameTemplate": "quay.io/calico/node"
     }
   ],
   "packageRules": [
@@ -361,6 +372,27 @@
         "digest"
       ],
       "enabled": false
+    },
+    {
+      "description": "Calico's images and manifest header move together in one PR.",
+      "matchFileNames": [
+        "tests/kindutil/calico.yaml"
+      ],
+      "groupName": "calico test CNI"
+    },
+    {
+      "description": "A Calico minor or major release changes its CRDs and manifest, which Renovate cannot regenerate.",
+      "matchFileNames": [
+        "tests/kindutil/calico.yaml"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "major"
+      ],
+      "automerge": false,
+      "prBodyNotes": [
+        "Regenerate `tests/kindutil/calico.yaml` from upstream `manifests/calico-vxlan.yaml` for this version and reapply the patches its header names before merging."
+      ]
     }
   ]
 }
