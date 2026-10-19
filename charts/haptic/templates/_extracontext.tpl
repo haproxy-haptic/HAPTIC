@@ -332,8 +332,8 @@
          and the standalone annotation library on one structured contract. */ -}}
   {{- $cacheContext := deepCopy .Values.cache }}
   {{- $varnish := $cacheContext.varnish }}
-  {{- $_ := set $varnish "image" (include "haptic.varnish.image" .) }}
   {{- if $varnish.enabled }}
+    {{- $_ := set $varnish "image" (include "haptic.varnish.image" .) }}
     {{- if not .Values.haproxy.enabled }}
       {{- fail "cache.varnish.enabled=true requires the chart-managed HAProxy workload (haproxy.enabled=true): Varnish fetches cache misses from a dedicated backend-fetch frontend on the HAProxy pods." }}
     {{- end }}
@@ -769,11 +769,7 @@
   {{- if $haproxy := .Values.haproxy }}
   {{- if $haproxy.enabled }}
   {{- $svc := $haproxy.service }}
-  {{- $svcLabels := dict }}
-  {{- range $k, $v := (include "haptic.labels" . | fromYaml) }}
-    {{- $_ := set $svcLabels $k $v }}
-  {{- end }}
-  {{- $_ := set $svcLabels "app.kubernetes.io/component" "loadbalancer" }}
+  {{- /* No chart/version labels: they would change this spec on every chart upgrade (#461). */ -}}
   {{- $svcSelectorLabels := dict }}
   {{- range $k, $v := (include "haptic.selectorLabels" . | fromYaml) }}
     {{- $_ := set $svcSelectorLabels $k $v }}
@@ -823,7 +819,7 @@
   {{- $allPorts := concat $defaultPorts ($svc.extraPorts | default list) }}
   {{- $haproxyService := dict
       "type" $svc.type
-      "labels" $svcLabels
+      "labels" $svcSelectorLabels
       "selector" $svcSelectorLabels
       "annotations" ($svc.annotations | default dict)
       "loadBalancerIP" ($svc.loadBalancerIP | default "")

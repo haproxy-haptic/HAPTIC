@@ -899,3 +899,11 @@ k8sResources:
             app.kubernetes.io/instance: {{ vSvc }}
       {%- end %}
       {%- end %}
+
+validationTests:
+  _global:
+    # Tests that enable Varnish render without the chart's image, which is set
+    # only for an enabled deployment (#461).
+    extraContext:
+      cache:
+        varnish: {image: haptic-validation-test/varnish}

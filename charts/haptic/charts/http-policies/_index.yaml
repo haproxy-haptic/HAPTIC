@@ -3,7 +3,9 @@ _helm_load:
 
   inject:
     - path: templatingSettings.extraContext.cache.varnish.image
+      # Only when enabled: the bundled image tag is the chart version (#461).
       value: '{{ include "haptic.varnish.image" . }}'
+      when: '{{ .Values.cache.varnish.enabled }}'
     - path: watchedResources.waf_selfservice_catalogs.fieldSelector
       value: 'metadata.name={{ .Values.controller.config.templatingSettings.extraContext.waf.policies.selfService.configMapName | default "waf-policies" }}'
 
