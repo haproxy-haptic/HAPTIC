@@ -663,8 +663,7 @@ func (c *Component) processStatusWork(ctx context.Context, work *statusWorkItem)
 			c.parkStatusWork(work, attempts)
 			return
 		}
-		c.logger.Warn("Failed to update deployment status",
-			"error", err,
+		c.logAPIFailure(ctx, "Failed to update deployment status", err,
 			"runtime_config_name", event.RuntimeConfigName,
 			"pod_name", event.PodName,
 		)
@@ -757,7 +756,7 @@ func (c *Component) processPendingVerdict(ctx context.Context) {
 	writeCtx, cancel := context.WithTimeout(ctx, timeouts.KubernetesAPITimeout)
 	defer cancel()
 	if err := c.publisher.ApplyGateVerdict(writeCtx, verdict); err != nil {
-		c.logger.Warn("Failed to write the render gate verdict to HAProxyCfg",
-			"error", err, "plan", verdict.PlanID)
+		c.logAPIFailure(ctx, "Failed to write the render gate verdict to HAProxyCfg", err,
+			"plan", verdict.PlanID)
 	}
 }

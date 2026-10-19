@@ -16,6 +16,7 @@ package deployer
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -34,11 +35,16 @@ import (
 // ready to be driven by renders and gate verdicts.
 func gateLatchScheduler(t *testing.T) (*DeploymentScheduler, <-chan busevents.Event, context.Context) {
 	t.Helper()
+	return gateLatchSchedulerWithLogger(t, testutil.NewTestLogger())
+}
+
+func gateLatchSchedulerWithLogger(t *testing.T, logger *slog.Logger) (*DeploymentScheduler, <-chan busevents.Event, context.Context) {
+	t.Helper()
 	bus := testutil.NewTestBus()
 	scheduled := bus.SubscribeTypes("gate-latch-test", 50, events.EventTypeDeploymentScheduled)
 	bus.Start()
 
-	scheduler := newDeploymentScheduler(bus, testutil.NewTestLogger(), 0, 30*time.Second)
+	scheduler := newDeploymentScheduler(bus, logger, 0, 30*time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	startLoopForTest(t, scheduler, ctx)
