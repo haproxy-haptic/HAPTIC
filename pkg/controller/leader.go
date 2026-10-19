@@ -38,6 +38,8 @@ type leaderOnlyComponents struct {
 	cancel context.CancelFunc
 	run    *lifecycle.ComponentRun
 	drain  func(context.Context) error
+	// drained runs the drain once: shutdown and the successor's retire both drain the term.
+	drained sync.Once
 }
 
 // leadershipDrainTimeout bounds how long a graceful stop waits for the term's
@@ -191,14 +193,16 @@ func (s *leaderCallbackState) drain(logger *slog.Logger) {
 	if components == nil || components.drain == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), leadershipDrainTimeout)
-	defer cancel()
-	if err := components.drain(ctx); err != nil {
-		logger.Warn("Leadership term ends without its latest checkpoint; replacement pods cannot use retained configuration until the next deployment is acknowledged",
-			"error", err)
-		return
-	}
-	logger.Info("Leadership term drained")
+	components.drained.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), leadershipDrainTimeout)
+		defer cancel()
+		if err := components.drain(ctx); err != nil {
+			logger.Warn("Leadership term ends without its latest checkpoint; replacement pods cannot use retained configuration until the next deployment is acknowledged",
+				"error", err)
+			return
+		}
+		logger.Info("Leadership term drained")
+	})
 }
 
 // stop ends one leadership term. It does not latch: the same replica may
