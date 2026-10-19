@@ -18,6 +18,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -28,9 +29,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/logging"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/server"
+	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/endpointrouting"
 	"github.com/haproxy-haptic/HAPTIC/pkg/metrics"
 	"github.com/haproxy-haptic/HAPTIC/pkg/transportsecurity"
 )
@@ -40,6 +46,9 @@ const (
 	agentUsernameEnv = "DATAPLANE_USERNAME"
 	agentPasswordEnv = "DATAPLANE_PASSWORD" // #nosec G101 -- environment variable name, not a credential
 	agentLogLevelEnv = "LOG_LEVEL"
+	podNamespaceEnv  = "POD_NAMESPACE"
+	podUIDEnv        = "POD_UID"
+	nodeNameEnv      = "NODE_NAME"
 )
 
 var (
@@ -54,6 +63,7 @@ var (
 	agentDrainQuietPeriod  time.Duration
 	agentDrainMaxWait      time.Duration
 	agentDrainIgnore       []string
+	agentKubeProxyPort     int
 	agentStateFile         string
 	agentReloadIntervalMin time.Duration
 	agentReloadTimeout     time.Duration
@@ -106,11 +116,14 @@ func init() {
 	agentCmd.Flags().StringVar(&agentDrainSocket, "drain-socket", "haptic-drain.sock",
 		"Unix socket (relative to --base-dir) serving GET /drain for the pod's preStop hook; empty disables it")
 	agentCmd.Flags().DurationVar(&agentDrainQuietPeriod, "drain-quiet-period", server.DefaultDrainQuietPeriod,
-		"The drain ends once the traffic frontends accepted no new connection for this long")
+		"The drain also needs the traffic frontends to accept no new connection for this long")
 	agentCmd.Flags().DurationVar(&agentDrainMaxWait, "drain-max-wait", server.DefaultDrainMaxWait,
 		"Upper bound of one drain; keep it inside the pod's termination grace period together with hard-stop-after")
 	agentCmd.Flags().StringSliceVar(&agentDrainIgnore, "drain-ignore-frontend", nil,
 		"Frontends whose connections do not count as traffic for the drain (probes, scrapes)")
+	agentCmd.Flags().IntVar(&agentKubeProxyPort, "drain-kube-proxy-healthz-port", 0,
+		"kube-proxy's healthz port on every node; the drain then also waits until no Service routes to this pod "+
+			"(needs "+podNamespaceEnv+", "+podUIDEnv+", "+nodeNameEnv+" and API access). 0 leaves the quiet period as the only signal")
 	agentCmd.Flags().StringVar(&agentStateFile, "state-file", ".haptic-agent.json",
 		"Name of the agent's state file inside --base-dir")
 	agentCmd.Flags().DurationVar(&agentReloadIntervalMin, "reload-interval-min", 5*time.Second,
@@ -146,6 +159,17 @@ func runAgent(_ *cobra.Command, _ []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
+	var routing *drainRouting
+	var drainRoutingObserver server.RoutingObserver
+	if agentKubeProxyPort == 0 {
+		logger.Info("drain: no routing observer configured; the quiet period alone ends the drain")
+	} else {
+		observer, err := newDrainRouting(ctx, logger)
+		if err != nil {
+			return err
+		}
+		routing, drainRoutingObserver = observer, observer
+	}
 	registry := prometheus.NewRegistry()
 	agent, err := server.New(ctx, &server.Config{
 		BaseDir:              agentBaseDir,
@@ -167,6 +191,7 @@ func runAgent(_ *cobra.Command, _ []string) error {
 		DrainQuietPeriod:     agentDrainQuietPeriod,
 		DrainMaxWait:         agentDrainMaxWait,
 		DrainIgnoreFrontends: agentDrainIgnore,
+		DrainRouting:         drainRoutingObserver,
 	})
 	if err != nil {
 		return err
@@ -177,6 +202,9 @@ func runAgent(_ *cobra.Command, _ []string) error {
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error { return agent.Start(groupCtx) })
+	if routing != nil {
+		group.Go(func() error { return routing.observer.Start(groupCtx) })
+	}
 	if agentMetricsListen != "" {
 		group.Go(func() error { return metrics.NewServer(agentMetricsListen, registry).Start(groupCtx) })
 	}
@@ -185,6 +213,44 @@ func runAgent(_ *cobra.Command, _ []string) error {
 	}
 	logger.Info("the HAPTIC agent stopped")
 	return nil
+}
+
+// drainRouting adapts the EndpointSlice observer to the drain.
+type drainRouting struct {
+	observer *endpointrouting.Observer
+}
+
+func (d *drainRouting) Watch(ctx context.Context, report func(server.Routing)) {
+	d.observer.Watch(ctx, func(r endpointrouting.Routing) {
+		report(server.Routing{Routed: r.Routed, Unverified: r.Unverified, Detail: r.Detail})
+	})
+}
+
+func newDrainRouting(ctx context.Context, logger *slog.Logger) (*drainRouting, error) {
+	if agentKubeProxyPort < 0 || agentKubeProxyPort > 65535 {
+		return nil, fmt.Errorf("--drain-kube-proxy-healthz-port %d is not a port", agentKubeProxyPort)
+	}
+	// client-go's informers log through klog; keep the agent's output JSON.
+	klog.SetSlogLogger(logging.WithCancellationLogging(logger, ctx))
+	restConfig, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("--drain-kube-proxy-healthz-port needs in-cluster API access: %w", err)
+	}
+	client, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return nil, err
+	}
+	observer, err := endpointrouting.New(&endpointrouting.Config{
+		Client:    client,
+		Namespace: os.Getenv(podNamespaceEnv),
+		PodUID:    types.UID(os.Getenv(podUIDEnv)),
+		NodeName:  os.Getenv(nodeNameEnv),
+		Healthz:   endpointrouting.HTTPHealthz(agentKubeProxyPort),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("--drain-kube-proxy-healthz-port: %w", err)
+	}
+	return &drainRouting{observer: observer}, nil
 }
 
 func localSocketPath(baseDir, socket string) string {

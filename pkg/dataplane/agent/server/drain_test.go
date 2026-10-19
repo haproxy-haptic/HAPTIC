@@ -15,6 +15,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"sync/atomic"
@@ -124,6 +125,132 @@ func TestDrainEndsWhenTheAgentStops(t *testing.T) {
 	}()
 	result := s.drain(stop)
 	assert.Equal(t, DrainReasonCancelled, result.Reason)
+}
+
+// routingScript reports each step's state once its delay since the previous
+// step elapsed, then holds until the drain stops watching.
+type routingScript struct {
+	steps   []routingStep
+	stopped chan struct{}
+}
+
+type routingStep struct {
+	after   time.Duration
+	routing Routing
+}
+
+func (r *routingScript) Watch(ctx context.Context, report func(Routing)) {
+	defer close(r.stopped)
+	for _, step := range r.steps {
+		select {
+		case <-time.After(step.after):
+			report(step.routing)
+		case <-ctx.Done():
+			return
+		}
+	}
+	<-ctx.Done()
+}
+
+func drainWithRouting(quiet, bound time.Duration, connections func() uint64, steps ...routingStep) (*Server, *routingScript) {
+	script := &routingScript{steps: steps, stopped: make(chan struct{})}
+	s := drainTestServer(quiet, bound, func(map[string]bool) (uint64, error) { return connections(), nil })
+	s.cfg.DrainRouting = script
+	return s, script
+}
+
+func idle() uint64 { return 7 }
+
+func TestDrainHoldsAQuietPodWhileItIsStillRouted(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, script := drainWithRouting(20*time.Millisecond, 500*time.Millisecond, idle,
+			routingStep{routing: Routing{Routed: true, Detail: "kube-proxy on node-a has not synced"}})
+		start := time.Now()
+		result := s.drain(nil)
+		assert.Equal(t, DrainReasonBound, result.Reason)
+		assert.Equal(t, "kube-proxy on node-a has not synced", result.Routing)
+		assert.GreaterOrEqual(t, time.Since(start), 500*time.Millisecond)
+		<-script.stopped
+	})
+}
+
+func TestDrainEndsOnceTheRoutingIsWithdrawnAndThePodIsQuiet(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, _ := drainWithRouting(20*time.Millisecond, 5*time.Second, idle,
+			routingStep{routing: Routing{Routed: true}},
+			routingStep{after: 300 * time.Millisecond, routing: Routing{}})
+		start := time.Now()
+		result := s.drain(nil)
+		assert.Equal(t, DrainReasonRoutedAway, result.Reason)
+		assert.GreaterOrEqual(t, time.Since(start), 300*time.Millisecond)
+		assert.Less(t, time.Since(start), 500*time.Millisecond)
+	})
+}
+
+func TestDrainStillWaitsForTheQuietPeriodAfterTheRoutingIsWithdrawn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var connections atomic.Uint64
+		s, _ := drainWithRouting(50*time.Millisecond, 5*time.Second, connections.Load,
+			routingStep{routing: Routing{}})
+		result := make(chan DrainResult, 1)
+		go func() { result <- s.drain(nil) }()
+		for range 5 {
+			time.Sleep(30 * time.Millisecond)
+			connections.Add(1)
+			synctest.Wait()
+			select {
+			case <-result:
+				t.Fatal("drain finished while new connections were arriving")
+			default:
+			}
+		}
+		lastConnection := time.Now()
+		drained := <-result
+		assert.Equal(t, DrainReasonRoutedAway, drained.Reason)
+		assert.GreaterOrEqual(t, time.Since(lastConnection), s.cfg.DrainQuietPeriod)
+	})
+}
+
+func TestDrainFallsBackToTheQuietPeriodForRoutingItCannotObserve(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, _ := drainWithRouting(20*time.Millisecond, 5*time.Second, idle,
+			routingStep{routing: Routing{Unverified: "kube-proxy healthz unreachable on node-b"}})
+		result := s.drain(nil)
+		assert.Equal(t, DrainReasonUnverified, result.Reason)
+		assert.Equal(t, "kube-proxy healthz unreachable on node-b", result.Routing)
+		assert.True(t, result.Unverified)
+	})
+}
+
+func TestDrainReportsUnverifiedRoutingWhenItEndsAtTheBound(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var connections atomic.Uint64
+		s, _ := drainWithRouting(50*time.Millisecond, 200*time.Millisecond, func() uint64 { return connections.Add(1) },
+			routingStep{routing: Routing{Unverified: "no EndpointSlice lists this pod"}})
+		result := s.drain(nil)
+		assert.Equal(t, DrainReasonBound, result.Reason)
+		assert.True(t, result.Unverified)
+	})
+}
+
+func TestDrainCountsThePodAsRoutedUntilTheFirstReport(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, script := drainWithRouting(20*time.Millisecond, 200*time.Millisecond, idle)
+		result := s.drain(nil)
+		assert.Equal(t, DrainReasonBound, result.Reason)
+		<-script.stopped
+	})
+}
+
+func TestDrainFollowsTheLatestReportWhenTheRoutingReturns(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s, _ := drainWithRouting(100*time.Millisecond, 400*time.Millisecond, idle,
+			routingStep{routing: Routing{}},
+			routingStep{after: 50 * time.Millisecond, routing: Routing{Routed: true, Detail: "a new slice routes here"}})
+		result := s.drain(nil)
+		assert.Equal(t, DrainReasonBound, result.Reason)
+		assert.Equal(t, "a new slice routes here", result.Routing)
+	})
 }
 
 func TestValidateDrainFillsDefaultsAndRejectsAnInvertedWindow(t *testing.T) {

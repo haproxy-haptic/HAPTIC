@@ -3,14 +3,21 @@
 package e2e
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
+	"fmt"
 	"net"
+	"net/http"
+	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -18,6 +25,7 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
+	"github.com/haproxy-haptic/HAPTIC/tests/e2e/e2ecluster"
 	"github.com/haproxy-haptic/HAPTIC/tests/e2e/httpclient"
 )
 
@@ -100,6 +108,146 @@ func TestHAProxyPodDeletionZeroDowntime(t *testing.T) {
 			return ctx
 		}).Feature()
 	testEnv.Test(t, feature)
+}
+
+// A client that pauses past the quiet period must not end the drain while
+// kube-proxy still routes to the deleted pod (#446). Freezing kube-proxy keeps
+// the pod's forwarding rules in place: the pod must keep its listeners, serve
+// every new connection the frozen rules still send it, and end its drain only
+// once the resumed kube-proxy has synced the removal. Serial: it stops
+// kube-proxy on every node and takes a replica out of the fleet.
+func TestHAProxyPodDeletionWaitsForKubeProxy(t *testing.T) {
+	const host = "haproxy-drain-routing.localdev.me"
+	feature := features.New("HAProxy: the drain waits for kube-proxy, not for a quiet client").
+		Assess("the deleted pod serves until kube-proxy synced its removal", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			client, err := cfg.NewClient()
+			require.NoError(t, err)
+			clientset, err := newClientsetForE2E(client.RESTConfig())
+			require.NoError(t, err)
+			namespace := NamespaceForTest(ctx, t, client)
+			DumpLogsOnFailure(t, namespace)
+			backend := NewEchoServerBackend(ctx, t, client, namespace)
+			NewIngress(ctx, t, client, namespace, &IngressSpec{
+				Name: "echo", Host: host, BackendService: backend.Service, BackendPort: backend.Port,
+			})
+			httpclient.New(t).GET(host, "/").ExpectOK(t)
+			endpoint, err := e2ecluster.ResolveTrafficEndpoint()
+			require.NoError(t, err)
+
+			pods := listHAProxyPods(t)
+			require.GreaterOrEqual(t, len(pods), 2)
+			victim := pods[0]
+			drained := followDrainResult(ctx, t, clientset, victim)
+
+			thaw := freezeKubeProxy(ctx, t, clientset)
+			require.NoError(t, clientset.CoreV1().Pods(ControllerNamespace).Delete(ctx, victim, metav1.DeleteOptions{}))
+			// No client connects for longer than the 2 s quiet period.
+			time.Sleep(3 * time.Second)
+			statsCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			_, err = apiProxyGet(statsCtx, victim, HAProxyStatsPort, "metrics")
+			cancel()
+			require.NoErrorf(t, err, "%s closed its listeners while kube-proxy still routed to it", victim)
+			// kube-proxy's frozen rules send about half of these to the victim.
+			for i := range 20 {
+				require.NoErrorf(t, freshConnectionGET(ctx, endpoint, host),
+					"request %d after the client pause was refused while kube-proxy still routed to %s", i, victim)
+			}
+			thaw()
+
+			select {
+			case result := <-drained:
+				require.Equalf(t, "routed-away", result.Reason,
+					"the drain of %s must end on kube-proxy's sync, not on the quiet period or the bound: %+v", victim, result)
+			case <-time.After(40 * time.Second):
+				t.Fatalf("%s never reported the end of its drain", victim)
+			}
+			waitForPodGone(ctx, t, clientset, victim)
+			requireNoFailedPreStopHook(ctx, t, clientset, victim)
+			require.NoError(t, waitForDeploymentRolloutComplete(ctx, client, ControllerNamespace, HAProxyDeploymentName, 2*time.Minute))
+			settled := waitForQuietFleet(ctx, t, clientset)
+			require.Len(t, settled, len(pods))
+			return ctx
+		}).Feature()
+	testEnv.Test(t, feature)
+}
+
+// freezeKubeProxy stops kube-proxy on every kind node, leaving its rules in
+// place. The returned thaw, also run at cleanup, resumes it.
+func freezeKubeProxy(ctx context.Context, t *testing.T, cs kubernetes.Interface) func() {
+	t.Helper()
+	nodes, err := cs.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+	signal := func(sig string) error {
+		for i := range nodes.Items {
+			out, err := exec.CommandContext(context.WithoutCancel(ctx), "docker", "exec", nodes.Items[i].Name, "pkill", "-"+sig, "-x", "kube-proxy").CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("pkill -%s kube-proxy on %s: %w: %s", sig, nodes.Items[i].Name, err, out)
+			}
+		}
+		return nil
+	}
+	var once sync.Once
+	thaw := func() {
+		once.Do(func() { require.NoError(t, signal("CONT")) })
+	}
+	t.Cleanup(thaw)
+	require.NoError(t, signal("STOP"))
+	return thaw
+}
+
+// freshConnectionGET sends one request on a new connection, so kube-proxy
+// chooses an endpoint for it.
+func freshConnectionGET(ctx context.Context, endpoint e2ecluster.TrafficEndpoint, host string) error {
+	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	url := "http://" + net.JoinHostPort(endpoint.Host, strconv.Itoa(endpoint.HTTPPort)) + "/"
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return err
+	}
+	req.Host = host
+	resp, err := (&http.Client{Transport: &http.Transport{DisableKeepAlives: true}}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+type drainResult struct {
+	Reason  string `json:"reason"`
+	Waited  string `json:"waited"`
+	Routing string `json:"routing"`
+}
+
+// followDrainResult streams the pod's agent log and delivers its drain verdict;
+// the log is gone once the pod is.
+func followDrainResult(ctx context.Context, t *testing.T, cs kubernetes.Interface, pod string) <-chan drainResult {
+	t.Helper()
+	stream, err := cs.CoreV1().Pods(ControllerNamespace).GetLogs(pod, &corev1.PodLogOptions{
+		Container: "agent", Follow: true, SinceTime: &metav1.Time{Time: time.Now()},
+	}).Stream(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = stream.Close() })
+	result := make(chan drainResult, 1)
+	go func() {
+		scanner := bufio.NewScanner(stream)
+		for scanner.Scan() {
+			var line struct {
+				Msg string `json:"msg"`
+				drainResult
+			}
+			if json.Unmarshal(scanner.Bytes(), &line) == nil && line.Msg == "drain finished" {
+				result <- line.drainResult
+				return
+			}
+		}
+	}()
+	return result
 }
 
 type heldRequest struct {
