@@ -14,7 +14,6 @@
 {{- $proxyProtocol := include "haptic.proxyProtocol" . | fromYaml }}
 {{- $http3 := include "haptic.http3" . | fromYaml }}
 {{- $agent := $haproxy.agent }}
-{{- $drainRouting := include "haptic.haproxy.drainRouting" . }}
 
 {{/*
   The pod spec below hardcodes /etc/haproxy: haproxy-runtime mounts there, the
@@ -90,10 +89,6 @@ spec:
       {{- if $podSpec.shareProcessNamespace }}
       shareProcessNamespace: true
       {{- end }}
-      serviceAccountName: {{ $haproxyFullname }}
-      # The API server copies serviceAccountName here; render it so a downgrade to a chart without the SA removes both.
-      serviceAccount: {{ $haproxyFullname }}
-      automountServiceAccountToken: false
       initContainers:
         {{- if $vectorEnabled }}
         # Seed the config before the Vector sidecar starts.
@@ -433,9 +428,6 @@ spec:
             - --drain-quiet-period={{ int $haproxy.drain.quietPeriodSeconds }}s
             - --drain-max-wait={{ int $haproxy.drain.maxWaitSeconds }}s
             - --drain-ignore-frontend=status
-            {{- if $drainRouting }}
-            - --drain-kube-proxy-healthz-port={{ int $haproxy.drain.kubeProxyHealthzPort }}
-            {{- end }}
             {{- with $dataplaneConfig.minDeploymentInterval }}
             - --reload-interval-min={{ . }}
             {{- end }}
@@ -452,14 +444,6 @@ spec:
             {{- end }}
             - name: LOG_LEVEL
               value: {{ $agent.logLevel | default "info" | quote }}
-            {{- if $drainRouting }}
-            {{- range $env := list (dict "name" "POD_NAMESPACE" "path" "metadata.namespace") (dict "name" "POD_UID" "path" "metadata.uid") (dict "name" "NODE_NAME" "path" "spec.nodeName") }}
-            - name: {{ $env.name }}
-              valueFrom:
-                fieldRef:
-                  fieldPath: {{ $env.path }}
-            {{- end }}
-            {{- end }}
             {{- include "haptic.agent.autoGomaxprocs" $agent | nindent 12 }}
             {{- with $agent.extraEnv }}
             {{- toYaml . | nindent 12 }}
@@ -490,11 +474,6 @@ spec:
             # volume the spoa-hub and vector sidecars read.
             - name: general-storage
               mountPath: /etc/haproxy/general
-            {{- if $drainRouting }}
-            - name: agent-api-token
-              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-              readOnly: true
-            {{- end }}
           resources:
             {{- toYaml $agent.resources | nindent 12 }}
       securityContext:
@@ -623,8 +602,8 @@ spec:
           lifecycle:
             {{- toYaml $haproxy.lifecycle | nindent 12 }}
           {{- else if $haproxy.drain.enabled }}
-          # The agent answers once nothing routes new connections to the pod;
-          # only then does kubelet's SIGUSR1 run HAProxy's own soft stop.
+          # The agent answers once no new connection reaches the pod; only then
+          # does kubelet's SIGUSR1 run HAProxy's own soft stop.
           lifecycle:
             preStop:
               exec:
@@ -637,25 +616,6 @@ spec:
         {{- tpl (toYaml .) $ | nindent 8 }}
         {{- end }}
       volumes:
-        {{- if $drainRouting }}
-        # The agent's API token, mounted into the agent alone.
-        - name: agent-api-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  path: token
-                  expirationSeconds: 3607
-              - configMap:
-                  name: kube-root-ca.crt
-                  items:
-                    - key: ca.crt
-                      path: ca.crt
-              - downwardAPI:
-                  items:
-                    - path: namespace
-                      fieldRef:
-                        fieldPath: metadata.namespace
-        {{- end }}
         {{- if $agent.tls.enabled }}
         - name: agent-tls
           secret:

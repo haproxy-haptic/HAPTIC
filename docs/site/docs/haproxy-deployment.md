@@ -325,56 +325,27 @@ and still restarts child processes that exit.
 
 ## Pod termination
 
-When a HAProxy pod is deleted, the agent holds the HAProxy container's `preStop`
-hook until no Service routes new connections to the pod any more. Then kubelet
-sends `SIGUSR1`, and HAProxy's soft stop closes the listeners and finishes the
-connections in flight within `extraContext.hardStopAfter`.
+When a HAProxy pod is deleted, its `preStop` hook holds the pod until no new
+connection has arrived for `haproxy.drain.quietPeriodSeconds` (default 2), and
+at most `haproxy.drain.maxWaitSeconds` (default 10). HAProxy then stops
+accepting connections and finishes the open ones.
 
-The drain ends when all of these hold, and after `haproxy.drain.maxWaitSeconds`
-(10 s) at the latest:
+The pod can't see when kube-proxy stops routing to it, so the quiet period is an
+estimate:
 
-- Every Service that selects the pod lists it as not ready, and has another ready
-  endpoint. With a `Local` traffic policy, that endpoint must run on the same node.
-- kube-proxy on every node reports a rule sync that finished after that change
-  reached the agent.
-- No new connection reached the pod for `haproxy.drain.quietPeriodSeconds` (2 s).
-
-The agent reads kube-proxy's sync time from its health endpoint on each node
-(`haproxy.drain.kubeProxyHealthzPort`, default `10256`, kube-proxy v1.33 or
-later). For that, the HAProxy pods get their own ServiceAccount, read access to
-EndpointSlices and Services in the release namespace and to Nodes, and egress to
-the API server and to that port; see [networking](operations/networking.md#default-configuration).
-Only the agent container mounts the token.
-
-The agent logs `drain finished` with a `reason`:
-
-| Reason | Meaning |
-| --- | --- |
-| `routed-away` | The routing was withdrawn everywhere the agent could check, and the pod was quiet. |
-| `unverified` | Logged at `WARN`. Part of the routing couldn't be observed; `routing` names it. The quiet period alone decided for that part. |
-| `bound` | The drain reached `maxWaitSeconds`; `routing` says what still routed to the pod. Logged at `WARN` if part of the routing couldn't be observed. |
-| `quiet` | The routing check is off; only the quiet period counted. |
-
-The agent can't confirm the routing in these cases, and falls back to the quiet
-period with an `unverified` drain:
-
-- kube-proxy is replaced, for example by Cilium or Calico eBPF, or is older than
-  v1.33.
-- A node's port `10256` is unreachable, for example because of a firewall.
-- An external load balancer sends traffic to pod IPs directly. The agent doesn't
-  see when it stops; this case isn't logged as `unverified`.
-
-Some pods still receive traffic at `maxWaitSeconds`, and HAProxy stops anyway:
-the last ready pod of a Service, and a pod whose Service has
-`externalTrafficPolicy: Local` without another ready HAProxy pod on its node.
-kube-proxy keeps routing to such a pod until it's gone.
-
-To turn the routing check off, set `haproxy.drain.kubeProxyHealthzPort: 0`. Clients
-that pause for longer than the quiet period can then be refused while kube-proxy
-still routes to the pod.
-
-The design and its limits are in
-[ADR-0037](https://github.com/haproxy-haptic/HAPTIC/blob/main/docs/adr/0037-drain-observes-routing.md).
+- **Steady traffic isn't refused.** Each new connection restarts the quiet
+  period.
+- **A client that pauses can be refused.** If a client sends nothing for longer
+  than `quietPeriodSeconds` while kube-proxy on some node still routes to the
+  pod, its next connection is refused. Raise `quietPeriodSeconds` above your
+  kube-proxy's endpoint update delay, keeping `maxWaitSeconds` at least as high.
+- **External load balancers decide for themselves.** With
+  `externalTrafficPolicy: Local`, a node's last HAProxy pod is withdrawn only
+  when the health check of the load balancer fails; a load balancer that targets pod
+  IPs withdraws it on its own schedule. If that takes longer than
+  `maxWaitSeconds`, connections arriving afterwards are refused. Keep the
+  failure detection time of the load balancer (interval times unhealthy
+  threshold) below `maxWaitSeconds`.
 
 ## HAProxy Pod requirements
 

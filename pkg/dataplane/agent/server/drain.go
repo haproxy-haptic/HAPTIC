@@ -15,10 +15,8 @@
 package server
 
 import (
-	"cmp"
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -26,10 +24,11 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
 )
 
-// Drain defaults. A terminating pod keeps its listeners until nothing routes
-// new connections to it any more (docs/adr/0037-drain-observes-routing.md);
-// the bound must stay inside the termination grace period together with
-// hard-stop-after.
+// Drain defaults. A terminating pod keeps its listeners until kube-proxy has
+// stopped routing new connections to it; the pod cannot observe kube-proxy,
+// but it can observe the effect, so the hook ends after a quiet period and
+// never later than the bound, which must stay inside the termination grace
+// period together with hard-stop-after.
 const (
 	DefaultDrainQuietPeriod = 2 * time.Second
 	DefaultDrainMaxWait     = 10 * time.Second
@@ -39,51 +38,21 @@ const (
 
 // Drain reasons reported to the hook and the log.
 const (
-	// DrainReasonRoutedAway: every data plane that routes to the pod confirmed
-	// the withdrawal, and the quiet period passed.
-	DrainReasonRoutedAway = "routed-away"
-	// DrainReasonUnverified: the observable routing was withdrawn and the quiet
-	// period passed, but part of the routing could not be observed.
-	DrainReasonUnverified = "unverified"
-	// DrainReasonQuiet: no routing observer is configured; only the quiet period counted.
 	DrainReasonQuiet       = "quiet"
 	DrainReasonBound       = "bound"
 	DrainReasonUnavailable = "unavailable"
 	DrainReasonCancelled   = "cancelled"
 )
 
-// Routing is what a RoutingObserver knows about the routes to this pod.
-type Routing struct {
-	// Routed is true while an observed data plane may still send new
-	// connections to this pod.
-	Routed bool
-	// Unverified names the routing the observer could not see; the quiet
-	// period alone stands in for it. Empty when everything was observed.
-	Unverified string
-	// Detail says what still routes here, for the log.
-	Detail string
-}
-
-// RoutingObserver reports the routes to this pod. Watch calls report with the
-// current state and again on every poll until ctx ends.
-type RoutingObserver interface {
-	Watch(ctx context.Context, report func(Routing))
-}
-
 // DrainResult is the answer of GET /drain on the drain socket.
 type DrainResult struct {
-	// Reason is why the drain ended: routed-away, unverified, quiet, bound,
-	// unavailable (the worker no longer answers, so there is nothing to keep
-	// open) or cancelled.
+	// Reason is why the drain ended: quiet, bound, unavailable (the worker no
+	// longer answers, so there is nothing to keep open) or cancelled.
 	Reason string `json:"reason"`
 	// Waited is how long the caller was held.
 	Waited string `json:"waited"`
 	// Connections is the last accepted-connection count seen on the traffic frontends.
 	Connections uint64 `json:"connections"`
-	// Routing is the last routing detail, or what could not be verified.
-	Routing string `json:"routing,omitempty"`
-	// Unverified is set when part of the routing could not be observed.
-	Unverified bool `json:"unverified,omitempty"`
 }
 
 // validateDrain fills the defaults and rejects a bound the grace period cannot hold.
@@ -104,19 +73,13 @@ func validateDrain(cfg *Config) error {
 	return nil
 }
 
-// handleDrain holds the caller until nothing routes new connections to the pod
-// and the worker has seen no new connection for the quiet period, or the bound
-// elapsed. The chart's preStop hook calls it, so kubelet's stop signal reaches
-// HAProxy only once nothing routes to the pod.
+// handleDrain holds the caller until the worker has seen no new connection for
+// the quiet period or the bound elapsed. The chart's preStop hook calls it, so
+// kubelet's stop signal reaches HAProxy only once nothing routes to the pod.
 func (s *Server) handleDrain(w http.ResponseWriter, _ *http.Request) {
 	shared, _, _ := s.drainFlight.Do("drain", func() (any, error) {
 		result := s.drain(s.drainStop)
-		level := slog.LevelInfo
-		if result.Unverified {
-			level = slog.LevelWarn
-		}
-		s.logger.Log(context.Background(), level, "drain finished",
-			"reason", result.Reason, "waited", result.Waited, "connections", result.Connections, "routing", result.Routing)
+		s.logger.Info("drain finished", "reason", result.Reason, "waited", result.Waited, "connections", result.Connections)
 		return result, nil
 	})
 	result, _ := shared.(DrainResult)
@@ -129,16 +92,8 @@ func (s *Server) drain(stop <-chan struct{}) DrainResult {
 	for _, name := range s.cfg.DrainIgnoreFrontends {
 		ignore[name] = true
 	}
-	routing, updates, stopRouting := s.watchRouting()
-	defer stopRouting()
 	finish := func(reason string, connections uint64) DrainResult {
-		return DrainResult{
-			Reason:      reason,
-			Waited:      time.Since(start).Round(time.Millisecond).String(),
-			Connections: connections,
-			Routing:     cmp.Or(routing.Unverified, routing.Detail),
-			Unverified:  routing.Unverified != "",
-		}
+		return DrainResult{Reason: reason, Waited: time.Since(start).Round(time.Millisecond).String(), Connections: connections}
 	}
 	last, err := s.drainCounter(ignore)
 	if err != nil {
@@ -152,7 +107,6 @@ func (s *Server) drain(stop <-chan struct{}) DrainResult {
 		select {
 		case <-stop:
 			return finish(DrainReasonCancelled, last)
-		case routing = <-updates:
 		case <-ticker.C:
 			current, err := s.drainCounter(ignore)
 			if err != nil {
@@ -163,45 +117,13 @@ func (s *Server) drain(stop <-chan struct{}) DrainResult {
 			if current != last {
 				last, quietSince = current, now
 			}
-			if !routing.Routed && now.Sub(quietSince) >= s.cfg.DrainQuietPeriod {
-				return finish(s.routedAwayReason(routing), last)
+			if now.Sub(quietSince) >= s.cfg.DrainQuietPeriod {
+				return finish(DrainReasonQuiet, last)
 			}
 			if now.Sub(start) >= s.cfg.DrainMaxWait {
 				return finish(DrainReasonBound, last)
 			}
 		}
-	}
-}
-
-// watchRouting starts the observer for one drain. Until its first report the
-// pod counts as routed; without an observer only the quiet period counts.
-func (s *Server) watchRouting() (Routing, <-chan Routing, context.CancelFunc) {
-	if s.cfg.DrainRouting == nil {
-		return Routing{}, nil, func() {}
-	}
-	updates := make(chan Routing, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	go s.cfg.DrainRouting.Watch(ctx, func(routing Routing) {
-		select {
-		case <-updates:
-		default:
-		}
-		select {
-		case updates <- routing:
-		case <-ctx.Done():
-		}
-	})
-	return Routing{Routed: true, Detail: "waiting for the first routing report"}, updates, cancel
-}
-
-func (s *Server) routedAwayReason(routing Routing) string {
-	switch {
-	case s.cfg.DrainRouting == nil:
-		return DrainReasonQuiet
-	case routing.Unverified != "":
-		return DrainReasonUnverified
-	default:
-		return DrainReasonRoutedAway
 	}
 }
 

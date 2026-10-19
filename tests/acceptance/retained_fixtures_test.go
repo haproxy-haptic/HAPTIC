@@ -97,7 +97,7 @@ func setupRetainedFleet(ctx context.Context, t *testing.T, cfg *envconf.Config, 
 	opts.SkipCRDAndDeployment = true
 	require.NoError(t, CreateControllerEnvironment(ctx, t, client, namespace, opts))
 	require.NoError(t, SetupBlocklistServer(ctx, t, client, namespace, ValidBlocklistContent))
-	deployment, bootstrap, serviceAccount := retainedChartFleet(ctx, t, namespace)
+	deployment, bootstrap := retainedChartFleet(ctx, t, namespace)
 	config := NewHTTPStoreHAProxyTemplateConfig(namespace, ControllerCRDName, ControllerSecretName, true)
 	config.Spec.HAProxyConfig.Template = retainedFleetTemplate
 	config.Spec.PodSelector.MatchLabels = deployment.Spec.Selector.DeepCopy().MatchLabels
@@ -111,7 +111,6 @@ func setupRetainedFleet(ctx context.Context, t *testing.T, cfg *envconf.Config, 
 	}
 	require.NoError(t, client.Resources().Create(ctx, config))
 	require.NoError(t, client.Resources().Create(ctx, bootstrap))
-	require.NoError(t, client.Resources().Create(ctx, serviceAccount))
 	require.NoError(t, client.Resources().Create(ctx, deployment))
 	require.NoError(t, client.Resources().Create(ctx, NewControllerDeployment(namespace, ControllerCRDName, ControllerSecretName, ControllerServiceAccountName, DebugPort, 2)))
 	haptic, err := hapticclient.NewForConfig(RESTConfig())
@@ -163,22 +162,17 @@ func addRetainedWatchedInputs(ctx context.Context, t *testing.T, config *v1.HAPr
 	require.NoError(t, group.Wait())
 }
 
-// retainedChartFleet renders the chart's HAProxy pods without the drain's
-// routing check, whose cluster-scoped grants these fixtures don't install.
-func retainedChartFleet(ctx context.Context, t *testing.T, namespace string) (*appsv1.Deployment, *corev1.ConfigMap, *corev1.ServiceAccount) {
+func retainedChartFleet(ctx context.Context, t *testing.T, namespace string) (*appsv1.Deployment, *corev1.ConfigMap) {
 	t.Helper()
 	output, err := exec.CommandContext(ctx, "helm", "template", "retained", "../../charts/haptic", "--namespace", namespace,
 		"--set", "haproxy.agent.tls.enabled=false", "--set", "spoaHub.enabled=false", "--set", "vector.enabled=false",
 		"--set", "haproxy.ports.http=8080", "--set", "haproxy.ports.https=8443",
 		"--set", "haproxy.replicaCount=2", "--set", "credentials.existingSecret="+ControllerSecretName,
-		"--set", "haproxy.drain.kubeProxyHealthzPort=0",
-		"--show-only", "templates/haproxy-deployment.yaml", "--show-only", "templates/haproxy-configmap.yaml",
-		"--show-only", "templates/haproxy-rbac.yaml").CombinedOutput()
+		"--show-only", "templates/haproxy-deployment.yaml", "--show-only", "templates/haproxy-configmap.yaml").CombinedOutput()
 	require.NoError(t, err, "%s", output)
 	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(output), 4096)
 	var deployment *appsv1.Deployment
 	var bootstrap *corev1.ConfigMap
-	var serviceAccount *corev1.ServiceAccount
 	for {
 		var raw json.RawMessage
 		err := decoder.Decode(&raw)
@@ -195,21 +189,17 @@ func retainedChartFleet(ctx context.Context, t *testing.T, namespace string) (*a
 		case "ConfigMap":
 			bootstrap = &corev1.ConfigMap{}
 			require.NoError(t, json.Unmarshal(raw, bootstrap))
-		case "ServiceAccount":
-			serviceAccount = &corev1.ServiceAccount{}
-			require.NoError(t, json.Unmarshal(raw, serviceAccount))
 		}
 	}
 	require.NotNil(t, deployment)
 	require.NotNil(t, bootstrap)
-	require.NotNil(t, serviceAccount)
 	for _, containers := range [][]corev1.Container{deployment.Spec.Template.Spec.Containers, deployment.Spec.Template.Spec.InitContainers} {
 		for i := range containers {
 			containers[i].Image = ControllerImageName
 			containers[i].ImagePullPolicy = corev1.PullNever
 		}
 	}
-	return deployment, bootstrap, serviceAccount
+	return deployment, bootstrap
 }
 
 func (f *retainedFleet) scale(ctx context.Context, t *testing.T, name string, replicas int32) {

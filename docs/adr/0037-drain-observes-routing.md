@@ -2,7 +2,17 @@
 
 ## Status
 
-Accepted. Fixes [#446](https://github.com/haproxy-haptic/HAPTIC/issues/446).
+Withdrawn (2026-10-19). Implemented in #449 and #451, removed before any release.
+The 0.6.0 quiet-period drain is back, with the limit below documented.
+
+The check only helped a client that pauses longer than `quietPeriodSeconds` while
+kube-proxy lags. It can't see the common production paths: `Local` policy behind a
+cloud load balancer, load balancers that target pod IPs, and kube-proxy
+replacements. Withdrawal on the load-balancer side isn't observable from the
+cluster, and no surveyed project observes routing withdrawal (see *Prior art*).
+For that, it gave internet-facing pods an API token, a cluster-wide Node `list`
+grant, and node egress, polled every node per drain, and had already caused a
+rollback regression (#451). The rest of this record is kept as history.
 
 ## Context
 

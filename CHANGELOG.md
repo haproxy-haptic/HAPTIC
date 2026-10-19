@@ -35,7 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The config publisher logs API calls cancelled by its own shutdown or reinitialization at INFO instead of WARN; other failures stay at WARN ([#444](https://github.com/haproxy-haptic/HAPTIC/issues/444)).
 - Waiting for the render gate's first verdict after a start or configuration change logs at INFO instead of WARN; holding renders after a failed verdict stays at WARN ([#445](https://github.com/haproxy-haptic/HAPTIC/issues/445)).
 - A controller could stop deploying, leaving HAProxy pods unready, when the render gate's verdict reached the deployment scheduler before the render it named. Each component now receives an event before any reaction to it.
-- A HAProxy pod's termination drain no longer ends on a client pause while kube-proxy still routes to the pod. The agent waits until every Service lists the pod as not ready and kube-proxy on every node has synced that, as well as for the quiet period; a drain that can't observe part of the routing logs `reason=unverified` at WARN ([#446](https://github.com/haproxy-haptic/HAPTIC/issues/446)).
 
 ### Security
 
@@ -50,7 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `extraContext.forwardedHeaders.trustedProxies`: the L7 load balancers whose `X-Forwarded-For`, `-Proto`, `-Host`, and `-Port` headers HAPTIC keeps.
 - `controller.rbac.releaseNamespaceSecretsOnly` limits Secret reads to the release namespace and rejects references elsewhere.
 - A watched resource that lists `namespaces` is granted by a Role in each listed namespace instead of the ClusterRole.
-- `haproxy.drain.kubeProxyHealthzPort` (default `10256`) and `haproxy.networkPolicy.kubeProxyCIDRs`: the termination drain reads kube-proxy's sync time on every node ([#446](https://github.com/haproxy-haptic/HAPTIC/issues/446)). HAProxy pods get their own ServiceAccount, which a rollback or downgrade to an earlier release removes cleanly; only the agent mounts a token, with `list`/`watch` on EndpointSlices and Services in the release namespace and `list` on Nodes. The HAProxy NetworkPolicy allows the controller's API-server egress and that port.
 
 #### Changed
 
@@ -59,7 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** Every HTTP frontend replaces a client-sent `X-Forwarded-For` with the client address, sets `X-Forwarded-Proto` to `https` or `http`, and drops a client-sent `X-Forwarded-Host` and `X-Forwarded-Port`. Behind an L7 load balancer, [list it in `trustedProxies`](./docs/site/docs/upgrade-notes.md#upgrading-to-07); `trustedProxies: ["0.0.0.0/0", "::/0"]` restores the old `X-Forwarded-For` handling.
 - **BREAKING:** haproxy-ingress: `haproxy-ingress.github.io/forwardfor: add` replaces the client's `X-Forwarded-For` and `update` appends to it, as upstream does; HAPTIC had them the other way round. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#3-check-haproxy-ingressgithubioforwardfor) before upgrading.
 - An Ingress that sets `X-Forwarded-For` handling through annotations from two families is rejected at admission, like other mixed-family features.
-- HAProxy containers no longer receive the namespace's default ServiceAccount token.
 
 #### Fixed
 

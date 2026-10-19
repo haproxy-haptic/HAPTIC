@@ -172,29 +172,6 @@ spec:
         - namespaceSelector: {}
           podSelector: {}
 
-    {{- if include "haptic.haproxy.drainRouting" . }}
-    # The agent's drain watches EndpointSlices and Services on the API server
-    # (the controller's API endpoints) and reads every node's kube-proxy healthz.
-    {{- range .Values.controller.networkPolicy.egress.kubernetesApi }}
-    - to:
-        - ipBlock:
-            cidr: {{ .cidr }}
-      ports:
-        {{- range .ports }}
-        - port: {{ .port }}
-          protocol: {{ .protocol }}
-        {{- end }}
-    {{- end }}
-    {{- range $np.kubeProxyCIDRs }}
-    - to:
-        - ipBlock:
-            cidr: {{ . }}
-      ports:
-        - port: {{ int $haproxy.drain.kubeProxyHealthzPort }}
-          protocol: TCP
-    {{- end }}
-    {{- end }}
-
     {{- with $np.extraEgress }}
     # Additional custom egress rules
     {{- toYaml . | nindent 4 }}
