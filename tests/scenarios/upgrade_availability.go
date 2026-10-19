@@ -113,18 +113,33 @@ func (u *upgrade) trafficProbePod(ctx context.Context) (*corev1.Pod, error) {
 	if image == "" {
 		return nil, errors.New("HAProxy image unavailable for the continuous traffic probe")
 	}
+	// The probe targets the ClusterIP so a starved CoreDNS can't fail a check about HAProxy.
+	service, err := readJSON[corev1.Service](ctx, s, "get", "service", deployment.Name)
+	if err != nil {
+		return nil, err
+	}
+	if service.Spec.ClusterIP == "" || service.Spec.ClusterIP == corev1.ClusterIPNone {
+		return nil, fmt.Errorf("service %s has no ClusterIP for the continuous traffic probe", deployment.Name)
+	}
 	return &corev1.Pod{
 		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
 		ObjectMeta: metav1.ObjectMeta{Name: "upgrade-continuous-traffic", Namespace: s.Namespace},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers: []corev1.Container{{Name: "probe", Image: image,
-				Command:      []string{"/bin/sh", "-c", upgradeProbeScript, "sh", deployment.Name},
+				Command:      []string{"/bin/sh", "-c", upgradeProbeScript, "sh", urlHost(service.Spec.ClusterIP)},
 				VolumeMounts: []corev1.VolumeMount{{Name: "tls", MountPath: "/tls", ReadOnly: true}},
 			}},
 			Volumes: []corev1.Volume{{Name: "tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "upgrade-default-tls"}}}},
 		},
 	}, nil
+}
+
+func urlHost(ip string) string {
+	if strings.Contains(ip, ":") {
+		return "[" + ip + "]"
+	}
+	return ip
 }
 
 func (s *Session) finishTrafficProbe(ctx context.Context, name string) error {
