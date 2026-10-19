@@ -244,7 +244,7 @@ sequenceDiagram
 
 `deployplan.Diff` compares the render with the pod's baseline to decide what that pod has to do:
 
-1. **`runtime`**: every change is a typed command the pod's HAProxy can run — map entries, certificate and CA content, crt-list entries, server address, weight or state, and on HAProxy 3.4 a backend the render declared dynamic. The agent writes the files, runs the commands on the worker socket, and the process keeps serving.
+1. **`runtime`**: every change is a typed command the pod's HAProxy can run — map entries, certificate and CA content, server address, weight or state, and on HAProxy 3.4 a backend the render declared dynamic. The agent writes the files, runs the commands on the worker socket, and the process keeps serving.
 2. **`file_only`**: the files changed but nothing has to run — a general file no section reads, or a map the running worker never loaded. The next reload picks it up.
 3. **`reload`**: a section's text changed, a profile appeared or disappeared, a file declares `reloadOnChange`, or the configuration changed in a way no section accounts for. The agent writes the whole set and reloads.
 

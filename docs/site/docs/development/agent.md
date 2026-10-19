@@ -23,7 +23,7 @@ are three pure steps and one round trip.
 
 1. **The render declares its structure.** Chart macros register what they emit —
    the sections of `haproxy.cfg`, the backend and server records behind them, the
-   entries of every map and crt-list, the file set — and the result is a
+   entries of every map, the file set — and the result is a
    `renderplan.Plan` (`pkg/dataplane/renderplan`). Nothing parses HAProxy
    configuration: the generator knows what it generated. A plan's ID is the
    digest of its canonical encoding, so two identical renders produce the same

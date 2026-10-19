@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `haptic_render_total` and `haptic_render_errors_total` export every `cache_state` at zero, and `haptic_config_rejected_total` every `validator`, so `increase()` and the `HAProxyControllerConfigRejected` alert see the first failure.
+- The controller logs `Reload required` at INFO with the pod and the reasons whenever it reloads a pod, instead of only at DEBUG.
 
 ### Fixed
 
