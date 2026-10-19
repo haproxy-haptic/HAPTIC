@@ -757,8 +757,8 @@ Agent credentials are the top-level `credentials.dataplane.*` section — see [C
 | `haproxy.shmStats.path` | string | `/dev/shm/haproxy-stats` | Path to the shared-memory stats file |
 | `haproxy.shmStats.maxObjects` | int | `50000` | Maximum object count in the shm-stats file. Each frontend, backend, listen, and server counts as one object — pick a value with headroom; HAProxy can't resize the file on reload |
 | `haproxy.shmStats.shmSizeLimit` | string | `""` | `/dev/shm` emptyDir size limit. Empty auto-calculates from `maxObjects` (~4 KB/object + 10% overhead, rounded to MiB) |
-| `haproxy.drain.enabled` | bool | `true` | Hold the HAProxy container's `preStop` hook on the agent's drain socket until no new connection has reached the pod for `quietPeriodSeconds` (kube-proxy has stopped routing to it); only then does kubelet's SIGUSR1 run HAProxy's own soft stop |
-| `haproxy.drain.quietPeriodSeconds` | int | `2` | The drain ends once the traffic frontends accepted no new connection for this many seconds |
+| `haproxy.drain.enabled` | bool | `true` | Hold the HAProxy container's `preStop` hook on the agent's drain socket until no new connection has reached the pod for `quietPeriodSeconds`; only then does kubelet's SIGUSR1 run HAProxy's own soft stop |
+| `haproxy.drain.quietPeriodSeconds` | int | `2` | The drain ends once the traffic frontends accepted no new connection for this many seconds. A client that pauses longer while kube-proxy still routes to the pod can be refused; see [Pod termination](haproxy-deployment.md#pod-termination) |
 | `haproxy.drain.maxWaitSeconds` | int | `10` | Upper bound of the drain in seconds; with `extraContext.hardStopAfter` and the sidecars' shutdown it must fit in `terminationGracePeriodSeconds` |
 | `haproxy.lifecycle` | map | `{}` | Container lifecycle hooks for the HAProxy container (`preStop`, `postStart`); when set they replace the drain hook |
 | `haproxy.updateStrategy.type` | string | `RollingUpdate` | HAProxy deployment update strategy |

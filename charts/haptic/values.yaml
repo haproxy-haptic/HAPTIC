@@ -1773,8 +1773,9 @@ haproxy:
   # (listeners unbind, in-flight connections finish, hardStopAfter caps the
   # drain). Before that signal the HAProxy container's preStop hook waits on the
   # agent's drain socket until no new connection has reached the pod for
-  # quietPeriodSeconds, which is when kube-proxy has stopped routing to it, and
-  # never longer than maxWaitSeconds. The agent, spoa-hub and vector are native
+  # quietPeriodSeconds, never longer than maxWaitSeconds. Silence doesn't prove
+  # kube-proxy stopped routing to the pod: a client that pauses longer than
+  # quietPeriodSeconds can be refused; see "Pod termination" in the docs. The agent, spoa-hub and vector are native
   # sidecars, stopped only after HAProxy exited from the same grace budget:
   # maxWaitSeconds plus hardStopAfter plus their shutdown must fit in
   # terminationGracePeriodSeconds.

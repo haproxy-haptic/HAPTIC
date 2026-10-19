@@ -323,6 +323,30 @@ The watchdog uses `/usr/bin/bash` and `timeout`, which the default images provid
 With a custom sidecar image missing either command, the supervisor logs a warning
 and still restarts child processes that exit.
 
+## Pod termination
+
+When a HAProxy pod is deleted, its `preStop` hook holds the pod until no new
+connection has arrived for `haproxy.drain.quietPeriodSeconds` (default 2), and
+at most `haproxy.drain.maxWaitSeconds` (default 10). HAProxy then stops
+accepting connections and finishes the open ones.
+
+The pod can't see when kube-proxy stops routing to it, so the quiet period is an
+estimate:
+
+- **Steady traffic isn't refused.** Each new connection restarts the quiet
+  period.
+- **A client that pauses can be refused.** If a client sends nothing for longer
+  than `quietPeriodSeconds` while kube-proxy on some node still routes to the
+  pod, its next connection is refused. Raise `quietPeriodSeconds` above your
+  kube-proxy's endpoint update delay, keeping `maxWaitSeconds` at least as high.
+- **External load balancers decide for themselves.** With
+  `externalTrafficPolicy: Local`, a node's last HAProxy pod is withdrawn only
+  when the load balancer's health check fails; a load balancer that targets pod
+  IPs withdraws it on its own schedule. If that takes longer than
+  `maxWaitSeconds`, connections arriving afterwards are refused. Keep the load
+  balancer's failure detection time (interval times unhealthy threshold) below
+  `maxWaitSeconds`.
+
 ## HAProxy Pod requirements
 
 When `haproxy.enabled: false`, you're responsible for deploying HAProxy pods yourself. The controller discovers them via the pod selector at `controller.config.podSelector`, which defaults to:
