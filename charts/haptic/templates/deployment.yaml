@@ -5,7 +5,6 @@
 {{- $webhookEnabled := .Values.controller.webhook.enabled }}
 {{- $webhookSecretName := include "haptic.webhook.secretName" . }}
 {{- $webhookResourceTimeoutSeconds := include "haptic.webhook.resourceTimeoutSeconds" . | int }}
-{{- $labels := include "haptic.labels.withCommon" . }}
 {{- $validatorsEnabled := include "haptic.validators.enabled" . }}
 {{- $validators := $controller.validators }}
 apiVersion: apps/v1
@@ -13,7 +12,7 @@ kind: Deployment
 metadata:
   name: {{ include "haptic.controllerFullname" . }}
   labels:
-    {{- $labels | nindent 4 }}
+    {{- include "haptic.labels.withCommon" . | nindent 4 }}
   {{- if or $controller.deploymentAnnotations .Values.commonAnnotations }}
   annotations:
     {{- with .Values.commonAnnotations }}
@@ -44,7 +43,10 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- $labels | nindent 8 }}
+        {{- include "haptic.stableLabels" . | nindent 8 }}
+        {{- with .Values.commonLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         app.kubernetes.io/component: controller
         {{- with $podSpec.podLabels }}
         {{- toYaml . | nindent 8 }}

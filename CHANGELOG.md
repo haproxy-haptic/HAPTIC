@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - haproxytech: `haproxy.org/forwarded-for: "false"` forwards the client's `X-Forwarded-For` unchanged; it was ignored.
 - Chart upgrades prepare controllers that accept the live configuration before applying new templates, preventing old replicas from rejecting valid incoming sets.
 - A `helm upgrade` that changes only the chart version no longer changes the `HAProxyTemplateConfig`, so running controllers don't start a new iteration mid-rollout. The controller-managed HAProxy Service drops its `helm.sh/chart`, `app.kubernetes.io/version`, and `app.kubernetes.io/managed-by` labels.
+- Controller pods no longer carry the `helm.sh/chart` and `app.kubernetes.io/version` labels; the Deployment keeps them. A chart upgrade no longer rolls the controllers a second time after the pre-upgrade hook has rolled them to the new image. The first upgrade to this version still rolls them twice ([#467](https://github.com/haproxy-haptic/HAPTIC/issues/467)).
 
 ## [0.6.0] - 2026-10-18
 

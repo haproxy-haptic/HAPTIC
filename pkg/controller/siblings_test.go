@@ -42,7 +42,7 @@ var controllerPodLabels = map[string]string{
 	"app.kubernetes.io/component": "controller",
 }
 
-// releaseLabels are the per-release labels the chart also puts on a pod.
+// releaseLabels are the per-release labels older charts put on a pod.
 func releaseLabels(version string) map[string]string {
 	return map[string]string{
 		"helm.sh/chart":             "haptic-" + version,

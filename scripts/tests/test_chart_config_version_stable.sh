@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # A chart upgrade that changes only the chart version must not change any
-# config spec: every running controller would treat it as a config change (#461).
+# config spec (#461) or pod template (#467): every running controller would
+# treat the first as a config change, and the second rolls the pods.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -22,9 +23,23 @@ rateLimit:
     enabled: true
 VALUES
 
-config_specs() {
+cat >"$test_dir/pinned.yaml" <<'VALUES'
+controller:
+  image: {tag: pinned}
+spoaHub:
+  image: {tag: pinned}
+credentials:
+  dataplane: {password: pinned}
+VALUES
+
+# Images follow appVersion by design, and an unset password is random per
+# render, so only the pod-template render pins them. Hook Jobs are recreated on
+# every upgrade anyway.
+stable_specs() {
     helm template haptic "$1" --namespace haptic "${@:2}" |
         yq ea '[select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")] | .[] | {"kind": .kind, "name": .metadata.name, "spec": .spec}'
+    helm template haptic "$1" --namespace haptic "${@:2}" -f "$test_dir/pinned.yaml" |
+        yq ea '[select((.spec.template or .spec.jobTemplate) and .metadata.annotations."helm.sh/hook" == null)] | .[] | {"kind": .kind, "name": .metadata.name, "template": (.spec.template // .spec.jobTemplate)}'
 }
 
 for version in 1.0.0 2.0.0; do
@@ -35,12 +50,13 @@ done
 for values in "" "$test_dir/all-libraries.yaml"; do
     args=()
     [[ -n "$values" ]] && args=(-f "$values")
-    config_specs "$test_dir/1.0.0" "${args[@]}" >"$test_dir/old.yaml"
-    config_specs "$test_dir/2.0.0" "${args[@]}" >"$test_dir/new.yaml"
+    stable_specs "$test_dir/1.0.0" "${args[@]}" >"$test_dir/old.yaml"
+    stable_specs "$test_dir/2.0.0" "${args[@]}" >"$test_dir/new.yaml"
     grep -q 'kind: HAProxyTemplateConfig' "$test_dir/old.yaml"
+    grep -q 'name: haptic-controller' "$test_dir/old.yaml"
     if ! diff -u "$test_dir/old.yaml" "$test_dir/new.yaml"; then
-        echo "Config specs differ between chart versions${values:+ with $(basename "$values")}" >&2
+        echo "Config specs or pod templates differ between chart versions${values:+ with $(basename "$values")}" >&2
         exit 1
     fi
 done
-echo "Chart config version-stability tests passed"
+echo "Chart config and pod template version-stability tests passed"
