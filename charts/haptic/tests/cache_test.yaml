@@ -12,6 +12,8 @@ tests:
     documentSelector:
       path: metadata.name
       value: haptic-config
+    set:
+      cache.varnish.enabled: true
     chart:
       appVersion: test-version
     asserts:
@@ -19,12 +21,25 @@ tests:
           path: spec.templatingSettings.extraContext.cache.varnish.image
           value: ghcr.io/haproxy-haptic/haptic/varnish:test-version
 
+  - it: should keep the chart version out of the config while Varnish is disabled
+    template: haproxytemplateconfig.yaml
+    documentSelector:
+      path: metadata.name
+      value: haptic-config
+    chart:
+      appVersion: test-version
+    asserts:
+      - equal:
+          path: spec.templatingSettings.extraContext.cache.varnish.image
+          value: ""
+
   - it: should preserve an explicit Varnish image
     template: haproxytemplateconfig.yaml
     documentSelector:
       path: metadata.name
       value: haptic-config
     set:
+      cache.varnish.enabled: true
       cache.varnish.image: example.invalid/cache@sha256:abc
     asserts:
       - equal:

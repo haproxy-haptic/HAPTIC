@@ -380,6 +380,7 @@ test-support: build-map-identity-check ## Run script, browser, process, playgrou
 	$(MAKE) test-release
 	bash scripts/tests/test_chart_spoa_image.sh
 	bash scripts/tests/test_chart_varnish_image.sh
+	bash scripts/tests/test_chart_config_version_stable.sh
 	bash scripts/tests/test_shard_conformance_tests.sh
 	@$(MAKE) test-process
 	@$(MAKE) test-playground

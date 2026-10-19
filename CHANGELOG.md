@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `haproxy-haptic.org/forwardfor` and `haproxy-ingress.github.io/forwardfor`: `add` and `update` no longer send the client address twice, and `ifmissing` and `ignore` no longer append it to the client's header.
 - haproxytech: `haproxy.org/forwarded-for: "false"` forwards the client's `X-Forwarded-For` unchanged; it was ignored.
 - Chart upgrades prepare controllers that accept the live configuration before applying new templates, preventing old replicas from rejecting valid incoming sets.
+- A `helm upgrade` that changes only the chart version no longer changes the `HAProxyTemplateConfig`, so running controllers don't start a new iteration mid-rollout. The controller-managed HAProxy Service drops its `helm.sh/chart`, `app.kubernetes.io/version`, and `app.kubernetes.io/managed-by` labels.
 
 ## [0.6.0] - 2026-10-18
 
