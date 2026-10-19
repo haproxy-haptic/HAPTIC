@@ -5,8 +5,8 @@ type: application
 # The oldest Kubernetes release still maintained upstream. Never below 1.33: the
 # HAProxy pod's helpers are native sidecars, which outlive HAProxy while it drains.
 kubeVersion: ">=1.35.0-0"
-version: 0.6.0
-appVersion: "0.6.0"
+version: 0.7.0
+appVersion: "0.7.0"
 # Template libraries are packaged as conditional subcharts so a release only
 # carries the source of the libraries it enables — disabled subcharts are
 # pruned from the Helm release Secret, keeping it under the 1 MiB limit. The
@@ -84,7 +84,7 @@ annotations:
   # Document all component images (Artifact Hub standard)
   artifacthub.io/images: |
     - name: controller
-      image: ghcr.io/haproxy-haptic/haptic:0.6.0-haproxy3.4
+      image: ghcr.io/haproxy-haptic/haptic:0.7.0-haproxy3.4
       platforms:
         - linux/amd64
         - linux/arm64
@@ -95,12 +95,12 @@ annotations:
         - linux/amd64
         - linux/arm64
     - name: spoa-hub
-      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.6.0
+      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.7.0
       platforms:
         - linux/amd64
         - linux/arm64
     - name: varnish
-      image: ghcr.io/haproxy-haptic/haptic/varnish:0.6.0
+      image: ghcr.io/haproxy-haptic/haptic/varnish:0.7.0
       platforms:
         - linux/amd64
         - linux/arm64
@@ -131,7 +131,7 @@ annotations:
   # Links
   artifacthub.io/links: |
     - name: Documentation
-      url: https://haproxy-haptic.org/docs/0.6.0/
+      url: https://haproxy-haptic.org/docs/0.7.0/
     - name: Issue Tracker
       url: https://github.com/haproxy-haptic/HAPTIC/issues
 

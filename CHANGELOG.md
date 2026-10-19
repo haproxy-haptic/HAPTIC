@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-20
+
 HAPTIC 0.7 closes two ways an Ingress writer or a client could influence what
 other routes see: raw HAProxy configuration annotations now need an explicit
 opt-in, and every HTTP frontend replaces client-sent forwarded headers. Chart
