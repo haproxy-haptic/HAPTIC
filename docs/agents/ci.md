@@ -32,7 +32,9 @@ Waiting is only useful while the pull request can still merge.
 
 - On every check, read `mergeable` and `mergeStateStatus` as well as the jobs.
   When the pull request conflicts, rebase and push right away; a run on a
-  conflicting head can't merge.
+  conflicting head can't merge. The new head supersedes the running attempt
+  (cancel it only if your task owns it); collect review and `verified`
+  evidence again for the new head SHA.
 - Start investigating the first failed job at once: its log, its artifacts,
   and a local reproduction. Don't wait for the rest of the run or for
   `verified`.
