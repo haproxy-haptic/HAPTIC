@@ -1165,7 +1165,7 @@ spoa-hub-image: spoa-prep ## Build the SPOA hub locally (SPOA_DEV_IMAGE selects 
 	@set -a; . ./versions-spoa.env; set +a; \
 	HUB_TAG="$${SPOA_HUB_VERSION#v}"; \
 	echo "Building $(SPOA_DEV_IMAGE) ($(SPOA_DEV_PLATFORM), FROM hub $$HUB_TAG)"; \
-	docker buildx build \
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
 		--platform "$(SPOA_DEV_PLATFORM)" \
 		--build-arg "SPOA_HUB_VERSION=$$HUB_TAG" \
 		--build-context plugins=plugins \

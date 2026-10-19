@@ -582,6 +582,12 @@ load_image_into_kind() {
     return 1
 }
 
+no_cache_flag() {
+    if [[ "$FORCE_REBUILD" == "true" ]]; then
+        echo "--no-cache"
+    fi
+}
+
 # Builds through `make docker-build` so the binary carries the full build
 # identity (version, source hash) the chart's pre-upgrade hook requires.
 build_controller_image() {
@@ -593,9 +599,7 @@ build_controller_image() {
         "HAPROXY_VERSION=${HAPROXY_VERSION}"
         "SOURCE_HASH=${source_hash}"
     )
-    if [[ "$FORCE_REBUILD" == "true" ]]; then
-        make_args+=("DOCKER_BUILD_FLAGS=--no-cache")
-    fi
+    make_args+=("DOCKER_BUILD_FLAGS=$(no_cache_flag)")
     run_with_spinner "Building controller image '${LOCAL_IMAGE}' with HAProxy ${HAPROXY_VERSION}" \
         make "${make_args[@]}"
 }
@@ -655,7 +659,8 @@ build_and_load_spoa_image() {
         local platform
         platform="linux/$(docker version --format '{{.Server.Arch}}')"
         run_with_spinner "Building spoa-hub image '${SPOA_IMAGE}'" \
-            make -C "${REPO_ROOT}" spoa-hub-image "SPOA_DEV_IMAGE=${SPOA_IMAGE}" "SPOA_DEV_PLATFORM=${platform}" || {
+            make -C "${REPO_ROOT}" spoa-hub-image "SPOA_DEV_IMAGE=${SPOA_IMAGE}" "SPOA_DEV_PLATFORM=${platform}" \
+            "DOCKER_BUILD_FLAGS=$(no_cache_flag)" || {
             err "spoa-hub build failed"
             return 1
         }
