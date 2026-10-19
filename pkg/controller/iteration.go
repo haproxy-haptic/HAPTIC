@@ -154,8 +154,8 @@ func (it *liveIteration) teardown() error {
 	return completeIteration(it.setup, nil, it.logger)
 }
 
-// handoverWarmupWait bounds how long a successor waits for its warmer's first
-// render before taking leadership with a cold graph.
+// handoverWarmupWait is how long a successor waits for a warm graph before it
+// waits only for the warm-up render in flight.
 const handoverWarmupWait = 30 * time.Second
 
 // startIteration starts a controller iteration and returns once it serves.
@@ -292,7 +292,7 @@ func startIteration(
 		return nil, err
 	}
 
-	takeOverLeadership(setup.IterCtx, previous, wiring.warmed, logger)
+	takeOverLeadership(setup.IterCtx, previous, wiring.warmer, infra.draining.Load, logger)
 	if err := setupLeadershipAndWebhook(ctx, setup, infra, cfg, webhookCertDir, webhookAdmissionTimeouts, webhookPort, k8sClient, dryrunValidator, pluggableMgrCleanup, logger); err != nil {
 		return nil, err
 	}
@@ -332,29 +332,64 @@ func completeFailedStartup(setup *componentSetup, authority *iterationReloadAuth
 	return err
 }
 
-// takeOverLeadership retires the predecessor's term once this iteration's
-// graph is warm, right before this one enters election. The wait is bounded
-// so a slow or failing warm-up cannot hold the hand-over indefinitely.
-func takeOverLeadership(ctx context.Context, previous *liveIteration, warmed <-chan struct{}, logger *slog.Logger) {
-	if previous == nil {
-		return
-	}
-	awaitWarmGraph(ctx, warmed, logger)
-	previous.retireLeadership()
+// warmUp is the successor's follower warmer as the hand-over sees it.
+type warmUp interface {
+	Warmed() <-chan struct{}
+	RenderInFlight() <-chan struct{}
 }
 
-func awaitWarmGraph(ctx context.Context, warmed <-chan struct{}, logger *slog.Logger) {
-	if warmed == nil {
+// takeOverLeadership retires the predecessor's term once this iteration's
+// graph is warm, right before this one enters election.
+func takeOverLeadership(ctx context.Context, previous *liveIteration, warmer warmUp, shuttingDown func() bool, logger *slog.Logger) {
+	if previous == nil {
 		return
 	}
 	timer := time.NewTimer(handoverWarmupWait)
 	defer timer.Stop()
+	awaitHandover(ctx, warmer, timer.C, shuttingDown, logger)
+	previous.retireLeadership()
+}
+
+// awaitHandover waits for a warm graph and reports a cold take-over.
+func awaitHandover(ctx context.Context, warmer warmUp, deadline <-chan time.Time, shuttingDown func() bool, logger *slog.Logger) {
+	started := time.Now()
+	if awaitWarmGraph(ctx, warmer, deadline) || ctx.Err() != nil {
+		return
+	}
+	waited := time.Since(started)
+	if shuttingDown() {
+		logger.Info("Taking leadership with a cold graph while the controller shuts down", "waited", waited)
+		return
+	}
+	logger.Warn("Taking leadership with a cold graph: the warm-up render left no graph. "+
+		"The first render as leader rebuilds the whole configuration and deployments wait for it. "+
+		"Fix the render-warmer error logged before this.",
+		"waited", waited)
+}
+
+// awaitWarmGraph reports whether the graph is warm. Past the deadline it still
+// waits for the render in flight: that is the warm-up progressing, and a cold
+// leader would discard and repeat it while nothing deploys.
+func awaitWarmGraph(ctx context.Context, warmer warmUp, deadline <-chan time.Time) bool {
 	select {
-	case <-warmed:
-	case <-timer.C:
-		logger.Warn("Taking leadership with a cold graph: the warm-up did not finish in time",
-			"waited", handoverWarmupWait)
+	case <-warmer.Warmed():
+		return true
 	case <-ctx.Done():
+		return false
+	case <-deadline:
+	}
+	if running := warmer.RenderInFlight(); running != nil {
+		select {
+		case <-running:
+		case <-ctx.Done():
+			return false
+		}
+	}
+	select {
+	case <-warmer.Warmed():
+		return true
+	default:
+		return false
 	}
 }
 

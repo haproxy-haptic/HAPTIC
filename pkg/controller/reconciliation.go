@@ -80,9 +80,9 @@ type reconciliationWiring struct {
 	freshStoreProvider    func(context.Context) (stores.StoreProvider, error)
 	inputIsolation        *inputisolation.Service
 	gvrMapper             meta.RESTMapper
-	// warmed is the follower warmer's first-render signal; a hand-over waits
-	// for it so the new leader's first render is warm.
-	warmed <-chan struct{}
+	// warmer is the follower warmer; a hand-over waits for it so the new
+	// leader's first render is warm.
+	warmer warmUp
 	// admissionChecks records the webhook's `haproxy -c` runs.
 	admissionChecks validation.CheckObserver
 }
@@ -379,7 +379,7 @@ func createReconciliationComponents(
 		publishedCurrentFiles: currentFiles.published,
 		inputIsolation:        inputSelector,
 		gvrMapper:             gvrMapper,
-		warmed:                warmerComponent.Warmed(),
+		warmer:                warmerComponent,
 		admissionChecks:       observeChecks(setup.MetricsComponent.Metrics(), "admission"),
 	}, nil
 }

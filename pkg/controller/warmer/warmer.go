@@ -86,6 +86,8 @@ type Component struct {
 	followerCtx    context.Context
 	cancelFollower context.CancelFunc
 	requests       chan context.Context
+	inFlightMu     sync.Mutex
+	inFlight       chan struct{}
 	// failing is whether the last follower render failed; only transitions log above Debug.
 	failing bool
 }
@@ -96,6 +98,14 @@ type Component struct {
 // renders again.
 func (c *Component) Warmed() <-chan struct{} {
 	return c.warmed
+}
+
+// RenderInFlight returns a channel closed when the follower render running now
+// ends, or nil when none is running.
+func (c *Component) RenderInFlight() <-chan struct{} {
+	c.inFlightMu.Lock()
+	defer c.inFlightMu.Unlock()
+	return c.inFlight
 }
 
 // New subscribes the component; call before the bus starts.
@@ -148,10 +158,24 @@ func (c *Component) runRenders(ctx context.Context) {
 			return
 		case renderCtx := <-c.requests:
 			if renderCtx.Err() == nil {
-				component.SafeDispatch(c.Logger(), ComponentName, nil, func() { c.render(renderCtx) })
+				c.renderTracked(renderCtx)
 			}
 		}
 	}
+}
+
+func (c *Component) renderTracked(ctx context.Context) {
+	done := make(chan struct{})
+	c.inFlightMu.Lock()
+	c.inFlight = done
+	c.inFlightMu.Unlock()
+	defer func() {
+		c.inFlightMu.Lock()
+		c.inFlight = nil
+		c.inFlightMu.Unlock()
+		close(done)
+	}()
+	component.SafeDispatch(c.Logger(), ComponentName, nil, func() { c.render(ctx) })
 }
 
 // CoalescesOn collapses a burst of triggers to the latest one: every render
