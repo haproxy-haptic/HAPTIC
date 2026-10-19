@@ -439,7 +439,7 @@ func loadAcceptedIterationConfig(
 	}
 	setup.ConfigChangeHandler.SetInitialSnapshot(active)
 	configureEffectiveConfig(setup.IterCtx, active, k8sClient, setup, infra, logger)
-	finalizeConfigLoad(state, setup, bundle.ConfigVersion, bundle.CredentialsVersion)
+	finalizeConfigLoad(state, setup, bundle.ConfigVersion)
 	return active, bundle, nil
 }
 

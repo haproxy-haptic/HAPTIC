@@ -381,15 +381,11 @@ func TestConfigChangeHandler_NewerCredentialEventRetiresStartupReplay(t *testing
 	})
 
 	startupCredentials := &coreconfig.Credentials{DataplaneUsername: "startup"}
-	handler.handleSecretRotation("credentials",
-		events.NewCredentialsUpdatedEvent(startupCredentials, "secret-startup"),
-		&handler.initialCredentialsVersion)
+	handler.handleSecretRotation(events.NewCredentialsUpdatedEvent(startupCredentials, "secret-startup"))
 	handler.EnableReinitialization()
 
 	newerCredentials := &coreconfig.Credentials{DataplaneUsername: "newer"}
-	handler.handleSecretRotation("credentials",
-		events.NewCredentialsUpdatedEvent(newerCredentials, "secret-newer"),
-		&handler.initialCredentialsVersion)
+	handler.handleSecretRotation(events.NewCredentialsUpdatedEvent(newerCredentials, "secret-newer"))
 	go handler.Start(t.Context())
 
 	select {

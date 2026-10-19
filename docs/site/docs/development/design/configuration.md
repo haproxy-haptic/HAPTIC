@@ -62,7 +62,9 @@ validated before replacement. A rejected proposal leaves the current iteration
 running. Accepted changes trigger an internal reinitialization; the debounce
 combines bursts such as a Helm upgrade. The Secret referenced by
 `credentialsSecretRef` is also watched, so credential rotation requires no pod
-restart.
+restart. Only a changed `dataplane_username` or `dataplane_password` restarts the
+iteration; an update that only changes labels or annotations, such as a Helm
+upgrade, doesn't.
 
 The serving iteration remains active while its successor starts from the accepted
 config, credentials, and discovery snapshot. The successor waits for its render

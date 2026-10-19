@@ -161,15 +161,6 @@ type ConfigChangeHandler struct {
 	// validated event went out for this iteration.
 	runningVersionAnnounced bool
 
-	// Initial credentials Secret version tracked the same way, for the same
-	// reason. The credentialsloader emits CredentialsUpdatedEvent on every
-	// Secret resync — including the bootstrap event the watcher fires the
-	// moment it observes the existing Secret at iteration startup. Filtering
-	// by version means we only signal reinitialization when the Secret
-	// content actually changed (rotation), not when the watcher just
-	// re-observes the same Secret.
-	initialCredentialsVersion string
-
 	// reinitializationEnabled separates bootstrap echoes from concurrent updates.
 	// Exact startup versions are ignored; newer versions are queued for replay.
 	reinitializationEnabled bool
@@ -283,18 +274,6 @@ func (h *ConfigChangeHandler) SetInitialConfigVersion(version string) {
 		"version", version)
 }
 
-// SetInitialCredentialsVersion records the resourceVersion of the
-// credentials Secret as observed at iteration startup, so the bootstrap
-// CredentialsUpdatedEvent (fired by the watcher's initial onAdd) doesn't
-// trigger a redundant reinitialization loop.
-func (h *ConfigChangeHandler) SetInitialCredentialsVersion(version string) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.initialCredentialsVersion = version
-	h.logger.Debug("Set initial credentials Secret version for bootstrap skip",
-		"version", version)
-}
-
 // SetEffectiveResolver installs the effective-config transformation applied
 // to every parsed config before validation (see the field doc). Like
 // SetInitialConfigVersion, this must be called after construction and before
@@ -318,7 +297,6 @@ func (h *ConfigChangeHandler) SetInitialSnapshot(snapshot *ValidatedSnapshot) {
 		return
 	}
 	h.initialConfigVersion = snapshot.ConfigVersion
-	h.initialCredentialsVersion = snapshot.CredentialsVersion
 	h.runningVersionAnnounced = false
 	h.currentCredentials = snapshot.Credentials
 	h.currentCredentialsVersion = snapshot.CredentialsVersion
@@ -993,7 +971,7 @@ func (h *ConfigChangeHandler) dispatchSideEvent(event busevents.Event) {
 	case *events.BecameLeaderEvent:
 		h.handleBecameLeader(e)
 	case *events.CredentialsUpdatedEvent:
-		h.handleSecretRotation("credentials", e, &h.initialCredentialsVersion)
+		h.handleSecretRotation(e)
 	default:
 		h.logger.Warn("ConfigChangeHandler received an unhandled event type; dropping",
 			"type", fmt.Sprintf("%T", event))
@@ -1094,12 +1072,13 @@ func (h *ConfigChangeHandler) retirePendingReload() {
 	h.pendingReload = nil
 }
 
-// handleSecretRotation restarts from the active config and the event's exact
-// credentials; the bootstrap Secret version is ignored.
-func (h *ConfigChangeHandler) handleSecretRotation(kind string, event *events.CredentialsUpdatedEvent, initialVersion *string) {
+// handleSecretRotation restarts from the active config when the event's
+// credentials differ from the active ones. Content, not resourceVersion,
+// decides: every chart upgrade relabels the Secret (#456).
+func (h *ConfigChangeHandler) handleSecretRotation(event *events.CredentialsUpdatedEvent) {
 	version := event.SecretVersion
 	if version == syntheticBootstrapVersion {
-		h.logger.Debug("Ignoring synthetic bootstrap " + kind + " event (version='initial')")
+		h.logger.Debug("Ignoring synthetic bootstrap credentials event (version='initial')")
 		return
 	}
 	creds, ok := event.Credentials.(*coreconfig.Credentials)
@@ -1111,27 +1090,25 @@ func (h *ConfigChangeHandler) handleSecretRotation(kind string, event *events.Cr
 
 	h.mu.Lock()
 	reinitEnabled := h.reinitializationEnabled
-	bootstrap := *initialVersion
-	if bootstrap != "" && version == bootstrap {
+	var activeCredentials *coreconfig.Credentials
+	if h.activeSnapshot != nil {
+		activeCredentials = h.activeSnapshot.Credentials
+	}
+	unchanged := sameCredentials(creds, activeCredentials)
+	if unchanged && !h.credentialsDirty {
 		h.mu.Unlock()
-		h.logger.Debug("Ignoring "+kind+" Secret bootstrap event (matches initial version)",
+		h.logger.Debug("Ignoring credentials Secret update with unchanged credentials",
 			"version", version)
 		return
 	}
 	h.currentCredentials = creds
 	h.currentCredentialsVersion = version
-	activeVersion := ""
-	if h.activeSnapshot != nil {
-		activeVersion = h.activeSnapshot.CredentialsVersion
-	}
-	h.credentialsDirty = version != activeVersion
+	h.credentialsDirty = !unchanged
 	if !reinitEnabled {
-		if kind == "credentials" {
-			h.pendingStartupCredentials = event
-		}
+		h.pendingStartupCredentials = event
 		h.mu.Unlock()
 		h.augmentQueuedReload(ReloadReasonCredentials)
-		h.logger.Debug("Queued "+kind+" Secret rotation received during startup",
+		h.logger.Debug("Queued credentials Secret rotation received during startup",
 			"version", version)
 		return
 	}
@@ -1144,7 +1121,7 @@ func (h *ConfigChangeHandler) handleSecretRotation(kind string, event *events.Cr
 	h.mu.Unlock()
 
 	if snapshot == nil {
-		h.logger.Warn("Cannot signal reinitialization for "+kind+" rotation: no validated config cached",
+		h.logger.Warn("Cannot signal reinitialization for credentials rotation: no validated config cached",
 			"version", version)
 		return
 	}
@@ -1153,9 +1130,13 @@ func (h *ConfigChangeHandler) handleSecretRotation(kind string, event *events.Cr
 
 	h.augmentQueuedReload(ReloadReasonCredentials)
 	h.logger.Info("Secret rotation detected; debouncing iteration restart",
-		"kind", kind,
+		"kind", "credentials",
 		"version", version)
 	h.scheduleReload(snapshot, ReloadReasonCredentials)
+}
+
+func sameCredentials(a, b *coreconfig.Credentials) bool {
+	return a != nil && b != nil && *a == *b
 }
 
 // sendPendingReload sends the pending state to the controller.

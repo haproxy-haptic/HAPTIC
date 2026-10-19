@@ -819,48 +819,93 @@ func TestConfigChangeHandler_BootstrapEventOrderingSyntheticThenReal(t *testing.
 	}
 }
 
-// TestConfigChangeHandler_HandleCredentialsUpdated_SignalsRotation exercises
-// the credentials-Secret rotation path (handleSecretRotation), confirming the
-// dispatch wiring and that the bootstrap-version filter is applied.
-func TestConfigChangeHandler_HandleCredentialsUpdated_SignalsRotation(t *testing.T) {
-	bus, logger := testutil.NewTestBusAndLogger()
-	configCh := make(chan *ReloadRequest, 1)
-	handler := NewConfigChangeHandler(bus, logger, configCh, nil, testDebounceInterval)
-	handler.SetInitialConfigVersion("v1")
+func credentialsTestSnapshot(config *coreconfig.Config, credentials *coreconfig.Credentials) *ValidatedSnapshot {
+	return &ValidatedSnapshot{
+		RawConfig:          config,
+		Config:             config,
+		ConfigVersion:      "v1",
+		Credentials:        credentials,
+		CredentialsVersion: "secret-v1",
+	}
+}
 
-	bus.Start()
-	go handler.Start(t.Context())
-	time.Sleep(testutil.StartupDelay)
+// Rotation is decided by the credentials, not the Secret's resourceVersion:
+// every chart upgrade relabels the Secret (#456).
+func TestConfigChangeHandler_CredentialsRotationComparesContent(t *testing.T) {
+	activeCredentials := coreconfig.Credentials{DataplaneUsername: "admin", DataplanePassword: "secret"}
+	newPassword := coreconfig.Credentials{DataplaneUsername: "admin", DataplanePassword: "rotated"}
+	newUsername := coreconfig.Credentials{DataplaneUsername: "operator", DataplanePassword: "secret"}
 
-	cachedConfig := &coreconfig.Config{}
-	bus.Publish(events.NewConfigValidatedEvent(cachedConfig, nil, "v1", "sv1"))
-	time.Sleep(testDebounceInterval + 50*time.Millisecond)
-	select {
-	case <-configCh:
-	default:
+	type update struct {
+		credentials coreconfig.Credentials
+		version     string
+	}
+	tests := []struct {
+		name    string
+		updates []update
+		restart *coreconfig.Credentials
+	}{
+		{
+			name:    "bootstrap event for the active Secret",
+			updates: []update{{activeCredentials, "secret-v1"}},
+		},
+		{
+			name:    "label-only update",
+			updates: []update{{activeCredentials, "secret-v2"}},
+		},
+		{
+			name:    "password change",
+			updates: []update{{newPassword, "secret-v2"}},
+			restart: &newPassword,
+		},
+		{
+			name:    "username change",
+			updates: []update{{newUsername, "secret-v2"}},
+			restart: &newUsername,
+		},
+		{
+			name:    "deleted and recreated with the same data",
+			updates: []update{{activeCredentials, "secret-v1"}, {activeCredentials, "secret-v2"}},
+		},
+		{
+			name:    "deleted and recreated with a new password",
+			updates: []update{{activeCredentials, "secret-v1"}, {newPassword, "secret-v2"}},
+			restart: &newPassword,
+		},
 	}
 
-	handler.SetInitialCredentialsVersion("creds-bootstrap")
-	handler.EnableReinitialization()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bus, logger := testutil.NewTestBusAndLogger()
+			configCh := make(chan *ReloadRequest, 1)
+			handler := NewConfigChangeHandler(bus, logger, configCh, nil, testDebounceInterval)
+			activeConfig := &coreconfig.Config{}
+			active := activeCredentials
+			handler.SetInitialSnapshot(credentialsTestSnapshot(activeConfig, &active))
+			handler.EnableReinitialization()
+			for _, u := range tt.updates {
+				credentials := u.credentials
+				handler.handleSecretRotation(events.NewCredentialsUpdatedEvent(&credentials, u.version))
+			}
+			go handler.Start(t.Context())
 
-	bootstrapCredentials := &coreconfig.Credentials{}
-	bus.Publish(events.NewCredentialsUpdatedEvent(bootstrapCredentials, "creds-bootstrap"))
-	time.Sleep(testDebounceInterval + 50*time.Millisecond)
-	select {
-	case <-configCh:
-		t.Fatal("unexpected reinit signal on bootstrap CredentialsUpdatedEvent")
-	case <-time.After(testutil.NoEventTimeout):
-	}
-
-	rotatedCredentials := &coreconfig.Credentials{}
-	bus.Publish(events.NewCredentialsUpdatedEvent(rotatedCredentials, "creds-rotated"))
-	time.Sleep(testDebounceInterval + 50*time.Millisecond)
-	select {
-	case reload := <-configCh:
-		assert.Same(t, cachedConfig, reload.Snapshot.Config)
-		assert.Same(t, rotatedCredentials, reload.Snapshot.Credentials)
-	case <-time.After(testutil.LongTimeout):
-		t.Fatal("timeout waiting for reinit signal after credentials rotation")
+			if tt.restart == nil {
+				select {
+				case reload := <-configCh:
+					t.Fatalf("unchanged credentials restarted the iteration: %v", reload.Reasons)
+				case <-time.After(testDebounceInterval + testutil.NoEventTimeout):
+				}
+				return
+			}
+			select {
+			case reload := <-configCh:
+				assert.Same(t, activeConfig, reload.Snapshot.Config)
+				assert.Equal(t, *tt.restart, *reload.Snapshot.Credentials)
+				assert.Equal(t, ReloadReasonCredentials, reload.Reasons)
+			case <-time.After(testutil.LongTimeout):
+				t.Fatal("credentials rotation did not restart the iteration")
+			}
+		})
 	}
 }
 
@@ -868,16 +913,14 @@ func TestConfigChangeHandler_QueuesCredentialsRotationDuringBootstrap(t *testing
 	bus, logger := testutil.NewTestBusAndLogger()
 	configCh := make(chan *ReloadRequest, 1)
 	handler := NewConfigChangeHandler(bus, logger, configCh, nil, testDebounceInterval)
-	handler.SetInitialConfigVersion("config-bootstrap")
-	handler.SetInitialCredentialsVersion("credentials-bootstrap")
+	cachedConfig := &coreconfig.Config{}
+	handler.SetInitialSnapshot(credentialsTestSnapshot(cachedConfig, &coreconfig.Credentials{DataplanePassword: "old"}))
 
 	bus.Start()
 	go handler.Start(t.Context())
 	time.Sleep(testutil.StartupDelay)
 
-	cachedConfig := &coreconfig.Config{}
-	bus.Publish(events.NewConfigValidatedEvent(cachedConfig, nil, "config-bootstrap", ""))
-	rotatedCredentials := &coreconfig.Credentials{}
+	rotatedCredentials := &coreconfig.Credentials{DataplanePassword: "rotated"}
 	bus.Publish(events.NewCredentialsUpdatedEvent(rotatedCredentials, "credentials-rotated"))
 	time.Sleep(testDebounceInterval + 50*time.Millisecond)
 
@@ -901,11 +944,7 @@ func TestConfigChangeHandler_QueuesCredentialsRotationDuringBootstrap(t *testing
 // TestConfigChangeHandler_HandleSecretRotation_SkipsSyntheticInitialEvent
 // pins the regression that caused issue #46: webhook.go publishes a
 // synthetic CredentialsUpdatedEvent("initial") during iteration startup
-// to kick subscribers before the real watcher onAdd. The literal
-// "initial" version never matches the real Secret resourceVersion
-// recorded via SetInitialCredentialsVersion, so the bootstrap-match
-// check at the bottom of handleSecretRotation does NOT filter it.
-// Without the dedicated "initial"-skip, the handler treated it as a
+// to kick subscribers before the real watcher onAdd. Without the dedicated "initial"-skip, the handler treated it as a
 // rotation and scheduled an iteration restart ~1s after every startup,
 // which raced UpdateBlocklistAndRestart in the HTTP-store
 // invalid-update acceptance test and caused the new iteration's empty
@@ -935,16 +974,10 @@ func TestConfigChangeHandler_HandleSecretRotation_SkipsSyntheticInitialEvent(t *
 	default:
 	}
 
-	// Record a real bootstrap version that does NOT match "initial",
-	// then enable reinit. This is the exact state at iteration startup
-	// when the bug fires: the real Secret had resourceVersion "1413"
-	// in the failing CI run; "initial" doesn't match, so the synthetic
-	// would slip past the bootstrap-match check.
-	handler.SetInitialCredentialsVersion("1413")
 	handler.EnableReinitialization()
 
-	// Synthetic credentials event — must NOT signal reinit even though
-	// "initial" != "1413".
+	// The cached snapshot carries no credentials, so only the synthetic
+	// skip keeps this event from signaling reinit.
 	bus.Publish(events.NewCredentialsUpdatedEvent(&coreconfig.Credentials{}, "initial"))
 	time.Sleep(testDebounceInterval + 50*time.Millisecond)
 	select {
@@ -954,9 +987,7 @@ func TestConfigChangeHandler_HandleSecretRotation_SkipsSyntheticInitialEvent(t *
 		// expected
 	}
 
-	// Sanity: a real rotation event (different from both "initial"
-	// and the recorded bootstrap version) still triggers reinit, so
-	// the "initial" skip didn't accidentally swallow real rotations.
+	// A real rotation still triggers reinit.
 	rotatedCredentials := &coreconfig.Credentials{}
 	bus.Publish(events.NewCredentialsUpdatedEvent(rotatedCredentials, "9999"))
 	time.Sleep(testDebounceInterval + 50*time.Millisecond)
