@@ -356,7 +356,7 @@ func (c *Component) handleReconciliationCompleted(ctx context.Context, event *ev
 			c.revertAppliedCycle(ctx, revert)
 			return
 		}
-		c.Logger().Warn("Render gate is holding renders; not applying this cycle's resources yet",
+		c.Logger().Warn("Render gate did not pass the last render; not applying resources until one passes. Fix the error it reported",
 			"correlation_id", cycle.correlationID)
 		return
 	}

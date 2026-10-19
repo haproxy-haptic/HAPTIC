@@ -62,11 +62,18 @@ func (s *DeploymentScheduler) handleTemplateRendered(ctx context.Context, event 
 	s.retainedRenderError = ""
 	s.mu.Lock()
 	s.lastRenderedOccurrence = occurrence
-	pinned := s.gatePinned || s.awaitingFirstAcceptedRenderLocked()
+	failedVerdict := s.gatePinned
+	awaitingFirstVerdict := s.awaitingFirstAcceptedRenderLocked()
 	s.mu.Unlock()
 
-	if pinned {
-		s.logger.Warn("Render gate is holding renders; waiting for its verdict before deploying",
+	if failedVerdict {
+		s.logger.Warn("Render gate did not pass the last render; not deploying until one passes. Fix the error it reported",
+			"plan", identity.planID,
+			"correlation_id", event.CorrelationID())
+		return
+	}
+	if awaitingFirstVerdict {
+		s.logger.Info("Waiting for the render gate's first verdict before deploying",
 			"plan", identity.planID,
 			"correlation_id", event.CorrelationID())
 		return

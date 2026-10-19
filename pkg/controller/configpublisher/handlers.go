@@ -142,7 +142,7 @@ func (c *Component) handleTemplateRendered(event *events.TemplateRenderedEvent) 
 	// renders, the fleet is given nothing, so publishing this one would
 	// advertise a config no pod has — it waits for the verdict that releases it.
 	if pinned {
-		c.logger.Warn("Render gate is holding renders; not publishing this one yet",
+		c.logger.Warn("Render gate did not pass the last render; not publishing until one passes. Fix the error it reported",
 			"plan", entry.planID, "correlation_id", correlationID)
 		return
 	}
@@ -572,16 +572,14 @@ func (c *Component) handlePodTerminated(ctx context.Context, event *events.HAPro
 	}
 
 	// Call pure publisher (non-blocking - log errors but don't fail)
-	ctx, cancel := context.WithTimeout(ctx, timeouts.KubernetesAPITimeout)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.KubernetesAPITimeout)
 	defer cancel()
 
-	if err := c.publisher.CleanupPodReferences(ctx, &cleanupReq); err != nil {
-		c.logger.Warn("Failed to cleanup pod references",
-			"error", err,
+	if err := c.publisher.CleanupPodReferences(apiCtx, &cleanupReq); err != nil {
+		c.logAPIFailure(ctx, "Failed to cleanup pod references", err,
 			"pod_name", event.PodName,
 			"pod_namespace", event.PodNamespace,
 		)
-		// Non-blocking - just log the error
 		return
 	}
 
@@ -629,13 +627,11 @@ func (c *Component) handlePodsDiscovered(ctx context.Context, event *events.HAPr
 		return
 	}
 
-	// Create timeout context derived from the lifecycle ctx (same pattern as handlePodTerminated)
-	ctx, cancel := context.WithTimeout(ctx, timeouts.KubernetesAPILongTimeout)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.KubernetesAPILongTimeout)
 	defer cancel()
 
-	// Reconcile status against running pods (namespace-scoped)
-	if err := c.publisher.ReconcileDeployedToPods(ctx, namespace, runningPods); err != nil {
-		c.logger.Warn("Failed to reconcile deployed pods status", "error", err)
+	if err := c.publisher.ReconcileDeployedToPods(apiCtx, namespace, runningPods); err != nil {
+		c.logAPIFailure(ctx, "Failed to reconcile deployed pods status", err)
 	} else {
 		c.logger.Debug("Reconciled deployed pods status",
 			"namespace", namespace,
