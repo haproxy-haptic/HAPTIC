@@ -85,10 +85,18 @@ Common labels
 */}}
 {{- define "haptic.labels" -}}
 helm.sh/chart: {{ include "haptic.chart" . }}
-{{ include "haptic.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
+{{ include "haptic.stableLabels" . }}
+{{- end }}
+
+{{/*
+The common labels that stay equal across chart versions. Pod templates use only
+these: a per-release label would roll every pod on each upgrade (#467).
+*/}}
+{{- define "haptic.stableLabels" -}}
+{{ include "haptic.selectorLabels" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 

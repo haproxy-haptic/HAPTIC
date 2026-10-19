@@ -66,7 +66,7 @@ is about.
      no grace entry). Pods are found by the controller Deployment's
      `spec.selector`, which the chart passes as `CONTROLLER_POD_SELECTOR`
      from the same helper. It is immutable, so it also matches the pods of a
-     newer release; a pod's own labels carry `helm.sh/chart` and
+     newer release; pods of older charts carry `helm.sh/chart` and
      `app.kubernetes.io/version` and would miss them after an upgrade.
      Without the variable the exemption never applies. Only Ready siblings
      are asked; a sibling that does not answer counts as possibly converged,
