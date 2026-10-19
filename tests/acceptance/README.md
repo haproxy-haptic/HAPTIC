@@ -46,7 +46,7 @@ make test-acceptance-parallel                      # one shared cluster, cases r
 TEST_RUN_PATTERN=TestLeaderElection make test-acceptance
 ```
 
-Always go through the Makefile. It rebuilds `haptic:test`, loads it into the cluster, and runs tests with the right flags. Running `go test` directly often leaves tests using a stale image — if a code change isn't reflected, rebuild with `docker build --no-cache -t haptic:test -f Dockerfile .` before re-running.
+Always go through the Makefile. It rebuilds `haptic:test`, loads it into the cluster, and runs tests with the right flags. Running `go test` directly often leaves tests using a stale image — if a code change isn't reflected, rebuild with `make docker-build-test DOCKER_BUILD_FLAGS=--no-cache` before re-running.
 
 Kind context: `kind-haproxy-test` (shared with integration).
 
