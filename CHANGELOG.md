@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-20
+
+HAPTIC 0.7 hardens two trust boundaries: raw HAProxy configuration annotations,
+which let an Ingress writer change the configuration for every host, need an
+explicit opt-in, and every HTTP frontend replaces client-sent forwarded headers,
+so clients can't forge their address. Chart upgrades roll the controller to the
+new image before applying new templates.
+
+**Before upgrading:** check your Ingresses for raw configuration annotations and
+`haproxy-ingress.github.io/forwardfor`, and list any L7 proxies in front of
+HAPTIC. Read the [upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-07).
+
 ### Added
 
 - `watchedResources.<name>.namespaces` restricts watches and template lookups to listed namespaces; `namespacesSetting` identifies the setting in rejection messages.
@@ -25,54 +37,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Controller images retain the legacy `haptic-controller` command used by 0.1 Deployments.
-- Deployments no longer contend with leader Lease renewals or log spurious `Failed to update lease` errors.
-- Startup-validation messages describe retrying NotReady pods and stalled rollouts instead of claiming the controller exits on rejection.
-- A new leader preserves the latest configuration validation verdict instead of reporting an older accepted configuration as valid over a newer rejected or unvalidated generation.
-- A configuration change on a large install no longer hands leadership over with a cold render graph after 30 s while the warm-up render is still running. The new leader started that render over and deployed nothing until it finished, and the controller logged `Taking leadership with a cold graph` at WARN.
-- Configuration changes fetch watched-resource schemas in parallel, reducing validation delays on clusters with slow API-server responses.
-- API discovery timeouts leave configuration validation inconclusive and retry it instead of rejecting templates that use typed fields.
-- Template admission denials show the rule's message; other render errors identify the watched object without exposing encoded cache keys.
-- A deployment cancelled because the HAProxy pod set changed no longer logs `context canceled` errors, emits `ApplyFailed` Pod events, or counts in `haptic_deployment_errors_total` for its in-flight pods ([#430](https://github.com/haproxy-haptic/HAPTIC/issues/430)).
-- The config publisher logs API calls cancelled by its own shutdown or reinitialization at INFO instead of WARN; other failures stay at WARN ([#444](https://github.com/haproxy-haptic/HAPTIC/issues/444)).
-- Waiting for the render gate's first verdict after a start or configuration change logs at INFO instead of WARN; holding renders after a failed verdict stays at WARN ([#445](https://github.com/haproxy-haptic/HAPTIC/issues/445)).
+- A change to the credentials Secret that leaves `dataplane_username` and `dataplane_password` unchanged, such as every Helm upgrade, no longer restarts the controller iteration, which briefly doubled controller memory and could OOMKill large installs ([#456](https://github.com/haproxy-haptic/HAPTIC/issues/456)).
 - A controller could stop deploying, leaving HAProxy pods unready, when the render gate's verdict reached the deployment scheduler before the render it named. Each component now receives an event before any reaction to it.
-- A Helm upgrade or any other update to the credentials Secret that leaves `dataplane_username` and `dataplane_password` unchanged no longer restarts the controller iteration. Every chart-version upgrade did, which briefly doubled controller memory during the rollout and could OOMKill large installs ([#456](https://github.com/haproxy-haptic/HAPTIC/issues/456)).
-- A leader stopped during a configuration hand-over no longer logs `Leadership term ends without its latest checkpoint` at WARN for a term it had just drained ([#453](https://github.com/haproxy-haptic/HAPTIC/issues/453)).
-
-### Security
-
-- Raw HAProxy configuration annotations are rejected by default. Any Ingress writer in a watched namespace could otherwise change the configuration for every host, or read HAProxy's TLS keys through a backend directive.
-- By default, HAPTIC replaces client-sent `X-Forwarded-For` and `X-Forwarded-Proto` to prevent forged client addresses and schemes ([#406](https://github.com/haproxy-haptic/HAPTIC/issues/406)).
+- A configuration change on a large install no longer hands leadership to a replica with a cold render graph while the warm-up render is still running, which delayed deployments until the new leader rendered from scratch.
+- Deployments no longer contend with leader Lease renewals or log spurious `Failed to update lease` errors.
+- A new leader preserves the latest configuration validation verdict instead of reporting an older accepted configuration as valid over a newer rejected or unvalidated generation.
+- Configuration changes fetch watched-resource schemas in parallel, and API discovery timeouts leave validation inconclusive and retry it instead of rejecting templates that use typed fields.
+- Admission denials show the governance rule's message and the watched object; other render errors identify the watched object without exposing encoded cache keys.
+- Startup-validation messages describe retrying NotReady pods and stalled rollouts instead of claiming the controller exits on rejection.
+- A deployment cancelled because the HAProxy pod set changed no longer logs `context canceled` errors, emits `ApplyFailed` Pod events, or counts in `haptic_deployment_errors_total` ([#430](https://github.com/haproxy-haptic/HAPTIC/issues/430)).
+- Expected events log at INFO instead of WARN: config publisher API calls cancelled by its own shutdown, the wait for the render gate's first verdict after a start or configuration change, and a leader drained during a configuration hand-over ([#444](https://github.com/haproxy-haptic/HAPTIC/issues/444), [#445](https://github.com/haproxy-haptic/HAPTIC/issues/445), [#453](https://github.com/haproxy-haptic/HAPTIC/issues/453)).
 
 ### Helm chart
 
 #### Added
 
-- `HAProxyControllerConfigNotValidated` alert (`controller.monitoring.prometheusRule.defaultRules.configNotValidated`): a replica hasn't validated its newest `HAProxyTemplateConfig` for 10 minutes.
 - `extraContext.forwardedHeaders.trustedProxies`: the L7 load balancers whose `X-Forwarded-For`, `-Proto`, `-Host`, and `-Port` headers HAPTIC keeps.
 - `controller.rbac.releaseNamespaceSecretsOnly` limits Secret reads to the release namespace and rejects references elsewhere.
 - A watched resource that lists `namespaces` is granted by a Role in each listed namespace instead of the ClusterRole.
+- `HAProxyControllerConfigNotValidated` alert (`controller.monitoring.prometheusRule.defaultRules.configNotValidated`): a replica hasn't validated its newest `HAProxyTemplateConfig` for 10 minutes.
 
 #### Changed
 
-- Governance denials identify the rule and watched object.
-- **BREAKING:** `haproxy-haptic.org/config-*`, `haproxy-ingress.github.io/config-*`, `haproxy.org/backend-config-snippet`, and `nginx.ingress.kubernetes.io/configuration-snippet` require `controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig: true`, independent of WAF governance; `waf.ingressPermissions.allowRawHAProxyConfig` can only narrow it. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#upgrading-to-07) before upgrading.
-- **BREAKING:** Every HTTP frontend replaces a client-sent `X-Forwarded-For` with the client address, sets `X-Forwarded-Proto` to `https` or `http`, and drops a client-sent `X-Forwarded-Host` and `X-Forwarded-Port`. Behind an L7 load balancer, [list it in `trustedProxies`](./docs/site/docs/upgrade-notes.md#upgrading-to-07); `trustedProxies: ["0.0.0.0/0", "::/0"]` restores the old `X-Forwarded-For` handling.
+- The pre-upgrade hook rolls the controller Deployment to the new image before Helm applies new templates, so old replicas no longer reject a valid incoming configuration. See [controller preparation](./docs/site/docs/deploying-with-helm.md#controller-preparation) for custom image tags and deployments without hooks.
 - **BREAKING:** haproxy-ingress: `haproxy-ingress.github.io/forwardfor: add` replaces the client's `X-Forwarded-For` and `update` appends to it, as upstream does; HAPTIC had them the other way round. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#3-check-haproxy-ingressgithubioforwardfor) before upgrading.
 - An Ingress that sets `X-Forwarded-For` handling through annotations from two families is rejected at admission, like other mixed-family features.
+- A `helm upgrade` that changes only the chart version no longer changes the `HAProxyTemplateConfig`, so running controllers don't start a new iteration mid-rollout. The controller-managed HAProxy Service drops its `helm.sh/chart`, `app.kubernetes.io/version`, and `app.kubernetes.io/managed-by` labels.
+- Controller pods no longer carry the `helm.sh/chart` and `app.kubernetes.io/version` labels; the Deployment keeps them. A chart upgrade then rolls the controllers once instead of twice; the upgrade to 0.7.0 itself still rolls them twice ([#467](https://github.com/haproxy-haptic/HAPTIC/issues/467)).
 
 #### Fixed
 
-- Forwarded-header sanitization preserves `X-Forwarded-Host`, `-Port`, and `-Proto` written by operator `frontend-extra-*` snippets.
-- A snippet at an extension point now starts on its own line whether or not its template begins or ends with a newline. Before, a `frontend-extra-*` or other snippet without a leading newline could join the previous line and fail validation.
-- WAF governance's `allowRawHAProxyConfig: false` also rejects raw configuration annotations when the `hapticAnnotations` library is disabled.
-- Reduce Helm release storage by keeping generated defaults in the helper subchart.
 - `haproxy-haptic.org/forwardfor` and `haproxy-ingress.github.io/forwardfor`: `add` and `update` no longer send the client address twice, and `ifmissing` and `ignore` no longer append it to the client's header.
 - haproxytech: `haproxy.org/forwarded-for: "false"` forwards the client's `X-Forwarded-For` unchanged; it was ignored.
-- Chart upgrades prepare controllers that accept the live configuration before applying new templates, preventing old replicas from rejecting valid incoming sets.
-- A `helm upgrade` that changes only the chart version no longer changes the `HAProxyTemplateConfig`, so running controllers don't start a new iteration mid-rollout. The controller-managed HAProxy Service drops its `helm.sh/chart`, `app.kubernetes.io/version`, and `app.kubernetes.io/managed-by` labels.
-- Controller pods no longer carry the `helm.sh/chart` and `app.kubernetes.io/version` labels; the Deployment keeps them. A chart upgrade no longer rolls the controllers a second time after the pre-upgrade hook has rolled them to the new image. The first upgrade to this version still rolls them twice ([#467](https://github.com/haproxy-haptic/HAPTIC/issues/467)).
+- A snippet at an extension point starts on its own line whether or not its template begins or ends with a newline. A `frontend-extra-*` or other snippet without a leading newline could join the previous line and fail validation.
+
+#### Security
+
+- **BREAKING:** Raw HAProxy configuration annotations (`haproxy-haptic.org/config-*`, `haproxy-ingress.github.io/config-*`, `haproxy.org/backend-config-snippet`, and `nginx.ingress.kubernetes.io/configuration-snippet`) are rejected unless `controller.config.templatingSettings.extraContext.ingressPermissions.allowRawHAProxyConfig` is `true`. Any Ingress writer in a watched namespace could otherwise change the configuration for every host or read HAProxy's TLS keys. `waf.ingressPermissions.allowRawHAProxyConfig` can only narrow it. [Check your Ingresses](./docs/site/docs/upgrade-notes.md#upgrading-to-07) before upgrading.
+- WAF governance's `allowRawHAProxyConfig: false` also rejects raw configuration annotations when the `hapticAnnotations` library is disabled.
+- **BREAKING:** Every HTTP frontend replaces a client-sent `X-Forwarded-For` with the client address, sets `X-Forwarded-Proto` to `https` or `http`, and drops a client-sent `X-Forwarded-Host` and `X-Forwarded-Port`, so clients can't forge their address or scheme ([#406](https://github.com/haproxy-haptic/HAPTIC/issues/406)). `X-Forwarded-Host`, `-Port`, and `-Proto` set by `frontend-extra-*` snippets are kept. Behind an L7 load balancer, [list it in `trustedProxies`](./docs/site/docs/upgrade-notes.md#upgrading-to-07); `trustedProxies: ["0.0.0.0/0", "::/0"]` restores the old `X-Forwarded-For` handling.
 
 ## [0.6.0] - 2026-10-18
 

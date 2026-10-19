@@ -382,7 +382,7 @@ controller:
   # HAProxyTemplateConfig and the controller merges them in the order fixed by
   # templates/_libraries.tpl (haptic.libraryFiles); see ADR-0014. Merge-order
   # docs and per-library references:
-  # https://haproxy-haptic.org/docs/0.6.0/template-libraries/
+  # https://haproxy-haptic.org/docs/0.7.0/template-libraries/
   templateLibraries:
     # Resource-agnostic core. Defines the haproxyConfig template and the
     # render_glob extension points the other libraries plug into.
@@ -421,7 +421,7 @@ controller:
       experimentalChannel: false
     # Required shared Ingress-scoped macros for all enabled annotation libraries
     # below (level 2.5). Rationale:
-    # https://github.com/haproxy-haptic/HAPTIC/blob/v0.6.0/docs/adr/0003-annotation-compat-scaffold-level-2-5.md
+    # https://github.com/haproxy-haptic/HAPTIC/blob/v0.7.0/docs/adr/0003-annotation-compat-scaffold-level-2-5.md
     ingressAnnotationsCompat:
       enabled: true
     # Governance rule engine. Generic over any watched resource, so it is

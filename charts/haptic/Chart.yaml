@@ -5,8 +5,8 @@ type: application
 # The oldest Kubernetes release still maintained upstream. Never below 1.33: the
 # HAProxy pod's helpers are native sidecars, which outlive HAProxy while it drains.
 kubeVersion: ">=1.35.0-0"
-version: 0.6.0
-appVersion: "0.6.0"
+version: 0.7.0
+appVersion: "0.7.0"
 # Template libraries are packaged as conditional subcharts so a release only
 # carries the source of the libraries it enables — disabled subcharts are
 # pruned from the Helm release Secret, keeping it under the 1 MiB limit. The
@@ -84,7 +84,7 @@ annotations:
   # Document all component images (Artifact Hub standard)
   artifacthub.io/images: |
     - name: controller
-      image: ghcr.io/haproxy-haptic/haptic:0.6.0-haproxy3.4
+      image: ghcr.io/haproxy-haptic/haptic:0.7.0-haproxy3.4
       platforms:
         - linux/amd64
         - linux/arm64
@@ -95,12 +95,12 @@ annotations:
         - linux/amd64
         - linux/arm64
     - name: spoa-hub
-      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.6.0
+      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.7.0
       platforms:
         - linux/amd64
         - linux/arm64
     - name: varnish
-      image: ghcr.io/haproxy-haptic/haptic/varnish:0.6.0
+      image: ghcr.io/haproxy-haptic/haptic/varnish:0.7.0
       platforms:
         - linux/amd64
         - linux/arm64
@@ -111,33 +111,27 @@ annotations:
   # Release highlights; full notes are in the root CHANGELOG.md.
   artifacthub.io/changes: |
     - kind: security
-      description: Go 1.27.2 and the bundled Coraza WAF plugin v0.10.1 (Coraza v3.8.1) fix HTTP, TLS, WAF bypass, and crash vulnerabilities
+      description: "Breaking: raw HAProxy configuration annotations are rejected unless ingressPermissions.allowRawHAProxyConfig is true"
     - kind: security
-      description: HAProxy 3.0.30, 3.2.26, 3.3.17, and 3.4.7 fix major HTTP/2 PING and HTTP/1 chunk-size bugs
+      description: "Breaking: HTTP frontends replace client-sent X-Forwarded-For and -Proto and drop -Host and -Port; list L7 proxies in forwardedHeaders.trustedProxies"
     - kind: changed
-      description: "Breaking: requires Kubernetes 1.35 or newer"
-    - kind: removed
-      description: "Breaking: HAProxy 3.1, which is past its upstream end of life, is no longer supported"
+      description: "Breaking: haproxy-ingress forwardfor add and update now match upstream (add replaces, update appends)"
     - kind: changed
-      description: Images and the chart are published on ghcr.io/haproxy-haptic; development moved to GitHub
+      description: The pre-upgrade hook rolls the controller to the new image before applying new templates
     - kind: added
-      description: Opt-in Pod readiness gate keeps single-replica rollouts from dropping requests
+      description: Per-resource watch namespaces and an opt-in to read Secrets only in the release namespace
+    - kind: added
+      description: haptic_config_validated and haptic_config_validation_total metrics and the HAProxyControllerConfigNotValidated alert
     - kind: fixed
-      description: A graceful leader stop saves its recovery checkpoint, so retained recovery works after ordinary leader changes
+      description: Helm upgrades no longer restart the controller iteration mid-rollout
     - kind: fixed
-      description: A replica no longer re-renders on every change while a critical http.Fetch source is down
-    - kind: fixed
-      description: A new leader deploys critical http.Fetch content as soon as it is accepted, instead of after the next drift-prevention round
-    - kind: fixed
-      description: Each release's Ingress and Gateway status lists only its own load balancer addresses
-    - kind: changed
-      description: Reconciliation cost no longer grows with the watched set, and the leader runs haproxy -c once per render
+      description: A controller no longer stops deploying when the render gate's verdict overtakes its render
   artifacthub.io/containsSecurityUpdates: "true"
 
   # Links
   artifacthub.io/links: |
     - name: Documentation
-      url: https://haproxy-haptic.org/docs/0.6.0/
+      url: https://haproxy-haptic.org/docs/0.7.0/
     - name: Issue Tracker
       url: https://github.com/haproxy-haptic/HAPTIC/issues
 
