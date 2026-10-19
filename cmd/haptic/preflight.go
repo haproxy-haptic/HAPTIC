@@ -24,13 +24,15 @@ import (
 )
 
 var (
-	preflightValuesFiles []string
-	preflightNamespace   string
-	preflightRelease     string
-	preflightChartDir    string
-	preflightAPIVersions []string
-	preflightSchemaDir   string
-	preflightKubeconfig  string
+	preflightValuesFiles    []string
+	preflightNamespace      string
+	preflightRelease        string
+	preflightChartDir       string
+	preflightAPIVersions    []string
+	preflightSchemaDir      string
+	preflightKubeconfig     string
+	preflightPrepareUpgrade bool
+	preflightPrepareTimeout time.Duration
 )
 
 // gatewayAPIVersion is always declared because the chart gates its Gateway API
@@ -84,13 +86,18 @@ func init() {
 			"hook sets it to the installing chart's version, so validating a DIFFERENT "+
 			"chart (a drifted image tag) fails loudly instead of passing on the wrong "+
 			"input. Also reads HAPTIC_EXPECT_CHART_VERSION.")
+	preflightCmd.Flags().BoolVar(&preflightPrepareUpgrade, "prepare-upgrade", false,
+		"After validation, roll an existing controller to this image before applying new templates.")
+	preflightCmd.Flags().DurationVar(&preflightPrepareTimeout, "prepare-timeout", 5*time.Minute,
+		"Time from preflight start by which controller preparation must finish; keep it below the Job deadline.")
 
 	_ = preflightCmd.MarkFlagRequired("values")
 	rootCmd.AddCommand(preflightCmd)
 }
 
-func runPreflight(_ *cobra.Command, _ []string) error {
-	ctx := context.Background()
+func runPreflight(cmd *cobra.Command, _ []string) error {
+	ctx := cmd.Context()
+	prepareDeadline := time.Now().Add(preflightPrepareTimeout)
 	logger := newValidateLogger()
 	configureMemoryLimit(logger)
 
@@ -156,6 +163,9 @@ func runPreflight(_ *cobra.Command, _ []string) error {
 	}
 
 	fmt.Fprintln(os.Stderr, "✓ configuration is valid for these values")
+	if preflightPrepareUpgrade {
+		return prepareControllerUpgrade(ctx, prepareDeadline, manifests, schemas, logger)
+	}
 	return nil
 }
 

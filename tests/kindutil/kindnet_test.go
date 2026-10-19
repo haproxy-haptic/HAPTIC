@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 
 	"github.com/haproxy-haptic/HAPTIC/tests/process"
@@ -38,6 +39,11 @@ func TestKindnetManifestKeepsKindDefaultsAndPolicyEnforcement(t *testing.T) {
 	for _, flag := range []string{"--network-policy=true", "--masquerading=true", "--dns-caching=false", "--fastpath-threshold=0", "--nat64=false", "--disable-cni=false", "--v=0"} {
 		require.Contains(t, command, flag)
 	}
+	disablesEvents := slices.ContainsFunc(daemonSet.Spec.Template.Spec.InitContainers, func(c corev1.Container) bool {
+		return slices.Contains(c.Command, "echo 0 > /proc/sys/net/netfilter/nf_conntrack_events") &&
+			c.SecurityContext != nil && c.SecurityContext.Privileged != nil && *c.SecurityContext.Privileged
+	})
+	require.True(t, disablesEvents, "kindnet must disable conntrack events before kindnetd subscribes to them")
 }
 
 type recordedCommand struct {

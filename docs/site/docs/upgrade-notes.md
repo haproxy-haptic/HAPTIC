@@ -7,7 +7,10 @@ to keep your existing routes working. For routine chart upgrades, see
 
 ## Upgrading to 0.7
 
-0.7 changes raw configuration permissions and forwarded headers.
+0.7 changes raw configuration permissions and forwarded headers. The pre-upgrade
+hook also rolls the controller image before applying templates that need the new
+binary. See [controller preparation](deploying-with-helm.md#controller-preparation)
+for recovery, custom image tags, and deployments without hooks.
 
 ### 1. Check for raw configuration annotations
 

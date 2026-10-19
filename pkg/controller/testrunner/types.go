@@ -200,6 +200,8 @@ type TestResult struct {
 
 // AssertionResult contains the result of running a single assertion.
 type AssertionResult struct {
+	// ConfigRejected distinguishes a checked invalid input from an unavailable checker.
+	ConfigRejected bool `json:"configRejected,omitempty" yaml:"configRejected,omitempty"`
 	// Type is the assertion type (haproxy_valid, contains, etc).
 	Type string
 

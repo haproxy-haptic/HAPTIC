@@ -381,7 +381,7 @@ func (r *Runner) runSingleTest(ctx context.Context, testName string, test *confi
 			result.Duration = time.Since(startTime)
 			return result, true
 		}
-		recordRenderFailure(&result, err)
+		recordRenderFailure(&result, err, hasRenderingErrorAssertions(test.Assertions))
 		if isResourceInputError(err) {
 			result.Passed = false
 			result.Duration = time.Since(startTime)
@@ -406,7 +406,7 @@ func (r *Runner) runSingleTest(ctx context.Context, testName string, test *confi
 	// 6. Build template context for JSONPath assertions
 	bctx, err := r.buildRenderingContext(ctx, fixtureStores, validationPaths, httpStore, currentConfig, test.CurrentFiles, effectiveExtraContext)
 	if err != nil {
-		recordRenderFailure(&result, err)
+		recordRenderFailure(&result, err, false)
 		result.Passed = false
 		result.Duration = time.Since(startTime)
 		return result, false
@@ -450,14 +450,20 @@ func (r *Runner) runSingleTest(ctx context.Context, testName string, test *confi
 	return result, incomplete
 }
 
-func recordRenderFailure(result *TestResult, err error) {
+func recordRenderFailure(result *TestResult, err error, expected bool) {
 	result.RenderError = templating.RenderErrorMessage(err)
 	result.Assertions = append(result.Assertions, AssertionResult{
-		Type:        "rendering",
-		Description: "Template rendering failed",
-		Passed:      false,
-		Error:       result.RenderError,
+		Type:           "rendering",
+		Description:    "Template rendering failed",
+		Passed:         false,
+		ConfigRejected: !expected && isTemplateRejection(err),
+		Error:          result.RenderError,
 	})
+}
+
+func isTemplateRejection(err error) bool {
+	_, rejected := errors.AsType[*templating.FailError](err)
+	return rejected
 }
 
 func isResourceInputError(err error) bool {
@@ -531,6 +537,7 @@ func (r *Runner) assertDeploymentRenders(ctx context.Context, test *config.Valid
 			return result
 		}
 		result.Passed = false
+		result.ConfigRejected = isTemplateRejection(err)
 		result.Error = fmt.Sprintf("This test's fixtures fail to render with the deployment's extraContext, "+
 			"so a cluster holding such resources stops reconciling: %s. Fix the value the error names.",
 			templating.RenderErrorMessage(err))
@@ -544,6 +551,7 @@ func (r *Runner) assertDeploymentRenders(ctx context.Context, test *config.Valid
 	}
 	valid := r.assertHAProxyValid(ctx, rendered.HAProxyConfig, rendered.AuxiliaryFiles, &config.ValidationAssertion{}, validationPaths)
 	result.incomplete = valid.incomplete
+	result.ConfigRejected = valid.ConfigRejected
 	if !valid.Passed {
 		result.Passed = false
 		result.Error = fmt.Sprintf("With the deployment's extraContext, this test's fixtures render a config HAProxy rejects: %s. "+

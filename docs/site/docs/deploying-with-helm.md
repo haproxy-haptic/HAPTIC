@@ -138,6 +138,57 @@ helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
 !!! warning "The chart owns the `HAProxyTemplateConfig`"
     Put persistent configuration changes under `controller.config` in your values file. Edits made with `kubectl edit` or `kubectl patch` take effect immediately, but a later `helm upgrade` can overwrite them. Helm also owns the library objects it creates.
 
+### Controller preparation
+
+After validating the complete incoming configuration, the pre-upgrade hook checks
+whether the new binary can load the current configuration. If it can, the hook
+updates the existing controller image and waits for the old replicas to exit
+before Helm applies new templates. Config and library identities stay unchanged.
+The hook preserves your Deployment strategy: `Recreate` still permits controller
+downtime; HAProxy keeps its loaded configuration.
+
+If the live configuration is invalid or a referenced library is missing, the hook
+reports that it's using the startup recovery path. The validated incoming set is
+then applied, and each controller must pass its normal startup gate. An API
+failure, a partially applied library revision, or a changed source stops preparation
+instead of selecting recovery.
+
+Use a new image tag or digest for each controller build. If an unchanged image
+reference resolves to a different build, preparation stops before changing the
+Deployment. Paused Deployments must be resumed before preparation. With zero
+replicas, the hook waits for existing pods to disappear; the final Deployment
+starts against the new configuration.
+
+The hook reads immutable build metadata directly from each controller Pod's
+`/build` health endpoint. The shipped NetworkPolicy allows this traffic from the
+preflight Pod in the same namespace. If you restrict health-port ingress, allow
+the preflight Pod to reach that port. The hook's namespace Role grants read access
+to the config, libraries, and workload identities, plus patch access to this
+release's controller Deployment. `/debug/*` remains loopback-only.
+
+Flux HelmRelease runs this Helm hook; Argo CD maps it to `PreSync`. Applying
+rendered manifests directly or using `--no-hooks` skips preparation. Those paths
+retain the startup and live validation gates, but old replicas can reject newer
+templates until their replacements start. For release `haptic` in namespace `haptic`, run this command in the target
+controller image, with cluster credentials, access to controller Pod IPs, and your complete `values.yaml`,
+before applying the rendered manifests:
+
+```bash
+haptic preflight --prepare-upgrade --values values.yaml --namespace haptic --release haptic
+```
+
+The Job's `preRolloutValidation.activeDeadlineSeconds` bounds validation and
+preparation together. Increase that configured budget when your chosen
+`minReadySeconds` or rollout size requires more time; the Helm timeout must also
+cover the complete operation.
+
+A failed preparation doesn't apply the incoming templates. Some replicas may
+already use the new image with the previous configuration. Correct the reported
+cause and retry the upgrade, or roll back the release. Rollback to a chart that
+predates preparation uses that chart's hooks and can produce temporary template
+rejections; the startup and live gates still prevent invalid configurations from
+reaching HAProxy.
+
 ### Recover a failed upgrade
 
 Check the release status and validation Job for the default installation:

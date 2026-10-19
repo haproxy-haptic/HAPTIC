@@ -94,6 +94,9 @@ ARG TARGETPLATFORM
 # When using --build-context binary=<path>, this copies from the external context
 COPY --chmod=0755 --from=binary /${TARGETPLATFORM}/haptic /usr/local/bin/haptic
 
+# Shipped 0.1 Deployments retain this command during controller image preparation.
+RUN ln -s haptic /usr/local/bin/haptic-controller
+
 # Bundle the Helm chart so `haptic migrate-check` can render the
 # config in-process with the image's own chart — no cluster or mounted
 # values needed for the zero-argument audit. The path matches

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/haproxy-haptic/HAPTIC/tests/admission"
 	"github.com/haproxy-haptic/HAPTIC/tests/fixtures"
@@ -22,16 +23,20 @@ import (
 
 const chartOCI = "oci://ghcr.io/haproxy-haptic/haptic/charts/haptic"
 const brokenTemplate = "{%- var x = %}"
+const handoverBaseline = "0.6.0"
+const controllerComponent = "controller"
 
 type upgrade struct {
-	session     *Session
-	baseline    string
-	certManager string
-	chart       string
-	values      string
-	fixtures    string
-	work        string
-	brokenChart string
+	session       *Session
+	baseline      string
+	certManager   string
+	chart         string
+	values        string
+	fixtures      string
+	work          string
+	brokenChart   string
+	baselineImage string
+	configUIDs    map[string]types.UID
 }
 
 func (s *Session) ChartUpgrade(ctx context.Context, baseline, certManager string) error {
@@ -51,10 +56,11 @@ func (s *Session) ChartUpgrade(ctx context.Context, baseline, certManager string
 		{"released baseline", u.baselineInstall},
 		{helmUpgrade, u.upgradeTarget},
 		{"rejected upgrade", u.rejectBrokenRelease},
+		{"released rollback", u.rollbackBaseline},
 		{"repair broken live configuration", u.repairBrokenDeployment},
 	} {
 		s.Infof("Upgrade %s: %s", baseline, phase.name)
-		if err := phase.run(ctx); err != nil {
+		if err := u.observeTraffic(ctx, phase.name, phase.run); err != nil {
 			return fmt.Errorf("%s: %w", phase.name, err)
 		}
 	}
@@ -91,6 +97,9 @@ func (u *upgrade) baselineInstall(ctx context.Context) error {
 	if err := s.WaitControllerReady(ctx, 420*time.Second); err != nil {
 		return err
 	}
+	if err := u.recordBaselineImage(ctx); err != nil {
+		return err
+	}
 	routes, err := os.ReadFile(filepath.Join(u.fixtures, "routes.yaml"))
 	if err != nil {
 		return err
@@ -107,6 +116,9 @@ func (u *upgrade) baselineInstall(ctx context.Context) error {
 	if _, err := s.Kube(ctx, nil, "rollout", "status", "deployment/upgrade-backend", "--timeout=180s"); err != nil {
 		return err
 	}
+	if err := u.requireConfigIdentity(ctx); err != nil {
+		return err
+	}
 	return s.UpgradeTraffic(ctx, "baseline")
 }
 
@@ -117,7 +129,7 @@ func (u *upgrade) targetArgs(chart string) []string {
 	return append(args, s.ImageValues()...)
 }
 
-func (u *upgrade) upgradeTarget(ctx context.Context) error {
+func (u *upgrade) upgradeTarget(ctx context.Context) (result error) {
 	s := u.session
 	if err := s.EnsureHelmDiff(ctx); err != nil {
 		return err
@@ -131,6 +143,13 @@ func (u *upgrade) upgradeTarget(ctx context.Context) error {
 	args := append([]string{"diff"}, u.targetArgs(u.chart)...)
 	if _, err := s.Helm(ctx, append(args, "--dry-run=server")...); err != nil {
 		return err
+	}
+	if u.baseline == handoverBaseline {
+		finish, err := u.observeControllers(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { result = errors.Join(result, finish()) }()
 	}
 	if _, err := s.Helm(ctx, append(u.targetArgs(u.chart), "--timeout", "20m")...); err != nil {
 		return err
@@ -150,6 +169,10 @@ func (u *upgrade) upgradeTarget(ctx context.Context) error {
 	if err := s.UpgradeTraffic(ctx, "upgraded"); err != nil {
 		return err
 	}
+	return s.requireNoLegacyConfigWebhook(ctx)
+}
+
+func (s *Session) requireNoLegacyConfigWebhook(ctx context.Context) error {
 	webhooks, err := readJSON[admissionv1.ValidatingWebhookConfigurationList](ctx, s, "get", "validatingwebhookconfigurations")
 	if err != nil {
 		return err

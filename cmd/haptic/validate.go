@@ -266,16 +266,16 @@ func setupValidation(ctx context.Context, files []string, schemas schemaSource, 
 	// `validate` an honest pre-apply gate.
 	structural, err := conversion.ConvertSpec(configSpec)
 	if err != nil {
-		return nil, fmt.Errorf("converting config: %w", err)
+		return nil, &configurationError{fmt.Errorf("converting config: %w", err)}
 	}
 	if err := coreconfig.ValidateMergedCompleteness(structural); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+		return nil, &configurationError{fmt.Errorf("invalid config: %w", err)}
 	}
 	if err := coreconfig.ValidateTemplateStructure(structural); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+		return nil, &configurationError{fmt.Errorf("invalid config: %w", err)}
 	}
 	if pathErrors := configvalidator.ValidateIncrementalActivationPaths(structural); len(pathErrors) > 0 {
-		return nil, fmt.Errorf("invalid config: %s", strings.Join(pathErrors, "; "))
+		return nil, &configurationError{fmt.Errorf("invalid config: %s", strings.Join(pathErrors, "; "))}
 	}
 
 	// Mirror the controller's effective-config resolution: resolve apiVersions

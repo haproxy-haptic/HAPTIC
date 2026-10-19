@@ -20,3 +20,41 @@ tests:
       - matchRegex:
           path: stringData["values.yaml"]
           pattern: "(?m)^controller:"
+  - it: prepares the controller only after preflight validation
+    template: templates/pre-rollout-validation-hook.yaml
+    documentSelector:
+      path: kind
+      value: Job
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --prepare-upgrade
+  - it: ends controller preparation before the Job deadline
+    template: templates/pre-rollout-validation-hook.yaml
+    documentSelector:
+      path: kind
+      value: Job
+    set:
+      preRolloutValidation.activeDeadlineSeconds: 600
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --prepare-timeout=540s
+  - it: limits controller mutation to this release deployment
+    template: templates/pre-rollout-validation-hook.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    release:
+      name: example
+      namespace: team
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: team
+      - equal:
+          path: rules[0].resourceNames
+          value: [example-haptic-controller]
+      - equal:
+          path: rules[0].verbs
+          value: [get, patch]

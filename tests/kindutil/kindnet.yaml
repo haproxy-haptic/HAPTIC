@@ -89,6 +89,13 @@ spec:
         volumeMounts:
         - name: cni-bin
           mountPath: /cni
+      # kindnetd's conntrack metrics listener sets NETLINK_BROADCAST_ERROR; whenever it lags, the
+      # kernel drops every SYN that reopens a TIME_WAIT entry (nf_conntrack_proto_tcp.c, nf_ct_kill).
+      - name: disable-conntrack-events
+        image: registry.k8s.io/networking/kindnet:v1.0.2@sha256:91b60692216e4d52f15cfde287084a633a9449701aac1c7d2e3993552083781d
+        command: ['sh', '-c', 'echo 0 > /proc/sys/net/netfilter/nf_conntrack_events']
+        securityContext:
+          privileged: true
       containers:
       - name: kindnet-cni
         image: registry.k8s.io/networking/kindnet:v1.0.2@sha256:91b60692216e4d52f15cfde287084a633a9449701aac1c7d2e3993552083781d

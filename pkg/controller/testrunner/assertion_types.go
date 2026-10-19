@@ -69,6 +69,7 @@ func (r *Runner) assertHAProxyValid(
 	failed := err != nil
 	if failed {
 		result.Passed = false
+		result.ConfigRejected = errors.Is(err, dataplane.ErrHAProxyRefused)
 		simplifiedError := dataplane.SimplifyValidationError(err)
 		result.Error = fmt.Sprintf("HAProxy validation failed (config size: %d bytes): %s", len(haproxyConfig), simplifiedError)
 	}
