@@ -293,6 +293,16 @@ on every node through `kindutil.Cluster.Create`. The dev-environment wrapper
 `kind_blackhole_synthetic_backends` calls the same Go implementation. Pick synthetic
 addresses inside those ranges, and add any new creator to the list.
 
+### Test clusters run kindnet v1.0.2, not kind's bundled CNI
+
+kind v0.33.0's bundled kindnetd recreates its NetworkPolicy nftables table on
+every sync, which drops any packet waiting for a policy verdict
+([kube-network-policies#402](https://github.com/kubernetes-sigs/kube-network-policies/issues/402)).
+Every kind cluster creator therefore sets `disableDefaultCNI` and installs
+`tests/kindutil/kindnet.yaml` through `kindutil.Cluster.Create` (or
+`kind_install_kindnet` for the dev environment), with policy enforcement on.
+Revert to kind's CNI once a kind release bundles the fix.
+
 ### Measuring controller memory at scale
 
 `TestScale` is the instrument; the `scale` CI job enforces its RSS budget at 800

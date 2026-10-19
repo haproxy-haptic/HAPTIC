@@ -195,6 +195,18 @@
       "managerFilePatterns": [
         "/^docs/site/docs/reference\\.md$/"
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "kindnet image in the CNI manifest every test Kind cluster installs. Both containers carry the same tag and digest.",
+      "managerFilePatterns": [
+        "/^tests/kindutil/kindnet\\.yaml$/"
+      ],
+      "matchStrings": [
+        "registry\\.k8s\\.io/networking/kindnet:(?<currentValue>v[0-9]+\\.[0-9]+\\.[0-9]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "registry.k8s.io/networking/kindnet"
     }
   ],
   "packageRules": [

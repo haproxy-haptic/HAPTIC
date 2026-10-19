@@ -381,6 +381,7 @@ ensure_cluster() {
 		log INFO "Creating kind cluster '${CLUSTER_NAME}'..."
 		kind create cluster --name "${CLUSTER_NAME}" --config "${ASSETS_DIR}/kind-config.yaml"
 		kind_blackhole_synthetic_backends "${CLUSTER_NAME}"
+		kind_install_kindnet "${CLUSTER_NAME}"
 		ok "Cluster created with admission controllers enabled."
 	else
 		ok "Using existing cluster '${CLUSTER_NAME}'."

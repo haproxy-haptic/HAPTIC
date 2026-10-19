@@ -1,6 +1,9 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: haptic-dev
+networking:
+  # kind_install_kindnet installs the CNI; see tests/kindutil/kindnet.yaml.
+  disableDefaultCNI: true
 nodes:
   - role: control-plane
     kubeadmConfigPatches:
