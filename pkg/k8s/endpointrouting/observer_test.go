@@ -289,6 +289,24 @@ func TestAnInternalLocalTrafficPolicyNeedsAReadyPeerOnTheSameNode(t *testing.T) 
 	assert.Contains(t, routing.Detail, "Local traffic policy")
 }
 
+func TestAServiceWhoseTrafficPolicyCannotBeReadIsUnverified(t *testing.T) {
+	f := start(t, node(ownNode, "192.0.2.1"),
+		slice("haproxy-1", "haproxy", endpoint{uid: ownUID, node: ownNode}, endpoint{uid: "peer", node: "node-b", ready: true}))
+	f.proxies.set("192.0.2.1", &fakeKubeProxy{syncedAt: time.Now(), families: ipv4})
+	routing := f.routing(t, newPoll())
+	assert.False(t, routing.Routed)
+	assert.Contains(t, routing.Unverified, `traffic policy of Service "haproxy"`)
+}
+
+func TestServicesKubeProxyIgnoresDoNotHoldTheDrain(t *testing.T) {
+	headless := slice("haproxy-headless-1", "haproxy-headless", endpoint{uid: ownUID, node: ownNode, ready: true})
+	headless.Labels[corev1.IsHeadlessService] = ""
+	f := start(t, append(terminatingWithAReadyPeer(), service("haproxy-headless"), headless)...)
+	f.proxies.set("192.0.2.1", &fakeKubeProxy{syncedAt: time.Now(), families: ipv4})
+	f.proxies.set("192.0.2.2", &fakeKubeProxy{syncedAt: time.Now(), families: ipv4})
+	assert.Equal(t, Routing{Detail: "kube-proxy synced on all 2 nodes"}, f.routing(t, newPoll()))
+}
+
 func TestEveryServiceThatListsThePodMustWithdrawIt(t *testing.T) {
 	f := start(t, node(ownNode, "192.0.2.1"), service("haproxy"), service("gateway-a"),
 		slice("haproxy-1", "haproxy", endpoint{uid: ownUID, node: ownNode}, endpoint{uid: "peer", node: "node-b", ready: true}),

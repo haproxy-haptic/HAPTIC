@@ -82,6 +82,8 @@ type DrainResult struct {
 	Connections uint64 `json:"connections"`
 	// Routing is the last routing detail, or what could not be verified.
 	Routing string `json:"routing,omitempty"`
+	// Unverified is set when part of the routing could not be observed.
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 // validateDrain fills the defaults and rejects a bound the grace period cannot hold.
@@ -110,7 +112,7 @@ func (s *Server) handleDrain(w http.ResponseWriter, _ *http.Request) {
 	shared, _, _ := s.drainFlight.Do("drain", func() (any, error) {
 		result := s.drain(s.drainStop)
 		level := slog.LevelInfo
-		if result.Reason == DrainReasonUnverified {
+		if result.Unverified {
 			level = slog.LevelWarn
 		}
 		s.logger.Log(context.Background(), level, "drain finished",
@@ -135,6 +137,7 @@ func (s *Server) drain(stop <-chan struct{}) DrainResult {
 			Waited:      time.Since(start).Round(time.Millisecond).String(),
 			Connections: connections,
 			Routing:     cmp.Or(routing.Unverified, routing.Detail),
+			Unverified:  routing.Unverified != "",
 		}
 	}
 	last, err := s.drainCounter(ignore)

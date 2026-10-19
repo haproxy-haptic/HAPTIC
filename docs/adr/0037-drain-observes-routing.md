@@ -45,7 +45,8 @@ EndpointSlice change is programmed" signal. The facts this decision rests on
 The drain ends when **both** hold:
 
 1. **Nothing observable routes new connections to the pod.** The agent watches
-   the EndpointSlices and Services of its namespace for the pod's whole life and
+   the EndpointSlices and Services of its namespace that kube-proxy programs (not
+   headless ones, nor those another proxy owns) for the pod's whole life and
    records when each Service's slices last changed. The routing is withdrawn
    when, for every Service whose slices list the pod:
     - the pod's endpoint is not ready;
@@ -66,7 +67,9 @@ The drain ends when **both** hold:
 
 `maxWaitSeconds` bounds the drain as before; it ends with reason `bound` if the
 routing never goes. The drain reports `routed-away` when everything was observed,
-and `unverified`, logged at `WARN` with what it couldn't see, when it fell back.
+and `unverified` when it fell back. Any drain that couldn't observe part of the
+routing, including one that ends at the bound, logs at `WARN` with what it
+couldn't see.
 
 ### What the agent can't observe
 
@@ -76,6 +79,7 @@ It never assumes a path is withdrawn. A path it can't observe is named in the
 | Situation | Signal | Drain behaviour |
 | --- | --- | --- |
 | No slice in the namespace lists the pod, or the watch hasn't synced | none | `unverified`: quiet period |
+| A listing Service's traffic policy can't be read | that Service's `Local` fallback | `unverified`: nodes still awaited, then quiet period |
 | A node's `:10256` refuses, the connection fails, or something other than kube-proxy healthz answers | that node unobservable | `unverified`: the other nodes are still awaited, then quiet period |
 | kube-proxy older than v1.33 (no per-family `status`) | that node unobservable | as above |
 | kube-proxy accepts the connection but doesn't answer (stopped, overloaded) | node pending | waits; `bound` at worst |

@@ -352,7 +352,7 @@ The agent logs `drain finished` with a `reason`:
 | --- | --- |
 | `routed-away` | The routing was withdrawn everywhere the agent could check, and the pod was quiet. |
 | `unverified` | Logged at `WARN`. Part of the routing couldn't be observed; `routing` names it. The quiet period alone decided for that part. |
-| `bound` | Something still routed to the pod at `maxWaitSeconds`; `routing` says what. |
+| `bound` | The drain reached `maxWaitSeconds`; `routing` says what still routed to the pod. Logged at `WARN` if part of the routing couldn't be observed. |
 | `quiet` | The routing check is off; only the quiet period counted. |
 
 The agent can't confirm the routing in these cases, and falls back to the quiet

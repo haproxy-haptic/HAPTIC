@@ -218,6 +218,18 @@ func TestDrainFallsBackToTheQuietPeriodForRoutingItCannotObserve(t *testing.T) {
 		result := s.drain(nil)
 		assert.Equal(t, DrainReasonUnverified, result.Reason)
 		assert.Equal(t, "kube-proxy healthz unreachable on node-b", result.Routing)
+		assert.True(t, result.Unverified)
+	})
+}
+
+func TestDrainReportsUnverifiedRoutingWhenItEndsAtTheBound(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var connections atomic.Uint64
+		s, _ := drainWithRouting(50*time.Millisecond, 200*time.Millisecond, func() uint64 { return connections.Add(1) },
+			routingStep{routing: Routing{Unverified: "no EndpointSlice lists this pod"}})
+		result := s.drain(nil)
+		assert.Equal(t, DrainReasonBound, result.Reason)
+		assert.True(t, result.Unverified)
 	})
 }
 

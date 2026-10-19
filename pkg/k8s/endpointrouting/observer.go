@@ -39,6 +39,10 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
+// kubeProxySelector selects the Services and slices kube-proxy programs; it
+// ignores headless ones and those another proxy owns.
+const kubeProxySelector = "!" + corev1.IsHeadlessService + ",!service.kubernetes.io/service-proxy-name"
+
 const (
 	defaultPollInterval = 200 * time.Millisecond
 	healthzTimeout      = time.Second
@@ -91,12 +95,16 @@ func New(cfg *Config) (*Observer, error) {
 	if o.cfg.PollInterval <= 0 {
 		o.cfg.PollInterval = defaultPollInterval
 	}
-	o.factory = informers.NewSharedInformerFactoryWithOptions(cfg.Client, 0, informers.WithNamespace(cfg.Namespace))
+	o.factory = informers.NewSharedInformerFactoryWithOptions(cfg.Client, 0, informers.WithNamespace(cfg.Namespace),
+		informers.WithTweakListOptions(func(options *metav1.ListOptions) { options.LabelSelector = kubeProxySelector }))
 	sliceInformer := o.factory.Discovery().V1().EndpointSlices()
 	serviceInformer := o.factory.Core().V1().Services()
 	o.slices, o.services = sliceInformer.Lister(), serviceInformer.Lister()
 	for _, informer := range []cache.SharedIndexInformer{sliceInformer.Informer(), serviceInformer.Informer()} {
-		if err := informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) { o.setWatchErr(err) }); err != nil {
+		if err := informer.SetWatchErrorHandlerWithContext(func(ctx context.Context, r *cache.Reflector, err error) {
+			o.setWatchErr(err)
+			cache.DefaultWatchErrorHandler(ctx, r, err)
+		}); err != nil {
 			return nil, err
 		}
 		o.synced = append(o.synced, informer.HasSynced)
@@ -187,7 +195,7 @@ func (o *Observer) routing(ctx context.Context, poll *nodePoll) Routing {
 			return Routing{Unverified: fmt.Sprintf("the EndpointSlice and Service watch in %s has not synced (last error: %v)", o.cfg.Namespace, err)}
 		}
 	}
-	families, changed, routing, ok := o.sliceRouting()
+	view, routing, ok := o.sliceRouting()
 	if !ok {
 		return routing
 	}
@@ -198,48 +206,78 @@ func (o *Observer) routing(ctx context.Context, poll *nodePoll) Routing {
 		}
 		poll.nodes = nodes.Items
 	}
-	return o.kubeProxyRouting(ctx, poll, families, changed)
+	routing = o.kubeProxyRouting(ctx, poll, view.families, view.changed)
+	if !routing.Routed && len(view.unverified) > 0 {
+		if routing.Unverified != "" {
+			view.unverified = append(view.unverified, routing.Unverified)
+		}
+		routing.Unverified = strings.Join(view.unverified, "; ")
+	}
+	return routing
+}
+
+// sliceView is what the slices say once they no longer route to the pod.
+type sliceView struct {
+	families []discoveryv1.AddressType
+	// changed is when the last change to the listing Services' slices arrived.
+	changed time.Time
+	// unverified names Services whose traffic policy could not be read.
+	unverified []string
 }
 
 // sliceRouting applies kube-proxy's endpoint selection (KEP-1669) to every
-// Service that lists the pod, and returns when the last change to those
-// Services' slices arrived. ok is false when the slices alone decide.
-func (o *Observer) sliceRouting() (families []discoveryv1.AddressType, changed time.Time, routing Routing, ok bool) {
+// Service that lists the pod. ok is false when the slices alone decide.
+func (o *Observer) sliceRouting() (view sliceView, routing Routing, ok bool) {
 	all, err := o.slices.List(labels.Everything())
 	if err != nil {
-		return nil, changed, Routing{Unverified: fmt.Sprintf("reading EndpointSlices: %v", err)}, false
+		return view, Routing{Unverified: fmt.Sprintf("reading EndpointSlices: %v", err)}, false
 	}
-	// listed maps each Service and family that lists the pod to whether the
-	// pod still serves there; only a serving pod is kube-proxy's fallback.
-	listed := map[serviceFamily]bool{}
-	for _, slice := range all {
-		if slice.AddressType != discoveryv1.AddressTypeIPv4 && slice.AddressType != discoveryv1.AddressTypeIPv6 {
-			continue
-		}
-		if own := o.ownEndpoint(slice); own != nil {
-			key := serviceFamily{slice.Labels[discoveryv1.LabelServiceName], slice.AddressType}
-			listed[key] = listed[key] || isServing(own)
-			if isReady(own) {
-				return nil, changed, Routing{Routed: true, Detail: fmt.Sprintf("Service %s still lists this pod as ready", key.service)}, false
-			}
-		}
-	}
-	if len(listed) == 0 {
-		return nil, changed, Routing{Unverified: fmt.Sprintf("no EndpointSlice in %s lists this pod", o.cfg.Namespace)}, false
+	listed, routing, ok := o.listings(all)
+	if !ok {
+		return view, routing, false
 	}
 	for key, serving := range listed {
-		if detail := o.fallbackRouting(all, key.service, key.family); serving && detail != "" {
-			return nil, changed, Routing{Routed: true, Detail: detail}, false
+		if serving {
+			fallback, unknown := o.fallbackRouting(all, key.service, key.family)
+			if fallback != "" {
+				return view, Routing{Routed: true, Detail: fallback}, false
+			}
+			if unknown != "" && !slices.Contains(view.unverified, unknown) {
+				view.unverified = append(view.unverified, unknown)
+			}
 		}
-		if !slices.Contains(families, key.family) {
-			families = append(families, key.family)
+		if !slices.Contains(view.families, key.family) {
+			view.families = append(view.families, key.family)
 		}
 	}
-	changed, current := o.lastChange(all, listed)
-	if !current {
-		return nil, changed, Routing{Routed: true, Detail: "an EndpointSlice change is still being processed"}, false
+	slices.Sort(view.unverified)
+	var current bool
+	if view.changed, current = o.lastChange(all, listed); !current {
+		return view, Routing{Routed: true, Detail: "an EndpointSlice change is still being processed"}, false
 	}
-	return families, changed, Routing{}, true
+	return view, Routing{}, true
+}
+
+// listings maps each Service and family whose slices list the pod to whether
+// the pod still serves there; only a serving pod is kube-proxy's fallback.
+// ok is false when the pod is still ready somewhere, or listed nowhere.
+func (o *Observer) listings(all []*discoveryv1.EndpointSlice) (listed map[serviceFamily]bool, routing Routing, ok bool) {
+	listed = map[serviceFamily]bool{}
+	for _, slice := range all {
+		own := o.ownEndpoint(slice)
+		if own == nil || slice.AddressType != discoveryv1.AddressTypeIPv4 && slice.AddressType != discoveryv1.AddressTypeIPv6 {
+			continue
+		}
+		key := serviceFamily{slice.Labels[discoveryv1.LabelServiceName], slice.AddressType}
+		if isReady(own) {
+			return nil, Routing{Routed: true, Detail: fmt.Sprintf("Service %s still lists this pod as ready", key.service)}, false
+		}
+		listed[key] = listed[key] || isServing(own)
+	}
+	if len(listed) == 0 {
+		return nil, Routing{Unverified: fmt.Sprintf("no EndpointSlice in %s lists this pod", o.cfg.Namespace)}, false
+	}
+	return listed, Routing{}, true
 }
 
 // lastChange returns when the last change to the listed Services' slices
@@ -265,25 +303,29 @@ func (o *Observer) lastChange(all []*discoveryv1.EndpointSlice, listed map[servi
 	return changed, true
 }
 
-// fallbackRouting says why kube-proxy still routes to the terminating pod: it
-// does so for as long as no other endpoint is ready, per node for Local
-// traffic policies.
-func (o *Observer) fallbackRouting(all []*discoveryv1.EndpointSlice, service string, family discoveryv1.AddressType) string {
+// fallbackRouting says why kube-proxy still routes to the serving,
+// terminating pod: it does so for as long as no other endpoint is ready, per
+// node for Local traffic policies. unknown is set when the Service's traffic
+// policy cannot be read.
+func (o *Observer) fallbackRouting(all []*discoveryv1.EndpointSlice, service string, family discoveryv1.AddressType) (fallback, unknown string) {
 	anyReady, localReady := o.readyPeers(all, service, family)
 	if !anyReady {
-		return fmt.Sprintf("Service %s has no other ready %s endpoint, so kube-proxy keeps routing to this terminating pod", service, family)
+		return fmt.Sprintf("Service %s has no other ready %s endpoint, so kube-proxy keeps routing to this terminating pod", service, family), ""
+	}
+	if localReady {
+		return "", ""
 	}
 	svc, err := o.services.Services(o.cfg.Namespace).Get(service)
-	if err != nil || localReady {
-		return ""
+	if err != nil {
+		return "", fmt.Sprintf("traffic policy of Service %q: %v", service, err)
 	}
 	externalLocal := svc.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyLocal &&
 		(svc.Spec.Type == corev1.ServiceTypeNodePort || svc.Spec.Type == corev1.ServiceTypeLoadBalancer)
 	internalLocal := svc.Spec.InternalTrafficPolicy != nil && *svc.Spec.InternalTrafficPolicy == corev1.ServiceInternalTrafficPolicyLocal
 	if externalLocal || internalLocal {
-		return fmt.Sprintf("Service %s has a Local traffic policy and no other ready endpoint on node %s, so kube-proxy there keeps routing to this terminating pod", service, o.cfg.NodeName)
+		return fmt.Sprintf("Service %s has a Local traffic policy and no other ready endpoint on node %s, so kube-proxy there keeps routing to this terminating pod", service, o.cfg.NodeName), ""
 	}
-	return ""
+	return "", ""
 }
 
 // readyPeers reports whether another endpoint of the Service and family is
