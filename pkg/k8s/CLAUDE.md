@@ -42,9 +42,6 @@ pkg/k8s/
 │                      # `converter.go::goFieldName` is the canonical
 │                      # Go-PascalCase rule (no acronym preservation).
 │                      # See ADR-0010 for design rationale.
-├── endpointrouting/   # Pure: whether Services and every node's kube-proxy
-│                      # still route new connections to one pod; the agent's
-│                      # termination drain waits on it (ADR-0037).
 └── schemafetcher/     # Schema sources for typegen: ClusterFetcher (live
                        # kube-apiserver), DirFetcher (offline --schema-dir
                        # with CRD-wrapped YAML or bare OpenAPI v3 +

@@ -72,16 +72,13 @@ type Config struct {
 	DrainSocket string
 	// AdminSocket exposes read-only state through the pod's filesystem permissions.
 	AdminSocket string
-	// DrainQuietPeriod is how long no traffic frontend may accept a new
-	// connection before the drain ends; DrainMaxWait bounds the whole drain.
+	// DrainQuietPeriod ends the drain once no traffic frontend accepted a new
+	// connection for this long; DrainMaxWait bounds the whole drain.
 	DrainQuietPeriod time.Duration
 	DrainMaxWait     time.Duration
 	// DrainIgnoreFrontends names frontends whose connections are not traffic
 	// (probes, scrapes); the chart passes its status frontend.
 	DrainIgnoreFrontends []string
-	// DrainRouting holds the drain until nothing routes new connections to
-	// the pod; nil leaves the quiet period as the only signal.
-	DrainRouting RoutingObserver
 }
 
 // Server owns the tree, the runtime plumbing and the apply state machine.

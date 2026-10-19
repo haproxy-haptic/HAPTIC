@@ -323,59 +323,6 @@ The watchdog uses `/usr/bin/bash` and `timeout`, which the default images provid
 With a custom sidecar image missing either command, the supervisor logs a warning
 and still restarts child processes that exit.
 
-## Pod termination
-
-When a HAProxy pod is deleted, the agent holds the HAProxy container's `preStop`
-hook until no Service routes new connections to the pod any more. Then kubelet
-sends `SIGUSR1`, and HAProxy's soft stop closes the listeners and finishes the
-connections in flight within `extraContext.hardStopAfter`.
-
-The drain ends when all of these hold, and after `haproxy.drain.maxWaitSeconds`
-(10 s) at the latest:
-
-- Every Service that selects the pod lists it as not ready, and has another ready
-  endpoint. With a `Local` traffic policy, that endpoint must run on the same node.
-- kube-proxy on every node reports a rule sync that finished after that change
-  reached the agent.
-- No new connection reached the pod for `haproxy.drain.quietPeriodSeconds` (2 s).
-
-The agent reads kube-proxy's sync time from its health endpoint on each node
-(`haproxy.drain.kubeProxyHealthzPort`, default `10256`, kube-proxy v1.33 or
-later). For that, the HAProxy pods get their own ServiceAccount, read access to
-EndpointSlices and Services in the release namespace and to Nodes, and egress to
-the API server and to that port; see [networking](operations/networking.md#default-configuration).
-Only the agent container mounts the token.
-
-The agent logs `drain finished` with a `reason`:
-
-| Reason | Meaning |
-| --- | --- |
-| `routed-away` | The routing was withdrawn everywhere the agent could check, and the pod was quiet. |
-| `unverified` | Logged at `WARN`. Part of the routing couldn't be observed; `routing` names it. The quiet period alone decided for that part. |
-| `bound` | The drain reached `maxWaitSeconds`; `routing` says what still routed to the pod. Logged at `WARN` if part of the routing couldn't be observed. |
-| `quiet` | The routing check is off; only the quiet period counted. |
-
-The agent can't confirm the routing in these cases, and falls back to the quiet
-period with an `unverified` drain:
-
-- kube-proxy is replaced, for example by Cilium or Calico eBPF, or is older than
-  v1.33.
-- A node's port `10256` is unreachable, for example because of a firewall.
-- An external load balancer sends traffic to pod IPs directly. The agent doesn't
-  see when it stops; this case isn't logged as `unverified`.
-
-Some pods still receive traffic at `maxWaitSeconds`, and HAProxy stops anyway:
-the last ready pod of a Service, and a pod whose Service has
-`externalTrafficPolicy: Local` without another ready HAProxy pod on its node.
-kube-proxy keeps routing to such a pod until it's gone.
-
-To turn the routing check off, set `haproxy.drain.kubeProxyHealthzPort: 0`. Clients
-that pause for longer than the quiet period can then be refused while kube-proxy
-still routes to the pod.
-
-The design and its limits are in
-[ADR-0037](https://github.com/haproxy-haptic/HAPTIC/blob/main/docs/adr/0037-drain-observes-routing.md).
-
 ## HAProxy Pod requirements
 
 When `haproxy.enabled: false`, you're responsible for deploying HAProxy pods yourself. The controller discovers them via the pod selector at `controller.config.podSelector`, which defaults to:

@@ -61,7 +61,6 @@ tests:
             - --drain-quiet-period=2s
             - --drain-max-wait=10s
             - --drain-ignore-frontend=status
-            - --drain-kube-proxy-healthz-port=10256
             - --reload-interval-min=5s
 
   # One value paces the controller's structural deploys and the agent's reloads;
@@ -151,7 +150,7 @@ tests:
             emptyDir: {}
       - lengthEqual:
           path: spec.template.spec.initContainers[?(@.name=="agent")].volumeMounts
-          count: 4
+          count: 3
       - contains:
           path: spec.template.spec.initContainers[?(@.name=="agent")].volumeMounts
           content:
@@ -485,77 +484,6 @@ tests:
           content: --drain-ignore-frontend=status
       - isNull:
           path: spec.template.spec.initContainers[?(@.name=="agent")].lifecycle
-
-  - it: should give only the agent an API token for observing the routing during the drain
-    asserts:
-      - equal:
-          path: spec.template.spec.serviceAccountName
-          value: RELEASE-NAME-haptic-haproxy
-      - equal:
-          path: spec.template.spec.automountServiceAccountToken
-          value: false
-      - contains:
-          path: spec.template.spec.initContainers[?(@.name=="agent")].args
-          content: --drain-kube-proxy-healthz-port=10256
-      - contains:
-          path: spec.template.spec.initContainers[?(@.name=="agent")].env
-          content:
-            name: POD_UID
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.uid
-      - contains:
-          path: spec.template.spec.initContainers[?(@.name=="agent")].env
-          content:
-            name: NODE_NAME
-            valueFrom:
-              fieldRef:
-                fieldPath: spec.nodeName
-      - contains:
-          path: spec.template.spec.initContainers[?(@.name=="agent")].volumeMounts
-          content:
-            name: agent-api-token
-            mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-            readOnly: true
-      - notContains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: agent-api-token
-            mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-            readOnly: true
-      - equal:
-          path: spec.template.spec.volumes[?(@.name=="agent-api-token")].projected.sources[0].serviceAccountToken.path
-          value: token
-
-  - it: should leave the quiet period as the only drain signal when the kube-proxy port is 0
-    set:
-      haproxy.drain.kubeProxyHealthzPort: 0
-    asserts:
-      - notContains:
-          path: spec.template.spec.initContainers[?(@.name=="agent")].args
-          content: --drain-kube-proxy-healthz-port=0
-      - isNull:
-          path: spec.template.spec.volumes[?(@.name=="agent-api-token")]
-      - notContains:
-          path: spec.template.spec.initContainers[?(@.name=="agent")].env
-          content:
-            name: POD_UID
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.uid
-      - equal:
-          path: spec.template.spec.automountServiceAccountToken
-          value: false
-
-  - it: should not observe the routing when custom lifecycle hooks replace the drain hook
-    set:
-      haproxy.lifecycle:
-        preStop:
-          exec:
-            command: ["/bin/sh", "-c", "true"]
-    asserts:
-      - isNull:
-          path: spec.template.spec.volumes[?(@.name=="agent-api-token")]
 
   - it: should render no hook and no drain socket when the drain is disabled
     set:

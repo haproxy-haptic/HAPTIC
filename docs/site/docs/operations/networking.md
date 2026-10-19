@@ -44,15 +44,6 @@ policies for those pods:
   themselves. Store egress is limited to DNS and store-internal replication,
   quorum, and failover traffic.
 
-The HAProxy policy also lets the agent's [termination drain](../haproxy-deployment.md#pod-termination)
-read the routing to its pod:
-
-- Kubernetes API egress, to the same addresses as
-  `controller.networkPolicy.egress.kubernetesApi`.
-- kube-proxy's healthz port (`haproxy.drain.kubeProxyHealthzPort`, default
-  `10256`) at `haproxy.networkPolicy.kubeProxyCIDRs`, by default any IPv4 or IPv6
-  address. Narrow it to your node addresses when hardening.
-
 These policies select release-scoped labels, so two HAPTIC releases in one
 namespace don't gain access to each other's cache or limiter tiers.
 
