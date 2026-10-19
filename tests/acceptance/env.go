@@ -1435,13 +1435,27 @@ func UpdateBlocklistAndRestart(ctx context.Context, t *testing.T, client klient.
 		return fmt.Errorf("no blocklist server pod found")
 	}
 
-	err = clientset.CoreV1().Pods(namespace).Delete(ctx, pods.Items[0].Name, metav1.DeleteOptions{})
+	old := pods.Items[0].Name
+	err = clientset.CoreV1().Pods(namespace).Delete(ctx, old, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to delete blocklist pod: %w", err)
 	}
 
+	// A terminating pod still counts as Ready and can keep serving the old content.
+	cfg := testutil.DefaultWaitConfig()
+	cfg.Timeout = DefaultConfigUpdateTimeout
+	if err := testutil.WaitForConditionWithDescription(ctx, cfg, "deleted blocklist pod "+old+" gone",
+		func(ctx context.Context) (bool, error) {
+			_, err := clientset.CoreV1().Pods(namespace).Get(ctx, old, metav1.GetOptions{})
+			return apierrors.IsNotFound(err), nil
+		}); err != nil {
+		return err
+	}
 	if err := WaitForPodReady(ctx, client, namespace, "app="+BlocklistServerName, DefaultConfigUpdateTimeout); err != nil {
 		return fmt.Errorf("blocklist server not ready after restart: %w", err)
+	}
+	if err := WaitForNginxContent(ctx, clientset, namespace, newContent, DefaultConfigUpdateTimeout); err != nil {
+		return err
 	}
 
 	t.Log("Blocklist content updated and server restarted")
