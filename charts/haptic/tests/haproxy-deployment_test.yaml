@@ -527,6 +527,15 @@ tests:
           path: spec.template.spec.volumes[?(@.name=="agent-api-token")].projected.sources[0].serviceAccountToken.path
           value: token
 
+  - it: should render the deprecated serviceAccount so a downgrade without the HAProxy SA removes it
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccount
+          value: RELEASE-NAME-haptic-haproxy
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-haptic-haproxy
+
   - it: should leave the quiet period as the only drain signal when the kube-proxy port is 0
     set:
       haproxy.drain.kubeProxyHealthzPort: 0

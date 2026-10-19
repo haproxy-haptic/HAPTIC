@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `extraContext.forwardedHeaders.trustedProxies`: the L7 load balancers whose `X-Forwarded-For`, `-Proto`, `-Host`, and `-Port` headers HAPTIC keeps.
 - `controller.rbac.releaseNamespaceSecretsOnly` limits Secret reads to the release namespace and rejects references elsewhere.
 - A watched resource that lists `namespaces` is granted by a Role in each listed namespace instead of the ClusterRole.
-- `haproxy.drain.kubeProxyHealthzPort` (default `10256`) and `haproxy.networkPolicy.kubeProxyCIDRs`: the termination drain reads kube-proxy's sync time on every node ([#446](https://github.com/haproxy-haptic/HAPTIC/issues/446)). HAProxy pods get their own ServiceAccount; only the agent mounts a token, with `list`/`watch` on EndpointSlices and Services in the release namespace and `list` on Nodes. The HAProxy NetworkPolicy allows the controller's API-server egress and that port.
+- `haproxy.drain.kubeProxyHealthzPort` (default `10256`) and `haproxy.networkPolicy.kubeProxyCIDRs`: the termination drain reads kube-proxy's sync time on every node ([#446](https://github.com/haproxy-haptic/HAPTIC/issues/446)). HAProxy pods get their own ServiceAccount, which a rollback or downgrade to an earlier release removes cleanly; only the agent mounts a token, with `list`/`watch` on EndpointSlices and Services in the release namespace and `list` on Nodes. The HAProxy NetworkPolicy allows the controller's API-server egress and that port.
 
 #### Changed
 

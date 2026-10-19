@@ -91,6 +91,8 @@ spec:
       shareProcessNamespace: true
       {{- end }}
       serviceAccountName: {{ $haproxyFullname }}
+      # The API server copies serviceAccountName here; render it so a downgrade to a chart without the SA removes both.
+      serviceAccount: {{ $haproxyFullname }}
       automountServiceAccountToken: false
       initContainers:
         {{- if $vectorEnabled }}
