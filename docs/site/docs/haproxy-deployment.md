@@ -341,11 +341,11 @@ estimate:
   kube-proxy's endpoint update delay, keeping `maxWaitSeconds` at least as high.
 - **External load balancers decide for themselves.** With
   `externalTrafficPolicy: Local`, a node's last HAProxy pod is withdrawn only
-  when the load balancer's health check fails; a load balancer that targets pod
+  when the health check of the load balancer fails; a load balancer that targets pod
   IPs withdraws it on its own schedule. If that takes longer than
-  `maxWaitSeconds`, connections arriving afterwards are refused. Keep the load
-  balancer's failure detection time (interval times unhealthy threshold) below
-  `maxWaitSeconds`.
+  `maxWaitSeconds`, connections arriving afterwards are refused. Keep the
+  failure detection time of the load balancer (interval times unhealthy
+  threshold) below `maxWaitSeconds`.
 
 ## HAProxy Pod requirements
 
