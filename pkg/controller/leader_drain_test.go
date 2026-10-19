@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -296,4 +297,118 @@ func (d *recordingDrainer) Start(ctx context.Context) error {
 func (d *recordingDrainer) Drain(context.Context) error {
 	d.drains.Add(1)
 	return nil
+}
+
+const (
+	drainLostMessage     = "Leadership term ends without its latest checkpoint"
+	drainedMessage       = "Leadership term drained"
+	shutdownDrainOutcome = "the shutdown drain must report the term drained"
+)
+
+// TestRetireAfterShutdownDrainedTheTermStaysSilent is the #453 sequence:
+// SIGTERM drains the term and cancels the process, and only then does the
+// successor's hand-over retire the same term.
+func TestRetireAfterShutdownDrainedTheTermStaysSilent(t *testing.T) {
+	h := newLeaderTermHarness(t)
+	h.deploy(t, "global\n  maxconn 100\n")
+	h.waitRetained(t, h.deployed[0])
+	h.deploy(t, "global\n  maxconn 200\n")
+	logger, logs := testutil.NewRecordingLogger()
+
+	h.state.drain(logger)
+	h.state.components.cancel()
+	h.state.drain(logger)
+
+	require.Equal(t, []slog.Level{slog.LevelInfo}, logs.Levels(drainedMessage), shutdownDrainOutcome)
+	require.Empty(t, logs.Levels(drainLostMessage), "a drained term must not be reported as losing its checkpoint")
+	h.state.stop(logger)
+	checksum, err := h.recoverable(t, h.takeOver(t))
+	require.NoError(t, err)
+	require.Equal(t, h.deployed[1], checksum)
+}
+
+func TestDrainRacingAnInFlightDrainObservesItsResult(t *testing.T) {
+	drainer := &gatedDrainer{ready: make(chan struct{}), entered: make(chan struct{}), release: make(chan struct{})}
+	state, cancelTerm, wait := startDrainerTerm(t, drainer)
+	logger, logs := testutil.NewRecordingLogger()
+
+	shutdown := make(chan struct{})
+	go func() {
+		defer close(shutdown)
+		state.drain(logger)
+	}()
+	<-drainer.entered
+	retire := make(chan struct{})
+	go func() {
+		defer close(retire)
+		state.drain(logger)
+	}()
+	close(drainer.release)
+	<-shutdown
+	cancelTerm()
+	<-retire
+	wait()
+
+	require.Equal(t, []slog.Level{slog.LevelInfo}, logs.Levels(drainedMessage), shutdownDrainOutcome)
+	require.Empty(t, logs.Levels(drainLostMessage))
+	require.Equal(t, int32(1), drainer.drains.Load())
+}
+
+func TestFailedDrainWarnsOnce(t *testing.T) {
+	drainer := &gatedDrainer{ready: make(chan struct{}), err: errors.New("checkpoint publish refused")}
+	state, cancelTerm, wait := startDrainerTerm(t, drainer)
+	logger, logs := testutil.NewRecordingLogger()
+
+	state.drain(logger)
+	state.drain(logger)
+	cancelTerm()
+	wait()
+
+	require.Equal(t, []slog.Level{slog.LevelWarn}, logs.Levels(drainLostMessage))
+	require.Empty(t, logs.Levels(drainedMessage))
+}
+
+func startDrainerTerm(t *testing.T, drainer lifecycle.Component) (*leaderCallbackState, context.CancelFunc, func()) {
+	t.Helper()
+	registry := lifecycle.NewRegistry()
+	registry.Register(drainer, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	group, _ := errgroup.WithContext(ctx)
+	components, err := startLeaderOnlyComponents(ctx, registry, testutil.NewTestLogger(), func(error) {}, group)
+	require.NoError(t, err)
+	state := &leaderCallbackState{components: components}
+	state.leading.Store(true)
+	return state, cancel, func() { require.NoError(t, group.Wait()) }
+}
+
+// gatedDrainer holds its first drain until release and fails every later one
+// once the term ends, the way a second checkpoint flush cannot complete.
+type gatedDrainer struct {
+	ready   chan struct{}
+	entered chan struct{}
+	release chan struct{}
+	err     error
+	drains  atomic.Int32
+}
+
+func (*gatedDrainer) Name() string { return "gated-drainer" }
+
+func (d *gatedDrainer) SubscriptionReady() <-chan struct{} { return d.ready }
+
+func (d *gatedDrainer) Start(ctx context.Context) error {
+	close(d.ready)
+	<-ctx.Done()
+	return nil
+}
+
+func (d *gatedDrainer) Drain(ctx context.Context) error {
+	if d.drains.Add(1) > 1 {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	if d.entered != nil {
+		close(d.entered)
+		<-d.release
+	}
+	return d.err
 }
