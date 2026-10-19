@@ -412,3 +412,39 @@ func (testCurrentFilesSource) SameRoot(other rendercontext.CurrentAuxFilesSource
 func (testCurrentFilesSource) MaterializeCurrentAuxFiles() (map[string]string, error) {
 	return map[string]string{"maps/a.map": "x"}, nil
 }
+
+// The hand-over waits for the render in flight at its deadline (#450).
+func TestWarmerReportsTheRenderInFlight(t *testing.T) {
+	p := &recordingPipeline{
+		result: warmResult(), ran: make(chan struct{}, 1), gate: make(chan struct{}), entered: make(chan struct{}, 1),
+	}
+	h := newHarness(t, p)
+	require.Nil(t, h.component.RenderInFlight())
+
+	h.bus.Publish(events.NewReconciliationTriggeredEvent("initial_sync_complete", true))
+	select {
+	case <-p.entered:
+	case <-time.After(testutil.EventTimeout):
+		t.Fatal("the render never started")
+	}
+	running := h.component.RenderInFlight()
+	require.NotNil(t, running)
+	select {
+	case <-running:
+		t.Fatal("the render was reported finished while it runs")
+	default:
+	}
+
+	close(p.gate)
+	select {
+	case <-running:
+	case <-time.After(testutil.EventTimeout):
+		t.Fatal("the render in flight was never reported finished")
+	}
+	select {
+	case <-h.component.Warmed():
+	default:
+		t.Fatal("the render finished before reporting the graph warm")
+	}
+	assert.Nil(t, h.component.RenderInFlight())
+}
