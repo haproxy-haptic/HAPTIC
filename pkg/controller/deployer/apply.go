@@ -95,6 +95,8 @@ type podOutcome struct {
 	notes     []string
 	converged bool
 	observed  bool
+	// reloadSent is a manifest in reload mode, whatever the diff concluded.
+	reloadSent bool
 }
 
 // reasons are the notes and the diff's reasons, most significant first.
@@ -132,6 +134,7 @@ func (c *Component) applyToPod(ctx context.Context, endpoint *dataplane.Endpoint
 			if outcome != nil {
 				outcome.notes = attempt.notes
 				outcome.phases = attempt.phases
+				c.logReload(attempt, outcome)
 			}
 			return outcome, err
 		}
@@ -162,6 +165,39 @@ func (c *Component) applyToPod(ctx context.Context, endpoint *dataplane.Endpoint
 	}
 }
 
+// logReload reports, once per pod and reload, why the pod reloads. Only the
+// final round lands here, so a conflict retry does not log twice.
+func (c *Component) logReload(attempt *podApply, outcome *podOutcome) {
+	result := outcome.result
+	if outcome.observed || result == nil || !result.OK {
+		return
+	}
+	pod := attempt.endpoint.PodName
+	switch {
+	case !startsReload(attempt.state, result):
+		if outcome.reloadSent {
+			c.Logger().Debug("Change joins the pending reload", "pod", pod, "reasons", outcome.reasons())
+		}
+	case outcome.reloadSent:
+		c.Logger().Info("Reload required", "pod", pod, "reasons", outcome.reasons())
+	default:
+		c.Logger().Info("Agent fell back to a reload instead of the runtime ops; its log has the reason", "pod", pod)
+	}
+}
+
+// startsReload reports whether an apply reloaded the pod or scheduled a new
+// reload, rather than joining the one already pending when its state was read.
+func startsReload(state *api.State, result *api.ApplyResult) bool {
+	switch result.Mode {
+	case api.ResultReload:
+		return true
+	case api.ResultScheduled:
+		return result.Reload == nil || state.ReloadPendingAt == "" ||
+			result.Reload.ScheduledAt != state.ReloadPendingAt
+	}
+	return false
+}
+
 // podApply is one pod's apply in progress: what it currently reports and how
 // much of the desired state this round is sending it.
 type podApply struct {
@@ -187,10 +223,6 @@ func (c *Component) applyOnce(ctx context.Context, attempt *podApply) (*podOutco
 	diffStarted := time.Now()
 	decision := attempt.req.decisionFor(attempt.state, c.plans, authority)
 	attempt.phases.DiffMs += time.Since(diffStarted).Milliseconds()
-	if decision.Verdict == deployplan.VerdictReload {
-		c.Logger().Debug("Reload required: this change cannot run as runtime ops",
-			"pod", attempt.endpoint.PodName, "reasons", decision.Reasons)
-	}
 	chunks := decision.Chunk()
 	if !attempt.full && len(chunks) > 1 && !slices.Contains(attempt.state.Features, api.FeatureRuntimeBatches) {
 		decision = deployplan.Decision{
@@ -206,6 +238,7 @@ func (c *Component) applyOnce(ctx context.Context, attempt *podApply) (*podOutco
 	prev := fenceOf(attempt.state)
 	validated := attempt.req.validatedPlanFor(authority, attempt.state)
 	manifest := attempt.req.manifest(&decision, chunks[0], &prev, attempt.full, validated)
+	outcome.reloadSent = manifest.Mode == api.ModeReload
 	manifest.OpBatches = chunks[1:]
 	blob := attempt.sendsPlanBlob(c.plans.Baseline(authority, attempt.state),
 		c.keeper.Delivers(attempt.endpoint) && decision.Verdict != deployplan.VerdictReload)

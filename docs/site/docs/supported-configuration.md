@@ -72,8 +72,7 @@ for template authoring constraints.
 | Content of a map loaded by the worker | Runtime entry updates; whole-map replacement when needed to preserve entry order or represent the values. |
 | Content of a map the worker hasn't loaded | File update only. Adding a configuration reference requires a reload. |
 | Certificate or CA content | Create or update the runtime-store object. |
-| Entries in an existing, loaded CRT-list | Runtime updates when the template declares the entries and the operations preserve their order. |
-| Add or remove a CRT-list, or reorder its entries | Reload. |
+| Add, remove, or change a CRT-list, including its entries | Reload. Templates register CRT-lists as files, so their entries can't be updated at runtime. |
 | Change or remove a general file with `reloadOnPush: true` (the default) | Reload. |
 | Other file changes | File update only; changes to the configuration that references the file may also require a reload. |
 

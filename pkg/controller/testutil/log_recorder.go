@@ -41,23 +41,46 @@ func (r *LogRecorder) Write(p []byte) (int, error) {
 	return r.buf.Write(p)
 }
 
-// Levels returns the level of each record whose message starts with prefix.
+// Levels returns the level of each record whose message starts with prefix,
+// nil when there is none.
 func (r *LogRecorder) Levels(prefix string) []slog.Level {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var levels []slog.Level
-	decoder := json.NewDecoder(bytes.NewReader(r.buf.Bytes()))
-	for decoder.More() {
+	records := r.Records(prefix)
+	if len(records) == 0 {
+		return nil
+	}
+	levels := make([]slog.Level, 0, len(records))
+	for _, raw := range records {
 		var record struct {
 			Level slog.Level `json:"level"`
-			Msg   string     `json:"msg"`
 		}
-		if err := decoder.Decode(&record); err != nil {
+		if err := json.Unmarshal(raw, &record); err != nil {
+			panic(err)
+		}
+		levels = append(levels, record.Level)
+	}
+	return levels
+}
+
+// Records returns each record whose message starts with prefix, as JSON.
+func (r *LogRecorder) Records(prefix string) []json.RawMessage {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var records []json.RawMessage
+	decoder := json.NewDecoder(bytes.NewReader(r.buf.Bytes()))
+	for decoder.More() {
+		var raw json.RawMessage
+		var record struct {
+			Msg string `json:"msg"`
+		}
+		if err := decoder.Decode(&raw); err != nil {
+			panic(err)
+		}
+		if err := json.Unmarshal(raw, &record); err != nil {
 			panic(err)
 		}
 		if strings.HasPrefix(record.Msg, prefix) {
-			levels = append(levels, record.Level)
+			records = append(records, raw)
 		}
 	}
-	return levels
+	return records
 }
