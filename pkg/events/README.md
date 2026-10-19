@@ -82,6 +82,10 @@ Responders listen on their own subscription, match on request ID, and `Publish` 
 
 Don't nest `Request()` calls on the same path without spawning a goroutine for the outer call — a responder that blocks on another `Request` while its own pending request waits can deadlock.
 
+## Delivery Order
+
+Delivery is causal: if a subscriber publishes an event in reaction to one it received, every subscriber gets the original first. Concurrent, unrelated publishes have no defined order.
+
 ## Back-Pressure
 
 Publish is non-blocking. If a subscriber's buffer is full, the event is **dropped for that subscriber** (others still receive it). The drop accounting splits into two paths (see `recordDrop` in `bus.go`):

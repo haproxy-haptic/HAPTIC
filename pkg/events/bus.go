@@ -56,6 +56,7 @@ type EventBus struct {
 	subscribers      []subscriber // Changed from []chan Event to support lossy flag
 	typedSubscribers []*typedSubscription
 	mu               sync.RWMutex
+	deliverMu        sync.Mutex // serializes fanOut's sends; see fanOut
 
 	// Startup coordination
 	started        bool
@@ -108,53 +109,74 @@ func (b *EventBus) reportDrops(drops []DropInfo) {
 	}
 }
 
+// delivery is one subscriber's copy of an event, cloned before any send.
+type delivery struct {
+	ch    chan<- Event
+	event Event
+	lossy bool
+	drop  DropInfo
+}
+
 // fanOut delivers event to every subscriber that accepts it, returning how many
 // received it and the critical drops the caller must pass to reportDrops.
 //
 // b.mu is held for the whole walk: the loops index the subscriber slices, and
 // UnsubscribeTyped removes an entry by overwriting it in place. Reporting the
 // drops is left to the caller so the callback runs with no lock held.
+//
+// The sends run under deliverMu so delivery is causal: an event a subscriber
+// publishes in reaction to this one reaches every other subscriber after it.
+// Cloning happens first, outside deliverMu, because a clone can be large.
 func (b *EventBus) fanOut(event Event) (sent int, criticalDrops []DropInfo) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
 	eventType := event.EventType()
+	deliveries := make([]delivery, 0, len(b.subscribers)+len(b.typedSubscribers))
 
 	for _, sub := range b.subscribers {
-		select {
-		case sub.ch <- cloneForSubscriber(event):
-			sent++
-		default:
-			// Channel full, subscriber is lagging - drop event
-			if sub.lossy {
-				atomic.AddUint64(&b.droppedEventsObservability, 1)
-				continue
-			}
-			criticalDrops = append(criticalDrops, DropInfo{
+		deliveries = append(deliveries, delivery{
+			ch:    sub.ch,
+			event: cloneForSubscriber(event),
+			lossy: sub.lossy,
+			drop: DropInfo{
 				EventType:      eventType,
 				SubscriberName: sub.name,
 				BufferSize:     sub.bufferSize,
-			})
-		}
+			},
+		})
 	}
 
-	// Send to typed subscribers (filtered at bus level)
 	for _, sub := range b.typedSubscribers {
 		if !sub.filterFunc(event) {
 			continue
 		}
-		select {
-		case sub.outputChan <- cloneForSubscriber(event):
-			sent++
-		default:
-			// Typed subscriptions are always critical; SubscribeLossy is
-			// universal-only, so there is no lossy branch to take here.
-			criticalDrops = append(criticalDrops, DropInfo{
+		// Typed subscriptions are always critical; SubscribeLossy is universal-only.
+		deliveries = append(deliveries, delivery{
+			ch:    sub.outputChan,
+			event: cloneForSubscriber(event),
+			drop: DropInfo{
 				EventType:      eventType,
 				SubscriberName: sub.name,
 				BufferSize:     sub.bufferSize,
 				EventTypes:     sub.eventTypesStr,
-			})
+			},
+		})
+	}
+
+	b.deliverMu.Lock()
+	defer b.deliverMu.Unlock()
+	for _, d := range deliveries {
+		select {
+		case d.ch <- d.event:
+			sent++
+		default:
+			// Channel full, subscriber is lagging - drop event
+			if d.lossy {
+				atomic.AddUint64(&b.droppedEventsObservability, 1)
+				continue
+			}
+			criticalDrops = append(criticalDrops, d.drop)
 		}
 	}
 

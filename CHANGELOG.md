@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A deployment cancelled because the HAProxy pod set changed no longer logs `context canceled` errors, emits `ApplyFailed` Pod events, or counts in `haptic_deployment_errors_total` for its in-flight pods ([#430](https://github.com/haproxy-haptic/HAPTIC/issues/430)).
 - The config publisher logs API calls cancelled by its own shutdown or reinitialization at INFO instead of WARN; other failures stay at WARN ([#444](https://github.com/haproxy-haptic/HAPTIC/issues/444)).
 - Waiting for the render gate's first verdict after a start or configuration change logs at INFO instead of WARN; holding renders after a failed verdict stays at WARN ([#445](https://github.com/haproxy-haptic/HAPTIC/issues/445)).
+- A controller could stop deploying, leaving HAProxy pods unready, when the render gate's verdict reached the deployment scheduler before the render it named. Each component now receives an event before any reaction to it.
 
 ### Security
 
