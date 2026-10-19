@@ -760,9 +760,9 @@ capture_failure_state() {
     best_effort_failure_capture "$output/events.json" \
         kubectl get events --all-namespaces -o json
     best_effort_failure_capture "$output/network.log" \
-        kubectl logs -n kube-system -l app=kindnet --all-containers --prefix --tail=-1 --timestamps=true
+        kubectl logs -n kube-system -l k8s-app=calico-node --all-containers --prefix --tail=-1 --timestamps=true
     best_effort_failure_capture "$output/previous-network.log" \
-        kubectl logs -n kube-system -l app=kindnet --all-containers --previous --prefix --tail=-1 --timestamps=true
+        kubectl logs -n kube-system -l k8s-app=calico-node --all-containers --previous --prefix --tail=-1 --timestamps=true
     best_effort_failure_capture "$output/controller.log" \
         kubectl logs -n "$RELEASE_NAMESPACE" \
             -l app.kubernetes.io/instance=haptic,app.kubernetes.io/component=controller \
@@ -1555,7 +1555,7 @@ network_pod_identity() {
 
 capture_network_health() {
     local phase="$1" output="${BENCH_OUTPUT_DIR}/cluster/network-${1}"
-    kubectl get pods -n kube-system -l app=kindnet -o json > "${output}-pods.json" || \
+    kubectl get pods -n kube-system -l k8s-app=calico-node -o json > "${output}-pods.json" || \
         die "could not inspect the benchmark network daemon"
     network_pod_identity < "${output}-pods.json" > "${output}-identity.json" || \
         die "benchmark network daemon is unready or restarted; inspect cluster/network-${phase}-pods.json"
@@ -1565,14 +1565,8 @@ capture_network_health() {
     fi
 }
 
-prepare_network_capacity() {
-    kubectl get daemonset kindnet -n kube-system -o json > "${BENCH_OUTPUT_DIR}/cluster/network-before.json"
-    kubectl set resources daemonset kindnet -n kube-system --containers=kindnet-cni --limits=memory=256Mi
-    kubectl rollout status daemonset/kindnet -n kube-system --timeout=120s
-    kubectl get daemonset kindnet -n kube-system -o json > "${BENCH_OUTPUT_DIR}/cluster/network-configured.json"
-    jq -e '[.spec.template.spec.containers[] | select(.name == "kindnet-cni") |
-        .resources.limits.memory] == ["256Mi"]' "${BENCH_OUTPUT_DIR}/cluster/network-configured.json" >/dev/null || \
-        die "benchmark network daemon memory allowance was not applied"
+record_network_daemon() {
+    kubectl get daemonset calico-node -n kube-system -o json > "${BENCH_OUTPUT_DIR}/cluster/network-daemonset.json"
     capture_network_health baseline
 }
 
@@ -5851,7 +5845,7 @@ main() {
 
     check_cluster_prerequisites
     bootstrap_cluster
-    prepare_network_capacity
+    record_network_daemon
     start_runtime_config_history
     capture_live_secret_patterns || \
         die "failed to capture live Secret patterns after cluster bootstrap"

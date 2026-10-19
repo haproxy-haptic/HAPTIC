@@ -1880,7 +1880,7 @@ haproxy:
     backend default_backend
         http-request return status 404
   # NetworkPolicy for HAProxy loadbalancer pods. Requires a CNI that
-  # enforces NetworkPolicy (Calico/Cilium/etc — kindnet does not).
+  # enforces NetworkPolicy (Calico, Cilium, etc.).
   # allowExternal=false with empty allowedSources fails install by
   # design (blocks accidental deny-all).
   networkPolicy:

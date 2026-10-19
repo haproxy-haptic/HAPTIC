@@ -923,7 +923,7 @@ func helmInstallChart(ctx context.Context, caBundleB64 string) (context.Context,
 func e2eProfileHelmArgs(profile string) []string {
 	switch profile {
 	case "cache":
-		fmt.Fprintf(os.Stderr, "e2e: cache shard — enabling Varnish with HAProxy Service port %d and kindnet policy enforcement\n", ChartHAProxyServiceHTTPPort)
+		fmt.Fprintf(os.Stderr, "e2e: cache shard — enabling Varnish with HAProxy Service port %d and NetworkPolicy enforcement\n", ChartHAProxyServiceHTTPPort)
 		return []string{
 			"--set", "cache.varnish.enabled=true",
 			"--set", "cache.varnish.replicas=1",

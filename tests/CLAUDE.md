@@ -293,15 +293,16 @@ on every node through `kindutil.Cluster.Create`. The dev-environment wrapper
 `kind_blackhole_synthetic_backends` calls the same Go implementation. Pick synthetic
 addresses inside those ranges, and add any new creator to the list.
 
-### Test clusters run kindnet v1.0.2, not kind's bundled CNI
+### Test clusters run Calico, not kind's bundled kindnet
 
-kind v0.33.0's bundled kindnetd recreates its NetworkPolicy nftables table on
-every sync, which drops any packet waiting for a policy verdict
-([kube-network-policies#402](https://github.com/kubernetes-sigs/kube-network-policies/issues/402)).
-Every kind cluster creator therefore sets `disableDefaultCNI` and installs
-`tests/kindutil/kindnet.yaml` through `kindutil.Cluster.Create` (or
-`kind_install_kindnet` for the dev environment), with policy enforcement on.
-Revert to kind's CNI once a kind release bundles the fix.
+kindnet enforces NetworkPolicy in userspace through nfqueue, so every new
+connection to a policy-selected pod waits for kindnetd's verdict; under CI load
+that verdict stalls past the 1 s connect timeout (#465). Calico's iptables
+dataplane enforces policy in the kernel. Every kind cluster creator therefore
+sets `disableDefaultCNI` and `podSubnet: 10.244.0.0/16` (Calico's IP pool) and
+installs `tests/kindutil/calico.yaml` through `kindutil.Cluster.Create` (or
+`kind_install_cni` for the dev environment). `TestHapticVarnishCache` proves a
+policy-denied connection is denied.
 
 ### Measuring controller memory at scale
 
