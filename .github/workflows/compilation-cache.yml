@@ -1,40 +1,91 @@
-name: Refresh shared compilation caches
+name: Upgrade handover diagnostic
 'on':
-  workflow_dispatch: {}
+  workflow_dispatch: null
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: compilation-cache-${{ github.ref }}
-  cancel-in-progress: true
+  group: issue-483-upgrade-diagnostic
+  cancel-in-progress: false
 jobs:
-  compile:
-    name: Compile ${{ matrix.shard }} test packages
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        shard:
-        - command
-        - renderer
-        - rest
+  upgrade:
+    name: Diagnose minimum Kubernetes upgrade
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
     env:
+      PILOT_GOGC: '300'
+      PILOT_CAPTURE_NETWORK: '0'
+      PILOT_GOMAXPROCS: '2'
+      HAPTIC_E2E_CONTROLLER_STARTUP: parallel
+      PILOT_CAPTURE_PROFILES: '0'
       PILOT_SOURCE_SHA: ${{ github.sha }}
-      PILOT_SUITE: unit-cache
-      PILOT_GO_CACHE_DIR: /tmp/haptic-go-cache
+      PILOT_VARNISH_IMAGE: ghcr.io/haproxy-haptic/haptic-ci@sha256:2cb9e813ede03e1e272695d1b6ca2be6c50dacc75fdee69485989f4d7a6e97bb
+      HAPROXY_VERSION: '3.4'
+      E2E_SHARD_INDEX: '1'
+      HAPTIC_E2E_PROFILE: ''
+      HAPTIC_E2E_GWAPI_CHANNEL: standard
+      KIND_NODE_IMAGE: kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0
+      HAPTIC_E2E_EXTRA_SET: controller.resources.requests.cpu=600m;controller.resources.limits.cpu=4;controller.resources.limits.memory=4Gi
+      PILOT_SUITE: upgrade
       PILOT_CI_IMAGE: ghcr.io/haproxy-haptic/haptic-ci@sha256:b27b3629fe0597aa0e7f9222e02f3b95ca4edcbb7af12877fd7d34a833b9d3ad
-      SHARD_ID: ${{ matrix.shard }}
+      BASELINE_CHART_VERSION: 0.6.0
+      GITOPS_PROVIDER: ''
+      GITOPS_CERTIFICATES: ''
+      SHARD_ID: ''
+      SHARD_COUNT: '4'
+      E2E_SHARD_TOTAL: '4'
+      SHARD_INDEX: ''
+      PILOT_STARTUP_ONLY: '0'
+      CONFORMANCE_PARALLEL: '4'
+      SCALE_SEED_WORKERS: '4'
+      E2E_SHARD_WEIGHTS: .github/e2e-shard-weights.json
+      PILOT_GO_CACHE_DIR: ''
+      PILOT_STARTUP_PROFILE: '0'
+      PILOT_VALIDATION_TMPFS: '1'
+      PILOT_NATIVE_BUILD: '1'
+      CI_SUITE: '{"runner":"ubuntu-24.04-arm","kind":"upgrade","name":"upgrade-0.6.0-minimum","suite":"upgrade","baseline":"0.6.0","node":"kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0","channel":"","index":"","profile":"","settings":"","shard":"","startup":"","provider":"","certificates":"","haproxy":"","image":""}'
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
+        fetch-depth: 0
         persist-credentials: false
-    - name: Restore and update compiled packages
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - name: Restore SPOA plugin downloads
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ${{ env.PILOT_GO_CACHE_DIR }}
-        key: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum', 'cmd/haptic/default.pgo', 'ci/build-pins.yml') }}-${{ matrix.shard
-          == 'command' && 'command-race' || matrix.shard }}
-        restore-keys: go-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ matrix.shard == 'command' && 'command-race' || matrix.shard
-          }}-
-    - name: Compile test packages without executing tests
-      run: bash .github/scripts/run-remaining-pilot.sh
+        path: .cache/spoa-plugins
+        key: spoa-plugins-${{ hashFiles('versions-spoa.env', 'scripts/prep-spoa-plugins.sh') }}
+        restore-keys: spoa-plugins-
+    - name: Select native compiler cache
+      run: 'mkdir -p .pilot
+
+        printf ''%s\n'' host-cache > .pilot/compiler-cache-variant
+
+        '
+    - name: Install pinned native tools
+      run: bash .github/scripts/install-arm-pilot-tools.sh
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: ${{ env.HAPTIC_NATIVE_GO_VERSION }}
+        cache: true
+        cache-dependency-path: 'go.mod
+
+          go.sum
+
+          cmd/haptic/default.pgo
+
+          .pilot/compiler-cache-variant
+
+          '
+    - name: Run native ARM lifecycle checks
+      run: bash .github/scripts/run-lifecycle-arm.sh
+    - name: Retain verification evidence
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ci-evidence-${{ fromJSON(env.CI_SUITE).name }}
+        path: '.pilot/
+
+          debug-logs/'
+        include-hidden-files: true
+        retention-days: 1
+        if-no-files-found: error
+      if: always()
