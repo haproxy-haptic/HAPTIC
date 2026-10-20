@@ -140,11 +140,13 @@ class FailureReportingTests(unittest.TestCase):
         api.get.assert_called_with("repos/owner/repo/issues", per_page=50, page=2, state="open", labels="ci-failure")
 
     def test_missing_labels_are_created_but_permission_errors_are_not_hidden(self):
-        self.api.get.side_effect = urllib.error.HTTPError("https://api.github.com", 404, "missing", {}, None)
+        self.api.get.side_effect = self.enterContext(
+            urllib.error.HTTPError("https://api.github.com", 404, "missing", {}, None))
         publish(self.api, "owner/repo", self.selected())
         self.api.post.assert_any_call("repos/owner/repo/labels", {"name": "ci-failure", "color": "d73a4a"})
         self.api.post.reset_mock()
-        self.api.get.side_effect = urllib.error.HTTPError("https://api.github.com", 403, "denied", {}, None)
+        self.api.get.side_effect = self.enterContext(
+            urllib.error.HTTPError("https://api.github.com", 403, "denied", {}, None))
         with self.assertRaises(urllib.error.HTTPError):
             publish(self.api, "owner/repo", self.selected())
         self.api.post.assert_not_called()

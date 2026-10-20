@@ -78,9 +78,11 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(self.history(), [])
         self.artifact["expired"] = False
         for code in (404, 410):
-            self.api.artifact.side_effect = urllib.error.HTTPError("https://api.github.com", code, "expired", {}, None)
+            self.api.artifact.side_effect = self.enterContext(
+                urllib.error.HTTPError("https://api.github.com", code, "expired", {}, None))
             self.assertEqual(self.history(), [])
-        self.api.artifact.side_effect = urllib.error.HTTPError("https://api.github.com", 403, "denied", {}, None)
+        self.api.artifact.side_effect = self.enterContext(
+            urllib.error.HTTPError("https://api.github.com", 403, "denied", {}, None))
         with self.assertRaises(urllib.error.HTTPError):
             self.history()
 
