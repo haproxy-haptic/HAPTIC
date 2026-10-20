@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The controller publishes a changed `HAProxyCfg` without a resourceVersion precondition, so frequent per-pod status writes no longer make every attempt fail with a conflict and log `Configuration publication incomplete; retrying`.
 - An unchanged successful render-gate verdict no longer rewrites `HAProxyCfg` status on every render.
 
+### Helm chart
+
+#### Fixed
+
+- Preflight compiles Varnish configurations with the deployed image when caching is enabled and a released fixture image when it is disabled, instead of an unavailable placeholder image.
+
 ## [0.7.0] - 2026-10-20
 
 HAPTIC 0.7 hardens two trust boundaries: raw HAProxy configuration annotations,

@@ -33,6 +33,44 @@ tests:
           path: spec.templatingSettings.extraContext.cache.varnish.image
           value: ""
 
+  - it: should validate Varnish with the deployed chart image when enabled
+    template: haproxytemplateconfig.yaml
+    documentSelector:
+      path: metadata.name
+      value: haptic-config-http-policies
+    set:
+      cache.varnish.enabled: true
+    chart:
+      appVersion: test-version
+    asserts:
+      - equal:
+          path: spec.validationTests._global.extraContext.cache.varnish.image
+          value: ghcr.io/haproxy-haptic/haptic/varnish:test-version
+
+  - it: should validate an explicit Varnish image even while staging the disabled cache
+    template: haproxytemplateconfig.yaml
+    documentSelector:
+      path: metadata.name
+      value: haptic-config-http-policies
+    set:
+      cache.varnish.image: example.invalid/cache@sha256:abc
+    asserts:
+      - equal:
+          path: spec.validationTests._global.extraContext.cache.varnish.image
+          value: example.invalid/cache@sha256:abc
+
+  - it: should give disabled-cache fixtures a released image independent of the chart version
+    template: haproxytemplateconfig.yaml
+    documentSelector:
+      path: metadata.name
+      value: haptic-config-http-policies
+    chart:
+      appVersion: test-version
+    asserts:
+      - equal:
+          path: spec.validationTests._global.extraContext.cache.varnish.image
+          value: ghcr.io/haproxy-haptic/haptic/varnish:0.6.0
+
   - it: should preserve an explicit Varnish image
     template: haproxytemplateconfig.yaml
     documentSelector:

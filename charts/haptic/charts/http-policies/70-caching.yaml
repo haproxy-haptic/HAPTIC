@@ -902,8 +902,7 @@ k8sResources:
 
 validationTests:
   _global:
-    # Tests that enable Varnish render without the chart's image, which is set
-    # only for an enabled deployment (#461).
+    # A released image keeps disabled-cache fixtures executable and version-stable (#461).
     extraContext:
       cache:
-        varnish: {image: haptic-validation-test/varnish}
+        varnish: {image: "ghcr.io/haproxy-haptic/haptic/varnish:0.6.0"}
