@@ -1,0 +1,139 @@
+haproxy:
+  service:
+    type: ClusterIP
+    extraPorts:
+      - name: platform-tcp
+        port: 2222
+        targetPort: 2222
+        protocol: TCP
+  networkPolicy:
+    enabled: true
+    allowExternal: false
+    allowedSources: &trusted-proxy
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ingress-system
+        podSelector:
+          matchLabels:
+            app: trusted-l4-proxy
+    extraIngress:
+      - from: *trusted-proxy
+        ports:
+          - port: 2222
+            protocol: TCP
+
+controller:
+  config:
+    templateSnippets:
+      frontends-800-platform-tcp:
+        template: |
+          frontend platform-tcp
+              guid fe:platform-tcp
+              mode tcp{{ render "util-log-format-tcp" }}
+              bind *:2222 accept-proxy
+              default_backend platform_tcp
+      backends-800-platform-tcp:
+        template: |
+          {%- import "util-backend" for Backend %}
+          {%- import "util-backend-servers" for BackendServers %}
+          {%- import "util-service-port-resolution" for ResolveServicePort %}
+          {%- var resolved = split(ResolveServicePort("apps", "tcp-app", 2222, nil), " ") %}
+          {{ Backend(map[string]any{
+               "name": "platform_tcp",
+               "guid": make_guid("be", "platform_tcp"),
+               "mode": "tcp",
+               "balance": "roundrobin",
+               "defaultServer": []any{
+                 map[string]any{"name": "check"},
+                 map[string]any{"name": "send-proxy-v2"},
+                 map[string]any{"name": "check-send-proxy"},
+               },
+               "servers": BackendServers("tcp-app", 0, toint(resolved[0]), nil, resolved[1], "platform_tcp", "apps"),
+             }) }}
+    validationTests:
+      tcp-proxy-endpoints:
+        fixtures:
+          services:
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                namespace: apps
+                name: tcp-app
+              spec:
+                ports:
+                  - name: proxy
+                    port: 2222
+                    targetPort: 8022
+                  - name: metrics
+                    port: 9000
+                    targetPort: 9090
+          endpoints:
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                namespace: apps
+                name: tcp-app-1
+                labels:
+                  kubernetes.io/service-name: tcp-app
+              addressType: IPv4
+              ports:
+                - name: proxy
+                  port: 8022
+                - name: metrics
+                  port: 9090
+              endpoints:
+                - addresses: ["10.0.0.10"]
+                  conditions:
+                    ready: true
+                  targetRef:
+                    kind: Pod
+                    name: app-ready
+                - addresses: ["10.0.0.11"]
+                  conditions:
+                    ready: false
+                  targetRef:
+                    kind: Pod
+                    name: app-starting
+            - apiVersion: discovery.k8s.io/v1
+              kind: EndpointSlice
+              metadata:
+                namespace: other
+                name: tcp-app-2
+                labels:
+                  kubernetes.io/service-name: tcp-app
+              addressType: IPv4
+              ports:
+                - name: proxy
+                  port: 8022
+              endpoints:
+                - addresses: ["10.0.0.99"]
+                  targetRef:
+                    kind: Pod
+                    name: unrelated
+        assertions:
+          - type: haproxy_valid
+          - type: contains
+            target: haproxy.cfg
+            pattern: '(?m)^frontend platform-tcp\n(?:[ \t].*\n|\n)*[ \t]+bind \*:2222 accept-proxy$'
+          - type: contains
+            target: haproxy.cfg
+            pattern: '(?m)^[ \t]+default-server check send-proxy-v2 check-send-proxy$'
+          - type: contains
+            target: haproxy.cfg
+            pattern: '(?m)^backend platform_tcp from haptic-be-[^\n]+\n(?:[ \t].*\n|\n)*[ \t]+server app-ready 10\.0\.0\.10:8022(?: [^\n]*)?$'
+          - type: contains
+            target: haproxy.cfg
+            pattern: '(?m)^[ \t]+server app-starting 10\.0\.0\.11:8022 .* disabled'
+          - type: not_contains
+            target: haproxy.cfg
+            pattern: '(?m)^backend platform_tcp [^\n]+\n(?:[ \t].*\n|\n)*[ \t]+server [^\n]*(10\.0\.0\.99|:2222|:9090)'
+      tcp-proxy-no-endpoints:
+        fixtures: {}
+        assertions:
+          - type: haproxy_valid
+          - type: contains
+            target: haproxy.cfg
+            pattern: '(?m)^backend platform_tcp from haptic-be-'
+          - type: not_contains
+            target: haproxy.cfg
+            pattern: '(?m)^backend platform_tcp [^\n]+\n(?:[ \t].*\n|\n)*[ \t]+server '

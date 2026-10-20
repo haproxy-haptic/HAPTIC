@@ -1371,7 +1371,9 @@ validationTests:
                       backend: {service: {name: echo, port: {number: 80}}}
     assertions:
       - type: haproxy_valid
-      - {type: not_contains, target: haproxy.cfg, pattern: 'bind \*:[0-9]+ accept-proxy'}
+      - type: not_contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend (?:https|ssl-tcp)\n(?:[ \t][^\n]*\n|#[^\n]*\n|\n)*[ \t]+bind \*:[0-9]+ accept-proxy(?:[ \t]|$)'
 
   test-ssl-http3-quic-bind:
     description: >-

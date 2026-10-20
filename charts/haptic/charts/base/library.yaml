@@ -4520,7 +4520,9 @@ validationTests:
                       backend: {service: {name: echo, port: {number: 80}}}
     assertions:
       - type: haproxy_valid
-      - {type: not_contains, target: haproxy.cfg, pattern: 'bind \*:[0-9]+ accept-proxy'}
+      - type: not_contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend (?:http|http-tcp|http_frontend|http_frontend_h2c)\n(?:[ \t][^\n]*\n|#[^\n]*\n|\n)*[ \t]+bind \*:[0-9]+ accept-proxy(?:[ \t]|$)'
 
   test-access-log-route-for-metrics:
     _helm_skip_test: *routeKeyOff
