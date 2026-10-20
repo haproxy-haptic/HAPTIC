@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -118,12 +119,13 @@ type Component struct {
 
 	// stateMu guards the per-fleet facts the apply path reads: which pods must
 	// be re-sent their complete state, which plans are proven good, which plans
-	// each pod last reported it holds, and the pods this controller last wrote
-	// to (the revert's search space).
+	// each pod last reported it holds, the contract skew each pod last showed,
+	// and the pods this controller last wrote to (the revert's search space).
 	stateMu         sync.Mutex
 	invalidBaseline map[string]struct{}
 	validatedPlans  *validatedPlanSet
 	observedPlans   map[string][]string
+	podSkew         map[string]string
 	fleet           []dataplane.Endpoint
 	// awaiting are the renders the fleet accepted behind a paced reload, in
 	// dispatch order, until a later deployment observes the fleet running one.
@@ -156,6 +158,7 @@ func New(eventBus *busevents.EventBus, logger *slog.Logger, syncTimeout time.Dur
 		contentProofs:   map[string]map[string]contentProof{},
 		invalidBaseline: map[string]struct{}{},
 		observedPlans:   map[string][]string{},
+		podSkew:         map[string]string{},
 		validatedPlans:  newValidatedPlanSet(),
 		healthTracker:   lifecycle.NewProcessingTracker(ComponentName, lifecycle.DefaultProcessingTimeout),
 		metrics:         domainMetrics,
@@ -369,15 +372,20 @@ func (c *Component) notePodPlans(endpoint *dataplane.Endpoint, proofs ...string)
 }
 
 // fleetPlanRefs is every plan the fleet still refers to, forgetting the pods
-// that are gone. A pod this deployment could not read keeps its last answer:
-// a blip that failed every pod would otherwise evict the whole cache and
-// reload the fleet on the next round.
+// that are gone along with their skew. A pod this deployment could not read
+// keeps its last answer: a blip that failed every pod would otherwise evict
+// the whole cache and reload the fleet on the next round.
 func (c *Component) fleetPlanRefs(endpoints []dataplane.Endpoint) []planCacheKey {
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 	live := make(map[string]struct{}, len(endpoints))
 	for i := range endpoints {
 		live[podKey(&endpoints[i])] = struct{}{}
+	}
+	for key := range c.podSkew {
+		if _, wanted := live[key]; !wanted {
+			delete(c.podSkew, key)
+		}
 	}
 	refs := make([]planCacheKey, 0, len(c.observedPlans)*3)
 	for key, proofs := range c.observedPlans {
@@ -405,19 +413,17 @@ func planProofs(proofs []string) []string {
 
 // applyPosture decides how much of the desired state one pod gets, and what to
 // tell an operator about it. A contract skew is never a refusal: a
-// fleet-correlated refusal would fence the repair path.
+// fleet-correlated refusal would fence the repair path. An agent that only
+// lacks op kinds keeps the runtime path: deployplan reloads the plans that
+// compose one of them.
 func (c *Component) applyPosture(endpoint *dataplane.Endpoint, state *api.State) (full bool, notes []string) {
-	majorMismatch, missingOps := agentclient.CheckSkew(state)
-	if majorMismatch || len(missingOps) > 0 {
-		if c.metrics != nil {
-			c.metrics.RecordAgentVersionSkew()
-		}
-		c.Logger().Warn("Agent speaks a different contract; sending the complete state and a reload",
-			"pod", endpoint.PodName,
-			"agent_api_version", state.APIVersion,
-			"controller_api_version", api.Version,
-			"missing_ops", len(missingOps))
-		notes = append(notes, skewReason(state, majorMismatch, missingOps))
+	incompatible, missingOps := agentclient.CheckSkew(state)
+	if (incompatible || len(missingOps) > 0) && c.metrics != nil {
+		c.metrics.RecordAgentVersionSkew()
+	}
+	c.logSkewChange(endpoint, state, incompatible, missingOps)
+	if incompatible {
+		notes = append(notes, skewReason(state))
 		full = true
 	}
 	if c.baselineInvalid(endpoint) {
@@ -435,9 +441,35 @@ func (c *Component) applyPosture(endpoint *dataplane.Endpoint, state *api.State)
 	return full, notes
 }
 
-func skewReason(state *api.State, majorMismatch bool, missingOps []string) string {
-	if majorMismatch {
+// logSkewChange logs a pod's contract skew when it first appears or changes,
+// not on every deployment to it.
+func (c *Component) logSkewChange(endpoint *dataplane.Endpoint, state *api.State, incompatible bool, missingOps []string) {
+	skew := strings.Join(missingOps, ",")
+	if incompatible {
+		skew = skewReason(state)
+	}
+	key := podKey(endpoint)
+	c.stateMu.Lock()
+	previous := c.podSkew[key]
+	c.podSkew[key] = skew
+	c.stateMu.Unlock()
+	switch {
+	case skew == previous:
+	case incompatible:
+		c.Logger().Warn("Agent speaks a different contract; sending the complete state and a reload",
+			"pod", endpoint.PodName,
+			"agent_api_version", state.APIVersion,
+			"controller_api_version", api.Version,
+			"reason", skew)
+	case skew != "":
+		c.Logger().Info("Agent lacks op kinds this controller composes; changes that need them reload the pod",
+			"pod", endpoint.PodName, "missing_ops", missingOps)
+	}
+}
+
+func skewReason(state *api.State) string {
+	if state.APIVersion != api.Version {
 		return fmt.Sprintf("agent speaks API version %d, this controller version %d", state.APIVersion, api.Version)
 	}
-	return fmt.Sprintf("agent does not execute %d of the composed op kinds", len(missingOps))
+	return "agent reports no op kinds"
 }

@@ -18,7 +18,7 @@ All three are leader-only — only the replica holding the `Lease` deploys, obse
 
 Every apply is fenced by a token — the leader epoch (a counter on the leader Lease, claimed per leadership term) and a per-term apply sequence — plus the baseline it was composed against. A `409` answers with the pod's actual baseline: `prev_mismatch` re-diffs once, `unknown_baseline` falls back to the complete state, and `stale_epoch` stands this controller down. A `409` naming missing file parts is answered by resending exactly those.
 
-A refused apply (NACK) counts `haptic_apply_rejected_total{pod}`, carries HAProxy's own words into the pod's status, and drops that pod's baseline. An agent speaking a different API major or missing a composed op kind gets the complete state and a reload plus `haptic_agent_version_skew_total` — never a refusal, which would fence the repair path.
+A refused apply (NACK) counts `haptic_apply_rejected_total{pod}`, carries HAProxy's own words into the pod's status, and drops that pod's baseline. An agent speaking a different API major gets the complete state and a reload; one missing a composed op kind reloads only for the plans that need it. Both count `haptic_agent_version_skew_total` and are never a refusal, which would fence the repair path.
 
 The full contract, with the sequence diagram, is in `docs/site/docs/development/design/deployment.md`.
 

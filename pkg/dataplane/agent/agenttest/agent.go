@@ -142,6 +142,11 @@ func WithAgentOps(ops ...string) Option {
 	return func(a *Agent) { a.state.AgentOps = ops }
 }
 
+// WithAPIVersion sets the contract version the fake reports.
+func WithAPIVersion(version int) Option {
+	return func(a *Agent) { a.state.APIVersion = version }
+}
+
 // WithInventory seeds what the running worker has loaded.
 func WithInventory(inventory *api.Inventory) Option {
 	return func(a *Agent) {

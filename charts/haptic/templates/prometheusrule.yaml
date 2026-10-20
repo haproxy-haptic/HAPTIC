@@ -177,7 +177,7 @@ spec:
             severity: warning
           annotations:
             summary: "HAProxy pods run an agent that does not match the controller"
-            description: "Applies fall back to a full file set plus a reload because a pod's agent speaks another API major or lacks an op kind - expected during a rolling upgrade, a defect if it persists after one"
+            description: "A pod's agent speaks another API major (every apply reloads) or lacks an op kind (changes that need it reload) - expected during a rolling upgrade, a defect if it persists after one"
         {{- end }}
         {{- if $defaults.criticalEventsDropped }}
         - alert: HAProxyControllerCriticalEventsDropped
