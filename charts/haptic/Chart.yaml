@@ -128,6 +128,10 @@ annotations:
       description: A controller no longer stops deploying when the render gate's verdict overtakes its render
     - kind: fixed
       description: pod-maxconn follows the HAProxy replica count at runtime; a rollout no longer reloads every HAProxy pod twice
+    - kind: fixed
+      description: Frequent per-pod status writes no longer block HAProxyCfg publication
+    - kind: fixed
+      description: Varnish preflight uses available images, and custom TCP PROXY frontends pass validation
   artifacthub.io/containsSecurityUpdates: "true"
 
   # Links
