@@ -16,6 +16,7 @@ package configpublisher
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,8 +45,6 @@ func runtimeConfigFixture() *haproxyv1alpha1.HAProxyCfg {
 	}
 }
 
-// The verdict is what `kubectl describe haproxycfg` answers with: HAProxy's own
-// words on a refusal, and the accepted plan on a pass.
 func TestApplyGateVerdict_WritesTheConditions(t *testing.T) {
 	publisher, crdClient := gateVerdictPublisher(t, runtimeConfigFixture())
 
@@ -133,5 +132,86 @@ func TestApplyGateVerdict_UnchangedVerdictSkipsTheWrite(t *testing.T) {
 	for _, action := range crdClient.Actions() {
 		assert.NotEqual(t, "update", action.GetVerb(),
 			"an unchanged verdict must not write the status again")
+	}
+}
+
+func TestApplyGateVerdict_NewPlanPreservesUnchangedStatus(t *testing.T) {
+	for _, interval := range []time.Duration{0, time.Hour} {
+		t.Run(interval.String(), func(t *testing.T) {
+			cfg := runtimeConfigFixture()
+			cfg.Generation = 7
+			cfg.Status.DeployedToPods = []haproxyv1alpha1.PodDeploymentStatus{
+				{PodName: "haproxy-1", AppliedPlanID: "deployed-plan"},
+			}
+			meta.SetStatusCondition(&cfg.Status.Conditions, metav1.Condition{
+				Type: "Deployed", Status: metav1.ConditionTrue, Reason: "Applied",
+				Message: "Deployment succeeded", ObservedGeneration: cfg.Generation,
+			})
+			publisher, crdClient := gateVerdictPublisher(t, cfg)
+			publisher.SetRepublishInterval(interval)
+			verdict := acceptedVerdict()
+			require.NoError(t, publisher.ApplyGateVerdict(t.Context(), verdict))
+			client := crdClient.HaproxyTemplateICV1alpha1().HAProxyCfgs(cfg.Namespace)
+			before, err := client.Get(t.Context(), cfg.Name, metav1.GetOptions{})
+			require.NoError(t, err)
+			crdClient.ClearActions()
+
+			for _, planID := range []string{"plan-2", "plan-3", "plan-4"} {
+				verdict.PlanID = planID
+				require.NoError(t, publisher.ApplyGateVerdict(t.Context(), verdict))
+			}
+			for _, action := range crdClient.Actions() {
+				assert.Equal(t, "get", action.GetVerb(), "a new plan alone must not write status")
+			}
+			after, err := client.Get(t.Context(), cfg.Name, metav1.GetOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, before.Status, after.Status)
+		})
+	}
+}
+
+func TestApplyGateVerdict_PersistsConditionTransitions(t *testing.T) {
+	publisher, crdClient := gateVerdictPublisher(t, runtimeConfigFixture())
+	publisher.SetRepublishInterval(time.Hour)
+
+	steps := []struct {
+		name     string
+		accepted bool
+		refused  bool
+		pinned   bool
+		message  string
+		reason   string
+	}{
+		{name: "accepted", accepted: true, reason: reasonHAProxyAccepted},
+		{name: "refused", refused: true, message: "unknown keyword", reason: reasonHAProxyRefused},
+		{name: "pinned", refused: true, pinned: true, message: "unknown keyword", reason: reasonHAProxyRefused},
+		{name: "unavailable", pinned: true, message: "read-only file system", reason: reasonGateUnavailable},
+		{name: "changed failure", pinned: true, message: "no space left on device", reason: reasonGateUnavailable},
+		{name: "recovered", accepted: true, reason: reasonHAProxyAccepted},
+	}
+	for _, step := range steps {
+		t.Run(step.name, func(t *testing.T) {
+			crdClient.ClearActions()
+			require.NoError(t, publisher.ApplyGateVerdict(t.Context(), &GateVerdict{
+				Namespace: "haptic", Name: "test-config-haproxycfg", PlanID: step.name,
+				Accepted: step.accepted, Refused: step.refused, Pinned: step.pinned, Message: step.message,
+			}))
+			require.Len(t, crdClient.Actions(), 2)
+			assert.Equal(t, "get", crdClient.Actions()[0].GetVerb())
+			assert.Equal(t, "update", crdClient.Actions()[1].GetVerb())
+			assert.Equal(t, "status", crdClient.Actions()[1].GetSubresource())
+
+			cfg, err := crdClient.HaproxyTemplateICV1alpha1().
+				HAProxyCfgs("haptic").Get(t.Context(), "test-config-haproxycfg", metav1.GetOptions{})
+			require.NoError(t, err)
+			validated := meta.FindStatusCondition(cfg.Status.Conditions, ConditionConfigValidated)
+			require.NotNil(t, validated)
+			assert.Equal(t, step.reason, validated.Reason)
+			assert.Equal(t, step.accepted, meta.IsStatusConditionTrue(cfg.Status.Conditions, ConditionConfigValidated))
+			assert.Equal(t, step.pinned, meta.IsStatusConditionTrue(cfg.Status.Conditions, ConditionConfigPinned))
+			if !step.accepted {
+				assert.Equal(t, step.message, validated.Message)
+			}
+		})
 	}
 }

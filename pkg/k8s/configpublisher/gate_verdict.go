@@ -52,8 +52,7 @@ type GateVerdict struct {
 	Namespace string
 	Name      string
 
-	// PlanID is the render the verdict describes; it appears in the message so
-	// an operator can tell a stale condition from a current one.
+	// PlanID identifies the render for log correlation and the reapply cache.
 	PlanID string
 
 	// Accepted is HAProxy's pass.
@@ -175,7 +174,7 @@ func validatedCondition(verdict *GateVerdict) metav1.Condition {
 			Type:    ConditionConfigValidated,
 			Status:  metav1.ConditionTrue,
 			Reason:  reasonHAProxyAccepted,
-			Message: "HAProxy loads this configuration (plan " + verdict.PlanID + ")",
+			Message: "HAProxy loads this configuration",
 		}
 	}
 	reason := reasonGateUnavailable
