@@ -123,7 +123,10 @@ func (c *Cluster) Create(ctx context.Context, image string) error {
 	if nodes, err = c.ownedNodes(ctx); err != nil {
 		return err
 	}
-	return c.installCNI(ctx, nodes)
+	if err := c.installCNI(ctx, nodes); err != nil {
+		return err
+	}
+	return c.reserveProxyCPU(ctx)
 }
 
 func (c *Cluster) reserveKubeconfig() error {
