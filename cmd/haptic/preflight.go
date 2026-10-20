@@ -324,6 +324,9 @@ func runSidecarChecks(ctx context.Context, configs []sidecarConfig, runtimeBin s
 		if err := os.Mkdir(configDir, 0o755); err != nil {
 			return fmt.Errorf("creating sidecar config directory: %w", err)
 		}
+		if err := os.Chmod(configDir, 0o755); err != nil {
+			return fmt.Errorf("setting sidecar config directory permissions: %w", err)
+		}
 		fmt.Fprintf(os.Stderr, "==> validating %s/%s with %s\n", config.testName, config.name, config.image)
 		if err := writeAndRun(ctx, configDir, config, runtimeBin, run); err != nil {
 			return fmt.Errorf("%s/%s fails validation with %s; fix the rendered config: %w",
@@ -337,6 +340,9 @@ func writeAndRun(ctx context.Context, dir string, config *sidecarConfig, runtime
 	path := filepath.Join(dir, config.name)
 	if err := os.WriteFile(path, []byte(config.content), 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		return fmt.Errorf("setting %s permissions: %w", path, err)
 	}
 	// Bound the run: a stalled image pull or a wedged compiler would otherwise
 	// hang the pipeline step forever with nothing to read.

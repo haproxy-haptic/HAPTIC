@@ -10,19 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- During an upgrade that adds a runtime operation, HAProxy pods still running the previous agent no longer reload on every change. Only a change that needs the new operation reloads them, and the controller logs the version difference once per pod at INFO instead of a WARN on every deployment.
-- The controller publishes a changed `HAProxyCfg` without a resourceVersion precondition, so frequent per-pod status writes no longer make every attempt fail with a conflict and log `Configuration publication incomplete; retrying`.
-- An unchanged successful render-gate verdict no longer rewrites `HAProxyCfg` status on every render.
-
-### Helm chart
-
-#### Fixed
-
-- Preflight compiles Varnish configurations with the deployed image when caching is enabled and a released fixture image when it is disabled, instead of an unavailable placeholder image.
-- Custom TCP frontends that accept PROXY protocol now pass validation when the built-in HTTP/HTTPS PROXY listeners are disabled.
-
 ## [0.7.0] - 2026-10-20
 
 HAPTIC 0.7 hardens two trust boundaries: raw HAProxy configuration annotations,
@@ -51,6 +38,10 @@ HAPTIC. Read the [upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-
 
 ### Fixed
 
+- `haptic preflight` validates sidecar configurations even when a restrictive umask would prevent the container user from reading temporary files.
+- When an upgrade adds runtime operations, older agents still apply supported runtime changes without a reload.
+- Frequent per-pod status writes no longer block publication of a changed `HAProxyCfg` with resource-version conflicts.
+- An unchanged successful render-gate verdict no longer rewrites `HAProxyCfg` status on every render.
 - A change to the credentials Secret that leaves `dataplane_username` and `dataplane_password` unchanged, such as every Helm upgrade, no longer restarts the controller iteration, which briefly doubled controller memory and could OOMKill large installs ([#456](https://github.com/haproxy-haptic/HAPTIC/issues/456)).
 - A controller container restarted during its startup validation no longer fails every `validationTest` with `no space left on device`. Each test's scratch files are removed when it finishes, instead of when the whole suite does.
 - A controller could stop deploying, leaving HAProxy pods unready, when the render gate's verdict reached the deployment scheduler before the render it named. Each component now receives an event before any reaction to it.
@@ -82,6 +73,8 @@ HAPTIC. Read the [upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-
 
 #### Fixed
 
+- Preflight compiles Varnish configurations with the deployed image when caching is enabled and a released fixture image when it is disabled.
+- Custom TCP frontends that accept PROXY protocol pass validation when the built-in HTTP/HTTPS PROXY listeners are disabled.
 - `haproxy.org/pod-maxconn` and `haproxy-haptic.org/pod-maxconn` set `maxconn` on each server line, so a change in the ready HAProxy pod count (for example during a rollout) updates it at runtime instead of reloading every HAProxy pod ([#474](https://github.com/haproxy-haptic/HAPTIC/issues/474)).
 - `haproxy-haptic.org/forwardfor` and `haproxy-ingress.github.io/forwardfor`: `add` and `update` no longer send the client address twice, and `ifmissing` and `ignore` no longer append it to the client's header.
 - haproxytech: `haproxy.org/forwarded-for: "false"` forwards the client's `X-Forwarded-For` unchanged; it was ignored.

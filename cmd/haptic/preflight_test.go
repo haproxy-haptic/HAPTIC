@@ -249,6 +249,11 @@ func sidecarResults() *testrunner.TestResults {
 }
 
 func TestCheckRenderedSidecarConfigsInvokesBothCompilers(t *testing.T) {
+	checkSidecarCompilers(t)
+}
+
+func checkSidecarCompilers(t *testing.T) {
+	t.Helper()
 	t.Setenv("HAPTIC_VECTOR_IMAGE", "")
 	t.Setenv("HAPTIC_VARNISH_IMAGE", "")
 	configs, err := collectSidecarConfigs(vectorManifests("vector:chart-test"), sidecarResults())

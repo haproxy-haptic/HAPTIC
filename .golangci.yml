@@ -331,7 +331,7 @@ linters:
       - path: ^cmd/haptic/preflight\.go$
         linters:
           - gosec
-        text: "G30[16]:"
+        text: "G30[126]:"
 
       # HAPTIC_HEAPDUMP_DIR is set by the operator in the pod spec; any existing absolute directory is allowed by design.
       - path: ^pkg/introspection/server\.go$
