@@ -10,9 +10,10 @@ pins locally. Node/npm come from a separate pinned toolchain image: Debian's
 `npm` dependency chain pulls OpenSSL development headers, which can conflict
 with the runtime libraries already installed in a newer HAProxy base.
 
-The Markdown linter's `smol-toml` override fixes
-[CVE-2026-85730](https://github.com/advisories/GHSA-7w5x-hrqm-74c2).
-Remove the override once the linter pins a fixed parser. `make audit` checks
+The Markdown linter's `smol-toml` and `markdown-it` overrides fix
+[CVE-2026-85730](https://github.com/advisories/GHSA-7w5x-hrqm-74c2) and
+[CVE-2026-111759](https://github.com/advisories/GHSA-r7fv-28h4-cvq7), respectively.
+Remove each override once the linter pins a fixed parser. `make audit` checks
 the locked npm dependencies as well as Go vulnerabilities.
 
 Run `make lint` after changing pins. The image-pin check also runs before CI

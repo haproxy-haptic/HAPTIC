@@ -333,8 +333,9 @@ accepting connections and finishes the open ones.
 The pod can't see when kube-proxy stops routing to it, so the quiet period is an
 estimate:
 
-- **Steady traffic isn't refused.** Each new connection restarts the quiet
-  period.
+- **Steady traffic extends the wait up to `maxWaitSeconds`.** Each new connection
+  restarts the quiet period. When the maximum wait expires, HAProxy stops accepting
+  connections even if traffic still arrives.
 - **A client that pauses can be refused.** If a client sends nothing for longer
   than `quietPeriodSeconds` while kube-proxy on some node still routes to the
   pod, its next connection is refused. Raise `quietPeriodSeconds` above your
