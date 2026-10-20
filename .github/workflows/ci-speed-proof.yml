@@ -267,7 +267,7 @@ jobs:
       HAPTIC_E2E_PROFILE: rate-limit
       HAPTIC_E2E_GWAPI_CHANNEL: standard
       KIND_NODE_IMAGE: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
-      HAPTIC_E2E_EXTRA_SET: controller.resources.requests.cpu=600m;controller.resources.limits.cpu=4;controller.resources.limits.memory=4Gi;spoaHub.resources.requests.cpu=200m;rateLimit.shared.managedStore.resources.requests.cpu=100m
+      HAPTIC_E2E_EXTRA_SET: controller.resources.requests.cpu=550m;controller.resources.limits.cpu=4;controller.resources.limits.memory=4Gi;spoaHub.resources.requests.cpu=200m;rateLimit.shared.managedStore.resources.requests.cpu=100m
       PILOT_SUITE: ''
       PILOT_CI_IMAGE: ghcr.io/haproxy-haptic/haptic-ci@sha256:b27b3629fe0597aa0e7f9222e02f3b95ca4edcbb7af12877fd7d34a833b9d3ad
       BASELINE_CHART_VERSION: ''
@@ -285,7 +285,7 @@ jobs:
       PILOT_STARTUP_PROFILE: '0'
       PILOT_VALIDATION_TMPFS: '1'
       PILOT_NATIVE_BUILD: '1'
-      CI_SUITE: '{"name":"e2e-rate-limit","runner":"ubuntu-24.04-arm","kind":"arm","haproxy":"3.4","shard":"rate-limit","profile":"rate-limit","settings":"controller.resources.requests.cpu=600m;controller.resources.limits.cpu=4;controller.resources.limits.memory=4Gi;spoaHub.resources.requests.cpu=200m;rateLimit.shared.managedStore.resources.requests.cpu=100m","baseline":"","certificates":"","provider":"","index":"","channel":"","node":"","suite":"","image":"","startup":""}'
+      CI_SUITE: '{"name":"e2e-rate-limit","runner":"ubuntu-24.04-arm","kind":"arm","haproxy":"3.4","shard":"rate-limit","profile":"rate-limit","settings":"controller.resources.requests.cpu=550m;controller.resources.limits.cpu=4;controller.resources.limits.memory=4Gi;spoaHub.resources.requests.cpu=200m;rateLimit.shared.managedStore.resources.requests.cpu=100m","baseline":"","certificates":"","provider":"","index":"","channel":"","node":"","suite":"","image":"","startup":""}'
     steps: *id001
     if: ${{ !cancelled() && inputs.verification_profile != 'prose' }}
   suite_upgrade_0_2_0_alpha_3_minimum:
