@@ -87,11 +87,13 @@ func (c *composer) addServer(be *renderplan.Backend, srv *renderplan.Server) (op
 // the backend because leaving MAINT needs the merged keyword set: `enable
 // health` is only accepted on a server that carries `check`.
 func (c *composer) updateServer(be *renderplan.Backend, prev, next *renderplan.Server) (ops []api.Op, reason string) {
-	if prev.GUID != next.GUID || !slices.EqualFunc(prev.Extra, next.Extra, sameKeyword) {
+	prevExtra, prevMaxconn := splitMaxconn(prev.Extra)
+	nextExtra, nextMaxconn := splitMaxconn(next.Extra)
+	if prev.GUID != next.GUID || !slices.EqualFunc(prevExtra, nextExtra, sameKeyword) {
 		return nil, "keywords changed, which set server cannot express"
 	}
 	backend := be.Name
-	ops = make([]api.Op, 0, 3)
+	ops = make([]api.Op, 0, 4)
 	if prev.Address != next.Address || prev.Port != next.Port {
 		if reason := endpointReason(next.Address, next.Port); reason != "" {
 			return nil, reason
@@ -107,6 +109,17 @@ func (c *composer) updateServer(be *renderplan.Backend, prev, next *renderplan.S
 		}
 		weight := *next.Weight
 		ops = append(ops, api.Op{Kind: api.OpServerSetWeight, Backend: backend, Server: next.Name, Weight: &weight})
+	}
+	if !slices.EqualFunc(prevMaxconn, nextMaxconn, sameKeyword) {
+		// set maxconn server also rewrites minconn when it equals maxconn.
+		if hasKeyword(mergeKeywords(be.DefaultServer, next.Extra), keywordMinconn) {
+			return nil, "maxconn changed next to minconn, which set maxconn server cannot express"
+		}
+		maxconn, reason := maxconnValue(nextMaxconn)
+		if reason != "" {
+			return nil, reason
+		}
+		ops = append(ops, api.Op{Kind: api.OpServerSetMaxconn, Backend: backend, Server: next.Name, Maxconn: &maxconn})
 	}
 	switch {
 	case prev.Disabled == next.Disabled:
@@ -164,6 +177,31 @@ func (c *composer) withRuntimeKeywords(keywords []api.KeywordArg, srv *renderpla
 		keywords = append(keywords, api.KeywordArg{Name: keywordInitState, Args: []string{"up"}})
 	}
 	return keywords
+}
+
+// splitMaxconn separates the maxconn keyword, which `set maxconn server`
+// changes in place, from the keywords only a reload can change.
+func splitMaxconn(extra []renderplan.KeywordArg) (rest, maxconn []renderplan.KeywordArg) {
+	for _, kw := range extra {
+		if kw.Name == keywordMaxconn {
+			maxconn = append(maxconn, kw)
+		} else {
+			rest = append(rest, kw)
+		}
+	}
+	return rest, maxconn
+}
+
+func maxconnValue(keywords []renderplan.KeywordArg) (maxconn int, reason string) {
+	if len(keywords) != 1 {
+		return 0, "the maxconn keyword was dropped or repeated, which set maxconn server cannot express"
+	}
+	if len(keywords[0].Args) == 1 {
+		if value, err := strconv.Atoi(keywords[0].Args[0]); err == nil && value >= 0 {
+			return value, ""
+		}
+	}
+	return 0, fmt.Sprintf("maxconn %v is not a connection count", keywords[0].Args)
 }
 
 func sameWeight(prev, next *int) bool {

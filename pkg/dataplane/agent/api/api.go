@@ -159,6 +159,7 @@ const (
 	OpServerDisable        = "server_disable"     // Backend, Server
 	OpServerSetAddr        = "server_set_addr"    // Backend, Server, Address, Port
 	OpServerSetWeight      = "server_set_weight"  // Backend, Server, Weight
+	OpServerSetMaxconn     = "server_set_maxconn" // Backend, Server, Maxconn
 	OpServerSetState       = "server_set_state"   // Backend, Server, State (ready|maint|drain)
 	OpServerWaitRemovable  = "wait_srv_removable" // Backend, Server, TimeoutMs
 	OpShutdownSessions     = "shutdown_sessions"  // Backend, Server
@@ -188,6 +189,7 @@ type Op struct {
 	Address    string       `json:"address,omitempty"`
 	Port       int          `json:"port,omitempty"`
 	Weight     *int         `json:"weight,omitempty"`
+	Maxconn    *int         `json:"maxconn,omitempty"`
 	State      string       `json:"state,omitempty"`
 	Health     bool         `json:"health,omitempty"`
 	Keywords   []KeywordArg `json:"keywords,omitempty"`

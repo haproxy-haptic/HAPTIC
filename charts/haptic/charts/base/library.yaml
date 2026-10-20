@@ -1308,16 +1308,13 @@ templateSnippets:
         return out
       } -%}
       {#- The structured `default-server` args for a backend: the check directive
-          (check|no-check), the per-server keyword flags, and the per-pod maxconn.
-          Passed to Backend() as `defaultServer` so the keywords are both on the
-          profile's default-server line AND visible in the plan record. -#}
+          (check|no-check) and the per-server keyword flags. Passed to Backend() as
+          `defaultServer` so the keywords are both on the profile's default-server
+          line AND visible in the plan record. -#}
       {%- var DefaultServerArgs = func(serverOpts map[string]any) []any {
         var ds = []any{map[string]any{"name": tostring(serverOpts | dig("checkDirective") | fallback("check"))}}
         for _, kw := range FlagsToKeywordArgs(toSlice(serverOpts["flags"])) {
           ds = append(ds, kw)
-        }
-        if m := serverOpts | dig("podMaxconnValue"); m != nil {
-          ds = append(ds, map[string]any{"name": "maxconn", "args": []any{tostring(m)}})
         }
         return ds
       } -%}

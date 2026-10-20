@@ -216,7 +216,7 @@ func (r *applyRun) note(op *api.Op) {
 	case api.OpMapAdd, api.OpMapSet, api.OpMapDel, api.OpMapReplace:
 		r.touchedMaps = append(r.touchedMaps, op.Path)
 	case api.OpServerAdd, api.OpServerDel, api.OpServerEnable, api.OpServerDisable,
-		api.OpServerSetAddr, api.OpServerSetWeight, api.OpServerSetState:
+		api.OpServerSetAddr, api.OpServerSetWeight, api.OpServerSetMaxconn, api.OpServerSetState:
 		r.touchedBackends = append(r.touchedBackends, op.Backend)
 	case api.OpCertNew:
 		r.createdCerts = append(r.createdCerts, op.Path)

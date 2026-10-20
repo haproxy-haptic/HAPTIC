@@ -358,7 +358,7 @@ _migrationCoverage:
         note: "Permanent redirect code (default 301); validated fail-loud."
       haproxy-haptic.org/pod-maxconn:
         status: supported
-        note: "Cluster budget divided by count of Ready HAProxy pods, quantized up to a power of two; result set on serverOpts.podMaxconnValue for base.yaml to emit as per-server maxconn."
+        note: "Cluster budget divided by count of Ready HAProxy pods, quantized up to a power of two; result set on serverOpts.maxconn for BackendServersResult to emit as per-server maxconn."
       haproxy-haptic.org/max-request-body-size:
         status: supported
         note: "Limits the request body size (accepts `k`, `m`, or `g` suffixes), returning `413` when exceeded; `0` means unlimited."

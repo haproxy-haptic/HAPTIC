@@ -114,6 +114,7 @@ var compilers = map[string]compiler{
 	api.OpServerDisable:        compileServerVerb("disable server", ""),
 	api.OpServerSetAddr:        compileServerSetAddr,
 	api.OpServerSetWeight:      compileServerSetWeight,
+	api.OpServerSetMaxconn:     compileServerSetMaxconn,
 	api.OpServerSetState:       compileServerSetState,
 	api.OpServerWaitRemovable:  compileWaitServer,
 	api.OpShutdownSessions:     compileServerVerb("shutdown sessions server", ""),
@@ -261,6 +262,17 @@ func compileServerSetWeight(op *api.Op, _ Content) (cmds, abort []Command, err e
 		return nil, nil, fmt.Errorf("%w: weight is unset", ErrUnsafeToken)
 	}
 	return []Command{{Text: fmt.Sprintf("set server %s weight %d", ref, *op.Weight)}}, nil, nil
+}
+
+func compileServerSetMaxconn(op *api.Op, _ Content) (cmds, abort []Command, err error) {
+	ref, err := serverRef(op)
+	if err != nil {
+		return nil, nil, err
+	}
+	if op.Maxconn == nil || *op.Maxconn < 0 {
+		return nil, nil, fmt.Errorf("%w: maxconn is unset or negative", ErrUnsafeToken)
+	}
+	return []Command{{Text: fmt.Sprintf("set maxconn server %s %d", ref, *op.Maxconn)}}, nil, nil
 }
 
 func compileServerSetState(op *api.Op, _ Content) (cmds, abort []Command, err error) {

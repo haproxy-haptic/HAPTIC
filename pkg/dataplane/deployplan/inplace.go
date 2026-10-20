@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/renderplan"
@@ -28,15 +29,16 @@ import (
 // changes an object the running worker already has and survives the reload,
 // because the file set the reload loads carries the same state.
 var inPlaceKinds = map[string]bool{
-	api.OpServerSetAddr:   true,
-	api.OpServerSetWeight: true,
-	api.OpServerSetState:  true,
-	api.OpServerAdd:       true,
-	api.OpServerEnable:    true,
-	api.OpServerDisable:   true,
-	api.OpMapSet:          true,
-	api.OpMapDel:          true,
-	api.OpCertSet:         true,
+	api.OpServerSetAddr:    true,
+	api.OpServerSetWeight:  true,
+	api.OpServerSetMaxconn: true,
+	api.OpServerSetState:   true,
+	api.OpServerAdd:        true,
+	api.OpServerEnable:     true,
+	api.OpServerDisable:    true,
+	api.OpMapSet:           true,
+	api.OpMapDel:           true,
+	api.OpCertSet:          true,
 }
 
 // inPlaceOps composes the subset that runs while this pod waits for its
@@ -108,7 +110,8 @@ func applyInPlaceOp(after, next *renderplan.Plan, op *api.Op) {
 			be.Servers = append(slices.Clone(be.Servers), added)
 			after.Backends[op.Backend] = be
 		}
-	case api.OpServerEnable, api.OpServerDisable, api.OpServerSetAddr, api.OpServerSetWeight, api.OpServerSetState:
+	case api.OpServerEnable, api.OpServerDisable, api.OpServerSetAddr, api.OpServerSetWeight,
+		api.OpServerSetMaxconn, api.OpServerSetState:
 		mutateServer(after, op)
 	case api.OpMapSet, api.OpMapDel:
 		mutateMap(after, op)
@@ -164,9 +167,24 @@ func mutateServer(after *renderplan.Plan, op *api.Op) {
 				weight := *op.Weight
 				srv.Weight = &weight
 			}
+		case api.OpServerSetMaxconn:
+			if op.Maxconn != nil {
+				srv.Extra = withMaxconn(srv.Extra, *op.Maxconn)
+			}
 		}
 	}
 	after.Backends[op.Backend] = be
+}
+
+// withMaxconn is extra with its maxconn keyword set to maxconn, in place.
+func withMaxconn(extra []renderplan.KeywordArg, maxconn int) []renderplan.KeywordArg {
+	kw := renderplan.KeywordArg{Name: keywordMaxconn, Args: []string{strconv.Itoa(maxconn)}}
+	extra = slices.Clone(extra)
+	if at := slices.IndexFunc(extra, func(k renderplan.KeywordArg) bool { return k.Name == keywordMaxconn }); at >= 0 {
+		extra[at] = kw
+		return extra
+	}
+	return append(extra, kw)
 }
 
 // mutateMap applies a set or del to the map at op.Path with `set map` and

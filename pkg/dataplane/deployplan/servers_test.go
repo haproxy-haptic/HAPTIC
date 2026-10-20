@@ -35,7 +35,10 @@ func TestDiffServerValueChanges(t *testing.T) {
 	disabled := srv("SRV_1", "10.0.0.1", 8080)
 	disabled.Disabled = true
 	rekeyworded := srv("SRV_1", "10.0.0.1", 8080)
-	rekeyworded.Extra = []renderplan.KeywordArg{{Name: "maxconn", Args: []string{"100"}}}
+	rekeyworded.Extra = []renderplan.KeywordArg{{Name: "maxqueue", Args: []string{"100"}}}
+	limited := srvWith("SRV_1", "10.0.0.1", maxconn("1500"))
+	halved := srvWith("SRV_1", "10.0.0.1", maxconn("750"))
+	halvedAndRequeued := srvWith("SRV_1", "10.0.0.1", maxconn("750"), renderplan.KeywordArg{Name: "maxqueue", Args: []string{"5"}})
 	rehomed := srv("SRV_1", "10.0.0.9", 9090)
 	hostnamed := srv("SRV_1", "api.svc.cluster.local", 8080)
 
@@ -89,6 +92,34 @@ func TestDiffServerValueChanges(t *testing.T) {
 			reason:  "keywords changed",
 		},
 		{
+			name:    "maxconn change",
+			before:  limited,
+			after:   halved,
+			want:    []string{api.OpServerSetMaxconn},
+			verdict: deployplan.VerdictRuntime,
+		},
+		{
+			name:    "maxconn added",
+			before:  srv("SRV_1", "10.0.0.1", 8080),
+			after:   halved,
+			want:    []string{api.OpServerSetMaxconn},
+			verdict: deployplan.VerdictRuntime,
+		},
+		{
+			name:    "dropped maxconn has no runtime command",
+			before:  limited,
+			after:   srv("SRV_1", "10.0.0.1", 8080),
+			verdict: deployplan.VerdictReload,
+			reason:  "maxconn keyword was dropped",
+		},
+		{
+			name:    "maxconn change next to another keyword change",
+			before:  limited,
+			after:   halvedAndRequeued,
+			verdict: deployplan.VerdictReload,
+			reason:  "keywords changed",
+		},
+		{
 			name:    "dropped weight has no runtime command",
 			before:  weighted,
 			after:   unweighted,
@@ -118,6 +149,41 @@ func TestDiffServerValueChanges(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDiffServerMaxconnChangeKeepsTheProfile pins issue #474: a per-server
+// maxconn that follows the HAProxy replica count changes at runtime.
+func TestDiffServerMaxconnChangeKeepsTheProfile(t *testing.T) {
+	prev := basePlan(withBackend(dynBackend("be-a",
+		srvWith("SRV_1", "10.0.0.1", maxconn("1500")),
+		srvWith("SRV_2", "10.0.0.2", maxconn("1500")))))
+	next := basePlan(withBackend(dynBackend("be-a",
+		srvWith("SRV_1", "10.0.0.1", maxconn("750")),
+		srvWith("SRV_2", "10.0.0.2", maxconn("750")))))
+
+	got := deployplan.Diff(next, on34(prev))
+
+	require.Equal(t, deployplan.VerdictRuntime, got.Verdict, got.Reasons)
+	require.Equal(t, []string{api.OpServerSetMaxconn, api.OpServerSetMaxconn}, kinds(got.Ops))
+	for _, op := range got.Ops {
+		require.NotNil(t, op.Maxconn)
+		assert.Equal(t, 750, *op.Maxconn)
+	}
+
+	floored := func(value string) *renderplan.Plan {
+		be := dynBackend("be-a", srvWith("SRV_1", "10.0.0.1", maxconn(value)))
+		be.DefaultServer = []renderplan.KeywordArg{{Name: "minconn", Args: []string{"100"}}}
+		return basePlan(withBackend(be))
+	}
+	got = deployplan.Diff(floored("750"), on34(floored("1500")))
+	require.Equal(t, deployplan.VerdictReload, got.Verdict)
+	reasonsContain(t, got.Reasons, "next to minconn")
+
+	older := deployplan.CapsFor("3.4.3", []string{api.OpServerSetWeight})
+	got = deployplan.Diff(next, &deployplan.Baseline{Applied: prev, Caps: older})
+
+	require.Equal(t, deployplan.VerdictReload, got.Verdict)
+	reasonsContain(t, got.Reasons, "the agent does not execute server_set_maxconn")
 }
 
 func TestDiffServerDisabledGoesToMaint(t *testing.T) {
@@ -396,4 +462,14 @@ func TestDiffServerNameMustBeASafeToken(t *testing.T) {
 
 	require.Equal(t, deployplan.VerdictReload, got.Verdict)
 	reasonsContain(t, got.Reasons, "not a safe runtime token")
+}
+
+func maxconn(value string) renderplan.KeywordArg {
+	return renderplan.KeywordArg{Name: "maxconn", Args: []string{value}}
+}
+
+func srvWith(name, address string, extra ...renderplan.KeywordArg) renderplan.Server {
+	server := srv(name, address, 8080)
+	server.Extra = extra
+	return server
 }

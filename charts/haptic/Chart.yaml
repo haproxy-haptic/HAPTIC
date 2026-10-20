@@ -126,6 +126,8 @@ annotations:
       description: Helm upgrades no longer restart the controller iteration mid-rollout
     - kind: fixed
       description: A controller no longer stops deploying when the render gate's verdict overtakes its render
+    - kind: fixed
+      description: pod-maxconn follows the HAProxy replica count at runtime; a rollout no longer reloads every HAProxy pod twice
   artifacthub.io/containsSecurityUpdates: "true"
 
   # Links

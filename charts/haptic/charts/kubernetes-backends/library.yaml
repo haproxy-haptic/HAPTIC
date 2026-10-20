@@ -270,6 +270,8 @@ templateSnippets:
                            via targetPort)
           serverOpts     - options map:
                              .weight     - per-server `weight` (weighted TCPRoute)
+                             .maxconn    - per-server `maxconn`, set at runtime on
+                                           change (default-server would need a reload)
                              .namePrefix - prepended to each server name so pods
                                            from different Services sharing one
                                            backend (weighted TCPRoute) never
@@ -293,6 +295,10 @@ templateSnippets:
           var weight any = nil
           if v := serverOpts | dig("weight"); v != nil {
             weight = toint(v)
+          }
+          var maxconn = []any{}
+          if v := serverOpts | dig("maxconn"); v != nil {
+            maxconn = []any{map[string]any{"name": "maxconn", "args": []any{tostring(toint(v))}}}
           }
           var bkName = ""
           if backendName != nil {
@@ -406,6 +412,9 @@ templateSnippets:
             }
             if weight != nil {
               record["weight"] = weight
+            }
+            if len(maxconn) > 0 {
+              record["extra"] = maxconn
             }
             servers = append(servers, record)
           }

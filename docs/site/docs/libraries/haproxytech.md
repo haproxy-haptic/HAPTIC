@@ -602,12 +602,12 @@ haproxy.org/pod-maxconn: "100"
 The annotation value represents the **total** maximum connections across all HAProxy replicas. The controller automatically:
 
 - Counts only **Running and Ready** HAProxy pods (Pending, CrashLoopBackOff, SysctlForbidden, and other non-ready pods are excluded)
-- Quantizes the pod count to the **next power of 2** to avoid HAProxy reload cascades when pods scale up or down
+- Quantizes the pod count to the **next power of 2**
 - Divides the total by the quantized count (ceiling rounding)
-- Applies the per-pod value to each server line
+- Applies the per-pod value as `maxconn` on each server line, and updates it through the runtime API without a reload when the count changes
 
 !!! note
-    The power-of-2 quantization means the effective per-pod `maxconn` only changes when the ready pod count crosses a power-of-2 boundary (1, 2, 4, 8, 16, and so on). This prevents unnecessary HAProxy reloads during scaling events. The trade-off is that the actual total capacity may be lower than the annotation value when the pod count isn't an exact power of 2.
+    The power-of-2 quantization means the effective per-pod `maxconn` only changes when the ready pod count crosses a power-of-2 boundary (1, 2, 4, 8, 16, and so on). The trade-off is that the actual total capacity may be lower than the annotation value when the pod count isn't an exact power of 2.
 
 **Quantization reference** (for `pod-maxconn: 200`):
 

@@ -186,6 +186,26 @@ func (h *HAProxy) setServer(rest string) reply {
 	return silent()
 }
 
+// setMaxconn models `set maxconn server`, which answers nothing on success.
+func (h *HAProxy) setMaxconn(rest string) reply {
+	fields := strings.Fields(rest)
+	if len(fields) != 3 || fields[0] != objServer {
+		return failure("Require 'frontend', 'global' or 'server'.")
+	}
+	maxconn, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return failure("maxconn string empty or preceded by garbage")
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, srv, bad := h.locate(fields[1])
+	if srv == nil {
+		return bad
+	}
+	srv.Maxconn = maxconn
+	return silent()
+}
+
 // setServerAddr answers as HAProxy does: at WARNING severity, with what
 // changed, "nothing changed", or the refusal. The caller holds the lock.
 func (h *HAProxy) setServerAddr(srv *Server, fields []string) reply {

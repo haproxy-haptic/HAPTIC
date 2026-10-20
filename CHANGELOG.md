@@ -33,6 +33,7 @@ HAPTIC. Read the [upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-
 ### Changed
 
 - `haptic_render_total` and `haptic_render_errors_total` export every `cache_state` at zero, and `haptic_config_rejected_total` every `validator`, so `increase()` and the `HAProxyControllerConfigRejected` alert see the first failure.
+- A change to a server's `maxconn` is applied with HAProxy's runtime API instead of a reload.
 - The controller logs `Reload required` at INFO with the pod and the reasons whenever it reloads a pod, instead of only at DEBUG.
 
 ### Fixed
@@ -67,6 +68,7 @@ HAPTIC. Read the [upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-
 
 #### Fixed
 
+- `haproxy.org/pod-maxconn` and `haproxy-haptic.org/pod-maxconn` set `maxconn` on each server line, so a change in the ready HAProxy pod count (for example during a rollout) updates it at runtime instead of reloading every HAProxy pod ([#474](https://github.com/haproxy-haptic/HAPTIC/issues/474)).
 - `haproxy-haptic.org/forwardfor` and `haproxy-ingress.github.io/forwardfor`: `add` and `update` no longer send the client address twice, and `ifmissing` and `ignore` no longer append it to the client's header.
 - haproxytech: `haproxy.org/forwarded-for: "false"` forwards the client's `X-Forwarded-For` unchanged; it was ignored.
 - A snippet at an extension point starts on its own line whether or not its template begins or ends with a newline. A `frontend-extra-*` or other snippet without a leading newline could join the previous line and fail validation.

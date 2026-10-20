@@ -73,6 +73,22 @@ func TestInPlaceIsComputedAgainstTheWorkerPlan(t *testing.T) {
 	assert.Equal(t, 30, *got.InPlace[0].Weight)
 }
 
+func TestInPlaceSetsMaxconnOnTheWorker(t *testing.T) {
+	applied := basePlan(withBackend(dynBackend("be-a", srvWith("SRV_1", "10.0.0.1", maxconn("1500")))))
+	next := basePlan(withBackend(dynBackend("be-a", srvWith("SRV_1", "10.0.0.1", maxconn("750")))))
+	base := on34(applied)
+	base.WorkerOps = applied
+	base.ReloadPending = true
+
+	got := deployplan.Diff(next, base)
+
+	require.Equal(t, []string{api.OpServerSetMaxconn}, kinds(got.InPlace))
+	assert.Equal(t, 750, *got.InPlace[0].Maxconn)
+	require.NotNil(t, got.WorkerPlan)
+	assert.Equal(t, []renderplan.KeywordArg{maxconn("750")}, got.WorkerPlan.Backends["be-a"].Servers[0].Extra)
+	assert.Equal(t, []renderplan.KeywordArg{maxconn("1500")}, applied.Backends["be-a"].Servers[0].Extra, "the worker plan is a copy")
+}
+
 // TestInPlaceExcludesWhatOutlivesTheReload: deletes and backend lifecycle ops
 // are not safe to run against a worker that is about to be replaced.
 func TestInPlaceExcludesDeletesAndBackendOps(t *testing.T) {

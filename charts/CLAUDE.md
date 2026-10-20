@@ -435,13 +435,13 @@ version):
 {%- var podMaxconn = ingress.Metadata.Annotations["haproxy.org/pod-maxconn"] | fallback("") | tostring() %}
 {%- if podMaxconn != "" %}
   {%- var perPod = calculate_per_pod_value(podMaxconn) %}
-  {% serverOpts["podMaxconnValue"] = perPod -%}
+  {% serverOpts["maxconn"] = perPod -%}
 {%- end %}
 
 {#- base.yaml (resource-agnostic): consume the map entry. The key is absent
     when the snippet didn't write it, so check existence with the comma-ok
     form rather than Jinja's `is defined`. -#}
-{%- var perPod, ok = serverOpts["podMaxconnValue"] %}
+{%- var perPod, ok = serverOpts["maxconn"] %}
 {%- if ok %}
   server {{ endpoint.pod }} {{ endpoint.address }}:{{ endpoint.port }} maxconn {{ perPod }}
 {%- end %}
