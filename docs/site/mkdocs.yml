@@ -92,6 +92,7 @@ nav:
     - Response caching: operations/response-cache.md
     - Traffic processing plugins: operations/spoa-hub.md
     - Backend mTLS with SPIFFE/SPIRE: operations/spiffe-mtls.md
+    - TCP with PROXY protocol: operations/tcp-proxy-protocol.md
   - Write templates:
     - Write your first template: templating.md
     - Template syntax: template-language.md

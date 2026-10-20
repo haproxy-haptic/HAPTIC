@@ -1161,6 +1161,10 @@ TCPRoutes count toward `attachedRoutes` on TCP listeners only. Status is written
 
 ### TCPRoute limitations
 
+For incoming and outgoing PROXY protocol, use a
+[platform-owned TCP frontend](../operations/tcp-proxy-protocol.md). TCPRoute
+listeners don't currently expose PROXY protocol options.
+
 - **One backend per port**: TCP can't be multiplexed by hostname or path; a port maps to a single route rule, and competing claims resolve oldest-first.
 - `backendRefs` must be core/v1 Services.
 - Listener ports colliding with the chart-static `httpPort` / `httpsPort` are dropped.

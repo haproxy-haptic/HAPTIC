@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Fixed
 
 - Preflight compiles Varnish configurations with the deployed image when caching is enabled and a released fixture image when it is disabled, instead of an unavailable placeholder image.
+- Custom TCP frontends that accept PROXY protocol now pass validation when the built-in HTTP/HTTPS PROXY listeners are disabled.
 
 ## [0.7.0] - 2026-10-20
 

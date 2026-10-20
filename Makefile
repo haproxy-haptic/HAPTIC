@@ -995,6 +995,15 @@ validate-helm-libraries: build ## Render the chart and run `haptic validate` aga
 	@# value.
 	@HAPROXY_VERSION=$(HAPROXY_VERSION) bash scripts/test-templates.sh
 	@$(MAKE) test-agent-skill
+	@$(MAKE) test-tcp-proxy-example
+
+.PHONY: test-tcp-proxy-example
+test-tcp-proxy-example: build ## Validate the documented TCP PROXY example with native HAProxy
+	@HAPROXY_VERSION=$(HAPROXY_VERSION) \
+		HAPTIC_TEMPLATE_VALUES=docs/site/docs/examples/tcp-proxy-values.yaml \
+		bash scripts/test-templates.sh --test tcp-proxy-endpoints --test tcp-proxy-no-endpoints \
+			--test test-proxy-protocol-http-bind-disabled --test test-proxy-protocol-https-bind-disabled
+	python3 scripts/tests/test_proxy_bind_assertions.py
 
 .PHONY: test-agent-skill test-agent-skill-package
 test-agent-skill: build ## Validate the portable agent skill's examples with native HAProxy

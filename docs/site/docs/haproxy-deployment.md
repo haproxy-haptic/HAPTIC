@@ -210,6 +210,10 @@ load balancer that sets `X-Forwarded-For` instead, see
 
 ### Full HAProxy Service reference
 
+For a custom TCP listener with incoming and outgoing PROXY protocol, see
+[Forward TCP with PROXY protocol](operations/tcp-proxy-protocol.md). The example
+uses `haproxy.service.extraPorts` with a numeric `targetPort`.
+
 ```yaml
 haproxy:
   enabled: true
