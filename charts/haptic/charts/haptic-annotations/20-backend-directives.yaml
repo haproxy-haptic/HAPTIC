@@ -252,9 +252,9 @@ templateSnippets:
         Best-of-breed source: haproxytech haproxy.org/pod-maxconn. The annotation
         is the TOTAL connection budget; the per-server maxconn is that value
         divided by the number of Ready HAProxy pods, quantized UP to the next
-        power of two so scaling events don't cascade reloads. The result is
-        stashed on serverOpts["podMaxconnValue"], which base.yaml's BackendServers
-        macro emits as `maxconn <perPod>` on each server line.
+        power of two. The result is stashed on serverOpts["maxconn"], which
+        BackendServersResult emits as `maxconn <perPod>` on each server line,
+        where a change is a runtime `set maxconn server`, not a reload.
 
         Annotation: haproxy-haptic.org/pod-maxconn (positive integer)
       #}
@@ -293,11 +293,11 @@ templateSnippets:
             {%- var perPod = ((val | float64()) / (effectiveCount | float64())) | ceil() %}
       # haptic/pod-maxconn ({{ key }})
       # pod-maxconn: {{ podMaxconn }} total / {{ haproxyPodCount }} ready pods (effective: {{ effectiveCount }}) = {{ perPod }} per pod
-            {% serverOpts["podMaxconnValue"] = perPod -%}
+            {% serverOpts["maxconn"] = perPod -%}
           {%- else %}
       # haptic/pod-maxconn ({{ key }})
       # pod-maxconn: {{ podMaxconn }} (no ready HAProxy pods discovered yet, using full value)
-            {% serverOpts["podMaxconnValue"] = val -%}
+            {% serverOpts["maxconn"] = val -%}
           {%- end %}
         {%- end %}
       {%- end -%}

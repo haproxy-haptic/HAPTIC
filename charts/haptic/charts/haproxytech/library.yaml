@@ -12,6 +12,19 @@ _fx:
     phase: Running
     conditions:
       - {type: Ready, status: "True"}
+  echoEndpoints: &echoEndpoints
+    - apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      metadata:
+        name: echo-abc
+        namespace: default
+        labels: {kubernetes.io/service-name: echo}
+      addressType: IPv4
+      endpoints:
+        - addresses: ["10.0.0.7"]
+          targetRef: {kind: Pod, name: echo-0}
+      ports:
+        - {port: 8080, protocol: TCP}
 
 _helm_load: {enable: '{{ .Values.controller.templateLibraries.haproxytech.enabled }}'}
 
@@ -496,7 +509,7 @@ templateSnippets:
             {%- end %}
           {%- end %}
           {%- if haproxyPodCount > 0 %}
-            {#- Power of 2, not the raw pod count: otherwise every scale event rewrites maxconn and reloads. -#}
+            {#- Power of 2, not the raw pod count, so most scale events leave maxconn unchanged. -#}
             {%- var effectiveCount = 1 %}
             {%- for effectiveCount < haproxyPodCount %}
               {%- effectiveCount = effectiveCount * 2 %}
@@ -504,11 +517,11 @@ templateSnippets:
             {%- var perPod = ((val | float64()) / (effectiveCount | float64())) | ceil() %}
       # haproxytech/backend-directives-haproxytech-pod-maxconn
       # pod-maxconn: {{ podMaxconn }} total / {{ haproxyPodCount }} ready pods (effective: {{ effectiveCount }}) = {{ perPod }} per pod
-            {% serverOpts["podMaxconnValue"] = perPod -%}
+            {% serverOpts["maxconn"] = perPod -%}
           {%- else %}
       # haproxytech/backend-directives-haproxytech-pod-maxconn
       # pod-maxconn: {{ podMaxconn }} (no ready HAProxy pods discovered yet, using full value)
-            {% serverOpts["podMaxconnValue"] = val -%}
+            {% serverOpts["maxconn"] = val -%}
           {%- end %}
         {%- end %}
       {%- end -%}
@@ -2176,6 +2189,7 @@ validationTests:
                     - path: /
                       pathType: Prefix
                       backend: {service: {name: echo, port: {number: 80}}}
+      endpoints: *echoEndpoints
       haproxy-pods:
         - apiVersion: v1
           kind: Pod
@@ -2187,7 +2201,7 @@ validationTests:
           status: *statusReady
     assertions:
       - type: haproxy_valid
-      - {type: contains, target: haproxy.cfg, pattern: "maxconn 50"}
+      - {type: contains, target: haproxy.cfg, pattern: "server echo-0 10\\.0\\.0\\.7:8080 .*maxconn 50"}
       - {type: contains, target: haproxy.cfg, pattern: "pod-maxconn: 100 total / 2 ready pods"}
 
   test-pod-maxconn-only-counts-ready-pods:
@@ -2209,6 +2223,7 @@ validationTests:
                     - path: /
                       pathType: Prefix
                       backend: {service: {name: echo, port: {number: 80}}}
+      endpoints: *echoEndpoints
       haproxy-pods:
         - apiVersion: v1
           kind: Pod
@@ -2231,9 +2246,32 @@ validationTests:
               - {type: Ready, status: "False"}
     assertions:
       - type: haproxy_valid
-      - {type: contains, target: haproxy.cfg, pattern: "maxconn 50"}
+      - {type: contains, target: haproxy.cfg, pattern: "server echo-0 10\\.0\\.0\\.7:8080 .*maxconn 50"}
       - {type: contains, target: haproxy.cfg, pattern: "2 ready pods"}
       - {type: not_contains, target: haproxy.cfg, pattern: "4 ready pods"}
+
+  test-pod-maxconn-keeps-the-profile-across-replica-counts:
+    description: pod-maxconn sets maxconn on the server lines, never on default-server, so a replica-count change is a runtime set maxconn, not a profile change and reload
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: test-ingress
+            annotations:
+              haproxy.org/pod-maxconn: "3000"
+          spec: *specTestExampleComRoot
+      endpoints: *echoEndpoints
+      haproxy-pods:
+        - {apiVersion: v1, kind: Pod, metadata: {namespace: haptic-system, name: haproxy-pod-1}, status: *statusReady}
+        - {apiVersion: v1, kind: Pod, metadata: {namespace: haptic-system, name: haproxy-pod-2}, status: *statusReady}
+        - {apiVersion: v1, kind: Pod, metadata: {namespace: haptic-system, name: haproxy-pod-3-surge}, status: *statusReady}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: "server echo-0 10\\.0\\.0\\.7:8080 .*maxconn 750"}
+      - {type: contains, target: haproxy.cfg, pattern: "pod-maxconn: 3000 total / 3 ready pods \\(effective: 4\\) = 750 per pod"}
+      - {type: not_contains, target: haproxy.cfg, pattern: "default-server [^\\n]*maxconn"}
 
   test-haproxytech-ssl-passthrough-named-port:
     description: haproxy.org/ssl-passthrough annotation must resolve a backend referenced by port.name to the correct numeric pod port (mirrors the original unifi-controller bug scenario)

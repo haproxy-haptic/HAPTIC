@@ -93,6 +93,7 @@ type Server struct {
 	Name    string
 	Address string
 	Weight  int
+	Maxconn int
 	State   string
 	Enabled bool
 	Health  bool

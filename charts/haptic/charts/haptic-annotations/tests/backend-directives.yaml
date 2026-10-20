@@ -241,3 +241,49 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: "send-proxy-v2"}
       - {type: contains, target: haproxy.cfg, pattern: "fullconn 300"}
       - {type: not_contains, target: haproxy.cfg, pattern: "server SRV_[0-9]"}
+
+  test-haptic-pod-maxconn-on-server-lines:
+    description: pod-maxconn divides the budget by the power-of-two ready HAProxy pod count and sets it on the server lines, not default-server
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: pod-maxconn
+            annotations: {haproxy-haptic.org/pod-maxconn: "3000"}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: pod-maxconn.example.com
+                http: *httpRoot
+      endpoints:
+        - apiVersion: discovery.k8s.io/v1
+          kind: EndpointSlice
+          metadata:
+            name: echo-abc
+            namespace: default
+            labels: {kubernetes.io/service-name: echo}
+          addressType: IPv4
+          endpoints:
+            - addresses: ["10.0.0.7"]
+              targetRef: {kind: Pod, name: echo-0}
+          ports:
+            - {port: 8080, protocol: TCP}
+      haproxy-pods:
+        - apiVersion: v1
+          kind: Pod
+          metadata: {namespace: haptic-system, name: haproxy-pod-1}
+          status: {phase: Running, conditions: [{type: Ready, status: "True"}]}
+        - apiVersion: v1
+          kind: Pod
+          metadata: {namespace: haptic-system, name: haproxy-pod-2}
+          status: {phase: Running, conditions: [{type: Ready, status: "True"}]}
+        - apiVersion: v1
+          kind: Pod
+          metadata: {namespace: haptic-system, name: haproxy-pod-3}
+          status: {phase: Running, conditions: [{type: Ready, status: "True"}]}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: "server echo-0 10\\.0\\.0\\.7:8080 .*maxconn 750"}
+      - {type: not_contains, target: haproxy.cfg, pattern: "default-server [^\\n]*maxconn"}

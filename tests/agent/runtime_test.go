@@ -175,6 +175,13 @@ func TestServerOpsRunAtRuntime(t *testing.T) {
 	require.True(t, result.OK, "server_set_weight was rejected: %+v", result.Error)
 	assert.Equal(t, strconv.Itoa(weight), e.mustServerRow("srv2")["weight"])
 
+	maxconn := 750
+	limited := s.next(api.ModeAuto)
+	limited.Ops = []api.Op{{Kind: api.OpServerSetMaxconn, Backend: "be-1", Server: "srv2", Maxconn: &maxconn}}
+	result = s.apply(limited, nil)
+	require.True(t, result.OK, "server_set_maxconn was rejected: %+v", result.Error)
+	assert.Equal(t, strconv.Itoa(maxconn), e.mustServerRow("srv2")["slim"])
+
 	// HAProxy answers `set server addr` at WARNING severity both when it
 	// changed something and when it refused; the words decide, and "nothing
 	// changed" is not a refusal.

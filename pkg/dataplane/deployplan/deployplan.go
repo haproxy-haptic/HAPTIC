@@ -90,6 +90,7 @@ var composedOps = []string{
 	api.OpServerDisable,
 	api.OpServerSetAddr,
 	api.OpServerSetWeight,
+	api.OpServerSetMaxconn,
 	api.OpServerSetState,
 	api.OpServerWaitRemovable,
 	api.OpServerDel,

@@ -91,6 +91,7 @@ func TestManifestWithoutIdentityVersionIsRejected(t *testing.T) {
 func TestRuntimeApplyRunsOpsWithoutReloading(t *testing.T) {
 	h := newHarness(t)
 	first := firstApply(t, h)
+	maxconn := 750
 
 	files := baseFiles("global\n")
 	files[1].Content = "example.com be-a\nnew.example.com be-b\n"
@@ -101,6 +102,7 @@ func TestRuntimeApplyRunsOpsWithoutReloading(t *testing.T) {
 		{Kind: api.OpBackendAdd, Backend: "be-b", Profile: "prof", Mode: "http"},
 		{Kind: api.OpServerAdd, Backend: "be-b", Server: "srv1", Address: "10.0.0.9", Port: 80},
 		{Kind: api.OpServerEnable, Backend: "be-b", Server: "srv1"},
+		{Kind: api.OpServerSetMaxconn, Backend: "be-b", Server: "srv1", Maxconn: &maxconn},
 		{Kind: api.OpBackendPublish, Backend: "be-b"},
 		{Kind: api.OpMapAdd, Path: "maps/host.map", Key: "new.example.com", Value: "be-b"},
 	}
@@ -111,6 +113,9 @@ func TestRuntimeApplyRunsOpsWithoutReloading(t *testing.T) {
 	assert.Nil(t, result.Reload)
 	assert.Equal(t, "plan-1", result.RunningPlanID, "a runtime apply does not advance the running plan")
 	assert.True(t, h.model.HasBackend("be-b"))
+	h.model.With(func(m *haproxytest.Model) {
+		assert.Equal(t, 750, m.Backends["be-b"].Servers[0].Maxconn)
+	})
 	assert.Equal(t, uint64(2), h.state(false).Generation)
 	assert.Equal(t, 1.0, h.metric("haptic_agent_apply_total", api.ResultRuntime))
 	assert.Zero(t, h.metric("haptic_agent_invariant_violations_total"))

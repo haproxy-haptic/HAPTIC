@@ -33,11 +33,13 @@ HAPTIC. Read the [upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-
 ### Changed
 
 - `haptic_render_total` and `haptic_render_errors_total` export every `cache_state` at zero, and `haptic_config_rejected_total` every `validator`, so `increase()` and the `HAProxyControllerConfigRejected` alert see the first failure.
+- A change to a server's `maxconn` is applied with HAProxy's runtime API instead of a reload.
 - The controller logs `Reload required` at INFO with the pod and the reasons whenever it reloads a pod, instead of only at DEBUG.
 
 ### Fixed
 
 - A change to the credentials Secret that leaves `dataplane_username` and `dataplane_password` unchanged, such as every Helm upgrade, no longer restarts the controller iteration, which briefly doubled controller memory and could OOMKill large installs ([#456](https://github.com/haproxy-haptic/HAPTIC/issues/456)).
+- A controller container restarted during its startup validation no longer fails every `validationTest` with `no space left on device`. Each test's scratch files are removed when it finishes, instead of when the whole suite does.
 - A controller could stop deploying, leaving HAProxy pods unready, when the render gate's verdict reached the deployment scheduler before the render it named. Each component now receives an event before any reaction to it.
 - A configuration change on a large install no longer hands leadership to a replica with a cold render graph while the warm-up render is still running, which delayed deployments until the new leader rendered from scratch.
 - Deployments no longer contend with leader Lease renewals or log spurious `Failed to update lease` errors.
@@ -67,6 +69,7 @@ HAPTIC. Read the [upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-
 
 #### Fixed
 
+- `haproxy.org/pod-maxconn` and `haproxy-haptic.org/pod-maxconn` set `maxconn` on each server line, so a change in the ready HAProxy pod count (for example during a rollout) updates it at runtime instead of reloading every HAProxy pod ([#474](https://github.com/haproxy-haptic/HAPTIC/issues/474)).
 - `haproxy-haptic.org/forwardfor` and `haproxy-ingress.github.io/forwardfor`: `add` and `update` no longer send the client address twice, and `ifmissing` and `ignore` no longer append it to the client's header.
 - haproxytech: `haproxy.org/forwarded-for: "false"` forwards the client's `X-Forwarded-For` unchanged; it was ignored.
 - A snippet at an extension point starts on its own line whether or not its template begins or ends with a newline. A `frontend-extra-*` or other snippet without a leading newline could join the previous line and fail validation.

@@ -56,6 +56,8 @@ func (h *HAProxy) set(rest, payload string) reply {
 	switch object {
 	case objServer:
 		return h.setServer(args)
+	case "maxconn":
+		return h.setMaxconn(args)
 	case objMap:
 		return h.setMap(args)
 	case objSSL:

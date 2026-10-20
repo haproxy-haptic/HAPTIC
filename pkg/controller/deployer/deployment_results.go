@@ -172,7 +172,7 @@ func (c *Component) recordAppliedOps(endpoint *dataplane.Endpoint, mode string, 
 			api.OpBackendDel, api.OpBackendWaitRemovable:
 			c.metrics.RecordRuntimeBackendOp(ops[i].Kind)
 		case api.OpServerAdd, api.OpServerEnable, api.OpServerDisable,
-			api.OpServerSetAddr, api.OpServerSetWeight, api.OpServerSetState,
+			api.OpServerSetAddr, api.OpServerSetWeight, api.OpServerSetMaxconn, api.OpServerSetState,
 			api.OpServerWaitRemovable, api.OpShutdownSessions, api.OpServerDel:
 			c.metrics.RecordRuntimeServerOp(ops[i].Kind)
 		}
@@ -396,7 +396,7 @@ func operationCounts(ops []api.Op) events.OperationCounts {
 			counts.ServersAdded++
 		case api.OpServerDel:
 			counts.ServersRemoved++
-		case api.OpServerSetAddr, api.OpServerSetWeight, api.OpServerSetState,
+		case api.OpServerSetAddr, api.OpServerSetWeight, api.OpServerSetMaxconn, api.OpServerSetState,
 			api.OpServerEnable, api.OpServerDisable:
 			counts.ServersModified++
 		case api.OpMapAdd, api.OpMapSet, api.OpMapReplace:

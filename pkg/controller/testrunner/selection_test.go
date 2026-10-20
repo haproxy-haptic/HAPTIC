@@ -1,6 +1,7 @@
 package testrunner
 
 import (
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -57,4 +58,24 @@ func TestRunnerNamedSelectionRejectsMissingNamesBeforeRendering(t *testing.T) {
 			assert.Zero(t, renders.Load())
 		})
 	}
+}
+
+func TestRunnerRemovesEachTestDirectoryWhenTheTestFinishes(t *testing.T) {
+	cfg := sharedAnalysisConfig("{{ render \"route-lines\" }}\n", 4)
+	engine, err := helpers.NewEngineFromConfigWithOptions(cfg, nil, nil, nil, helpers.EngineOptions{})
+	require.NoError(t, err)
+	version, err := dataplane.ParseVersionString("3.4")
+	require.NoError(t, err)
+	scratch := t.TempDir()
+	runner := New(cfg, engine, &dataplane.ValidationPaths{ConfigFile: filepath.Join(scratch, "haproxy.cfg")}, &Options{Workers: 2, HAProxyVersion: version})
+
+	results, err := runner.RunTests(t.Context(), "")
+	require.NoError(t, err)
+	require.Equal(t, 4, results.PassedTests)
+
+	leftovers, err := filepath.Glob(filepath.Join(scratch, "worker-*", "test-*"))
+	require.NoError(t, err)
+	assert.Empty(t, leftovers)
+	_, err = os.Stat(scratch)
+	require.NoError(t, err, "the base directory stays for the caller to remove")
 }

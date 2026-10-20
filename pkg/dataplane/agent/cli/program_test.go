@@ -41,7 +41,7 @@ func TestCompileCoversEveryOpKind(t *testing.T) {
 	declared := []string{
 		api.OpBackendAdd, api.OpBackendPublish, api.OpBackendUnpublish, api.OpBackendDel,
 		api.OpBackendWaitRemovable, api.OpServerAdd, api.OpServerEnable, api.OpServerDisable,
-		api.OpServerSetAddr, api.OpServerSetWeight, api.OpServerSetState, api.OpServerWaitRemovable,
+		api.OpServerSetAddr, api.OpServerSetWeight, api.OpServerSetMaxconn, api.OpServerSetState, api.OpServerWaitRemovable,
 		api.OpShutdownSessions, api.OpServerDel, api.OpMapAdd, api.OpMapSet, api.OpMapDel,
 		api.OpMapReplace, api.OpCertSet, api.OpCertNew, api.OpCASet, api.OpCANew,
 		api.OpCRTListAdd, api.OpCRTListDel,
@@ -131,6 +131,11 @@ func TestCompileCommandTable(t *testing.T) {
 			name:  "server set weight",
 			op:    api.Op{Kind: api.OpServerSetWeight, Backend: "be-a", Server: "srv1", Weight: intPtr(0)},
 			texts: []string{"set server be-a/srv1 weight 0"},
+		},
+		{
+			name:  "server set maxconn",
+			op:    api.Op{Kind: api.OpServerSetMaxconn, Backend: "be-a", Server: "srv1", Maxconn: intPtr(750)},
+			texts: []string{"set maxconn server be-a/srv1 750"},
 		},
 		{
 			name:  "server set state",
@@ -266,6 +271,8 @@ func TestCompileRejectsUnsafeTokens(t *testing.T) {
 		{"empty backend", api.Op{Kind: api.OpBackendPublish}},
 		{"wait beyond the budget", api.Op{Kind: api.OpBackendWaitRemovable, Backend: "be", TimeoutMs: api.MaxWaitBudgetMs + 1}},
 		{"weight unset", api.Op{Kind: api.OpServerSetWeight, Backend: "be", Server: "s"}},
+		{"maxconn unset", api.Op{Kind: api.OpServerSetMaxconn, Backend: "be", Server: "s"}},
+		{"negative maxconn", api.Op{Kind: api.OpServerSetMaxconn, Backend: "be", Server: "s", Maxconn: intPtr(-1)}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
