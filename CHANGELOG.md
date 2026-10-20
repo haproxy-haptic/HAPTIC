@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - During an upgrade that adds a runtime operation, HAProxy pods still running the previous agent no longer reload on every change. Only a change that needs the new operation reloads them, and the controller logs the version difference once per pod at INFO instead of a WARN on every deployment.
+- The controller publishes a changed `HAProxyCfg` without a resourceVersion precondition, so frequent per-pod status writes no longer make every attempt fail with a conflict and log `Configuration publication incomplete; retrying`.
 
 ## [0.7.0] - 2026-10-20
 
