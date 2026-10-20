@@ -200,7 +200,7 @@ func TestPublishConfig_ErrorClearsPublishedState(t *testing.T) {
 	// A changed publish fails midway: it may already have rewritten the
 	// HAProxyCfg spec, so the cached "original content is live" claim is void.
 	failing := errors.New("injected update failure")
-	crdClient.PrependReactor("update", "haproxycfgs",
+	crdClient.PrependReactor("patch", "haproxycfgs",
 		func(k8stesting.Action) (bool, runtime.Object, error) { return true, nil, failing })
 	changed := skipTestRequest()
 	changed.Config = "global\n  daemon\n  maxconn 1\n"

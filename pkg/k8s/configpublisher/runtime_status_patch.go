@@ -22,13 +22,17 @@ import (
 	haproxyv1alpha1 "github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
 )
 
-type runtimeStatusPatchOperation struct {
+type jsonPatchOperation struct {
 	Op    string `json:"op"`
 	Path  string `json:"path"`
 	Value any    `json:"value"`
 }
 
-const runtimeStatusTestOperation = "test"
+const (
+	jsonPatchTest       = "test"
+	jsonPatchAdd        = "add"
+	ownerReferencesPath = "/metadata/ownerReferences"
+)
 
 func validateRuntimePublication(expected, current *haproxyv1alpha1.HAProxyCfg) error {
 	if expected.UID == "" {
@@ -60,12 +64,12 @@ func (p *Publisher) patchRuntimeConfigStatusField(
 		}
 	}
 	annotationPath := "/metadata/annotations/" + strings.ReplaceAll(AuxiliarySetIDAnnotationKey, "/", "~1")
-	operations := []runtimeStatusPatchOperation{
-		{Op: runtimeStatusTestOperation, Path: "/metadata/uid", Value: expected.UID},
-		{Op: runtimeStatusTestOperation, Path: "/metadata/ownerReferences", Value: expected.OwnerReferences},
-		{Op: runtimeStatusTestOperation, Path: "/spec", Value: expected.Spec},
-		{Op: runtimeStatusTestOperation, Path: annotationPath, Value: expected.Annotations[AuxiliarySetIDAnnotationKey]},
-		{Op: "add", Path: "/status/" + field, Value: value},
+	operations := []jsonPatchOperation{
+		{Op: jsonPatchTest, Path: "/metadata/uid", Value: expected.UID},
+		{Op: jsonPatchTest, Path: ownerReferencesPath, Value: expected.OwnerReferences},
+		{Op: jsonPatchTest, Path: "/spec", Value: expected.Spec},
+		{Op: jsonPatchTest, Path: annotationPath, Value: expected.Annotations[AuxiliarySetIDAnnotationKey]},
+		{Op: jsonPatchAdd, Path: "/status/" + field, Value: value},
 	}
 	payload, err := json.Marshal(operations)
 	if err != nil {

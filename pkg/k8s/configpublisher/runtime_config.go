@@ -16,6 +16,7 @@ package configpublisher
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -25,6 +26,7 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 )
 
@@ -79,10 +81,9 @@ func (p *Publisher) createOrUpdateRuntimeConfig(ctx context.Context, req *Publis
 
 // runtimeConfigToWrite returns the HAProxyCfg the write starts from. A first
 // attempt uses the informer's copy when it differs from desired, saving a read
-// of the whole object: the update carries the cached resourceVersion, so a
-// stale copy is refused with a conflict and the retry reads the live object.
-// An unchanged object is confirmed by a live read, because skipping the write
-// trusts it.
+// of the whole object: the patch replaces every field it decides on, so a stale
+// copy cannot leave one behind. An unchanged object is confirmed by a live
+// read, because skipping the write trusts it.
 func (p *Publisher) runtimeConfigToWrite(ctx context.Context, namespace, name string, desired *haproxyv1alpha1.HAProxyCfg, firstAttempt bool) (*haproxyv1alpha1.HAProxyCfg, error) {
 	if firstAttempt && p.listers != nil && p.listers.HAProxyCfgs != nil {
 		cached, err := p.listers.HAProxyCfgs.HAProxyCfgs(namespace).Get(name)
@@ -190,15 +191,13 @@ func (p *Publisher) updateRuntimeConfig(ctx context.Context, req *PublishRequest
 			"checksum", existing.Spec.Checksum,
 		)
 	} else {
-		existing.Spec = runtimeConfig.Spec
-		existing.Annotations = runtimeConfig.Annotations
-		existing.Labels = runtimeConfig.Labels
-		existing.OwnerReferences = runtimeConfig.OwnerReferences
-
-		var err error
+		payload, err := runtimeConfigPatch(req, existing, runtimeConfig)
+		if err != nil {
+			return nil, err
+		}
 		updated, err = p.crdClient.HaproxyTemplateICV1alpha1().
 			HAProxyCfgs(req.TemplateConfigNamespace).
-			Update(ctx, existing, metav1.UpdateOptions{})
+			Patch(ctx, existing.Name, types.JSONPatchType, payload, metav1.PatchOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("updating runtime config: %w", err)
 		}
@@ -210,6 +209,27 @@ func (p *Publisher) updateRuntimeConfig(ctx context.Context, req *PublishRequest
 		}
 	}
 	return updated, nil
+}
+
+// runtimeConfigPatch replaces the published fields without a resourceVersion
+// precondition, so the per-pod and verdict status writes cannot conflict with
+// it (#477). A retained checkpoint keeps the ownership it was checked for.
+func runtimeConfigPatch(req *PublishRequest, existing, desired *haproxyv1alpha1.HAProxyCfg) ([]byte, error) {
+	var operations []jsonPatchOperation
+	if req.RetainedPlan != "" {
+		operations = append(operations, jsonPatchOperation{Op: jsonPatchTest, Path: ownerReferencesPath, Value: existing.OwnerReferences})
+	}
+	operations = append(operations,
+		jsonPatchOperation{Op: jsonPatchAdd, Path: "/spec", Value: desired.Spec},
+		jsonPatchOperation{Op: jsonPatchAdd, Path: "/metadata/annotations", Value: desired.Annotations},
+		jsonPatchOperation{Op: jsonPatchAdd, Path: "/metadata/labels", Value: desired.Labels},
+		jsonPatchOperation{Op: jsonPatchAdd, Path: ownerReferencesPath, Value: desired.OwnerReferences},
+	)
+	payload, err := json.Marshal(operations)
+	if err != nil {
+		return nil, fmt.Errorf("encoding runtime config patch: %w", err)
+	}
+	return payload, nil
 }
 
 // updateRuntimeConfigStatus updates the HAProxyCfg status with child resource references.

@@ -196,13 +196,9 @@ func TestPublishConfig_ChangeUpdatesFromInformerCache(t *testing.T) {
 				Get(ctx, "test-config-haproxycfg", metav1.GetOptions{})
 			require.NoError(t, err)
 			assert.Equal(t, next.Config, current.Spec.Content)
-			// Two reads: the prune fence's and the one above. A stale cache
-			// costs back the live read before the update.
-			wantGets := 2
-			if stale {
-				wantGets = 3
-			}
-			assert.Equal(t, wantGets, countRuntimeConfigGets(crdClient))
+			// Two reads: the prune fence's and the one above. The spec patch
+			// carries no resourceVersion, so a stale cache costs no live read.
+			assert.Equal(t, 2, countRuntimeConfigGets(crdClient))
 		})
 	}
 }
