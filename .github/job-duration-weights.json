@@ -297,6 +297,12 @@
     },
     "upgrade-0.6.0-current": {
       "seconds": 674
+    },
+    "upgrade-0.7.0-current": {
+      "seconds": 674
+    },
+    "upgrade-0.7.0-minimum": {
+      "seconds": 684
     }
   },
   "early_jobs": [
