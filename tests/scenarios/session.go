@@ -22,6 +22,12 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/tests/testutil"
 )
 
+const (
+	kubectlGet    = "get"
+	podsResource  = "pods"
+	dockerCommand = "docker"
+)
+
 type Session struct {
 	Runner          process.Runner
 	Cluster         *kindutil.Cluster

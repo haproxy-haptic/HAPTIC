@@ -107,7 +107,7 @@ func (s *Session) requireReleaseNamespaceSecretRBAC(ctx context.Context) error {
 		{secrets, "--namespace=" + s.Namespace, true},
 		{"ingresses.networking.k8s.io", everywhere, true},
 	} {
-		for _, verb := range []string{"list", "watch", "get"} {
+		for _, verb := range []string{"list", "watch", kubectlGet} {
 			allowed, err := s.canI(ctx, identity, verb, check.resource, check.scope)
 			if err != nil {
 				return err

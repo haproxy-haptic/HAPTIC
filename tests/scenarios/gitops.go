@@ -50,7 +50,7 @@ func (s *Session) GitOps(ctx context.Context, options *GitOpsOptions) error {
 	if err := g.exercise(ctx); err != nil {
 		return err
 	}
-	for _, kind := range []string{"pods", "jobs"} {
+	for _, kind := range []string{podsResource, "jobs"} {
 		if _, err := s.Kube(ctx, nil, "get", kind, "-o", "json"); err != nil {
 			return err
 		}

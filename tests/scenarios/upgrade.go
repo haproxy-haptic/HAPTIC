@@ -145,6 +145,11 @@ func (u *upgrade) upgradeTarget(ctx context.Context) (result error) {
 		return err
 	}
 	if u.baseline == handoverBaseline {
+		finishDiagnostics, err := s.observeUpgradeDiagnostics(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { result = errors.Join(result, finishDiagnostics()) }()
 		finish, err := u.observeControllers(ctx)
 		if err != nil {
 			return err

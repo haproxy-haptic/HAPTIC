@@ -226,6 +226,11 @@ func (c *Cluster) ownedNodes(ctx context.Context) ([]string, error) {
 	return nodes, nil
 }
 
+// OwnedNodes verifies the ownership mount before exposing node containers to diagnostics.
+func (c *Cluster) OwnedNodes(ctx context.Context) ([]string, error) {
+	return c.ownedNodes(ctx)
+}
+
 func hasOwnerMount(identity nodeIdentity, owner string) bool {
 	for _, mount := range identity.Mounts {
 		if mount.Source == owner && mount.Destination == ownerMount && !mount.RW {

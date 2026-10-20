@@ -63,7 +63,7 @@ func (u *upgrade) brokenRelease(ctx context.Context) error {
 	}
 	image := s.ImageRepository + ":" + s.ImageTag + "-broken-haproxy" + s.HAProxyVersion
 	args := []string{"build", "--build-arg", "BASE_IMAGE=" + s.ImageRepository + ":" + s.ImageTag, "-t", image, "-f", "-", filepath.Dir(library)}
-	result, err := s.Runner.Run(ctx, &process.Command{Name: "docker", Args: args, Env: s.Cluster.Environment, Stdin: strings.NewReader("ARG BASE_IMAGE\nFROM ${BASE_IMAGE}\nCOPY library.yaml /usr/share/haptic/chart/charts/base/library.yaml\n")})
+	result, err := s.Runner.Run(ctx, &process.Command{Name: dockerCommand, Args: args, Env: s.Cluster.Environment, Stdin: strings.NewReader("ARG BASE_IMAGE\nFROM ${BASE_IMAGE}\nCOPY library.yaml /usr/share/haptic/chart/charts/base/library.yaml\n")})
 	if _, err = s.record("docker", args, result, err); err != nil {
 		return err
 	}

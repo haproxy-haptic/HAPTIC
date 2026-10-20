@@ -33,7 +33,7 @@ func (s *Session) Diagnostics(ctx context.Context) {
 func (s *Session) namespaceDiagnostics(ctx context.Context, namespace string) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	for _, args := range [][]string{{"get", "pods,events,jobs,deployments,services,endpoints", "-o", "yaml"}, {"describe", "pods"}} {
+	for _, args := range [][]string{{kubectlGet, "pods,events,jobs,deployments,services,endpoints", "-o", "yaml"}, {"describe", podsResource}} {
 		if _, err := s.Kube(ctx, nil, append([]string{"-n", namespace}, args...)...); err != nil {
 			s.Infof("diagnostics in %s: %v", namespace, err)
 		}
