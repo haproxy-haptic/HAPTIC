@@ -434,10 +434,10 @@ The test framework automatically loads this image into the kind cluster during t
 
 ```bash
 # Standard rebuild (uses Docker cache for faster builds)
-docker build -t haptic:test -f Dockerfile .
+make docker-build-test
 
 # Force complete rebuild (necessary if cached layers are stale)
-docker build --no-cache -t haptic:test -f Dockerfile .
+make docker-build-test DOCKER_BUILD_FLAGS=--no-cache
 ```
 
 **When to use `--no-cache`:**
@@ -450,10 +450,10 @@ docker build --no-cache -t haptic:test -f Dockerfile .
 
 ```bash
 # WRONG - tests won't use this image
-docker build -t haptic:dev -f Dockerfile .
+make docker-build IMAGE_TAG=dev
 
 # CORRECT - tests will use this image
-docker build -t haptic:test -f Dockerfile .
+make docker-build-test
 ```
 
 ## Running Acceptance Tests
@@ -566,7 +566,7 @@ kubectl logs -n haproxy-test haptic-xxx -f
 kind create cluster --name haproxy-test
 
 # Build controller image with CORRECT tag
-docker build -t haptic:test -f Dockerfile .
+make docker-build-test
 
 # Load image into kind cluster
 kind load docker-image haptic:test --name haproxy-test
@@ -582,7 +582,7 @@ kind delete cluster --name haproxy-test
 
 ```bash
 # Rebuild without cache to ensure latest code is included
-docker build --no-cache -t haptic:test -f Dockerfile .
+make docker-build-test DOCKER_BUILD_FLAGS=--no-cache
 
 # Load into kind cluster
 kind load docker-image haptic:test --name haproxy-test

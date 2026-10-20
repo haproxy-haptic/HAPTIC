@@ -174,16 +174,11 @@ haproxy:
 
 # External-auth plugin for the SPOA hub. allow_plaintext=true is needed
 # because the dev auth-server.yaml fixture serves http://, not https://.
-# image.tag defaults to "main-latest" so local devs get the most recent
-# main-branch image without having to build it themselves; CI overrides
-# this via the SPOA_TAG env var (passed through start-dev-env.sh) to
-# point at the freshly-built ci-${CI_PIPELINE_ID} snapshot.
+# start-dev-env.sh sets image: a local build, or SPOA_TAG.
 # hub.logLevel is bumped to debug so test failures surface the per-
 # connection SPOE handshakes and per-request plugin invocations
 # (the default `info` level only logs startup messages).
 spoaHub:
-  image:
-    tag: main-latest
   hub:
     logLevel: debug
   plugins:

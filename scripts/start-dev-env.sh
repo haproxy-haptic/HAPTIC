@@ -24,6 +24,8 @@ ECHO_NAMESPACE="echo"
 ECHO_APP_NAME="echo-server"
 ECHO_IMAGE="ealen/echo-server@sha256:ec8a6e95890df937a1eb5fafca033a32172d4f43c1fea1f302931d5f230a137f"
 LOCAL_IMAGE="haptic:dev"
+SPOA_DEV_REPOSITORY="haptic-spoa"
+SPOA_IMAGE=""
 HAPROXY_VERSION="${HAPROXY_VERSION:-$DEFAULT_HAPROXY}"
 HAPROXY_ENTERPRISE="${HAPROXY_ENTERPRISE:-false}"
 TIMEOUT="180"
@@ -170,6 +172,8 @@ ENVIRONMENT VARIABLES:
     HAPROXY_ENTERPRISE      Use HAProxy Enterprise instead of Community (default: false)
                             Enterprise versions: 3.0r1, 3.2r1
                             Registry: hapee-registry.haproxy.com/haproxy-enterprise
+    SPOA_TAG                Use the published spoa-hub image with this tag instead of
+                            building it locally (e.g. 0.6.0)
 
 EXAMPLES:
     $0                      # Start dev environment with defaults
@@ -551,34 +555,63 @@ setup_webhook_certificates() {
     return 0
 }
 
+# Loads an image into the kind cluster and waits until containerd lists it.
+load_image_into_kind() {
+    local image="$1"
+    run_with_spinner "Loading image '${image}' into kind cluster '${CLUSTER_NAME}'" \
+        kind load docker-image "${image}" --name "${CLUSTER_NAME}" || return 1
+
+    # containerd can index a freshly loaded image a moment after `kind load` returns.
+    local repository="${image%%:*}" tag="${image##*:}"
+    local attempt delay=1
+    for attempt in 1 2 3 4 5; do
+        debug "Verifying '${image}' in kind cluster (attempt ${attempt}/5)..."
+        if docker exec "${CLUSTER_NAME}-control-plane" crictl images 2>/dev/null | grep -q "${repository}.*${tag}"; then
+            ok "Image '${image}' verified in cluster"
+            return 0
+        fi
+        if [[ $attempt -lt 5 ]]; then
+            sleep "$delay"
+            delay=$((delay * 2))
+        fi
+    done
+
+    err "Image '${image}' not found in cluster after loading"
+    echo "  Images currently in cluster:"
+    docker exec "${CLUSTER_NAME}-control-plane" crictl images 2>/dev/null | head -n 20
+    return 1
+}
+
+no_cache_flag() {
+    if [[ "$FORCE_REBUILD" == "true" ]]; then
+        echo "--no-cache"
+    fi
+}
+
+# Builds through `make docker-build` so the binary carries the full build
+# identity (version, source hash) the chart's pre-upgrade hook requires.
+build_controller_image() {
+    local source_hash="$1"
+    local make_args=(
+        "-C" "${REPO_ROOT}" "docker-build"
+        "IMAGE_NAME=${LOCAL_IMAGE%%:*}"
+        "IMAGE_TAG=${LOCAL_IMAGE#*:}"
+        "HAPROXY_VERSION=${HAPROXY_VERSION}"
+        "SOURCE_HASH=${source_hash}"
+    )
+    make_args+=("DOCKER_BUILD_FLAGS=$(no_cache_flag)")
+    run_with_spinner "Building controller image '${LOCAL_IMAGE}' with HAProxy ${HAPROXY_VERSION}" \
+        make "${make_args[@]}"
+}
+
 build_and_load_local_image() {
     # Calculate source hash for reproducible builds and verification
     local source_hash
     source_hash=$("${SCRIPT_DIR}/source-hash.sh")
     debug "Source hash: ${source_hash}"
 
-    # Build image unless --skip-build is set
     if [[ "$SKIP_BUILD" != "true" ]]; then
-        local build_args=("-t" "${LOCAL_IMAGE}")
-
-        local haproxy_image
-        haproxy_image="$(bash "${SCRIPT_DIR}/chart-haproxy-image.sh" "${HAPROXY_VERSION}")" || return 1
-        build_args+=("--build-arg" "HAPROXY_IMAGE=${haproxy_image}")
-
-        # Pass source hash to embed in binary
-        build_args+=("--build-arg" "SOURCE_HASH=${source_hash}")
-
-        if [[ "$FORCE_REBUILD" == "true" ]]; then
-            build_args+=("--no-cache")
-        fi
-
-        build_args+=("${REPO_ROOT}")
-
-        local docker_path
-        docker_path="$(command -v docker)"
-
-        run_with_spinner "Building controller image '${LOCAL_IMAGE}' with HAProxy ${HAPROXY_VERSION}" \
-            env DOCKER_BUILDKIT=1 "${docker_path}" build "${build_args[@]}" || {
+        build_controller_image "${source_hash}" || {
             err "Docker build failed"
             return 1
         }
@@ -592,60 +625,48 @@ build_and_load_local_image() {
     # Use source hash as the base tag (Helm chart appends -haproxy<version>)
     # This makes it easy to verify if running image matches local source
     local base_tag="dev-${source_hash}"
-    local unique_tag="${base_tag}-haproxy${HAPROXY_VERSION}"
-    local image_with_sha="${LOCAL_IMAGE%%:*}:${unique_tag}"
+    local image_with_sha="${LOCAL_IMAGE%%:*}:${base_tag}-haproxy${HAPROXY_VERSION}"
 
-    debug "Tagging image with source hash: ${unique_tag}"
     docker tag "${LOCAL_IMAGE}" "${image_with_sha}"
-
-    # Load uniquely-tagged image into kind cluster
-    run_with_spinner "Loading image '${image_with_sha}' into kind cluster '${CLUSTER_NAME}'" \
-        kind load docker-image "${image_with_sha}" --name "${CLUSTER_NAME}"
-
-    # Verify the image was loaded successfully into the cluster
-    # Use retry loop to handle timing issues with containerd image indexing
-    debug "Verifying image '${image_with_sha}' in kind cluster..."
-
-    local max_attempts=5
-    local attempt=1
-    local delay=1
-    local image_found=false
-
-    while [[ $attempt -le $max_attempts ]]; do
-        debug "Verification attempt $attempt/$max_attempts..."
-
-        # Check if crictl can see the image with the specific tag
-        # Handle potential registry prefixes (docker.io/library/, localhost/, etc.)
-        if docker exec "${CLUSTER_NAME}-control-plane" crictl images 2>/dev/null | grep -q "${LOCAL_IMAGE%%:*}.*${unique_tag}"; then
-            image_found=true
-            ok "Image verified in cluster"
-            break
-        fi
-
-        if [[ $attempt -lt $max_attempts ]]; then
-            debug "Image not found yet, waiting ${delay}s before retry..."
-            sleep "$delay"
-            delay=$((delay * 2))  # Exponential backoff: 1s, 2s, 4s, 8s, 16s
-        fi
-
-        ((attempt++)) || true
-    done
-
-    if [[ "$image_found" != "true" ]]; then
-        err "Image not found in cluster after loading and $max_attempts verification attempts"
-        warn "Troubleshooting information:"
-        echo "  Expected image: ${image_with_sha}"
-        echo "  Images currently in cluster:"
-        docker exec "${CLUSTER_NAME}-control-plane" crictl images 2>/dev/null | grep "${LOCAL_IMAGE%%:*}" || echo "    (no images matching '${LOCAL_IMAGE%%:*}' found)"
-        echo ""
-        echo "  Full crictl images output:"
-        docker exec "${CLUSTER_NAME}-control-plane" crictl images 2>/dev/null | head -n 20
-        return 1
-    fi
+    load_image_into_kind "${image_with_sha}" || return 1
 
     # Export base tag for use by Helm (chart appends -haproxy<version>)
     IMAGE_TAG="${base_tag}"
     debug "Exported IMAGE_TAG=${IMAGE_TAG} (full image: ${image_with_sha})"
+
+    build_and_load_spoa_image
+}
+
+# Builds the SPOA hub from versions-spoa.env like CI does, unless SPOA_TAG
+# selects a published image. The tag hashes every build input, so an existing
+# image with that tag is current.
+build_and_load_spoa_image() {
+    if [[ -n "${SPOA_TAG:-}" ]]; then
+        debug "Using published spoa-hub tag ${SPOA_TAG}"
+        return 0
+    fi
+
+    local inputs_hash
+    inputs_hash=$(cat "${REPO_ROOT}/versions-spoa.env" "${REPO_ROOT}/Dockerfile.spoa-hub" | sha256sum | cut -c1-12)
+    SPOA_IMAGE="${SPOA_DEV_REPOSITORY}:dev-${inputs_hash}"
+
+    if [[ "$FORCE_REBUILD" != "true" ]] && docker image inspect "${SPOA_IMAGE}" >/dev/null 2>&1; then
+        ok "Using existing spoa-hub image '${SPOA_IMAGE}'"
+    elif [[ "$SKIP_BUILD" == "true" ]]; then
+        err "Image '${SPOA_IMAGE}' not found and --skip-build was specified"
+        return 1
+    else
+        local platform
+        platform="linux/$(docker version --format '{{.Server.Arch}}')"
+        run_with_spinner "Building spoa-hub image '${SPOA_IMAGE}'" \
+            make -C "${REPO_ROOT}" spoa-hub-image "SPOA_DEV_IMAGE=${SPOA_IMAGE}" "SPOA_DEV_PLATFORM=${platform}" \
+            "DOCKER_BUILD_FLAGS=$(no_cache_flag)" || {
+            err "spoa-hub build failed"
+            return 1
+        }
+    fi
+
+    load_image_into_kind "${SPOA_IMAGE}"
 }
 
 # Populate the global HELM_ARGS array with the shared helm upgrade --install
@@ -690,12 +711,14 @@ build_helm_args() {
         debug "Added Enterprise Helm values"
     fi
 
-    # Override the spoa-hub image tag if SPOA_TAG is set (used by CI to
-    # point at the freshly-built ci-${CI_PIPELINE_ID} snapshot). Defaults
-    # in dev-values.yaml to main-latest for local devs.
     if [[ -n "${SPOA_TAG:-}" ]]; then
         HELM_ARGS+=("--set" "spoaHub.image.tag=${SPOA_TAG}")
         debug "Using SPOA_TAG=${SPOA_TAG} for spoa-hub image"
+    else
+        HELM_ARGS+=(
+            "--set" "spoaHub.image.repository=${SPOA_IMAGE%%:*}"
+            "--set" "spoaHub.image.tag=${SPOA_IMAGE##*:}"
+        )
     fi
 
     # Add webhook CA bundle if set
@@ -1741,7 +1764,11 @@ main() {
     esac
 }
 
-# Now that all functions are defined, set up the environment and trap
+# Sourcing defines the functions without running anything (scripts/tests).
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
+
 pushd "${REPO_ROOT}" >/dev/null 2>&1 || {
     echo "Error: Could not change to repository root directory"
     exit 1

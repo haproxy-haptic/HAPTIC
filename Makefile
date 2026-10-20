@@ -36,6 +36,7 @@ REGISTRY ?=# Container registry (e.g., ghcr.io/myorg)
 FULL_IMAGE := $(if $(REGISTRY),$(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG),$(IMAGE_NAME):$(IMAGE_TAG))
 DOCKER_BINARY_ARCH ?= amd64
 DOCKER_BINARY_CONTEXT ?=
+DOCKER_BUILD_FLAGS ?=
 # HAProxy version baked into the controller image at build time.
 # Override per-build with HAPROXY_VERSION=3.x.
 HAPROXY_VERSION ?= $(shell yq -r '.haproxyVersion' charts/haptic/values.yaml)
@@ -379,6 +380,7 @@ test-support: build-map-identity-check ## Run script, browser, process, playgrou
 	bash scripts/tests/test_chart_haproxy_image.sh
 	$(MAKE) test-release
 	bash scripts/tests/test_chart_spoa_image.sh
+	bash scripts/tests/test_start_dev_env_images.sh
 	bash scripts/tests/test_chart_varnish_image.sh
 	bash scripts/tests/test_chart_config_version_stable.sh
 	bash scripts/tests/test_shard_conformance_tests.sh
@@ -1057,7 +1059,7 @@ docker-build: check-source-hash ## Build Docker image
 	@echo "  Git tag:         $(GIT_TAG)"
 	@echo "  Source hash:     $(SOURCE_HASH)"
 	@echo "  HAProxy series:  $(HAPROXY_VERSION) (chart-selected patch)"
-	DOCKER_BUILDKIT=1 bash scripts/retry-registry-build.sh docker build \
+	DOCKER_BUILDKIT=1 bash scripts/retry-registry-build.sh docker build $(DOCKER_BUILD_FLAGS) \
 		$(if $(DOCKER_BINARY_CONTEXT),--build-context "binary=$(DOCKER_BINARY_CONTEXT)" --target runtime) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg GIT_TAG=$(GIT_TAG) \
@@ -1163,7 +1165,7 @@ spoa-hub-image: spoa-prep ## Build the SPOA hub locally (SPOA_DEV_IMAGE selects 
 	@set -a; . ./versions-spoa.env; set +a; \
 	HUB_TAG="$${SPOA_HUB_VERSION#v}"; \
 	echo "Building $(SPOA_DEV_IMAGE) ($(SPOA_DEV_PLATFORM), FROM hub $$HUB_TAG)"; \
-	docker buildx build \
+	docker buildx build $(DOCKER_BUILD_FLAGS) \
 		--platform "$(SPOA_DEV_PLATFORM)" \
 		--build-arg "SPOA_HUB_VERSION=$$HUB_TAG" \
 		--build-context plugins=plugins \
