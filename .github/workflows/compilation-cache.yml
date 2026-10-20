@@ -1,4 +1,4 @@
-name: Upgrade handover diagnostic
+name: Upgrade scheduling comparison
 'on':
   workflow_dispatch: null
 permissions:
@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   upgrade:
-    name: Diagnose minimum Kubernetes upgrade
+    name: Compare kube-proxy CPU reservation
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
@@ -76,8 +76,8 @@ jobs:
           .pilot/compiler-cache-variant
 
           '
-    - name: Run native ARM lifecycle checks
-      run: bash .github/scripts/run-lifecycle-arm.sh
+    - name: Run predefined native ARM pair
+      run: bash .github/scripts/run-upgrade-pair-arm.sh
     - name: Retain verification evidence
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
