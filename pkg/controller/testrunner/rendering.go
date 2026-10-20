@@ -96,6 +96,18 @@ func (r *Runner) createTestPaths(workerID, testNum int) (*dataplane.ValidationPa
 	return resolvedPaths.ToValidationPaths(), nil
 }
 
+// removeTestPaths deletes a finished test's directory, so scratch use is bounded
+// by the worker count rather than the suite size, including what a killed
+// container leaves in a pod-lifetime emptyDir.
+func (r *Runner) removeTestPaths(paths *dataplane.ValidationPaths) {
+	if r.checkWithoutBinary != nil {
+		return
+	}
+	if err := os.RemoveAll(filepath.Dir(paths.ConfigFile)); err != nil {
+		r.logger.Warn("Failed to remove test directory", "path", filepath.Dir(paths.ConfigFile), "error", err)
+	}
+}
+
 // RenderOutput bundles every artifact produced by a single test render so
 // callers don't have to thread six positional return values.
 type RenderOutput struct {

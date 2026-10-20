@@ -39,6 +39,7 @@ HAPTIC. Read the [upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-
 ### Fixed
 
 - A change to the credentials Secret that leaves `dataplane_username` and `dataplane_password` unchanged, such as every Helm upgrade, no longer restarts the controller iteration, which briefly doubled controller memory and could OOMKill large installs ([#456](https://github.com/haproxy-haptic/HAPTIC/issues/456)).
+- A controller container restarted during its startup validation no longer fails every `validationTest` with `no space left on device`. Each test's scratch files are removed when it finishes, instead of when the whole suite does.
 - A controller could stop deploying, leaving HAProxy pods unready, when the render gate's verdict reached the deployment scheduler before the render it named. Each component now receives an event before any reaction to it.
 - A configuration change on a large install no longer hands leadership to a replica with a cold render graph while the warm-up render is still running, which delayed deployments until the new leader rendered from scratch.
 - Deployments no longer contend with leader Lease renewals or log spurious `Failed to update lease` errors.

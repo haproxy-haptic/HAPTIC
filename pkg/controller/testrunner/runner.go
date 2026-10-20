@@ -284,6 +284,7 @@ func (r *Runner) testWorker(ctx context.Context, workerID int, tests <-chan test
 
 			// Run test with isolated paths and engine
 			result, incomplete := r.runSingleTest(ctx, entry.name, &entry.test, testEngine, testPaths)
+			r.removeTestPaths(testPaths)
 
 			testDuration := time.Since(testStartTime)
 			r.logger.Log(context.Background(), logging.LevelTrace, "Test completed",
