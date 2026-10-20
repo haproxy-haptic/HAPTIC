@@ -129,10 +129,12 @@ func ComposableOps() []string {
 	return deployplan.ComposedOps()
 }
 
-// CheckSkew compares an agent's reported contract with this controller's.
-// Either finding means that pod gets full state and mode reload — never a
-// refusal, because a fleet-correlated refusal would fence the repair path.
-func CheckSkew(state *api.State) (majorMismatch bool, missingOps []string) {
+// CheckSkew compares an agent's reported contract with this controller's. An
+// incompatible pod gets full state and a reload; a missing op kind only takes
+// the changes that need it off the runtime path, which deployplan gates per
+// op. Neither is a refusal, because a fleet-correlated refusal would fence the
+// repair path.
+func CheckSkew(state *api.State) (incompatible bool, missingOps []string) {
 	if state == nil {
 		return true, nil
 	}
@@ -150,5 +152,6 @@ func CheckSkew(state *api.State) (majorMismatch bool, missingOps []string) {
 	if len(missing) == 0 {
 		missing = nil
 	}
-	return state.APIVersion != api.Version, missing
+	// No reported kinds reads as "executes every kind" to deployplan.CapsFor.
+	return state.APIVersion != api.Version || len(state.AgentOps) == 0, missing
 }

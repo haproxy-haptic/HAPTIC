@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -31,6 +33,7 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/agenttest"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
+	agentclient "github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/client"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/auxiliaryfiles"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/renderplan"
 )
@@ -594,28 +597,106 @@ func TestApply_NackInvalidatesTheBaseline(t *testing.T) {
 	assert.False(t, component.baselineInvalid(&endpoint), "an accepted apply clears the invalidation")
 }
 
-// An agent that does not execute every op kind this controller composes gets
-// the complete state and a reload — never a refusal, which would fence the
-// repair path — plus a counter and a reason on the pod's status.
-func TestApply_VersionSkewSendsFullStateAndReload(t *testing.T) {
-	agent := agenttest.New(t, agenttest.WithAgentOps(api.OpMapSet))
+func composedOpsWithout(kind string) []string {
+	return slices.DeleteFunc(agentclient.ComposableOps(), func(op string) bool { return op == kind })
+}
+
+// An agent that lacks an op kind the plans do not use keeps the runtime path —
+// a rolling upgrade's old pods must not reload on every endpoint change — and
+// the skew is logged once, at INFO.
+func TestApply_AgentLackingAnUnusedOpKindStaysOnTheRuntimePath(t *testing.T) {
+	agent := agenttest.New(t, agenttest.WithAgentOps(composedOpsWithout(api.OpServerSetMaxconn)...))
 	bus := newTestBus(t)
-	component := createTestDeployer(bus.EventBus)
+	component, logs := reloadLoggingDeployer(bus)
 	endpoint := agentEndpoint(agent, "haproxy-0")
 
-	appliedCh := bus.SubscribeTypes("skew-watch", 4, events.EventTypeConfigAppliedToPod)
-	plan, config, aux := renderFor("plan-1", "10.0.0.1", mapEntry)
-	completed := deployTo(t, component, bus, plan, config, aux, "config_validation", endpoint)
+	for i, address := range []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"} {
+		plan, config, aux := renderFor(fmt.Sprintf("plan-%d", i), address, mapEntry)
+		deployTo(t, component, bus, plan, config, aux, "config_validation", endpoint)
+	}
+
+	applies := agent.Applies()
+	require.Len(t, applies, 3)
+	for _, later := range applies[1:] {
+		assert.Equal(t, api.ModeAuto, later.Manifest.Mode)
+		assert.Equal(t, []string{api.OpServerSetAddr}, opKinds(later.Manifest.Ops))
+		assert.Equal(t, api.ResultRuntime, later.Result.Mode)
+	}
+	assert.Len(t, reloadLines(t, logs), 1, "only the first apply, which has no baseline, reloads")
+	assert.Empty(t, logs.Records("Agent speaks a different contract; sending the complete state and a reload"))
+	assert.Equal(t, []slog.Level{slog.LevelInfo},
+		logs.Levels("Agent lacks op kinds this controller composes; changes that need them reload the pod"))
+	assert.Equal(t, 3.0, promtestutil.ToFloat64(component.metrics.AgentVersionSkewTotal))
+
+	plan, config, aux := renderFor("plan-3", "10.0.0.4", mapEntry)
+	deployTo(t, component, bus, plan, config, aux, "config_validation", agentEndpoint(agenttest.New(t), "haproxy-1"))
+	assert.NotContains(t, component.podSkew, podKey(&endpoint), "a pod that left the fleet is forgotten")
+}
+
+// A plan that composes an op kind the agent lacks reloads that pod instead of
+// sending it the op.
+func TestApply_AgentLackingAComposedOpKindReloadsThatPlan(t *testing.T) {
+	agent := agenttest.New(t, agenttest.WithAgentOps(composedOpsWithout(api.OpServerSetAddr)...))
+	bus := newTestBus(t)
+	component, logs := reloadLoggingDeployer(bus)
+	endpoint := agentEndpoint(agent, "haproxy-0")
+
+	plan1, config1, aux1 := renderFor("plan-1", "10.0.0.1", mapEntry)
+	deployTo(t, component, bus, plan1, config1, aux1, "config_validation", endpoint)
+	plan2, config2, aux2 := renderFor("plan-2", "10.0.0.2", mapEntry)
+	completed := deployTo(t, component, bus, plan2, config2, aux2, "config_validation", endpoint)
 
 	require.Equal(t, 1, completed.Succeeded)
-	assert.Equal(t, 1.0, promtestutil.ToFloat64(component.metrics.AgentVersionSkewTotal))
 	applies := agent.Applies()
-	require.Len(t, applies, 1)
-	assert.Equal(t, api.ModeReload, applies[0].Manifest.Mode)
+	require.Len(t, applies, 2)
+	assert.Equal(t, api.ModeReload, applies[1].Manifest.Mode)
+	assert.Empty(t, applies[1].Manifest.Ops)
+	assert.Empty(t, applies[1].Manifest.InPlaceOps)
+	lines := reloadLines(t, logs)
+	require.Len(t, lines, 2)
+	assert.Contains(t, lines[1].Reasons, "the agent does not execute "+api.OpServerSetAddr)
+}
 
-	applied := testutil.WaitForEvent[*events.ConfigAppliedToPodEvent](t, appliedCh, testutil.LongTimeout)
-	require.NotNil(t, applied.SyncMetadata)
-	assert.NotEmpty(t, applied.SyncMetadata.Reasons, "an operator must be able to see why the pod reloaded")
+// An agent on another contract gets the complete state and a reload on every
+// apply — never a refusal, which would fence the repair path — with a counter,
+// a reason on the pod's status, and one WARN per pod.
+func TestApply_IncompatibleAgentContractSendsFullStateAndReload(t *testing.T) {
+	tests := []struct {
+		name   string
+		option agenttest.Option
+		reason string
+	}{
+		{"another API major", agenttest.WithAPIVersion(api.Version + 1), "agent speaks API version"},
+		{"no reported op kinds", agenttest.WithAgentOps(), "agent reports no op kinds"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := agenttest.New(t, tt.option)
+			bus := newTestBus(t)
+			component, logs := reloadLoggingDeployer(bus)
+			endpoint := agentEndpoint(agent, "haproxy-0")
+			appliedCh := bus.SubscribeTypes("skew-watch", 4, events.EventTypeConfigAppliedToPod)
+
+			for i, address := range []string{"10.0.0.1", "10.0.0.2"} {
+				plan, config, aux := renderFor(fmt.Sprintf("plan-%d", i), address, mapEntry)
+				deployTo(t, component, bus, plan, config, aux, "config_validation", endpoint)
+			}
+
+			applies := agent.Applies()
+			require.Len(t, applies, 2)
+			for _, apply := range applies {
+				assert.Equal(t, api.ModeReload, apply.Manifest.Mode)
+				assert.Empty(t, apply.Manifest.Ops)
+			}
+			assert.Equal(t, 2.0, promtestutil.ToFloat64(component.metrics.AgentVersionSkewTotal))
+			assert.Equal(t, []slog.Level{slog.LevelWarn},
+				logs.Levels("Agent speaks a different contract; sending the complete state and a reload"))
+			applied := testutil.WaitForEvent[*events.ConfigAppliedToPodEvent](t, appliedCh, testutil.LongTimeout)
+			require.NotNil(t, applied.SyncMetadata)
+			require.NotEmpty(t, applied.SyncMetadata.Reasons)
+			assert.Contains(t, applied.SyncMetadata.Reasons[0], tt.reason)
+		})
+	}
 }
 
 // The plan the fleet ACKed is what the next render reads its server slots from.

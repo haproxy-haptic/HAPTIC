@@ -94,10 +94,9 @@ type Metrics struct {
 	AgentApplyTotal    *prometheus.CounterVec
 	ApplyRejectedTotal *prometheus.CounterVec
 
-	// AgentVersionSkewTotal counts pods whose agent reported a contract this
-	// controller does not fully speak. Never a refusal — the pod gets the
-	// complete file set and a reload — but sustained growth means a rollout is
-	// stuck half-upgraded.
+	// AgentVersionSkewTotal counts applies to pods whose agent reported a
+	// contract this controller does not fully speak. Never a refusal, but
+	// sustained growth means a rollout is stuck half-upgraded.
 	AgentVersionSkewTotal prometheus.Counter
 
 	// Runtime op counters, recorded from what the pods ACKed. Labelled by op
@@ -321,7 +320,7 @@ func NewMetrics(registry prometheus.Registerer) *Metrics {
 		AgentVersionSkewTotal: pkgmetrics.NewCounter(
 			registry,
 			"haptic_agent_version_skew_total",
-			"Applies sent to a pod whose agent reported a different API major or a missing op kind. Never a refusal: the pod gets the complete file set and a reload. Sustained growth means a controller/agent rollout is stuck half-upgraded.",
+			"Applies sent to a pod whose agent reported a different API major or a missing op kind. Never a refusal: a different API major gets the complete file set and a reload, a missing op kind reloads only the changes that need it. Sustained growth means a controller/agent rollout is stuck half-upgraded.",
 		),
 		RuntimeBackendOpsTotal: pkgmetrics.NewCounterVec(
 			registry,

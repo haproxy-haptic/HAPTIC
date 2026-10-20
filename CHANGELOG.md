@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- During an upgrade that adds a runtime operation, HAProxy pods still running the previous agent no longer reload on every change. Only a change that needs the new operation reloads them, and the controller logs the version difference once per pod at INFO instead of a WARN on every deployment.
+
 ## [0.7.0] - 2026-10-20
 
 HAPTIC 0.7 hardens two trust boundaries: raw HAProxy configuration annotations,

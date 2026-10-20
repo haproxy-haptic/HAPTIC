@@ -449,23 +449,28 @@ func TestCheckSkew(t *testing.T) {
 	require.Equal(t, deployplan.ComposedOps(), full, "the skew check measures against what deployplan composes")
 
 	t.Run("matching agent", func(t *testing.T) {
-		mismatch, missing := CheckSkew(&api.State{APIVersion: api.Version, AgentOps: full})
-		assert.False(t, mismatch)
+		incompatible, missing := CheckSkew(&api.State{APIVersion: api.Version, AgentOps: full})
+		assert.False(t, incompatible)
 		assert.Empty(t, missing)
 	})
 	t.Run("major mismatch", func(t *testing.T) {
-		mismatch, missing := CheckSkew(&api.State{APIVersion: api.Version + 1, AgentOps: full})
-		assert.True(t, mismatch)
+		incompatible, missing := CheckSkew(&api.State{APIVersion: api.Version + 1, AgentOps: full})
+		assert.True(t, incompatible)
 		assert.Empty(t, missing)
 	})
 	t.Run("missing op kinds", func(t *testing.T) {
-		mismatch, missing := CheckSkew(&api.State{APIVersion: api.Version, AgentOps: full[:len(full)-2]})
-		assert.False(t, mismatch)
+		incompatible, missing := CheckSkew(&api.State{APIVersion: api.Version, AgentOps: full[:len(full)-2]})
+		assert.False(t, incompatible)
 		assert.Equal(t, full[len(full)-2:], missing)
 	})
+	t.Run("no op kinds reported", func(t *testing.T) {
+		incompatible, missing := CheckSkew(&api.State{APIVersion: api.Version})
+		assert.True(t, incompatible, "deployplan reads no kinds as every kind, so the ops cannot be gated")
+		assert.Equal(t, full, missing)
+	})
 	t.Run("no state", func(t *testing.T) {
-		mismatch, missing := CheckSkew(nil)
-		assert.True(t, mismatch)
+		incompatible, missing := CheckSkew(nil)
+		assert.True(t, incompatible)
 		assert.Empty(t, missing)
 	})
 }

@@ -44,7 +44,7 @@ rate(haptic_reconciliation_duration_seconds_count[5m])
 | `haptic_haproxy_reloads_total` | Counter | HAProxy reloads triggered by deployments; compare with runtime apply counts when investigating reload frequency |
 | `haptic_deploy_apply_total` | Counter | Applies an agent accepted, by `pod` and by the `mode` it reported: `runtime`, `file_only`, `reload`, `scheduled` or `noop`. The reload-free share of a rollout is the `runtime`+`file_only`+`noop` fraction |
 | `haptic_apply_rejected_total` | Counter | Applies an agent refused or rolled back, by `pod`. Every increment carries HAProxy's own message in a Warning event and the pod's status condition |
-| `haptic_agent_version_skew_total` | Counter | Applies degraded to full state plus a reload because the pod's agent speaks a different API major or doesn't execute an op kind. Can increase during a rolling upgrade; should stop increasing once versions match |
+| `haptic_agent_version_skew_total` | Counter | Applies to a pod whose agent speaks a different API major (full state plus a reload) or doesn't execute an op kind (a reload only for changes that need it). Can increase during a rolling upgrade; should stop increasing once versions match |
 
 **Key queries:**
 
