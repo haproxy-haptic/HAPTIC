@@ -6,6 +6,9 @@ _helm_load:
       # Only when enabled: the bundled image tag is the chart version (#461).
       value: '{{ include "haptic.varnish.image" . }}'
       when: '{{ .Values.cache.varnish.enabled }}'
+    - path: validationTests._global.extraContext.cache.varnish.image
+      value: '{{ include "haptic.varnish.image" . }}'
+      when: '{{ or .Values.cache.varnish.enabled (ne .Values.cache.varnish.image "") }}'
     - path: watchedResources.waf_selfservice_catalogs.fieldSelector
       value: 'metadata.name={{ .Values.controller.config.templatingSettings.extraContext.waf.policies.selfService.configMapName | default "waf-policies" }}'
 
