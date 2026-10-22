@@ -114,6 +114,9 @@ type Config struct {
 //
 // The test name is provided by the map key in ValidationTests.
 type ValidationTest struct {
+	// UseDeploymentWatchScopes applies configured watch namespaces to this test.
+	UseDeploymentWatchScopes bool `yaml:"useDeploymentWatchScopes,omitempty" json:"useDeploymentWatchScopes,omitempty"`
+
 	// Description explains what this test validates.
 	Description string `yaml:"description"`
 

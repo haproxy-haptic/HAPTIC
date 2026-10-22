@@ -354,6 +354,7 @@ func (r *Runner) shouldSkipTest(test *config.ValidationTest) string {
 
 // runSingleTest executes a single validation test using worker-specific engine and validation paths.
 func (r *Runner) runSingleTest(ctx context.Context, testName string, test *config.ValidationTest, engine templating.Engine, validationPaths *dataplane.ValidationPaths) (TestResult, bool) {
+	r = r.withDeploymentWatchScopes(test.UseDeploymentWatchScopes)
 	startTime := time.Now()
 	ctx = templating.WithCycleTime(ctx, startTime)
 
@@ -383,7 +384,7 @@ func (r *Runner) runSingleTest(ctx context.Context, testName string, test *confi
 			return result, true
 		}
 		recordRenderFailure(&result, err, hasRenderingErrorAssertions(test.Assertions))
-		if isResourceInputError(err) {
+		if isResourceInputError(err) && !rendercontext.IsNamespaceScopeViolation(err) {
 			result.Passed = false
 			result.Duration = time.Since(startTime)
 			return result, false
@@ -451,6 +452,15 @@ func (r *Runner) runSingleTest(ctx context.Context, testName string, test *confi
 	return result, incomplete
 }
 
+func (r *Runner) withDeploymentWatchScopes(enabled bool) *Runner {
+	if !enabled {
+		return r
+	}
+	scoped := *r
+	scoped.namespaceScopes = rendercontext.NamespaceScopes(r.config)
+	return &scoped
+}
+
 func recordRenderFailure(result *TestResult, err error, expected bool) {
 	result.RenderError = templating.RenderErrorMessage(err)
 	result.Assertions = append(result.Assertions, AssertionResult{
@@ -464,7 +474,7 @@ func recordRenderFailure(result *TestResult, err error, expected bool) {
 
 func isTemplateRejection(err error) bool {
 	_, rejected := errors.AsType[*templating.FailError](err)
-	return rejected
+	return rejected || rendercontext.IsNamespaceScopeViolation(err)
 }
 
 func isResourceInputError(err error) bool {

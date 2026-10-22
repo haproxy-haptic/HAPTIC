@@ -324,8 +324,7 @@ type RenderService struct {
 	skipCurrentConfigProjection bool
 	skipCurrentFilesProjection  bool
 
-	// namespaceScopes rejects lookups outside a watch's namespaces. Only live
-	// stores honor it; fixture renders (the testrunner) never set it.
+	// namespaceScopes rejects lookups outside a watch's namespaces.
 	namespaceScopes func(string) *rendercontext.NamespaceScope
 
 	// renderTimeout is the maximum time allowed for rendering a single template.

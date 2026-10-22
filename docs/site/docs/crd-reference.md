@@ -698,6 +698,7 @@ Embedded validation tests (optional; run by the pre-rollout validation Job, the 
 | `currentConfig` | string | No | — (deprecated: a raw HAProxy config parsed down to the same server index as `currentServers`) |
 | `currentFiles` | `map[string]string` | No | — (filename → content of the general files currently deployed, exposed to templates as `currentFiles`) |
 | `extraContext` | object | No | — (per-test overrides of `templatingSettings.extraContext`) |
+| `useDeploymentWatchScopes` | bool | No | `false`; apply configured watch namespaces to fixtures and lookups for this test; can't be `true` on `_global` |
 | `minHAProxyVersion` | string | No | — (skip the test on older HAProxy) |
 | `requires` | `[]string` | No | — (strip the test when a named optional watched resource is unavailable) |
 | `requiresFields` | `[]string` | No | — (strip the test when a schema field path is absent) |

@@ -150,6 +150,7 @@ func (r *Runner) renderWithStores(ctx context.Context, engine templating.Engine,
 		Mode:               renderMode,
 		TemplateContext:    renderCtx,
 		ResourceErrors:     bctx.ResourceErrors,
+		NamespaceScopes:    r.namespaceScopes,
 		Logger:             r.logger,
 		TypedResourceTypes: r.typedResourceTypes,
 		Analysis:           r.coldAnalysisFor(engine),
@@ -477,6 +478,7 @@ func (r *Runner) buildRenderingContext(ctx context.Context, storeMap map[string]
 	// production renderer provides.
 	opts := append([]rendercontext.Option{
 		rendercontext.WithStores(resourceStores),
+		rendercontext.WithNamespaceScopes(r.namespaceScopes),
 		rendercontext.WithHAProxyPodStore(haproxyPodStore),
 		rendercontext.WithHTTPFetcher(httpStore),
 		rendercontext.WithCurrentConfig(currentConfig),

@@ -805,6 +805,11 @@ spec:
                       items:
                         type: string
                       type: array
+                    useDeploymentWatchScopes:
+                      description: |-
+                        UseDeploymentWatchScopes applies configured watch namespaces to this test.
+                        Set it on individual tests, not on the shared _global entry.
+                      type: boolean
                   type: object
                 description: |-
                   ValidationTests contains embedded validation test definitions.

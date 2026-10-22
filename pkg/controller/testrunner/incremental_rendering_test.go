@@ -84,8 +84,7 @@ func TestRunnerRendersIncrementalComponents(t *testing.T) {
 	assert.Equal(t, 1, results.PassedTests)
 }
 
-// The deployment's watch namespaces never apply to fixtures: a test sees the
-// stores it declares, so an operator's scope cannot fail a bundled test.
+// Fixture isolation remains the default for bundled cross-namespace scenarios.
 func TestRunnerIgnoresWatchNamespacesForFixtures(t *testing.T) {
 	object := func(kind, name string) map[string]any {
 		return map[string]any{"apiVersion": "v1", "kind": kind, "metadata": map[string]any{"namespace": "default", "name": name}}

@@ -1323,3 +1323,8 @@ func TestValidateStructure_SubsumesMergedCompleteness(t *testing.T) {
 	assert.ErrorContains(t, ValidateStructure(cfg),
 		"validation_tests.silent: must declare at least one assertion")
 }
+
+func TestValidationTestsRejectGlobalDeploymentWatchScopes(t *testing.T) {
+	err := validateValidationTests(&Config{ValidationTests: map[string]ValidationTest{GlobalValidationTestName: {UseDeploymentWatchScopes: true}}})
+	require.ErrorContains(t, err, "validationTests._global.useDeploymentWatchScopes")
+}

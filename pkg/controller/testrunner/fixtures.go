@@ -285,6 +285,10 @@ func (r *Runner) populateWatchedResourceStore(storeMap map[string]stores.Store, 
 			return fmt.Errorf("extracting index keys from fixture resource: %w", err)
 		}
 
+		if r.namespaceScopes != nil && r.namespaceScopes(resourceType).Check(keys) != nil {
+			continue
+		}
+
 		converted := indexer.ConvertResource(resource)
 		if err := storeInstance.Add(converted, keys); err != nil {
 			return fmt.Errorf("adding fixture resource to %s store: %w", resourceType, err)

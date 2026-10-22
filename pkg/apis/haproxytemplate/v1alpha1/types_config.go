@@ -881,6 +881,11 @@ type HAProxyConfig struct {
 //
 // The test name is provided by the map key in ValidationTests.
 type ValidationTest struct {
+	// UseDeploymentWatchScopes applies configured watch namespaces to this test.
+	// Set it on individual tests, not on the shared _global entry.
+	// +optional
+	UseDeploymentWatchScopes bool `json:"useDeploymentWatchScopes,omitempty"`
+
 	// Description explains what this test validates.
 	// +optional
 	Description string `json:"description,omitempty"`

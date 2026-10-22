@@ -15,6 +15,7 @@ Each test consists of:
 | **Name** | Unique identifier (kebab-case, for example `test-ingress-tls-routing`) |
 | **Description** | What the test verifies |
 | **Fixtures** | Simulated Kubernetes resources |
+| **Deployment watch scopes** (`useDeploymentWatchScopes`) | Optional — apply configured watch namespaces to this test (see [Namespace-scoped watches](#namespace-scoped-watches)) |
 | **Assertions** | Checks on rendered output |
 | **HTTP fixtures** (`httpResources`) | Optional — mocked responses for `http.Fetch()` URLs (see [HTTP Fixtures](#http-fixtures)) |
 | **Min HAProxy version** (`minHAProxyVersion`) | Optional — skip the test unless the HAProxy version under test is at least this (for version-gated features) |
@@ -57,6 +58,66 @@ fixtures:
                       name: api
                       port:
                         number: 80
+```
+
+### Namespace-scoped watches
+
+Fixtures normally remain independent of your deployment's watch namespaces, so
+bundled tests can exercise cross-namespace scenarios. Set
+`useDeploymentWatchScopes: true` on an individual test to check your configured
+`watchedResources.<name>.namespaces`, including namespaces set by
+`controller.rbac.releaseNamespaceSecretsOnly`.
+
+The test's fixture stores then include only objects in the watch's namespaces.
+`List()` sees that filtered set; `Fetch(namespace, ...)` and
+`GetSingle(namespace, ...)` reject lookups outside it. This applies to typed
+resources, incremental components, and the second render with deployment values.
+Watches without namespace restrictions and cluster-scoped resources retain their
+fixtures. Live cluster objects are never included.
+
+You can assert these rejections with `target: rendering_error`. Store failures,
+invalid typed values, and other resource-input errors still fail the test, even
+when a namespace rejection occurs in the same render. Set the option on each test
+that needs it; `_global.useDeploymentWatchScopes: true` is invalid.
+
+For example, with the release namespace `haptic`, this test checks that an Ingress
+in `default` can't reference a local TLS Secret when Secret reads are restricted:
+
+```yaml
+controller:
+  rbac:
+    releaseNamespaceSecretsOnly: true
+  config:
+    validationTests:
+      rejects-foreign-secret:
+        useDeploymentWatchScopes: true
+        fixtures:
+          ingresses:
+            - apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                namespace: default
+                name: foreign-tls
+              spec:
+                ingressClassName: haptic
+                tls:
+                  - hosts: [app.example.com]
+                    secretName: foreign-tls
+                rules:
+                  - host: app.example.com
+                    http:
+                      paths:
+                        - path: /
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: app
+                              port:
+                                number: 80
+        assertions:
+          - type: contains
+            target: rendering_error
+            pattern: 'secrets default/foreign-tls cannot be read: controller.rbac.releaseNamespaceSecretsOnly'
 ```
 
 ### HTTP fixtures
