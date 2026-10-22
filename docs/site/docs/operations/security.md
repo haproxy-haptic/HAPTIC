@@ -80,9 +80,15 @@ With this setting:
   certificate in the release namespace.
 
 Before you turn it on, remove Secret references outside the release namespace.
-After the restart the controller withholds an object that still has one, so its
-routes stop serving, and records an `InputRejected` event on it. See
+When the controller loads this setting, it withholds an object that still has
+such a reference, so its routes stop serving, and records an `InputRejected` event. See
 [rejected resource changes](input-isolation.md).
+
+Changing this setting on an existing installation updates permissions and watch
+configuration separately. During a Helm upgrade or GitOps sync, cluster-wide
+Secret access can be removed before every controller has loaded the narrower
+watch. That ordering can produce Secret-watch `Forbidden` warnings; the setting
+doesn't provide an atomic transition between permissions and watches.
 
 Confirm the narrowed access:
 
@@ -93,6 +99,24 @@ kubectl auth can-i list secrets --all-namespaces \
 
 The answer is `no`. Replace `haptic:haptic` with your release namespace and the
 controller's ServiceAccount name.
+
+If warnings continue after the upgrade or sync, check the applied watch scope
+and the permissions in the release namespace. These commands use the default
+configuration name and the `haptic` release and namespace:
+
+```bash
+kubectl --namespace haptic get haproxytemplateconfig haptic-config \
+  -o jsonpath='{.spec.watchedResources.secrets.namespaces}{"\n"}'
+kubectl auth can-i list secrets --namespace haptic \
+  --as=system:serviceaccount:haptic:haptic
+kubectl auth can-i watch secrets --namespace haptic \
+  --as=system:serviceaccount:haptic:haptic
+```
+
+Expect only `haptic` in the watch scope and two `yes` answers. A different scope
+or a missing grant needs a configuration or RBAC correction. These checks don't establish
+which scope each running watcher uses. If they match but warnings continue,
+collect logs from each controller replica for further diagnosis.
 
 ### Credentials
 
