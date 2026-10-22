@@ -31,6 +31,33 @@
   "customManagers": [
     {
       "customType": "regex",
+      "description": "Go release series used to select the pinned compiler image.",
+      "managerFilePatterns": [
+        "/^ci/build-pins\\.yml$/"
+      ],
+      "matchStrings": [
+        "GO_VERSION:\\s*\"(?<currentValue>[0-9]+\\.[0-9]+)\""
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "golang build series",
+      "packageNameTemplate": "golang",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Pinned Go compiler image used by CI images and native runners.",
+      "managerFilePatterns": [
+        "/^ci/build-pins\\.yml$/"
+      ],
+      "matchStrings": [
+        "GO_BUILD_IMAGE:\\s*\"golang:(?<currentValue>[^\"@]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "golang",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
       "description": "The cert-manager release the test scenarios install, anchored on the `renovate:` comment above the constant.",
       "managerFilePatterns": [
         "/^tests/scenarios/defaults\\.go$/"
@@ -282,11 +309,14 @@
       "description": "Go toolchain bumps share one MR with every vulnerability fix: make audit gates on all of them, so split MRs each fail on the vulns the other fixes.",
       "matchManagers": [
         "gomod",
-        "asdf"
+        "asdf",
+        "custom.regex",
+        "dockerfile"
       ],
       "matchDepNames": [
         "go",
-        "golang"
+        "golang",
+        "golang build series"
       ],
       "groupName": "security and go toolchain",
       "schedule": [

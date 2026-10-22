@@ -13,6 +13,34 @@ SPEC.loader.exec_module(CHECKER)
 
 
 class CheckImagePinsTests(unittest.TestCase):
+    def test_go_compiler_image_updates_with_module_toolchain(self):
+        config = json.loads((ROOT / "renovate.json").read_text())
+        managers = [m for m in config["customManagers"] if m.get("depNameTemplate") == "golang"]
+        self.assertEqual(len(managers), 1)
+        manager = managers[0]
+        self.assertTrue(any(p.search("ci/build-pins.yml") for p in CHECKER.file_matchers(manager)))
+        pattern = CHECKER.re.compile(CHECKER.to_python(manager["matchStrings"][0]))
+        fixture = '  GO_BUILD_IMAGE: "golang:1.27-bookworm@sha256:' + 'a' * 64 + '"\n'
+        captures = pattern.search(fixture).groupdict()
+        self.assertEqual(captures["currentValue"], "1.27-bookworm")
+        self.assertEqual(captures["currentDigest"], "sha256:" + "a" * 64)
+        self.assertEqual(manager["datasourceTemplate"], "docker")
+        series_managers = [m for m in config["customManagers"]
+                           if m.get("depNameTemplate") == "golang build series"]
+        self.assertEqual(len(series_managers), 1)
+        series_manager = series_managers[0]
+        self.assertTrue(any(p.search("ci/build-pins.yml") for p in CHECKER.file_matchers(series_manager)))
+        series_pattern = CHECKER.re.compile(CHECKER.to_python(series_manager["matchStrings"][0]))
+        self.assertEqual(series_pattern.search('  GO_VERSION: "1.27"\n').group("currentValue"), "1.27")
+        self.assertEqual(series_manager["datasourceTemplate"], "docker")
+        self.assertEqual(series_manager["packageNameTemplate"], "golang")
+        self.assertTrue(any(
+            {"custom.regex", "gomod", "asdf", "dockerfile"}.issubset(rule.get("matchManagers", []))
+            and {"golang", "go", "golang build series"}.issubset(rule.get("matchDepNames", []))
+            and rule.get("groupName") == config["vulnerabilityAlerts"]["groupName"]
+            for rule in config["packageRules"]
+        ))
+
     def setUp(self):
         managers = json.loads((ROOT / "renovate.json").read_text())["customManagers"]
         self.managers = [m for m in managers if m.get("packageNameTemplate") == "haproxytech/haproxy-debian"]
