@@ -786,10 +786,15 @@ Extract true client IP from a specific header (useful when behind proxies/CDNs).
 haproxy.org/src-ip-header: "CF-Connecting-IP"
 ```
 
-Use this only when traffic reaches HAProxy through a trusted proxy that overwrites
-the header. Direct clients can forge it. Choose the header your proxy supplies,
+For a proxy-supplied header, restrict traffic to a trusted proxy that overwrites
+it. Direct clients can forge the value. Choose the header your proxy supplies,
 such as `CF-Connecting-IP`, `X-Forwarded-For`, or `True-Client-IP`. Naming
 `X-Forwarded-For` also keeps the client's `X-Forwarded-For` for the route.
+`X-Real-IP`, `X-Client-IP`, and `Client-IP` are sanitized before this annotation
+runs. List the L7 proxy in
+[`forwardedHeaders.trustedProxies`](../operations/security.md#forwarded-headers)
+or set the header in an operator snippet; the annotation alone doesn't trust
+these client-supplied headers.
 
 ## Advanced backend configuration
 

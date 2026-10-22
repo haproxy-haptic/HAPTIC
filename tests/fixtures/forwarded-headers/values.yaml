@@ -6,6 +6,12 @@ controller:
           http-request set-header X-Forwarded-Host %[req.hdr(Host)] unless { req.hdr(X-Forwarded-Host) -m found }
           http-request set-header X-Forwarded-Port 9443 unless { req.hdr(X-Forwarded-Port) -m found }
           http-request set-header X-Forwarded-Proto operator
+          http-request set-header Forwarded operator
+          http-request set-header X-Forwarded-Prefix operator
+          http-request set-header X-Forwarded-Server operator
+          http-request set-header X-Real-IP operator
+          http-request set-header X-Client-IP operator
+          http-request set-header Client-IP operator
     validationTests:
       test-operator-forwarded-headers-after-sanitization:
         fixtures: &forwardedFixtures
@@ -45,4 +51,65 @@ controller:
           - type: match_count
             target: haproxy.cfg
             pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-Host unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-Port unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Host %\[req\.hdr\(Host\)\] unless \{ req\.hdr\(X-Forwarded-Host\) -m found \}\n'
+            expected: "3"
+      test-alternative-forwarded-headers-proxy-listeners:
+        extraContext:
+          proxyProtocol: {enabled: true}
+        fixtures: *forwardedFixtures
+        assertions:
+          - type: haproxy_valid
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header Forwarded\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header Forwarded operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-Prefix\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Prefix operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-Server\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Server operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Real-IP\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Real-IP operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Client-IP\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Client-IP operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header Client-IP\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header Client-IP operator\n'
+            expected: "3"
+      test-alternative-forwarded-headers-proxy-listeners-trusted:
+        extraContext:
+          proxyProtocol: {enabled: true}
+          forwardedHeaders: {trustedProxies: ["192.0.2.0/24"]}
+        fixtures: *forwardedFixtures
+        assertions:
+          - type: haproxy_valid
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header Forwarded unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header Forwarded operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-Prefix unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Prefix operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-Server unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Forwarded-Server operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Real-IP unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Real-IP operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Client-IP unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header X-Client-IP operator\n'
+            expected: "3"
+          - type: match_count
+            target: haproxy.cfg
+            pattern: '(?m)^frontend (http_frontend|http_frontend_h2c|https)\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header Client-IP unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-header Client-IP operator\n'
             expected: "3"

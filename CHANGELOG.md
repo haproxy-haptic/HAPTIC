@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Build with Go 1.27.3 to reject compromised intermediate certificates in TLS verification (CVE-2026-111943).
 
+### Helm chart
+
+#### Changed
+
+- **BREAKING:** `src-ip-header` no longer trusts client-sent `X-Real-IP`, `X-Client-IP`, or `Client-IP` by itself. List the L7 proxy in `forwardedHeaders.trustedProxies` or produce the header in an operator snippet; L4 PROXY-protocol client addresses need no header annotation.
+
+#### Fixed
+
+- Drop client-sent `Forwarded`, `X-Forwarded-Prefix`, `X-Forwarded-Server`, `X-Real-IP`, `X-Client-IP`, and `Client-IP` before forwarding requests, while preserving trusted proxies and operator header changes ([#490](https://github.com/haproxy-haptic/HAPTIC/issues/490)).
+
 ## [0.7.0] - 2026-10-20
 
 HAPTIC 0.7 hardens two trust boundaries: raw HAProxy configuration annotations,

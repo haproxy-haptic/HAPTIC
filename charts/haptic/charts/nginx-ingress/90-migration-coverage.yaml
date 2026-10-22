@@ -701,7 +701,7 @@ _migrationCoverage:
         - name: enable-real-ip
         setting: 'Per Ingress: `haproxy-haptic.org/src-ip-header`'
         status: different
-        note: '`src-ip-header` takes the client address from the named header on every connection; there''s no trusted-CIDR list for it.'
+        note: 'Reads the named header after [forwarded-header filtering](operations/security.md#forwarded-headers); there''s no separate per-annotation trusted-CIDR setting.'
       - keys:
         - name: use-proxy-protocol
           default: 'false'

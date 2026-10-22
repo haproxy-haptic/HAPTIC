@@ -1713,7 +1713,7 @@ templateSnippets:
       errorfile 503 {{ pathResolver.GetPath("503.http", "file") }}
       errorfile 504 {{ pathResolver.GetPath("504.http", "file") }}
 
-  # Sanitize client authority and scheme before operator snippets write their own.
+  # Sanitize client metadata before operator snippets write their own.
   frontend-forwarded-headers:
     template: |
       {%- var trusted = shared.Get("forwardedTrustedProxiesMap") | fallback("") | tostring() -%}
@@ -1726,6 +1726,12 @@ templateSnippets:
       http-request set-header X-Forwarded-Proto %[ssl_fc,iif(https,http)]{{ unlessTrusted }}{% if trusted != "" %} { req.hdr(X-Forwarded-Proto) -m found }{% end %}
       http-request del-header X-Forwarded-Host{{ unlessTrusted }}
       http-request del-header X-Forwarded-Port{{ unlessTrusted }}
+      http-request del-header Forwarded{{ unlessTrusted }}
+      http-request del-header X-Forwarded-Prefix{{ unlessTrusted }}
+      http-request del-header X-Forwarded-Server{{ unlessTrusted }}
+      http-request del-header X-Real-IP{{ unlessTrusted }}
+      http-request del-header X-Client-IP{{ unlessTrusted }}
+      http-request del-header Client-IP{{ unlessTrusted }}
 
   # X-Forwarded-For policy needs the route key and must precede SPOE.
   frontend-filters-010-forwarded-headers:
@@ -3577,6 +3583,12 @@ validationTests:
           - 'http-request add-header X-Forwarded-For %\[src\]\n'
           - 'use_backend %\[var\(txn\.backend_name\)\]'
       - {type: not_contains, target: haproxy.cfg, pattern: 'haptic_trusted_proxy'}
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend http_frontend\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header Forwarded\n[ \t]+http-request del-header X-Forwarded-Prefix\n[ \t]+http-request del-header X-Forwarded-Server\n[ \t]+http-request del-header X-Real-IP\n[ \t]+http-request del-header X-Client-IP\n[ \t]+http-request del-header Client-IP\n'
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend http_frontend_h2c\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header Forwarded\n[ \t]+http-request del-header X-Forwarded-Prefix\n[ \t]+http-request del-header X-Forwarded-Server\n[ \t]+http-request del-header X-Real-IP\n[ \t]+http-request del-header X-Client-IP\n[ \t]+http-request del-header Client-IP\n'
 
   test-forwarded-headers-trusted-proxies:
     description: >-
@@ -3608,6 +3620,12 @@ validationTests:
       - type: contains
         target: haproxy.cfg
         pattern: '(?m)^frontend http_frontend\n(?:[ \t][^\n]*\n|\n)*?[ \t]+acl haptic_trusted_proxy src,map_ip\(\S*/forwarded-trusted-proxies\.map\) -m found\n[ \t]+http-request set-header X-Forwarded-Proto %\[ssl_fc,iif\(https,http\)\] unless haptic_trusted_proxy \{ req\.hdr\(X-Forwarded-Proto\) -m found \}\n[ \t]+http-request del-header X-Forwarded-Host unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-Port unless haptic_trusted_proxy\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header X-Forwarded-For unless haptic_trusted_proxy\n'
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend http_frontend\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header Forwarded unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-Prefix unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-Server unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Real-IP unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Client-IP unless haptic_trusted_proxy\n[ \t]+http-request del-header Client-IP unless haptic_trusted_proxy\n'
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend http_frontend_h2c\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request del-header Forwarded unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-Prefix unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Forwarded-Server unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Real-IP unless haptic_trusted_proxy\n[ \t]+http-request del-header X-Client-IP unless haptic_trusted_proxy\n[ \t]+http-request del-header Client-IP unless haptic_trusted_proxy\n'
 
   test-forwarded-headers-trusted-proxies-rejects-bad-entry:
     description: A trusted-proxy entry that is not an address could inject configuration, so the render refuses it

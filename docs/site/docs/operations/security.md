@@ -201,6 +201,7 @@ client can't forge them:
 | `X-Forwarded-For` | The client address. A value the client sent is dropped. |
 | `X-Forwarded-Proto` | `https` when HAPTIC terminated TLS, otherwise `http`. |
 | `X-Forwarded-Host`, `X-Forwarded-Port` | Nothing. A value the client sent is dropped. |
+| `Forwarded`, `X-Forwarded-Prefix`, `X-Forwarded-Server`, `X-Real-IP`, `X-Client-IP`, `Client-IP` | Nothing. A value the client sent is dropped. |
 
 With [PROXY protocol](../haproxy-deployment.md#proxy-protocol), the client
 address is the one the load balancer reports.
@@ -209,9 +210,10 @@ HAPTIC doesn't set `X-Forwarded-Port`: its listeners bind container ports behind
 the HAProxy Service, so the port it sees isn't always the port the client used.
 `X-Forwarded-Host` would repeat the `Host` header.
 
-HAPTIC removes or replaces client `X-Forwarded-Host`, `-Port`, and `-Proto`
+HAPTIC removes or replaces the headers in this table, except `X-Forwarded-For`,
 before operator `frontend-extra-*` snippets run, so these snippets can set their
-own values.
+own values. Other header names, including vendor-specific client-address headers,
+pass through; configure your backend to trust only the headers your proxy sets.
 `X-Forwarded-For` remains subject to the [per-route policy](../libraries/base.md#forwarded-headers),
 which runs after these snippets.
 
@@ -219,7 +221,7 @@ which runs after these snippets.
 
 If an L7 load balancer or a content delivery network in front of HAPTIC sets
 these headers, list its source addresses. From a listed source, HAPTIC keeps all
-four headers and appends the address it received the request from to
+headers in the table and appends the address it received the request from to
 `X-Forwarded-For`. It still sets `X-Forwarded-Proto` when the request has none.
 
 ```yaml
@@ -246,6 +248,56 @@ The values that keep the client's header (`add`, `ifmissing`, and `ignore` for
 the native annotation) bring forged addresses back for that route's backend.
 An Ingress whose `src-ip-header` names `X-Forwarded-For` already trusts that
 header, so HAPTIC keeps the client's `X-Forwarded-For` for its routes.
+For the other headers in the table, `src-ip-header` reads the sanitized value:
+it can use a trusted proxy's header or a value written by an operator snippet.
+The annotation alone doesn't exempt client input from header filtering. An operator
+snippet that deletes the header prevents it from changing the source address.
+Headers outside this table remain client-controlled unless your proxy or
+operator snippet overwrites them. Restrict direct access when you rely on a
+proxy to supply one of those headers.
+
+For example, if your L7 proxy connects from `192.0.2.10` and overwrites
+`X-Real-IP`, put its address in your Helm values:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        forwardedHeaders:
+          trustedProxies:
+            - 192.0.2.10/32
+```
+
+For an existing `app` Service on port 80, this Ingress selects that header:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+  annotations:
+    haproxy-haptic.org/src-ip-header: X-Real-IP
+spec:
+  ingressClassName: haptic
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app
+                port:
+                  number: 80
+```
+
+With PROXY protocol, the trust check uses the reported source address. If an
+L7 proxy reaches HAPTIC through an L4 load balancer, list the L7 proxy's address
+carried in the PROXY header. A direct client behind an L4 load balancer still isn't
+trusted; its address already comes from PROXY protocol and doesn't need
+`src-ip-header`.
 
 ## Secrets in templates
 

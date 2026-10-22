@@ -726,11 +726,9 @@ controller:
           enabled: false
           httpPort: 8081
           httpsPort: 8444
-        # X-Forwarded-For, -Proto, -Host and -Port are kept only from these
-        # source addresses (CIDRs), with the client address appended to
-        # X-Forwarded-For. From any other source HAPTIC replaces X-Forwarded-For
-        # with the client address, sets X-Forwarded-Proto, and drops the other
-        # two. List the L7 load balancers in front of HAPTIC. See
+        # Keep forwarding metadata from these L7 proxy source addresses (CIDRs).
+        # Other sources have their client-address, scheme and authority headers
+        # sanitized. See the complete header list and route exceptions:
         # https://haproxy-haptic.org/docs/latest/operations/security/#forwarded-headers
         forwardedHeaders:
           trustedProxies: []  # @schema item: string

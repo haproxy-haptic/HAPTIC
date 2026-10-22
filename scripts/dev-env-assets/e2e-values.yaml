@@ -234,6 +234,21 @@ controller:
           http-request set-header X-Forwarded-Port 9443 if operator_forwarded_headers !{ req.hdr(X-Forwarded-Port) -m found }
           http-request set-header X-Forwarded-Proto operator if operator_forwarded_headers
           http-request set-header X-Forwarded-For 198.51.100.9 if operator_forwarded_headers
+          http-request set-header Forwarded operator if operator_forwarded_headers
+          http-request set-header X-Forwarded-Prefix operator if operator_forwarded_headers
+          http-request set-header X-Forwarded-Server operator if operator_forwarded_headers
+          http-request set-header X-Real-IP operator if operator_forwarded_headers
+          http-request set-header X-Client-IP operator if operator_forwarded_headers
+          http-request set-header Client-IP operator if operator_forwarded_headers
+      frontend-extra-101-source-headers-test:
+        template: |
+          acl operator_source_headers req.hdr(Host) -m beg xfwd-source.
+          http-request set-header X-Real-IP 198.51.100.8 if operator_source_headers { req.hdr(X-Test-Set-Source),lower -m str x-real-ip }
+          http-request del-header X-Real-IP if operator_source_headers { req.hdr(X-Test-Delete-Source),lower -m str x-real-ip }
+          http-request set-header X-Client-IP 198.51.100.8 if operator_source_headers { req.hdr(X-Test-Set-Source),lower -m str x-client-ip }
+          http-request del-header X-Client-IP if operator_source_headers { req.hdr(X-Test-Delete-Source),lower -m str x-client-ip }
+          http-request set-header Client-IP 198.51.100.8 if operator_source_headers { req.hdr(X-Test-Set-Source),lower -m str client-ip }
+          http-request del-header Client-IP if operator_source_headers { req.hdr(X-Test-Delete-Source),lower -m str client-ip }
       # Hook into frontend routing to check header against blocklist
       # Uses "frontend-filters-*" naming convention to be auto-included by base.yaml
       frontend-filters-http-store-demo:
