@@ -5,6 +5,21 @@ you plan to deploy. Each section lists configuration changes and the steps neede
 to keep your existing routes working. For routine chart upgrades, see
 [Upgrading with Helm](deploying-with-helm.md#upgrading).
 
+## Forwarding-header changes after 0.7.0
+
+HAPTIC now removes client-sent `Forwarded`, `X-Forwarded-Prefix`,
+`X-Forwarded-Server`, `X-Real-IP`, `X-Client-IP`, and `Client-IP` unless their
+source appears in `forwardedHeaders.trustedProxies`. Operator snippets still
+run after header filtering, so their header setters and deletions take effect.
+
+If an Ingress uses `src-ip-header: X-Real-IP`, `X-Client-IP`, or `Client-IP`,
+list the L7 proxy that overwrites that header in `trustedProxies`. See the
+[complete L7 proxy example](operations/security.md#per-route-exceptions).
+The annotation alone no longer trusts these client-supplied headers.
+For direct clients behind an L4 load balancer sending PROXY protocol, remove
+the header annotation: HAPTIC already receives the client address from PROXY
+protocol. Don't add client networks to `trustedProxies` to restore the old behavior.
+
 ## Upgrading to 0.7
 
 0.7 changes raw configuration permissions and forwarded headers. The pre-upgrade

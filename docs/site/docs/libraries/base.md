@@ -268,8 +268,8 @@ HTTP requests receive `404`.
 
 ### Forwarded headers
 
-Every HTTP frontend drops the `X-Forwarded-*` headers a client sends and sets its
-own; the [security page](../operations/security.md#forwarded-headers) describes
+Every HTTP frontend sanitizes the forwarding headers listed on the
+[security page](../operations/security.md#forwarded-headers), which describes
 what backends receive and how to trust a load balancer. Without trusted proxies
 and per-route modes, the rules are:
 
@@ -277,14 +277,20 @@ and per-route modes, the rules are:
 http-request set-header X-Forwarded-Proto %[ssl_fc,iif(https,http)]
 http-request del-header X-Forwarded-Host
 http-request del-header X-Forwarded-Port
+http-request del-header Forwarded
+http-request del-header X-Forwarded-Prefix
+http-request del-header X-Forwarded-Server
+http-request del-header X-Real-IP
+http-request del-header X-Client-IP
+http-request del-header Client-IP
 # ... frontend-extra-* snippets and routing ...
 http-request del-header X-Forwarded-For
 # ... every other frontend-filters-* rule, including set-src ...
 http-request add-header X-Forwarded-For %[src]
 ```
 
-`frontend-forwarded-headers` sanitizes the client's `X-Forwarded-Host`, `-Port`,
-and `-Proto` before `frontend-extra-*` snippets run. A snippet can then set
+`frontend-forwarded-headers` sanitizes these headers, except `X-Forwarded-For`,
+before `frontend-extra-*` snippets run. A snippet can then set
 these headers without HAPTIC deleting or replacing them.
 Trust for these headers uses the connection source before any operator
 `set-src` rewrite; the later `X-Forwarded-For` policy sees the rewritten source.
@@ -295,6 +301,9 @@ This policy also applies to an `X-Forwarded-For` written by a `frontend-extra-*`
 snippet. To set that header after the route policy, use a `frontend-filters-*`
 snippet ordered after `010`; `998` still appends the source address according
 to the route mode. A snippet ordered after `998` can set the final header.
+An Ingress `src-ip-header` that names one of the six additional headers above
+reads the sanitized request: it can use a trusted proxy's value or a value set
+by an operator snippet. It doesn't restore a client header that was removed.
 `frontend-filters-998-forwarded-for` appends the client address after any
 `set-src` rewrite. With `extraContext.forwardedHeaders.trustedProxies` set, the
 deletions skip a source listed in `forwarded-trusted-proxies.map`, and such a

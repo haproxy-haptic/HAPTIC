@@ -240,7 +240,7 @@ Request/response header manipulation, capture, CORS, source-IP allow/deny, and u
 | `haproxy-haptic.org/request-capture-len` | Sets the capture length for `request-capture` (default `128`). |
 | `haproxy-haptic.org/request-set-header` | Sets request headers sent to the upstream, one `<name> <value>` per line. Changing a value avoids a reload; the first use of a new header name requires one. |
 | `haproxy-haptic.org/response-set-header` | Sets response headers, one `<name> <value>` per line. Changing a value avoids a reload; the first use of a new header name requires one. |
-| `haproxy-haptic.org/src-ip-header` | Derives the client source IP from the named request header via `http-request set-src`, from a per-route map; the first route to name a new header reloads once. Naming `X-Forwarded-For` also keeps the client's `X-Forwarded-For` for the route, as `forwardfor: add` does, unless the route sets `forwardfor`. |
+| `haproxy-haptic.org/src-ip-header` | Derives the client source IP from the named request header via `http-request set-src`, from a per-route map; the first route to name a new header reloads once. Naming `X-Forwarded-For` also keeps the client's `X-Forwarded-For` for the route, as `forwardfor: add` does, unless the route sets `forwardfor`. `X-Real-IP`, `X-Client-IP`, and `Client-IP` must come from a listed trusted proxy or an operator snippet; this annotation doesn't exempt them from header filtering. |
 
 ### Canary and traffic mirroring
 

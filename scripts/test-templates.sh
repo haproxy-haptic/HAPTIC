@@ -356,7 +356,9 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     echo -e "${YELLOW}Validating operator forwarded headers after client sanitization...${NC}" >&2
     HAPTIC_TEMPLATE_VALUES="$PROJECT_ROOT/tests/fixtures/forwarded-headers/values.yaml" \
         "$0" --test test-operator-forwarded-headers-after-sanitization \
-        --test test-operator-forwarded-headers-trusted-proxies || FULL_RC=$?
+        --test test-operator-forwarded-headers-trusted-proxies \
+        --test test-alternative-forwarded-headers-proxy-listeners \
+        --test test-alternative-forwarded-headers-proxy-listeners-trusted || FULL_RC=$?
 fi
 
 if ! single_test_requested "$@"; then

@@ -74,6 +74,7 @@ func TestForwardedHeadersOperatorSnippets(t *testing.T) {
 						expectHeader(t, headers, "x-forwarded-host", host)
 						expectHeader(t, headers, "x-forwarded-port", "9443")
 						expectHeader(t, headers, "x-forwarded-proto", "operator")
+						expectAlternativeForwardedHeaders(t, headers, "operator")
 						requireClientAddress(t, headers["x-forwarded-for"])
 						require.NotEqual(t, "198.51.100.9", headers["x-forwarded-for"])
 					}
@@ -111,7 +112,7 @@ func TestForwardedHeadersOperatorSnippets(t *testing.T) {
 
 func assessTrustedOperatorForwardedHeaders(ctx context.Context, t *testing.T, cfg *envconf.Config, hosts map[string]string, namespace string) {
 	t.Helper()
-	trustForwardedHeadersDuringTest(ctx, t, cfg, hosts["default"], namespace)
+	trustForwardedHeadersDuringTest(ctx, t, cfg, hosts["default"], namespace, []string{"default", "add", "update", "ifmissing", "ignore", "control"}, "198.51.100.9")
 	for _, protocol := range []string{"http", "h2c", "https"} {
 		for _, forged := range []bool{false, true} {
 			headers := operatorForwardedHeaders(ctx, t, hosts["default"], protocol, forged)
@@ -128,6 +129,12 @@ func assessTrustedOperatorForwardedHeaders(ctx context.Context, t *testing.T, cf
 			requireClientAddress(t, address)
 		}
 	}
+	for _, protocol := range []string{"http", "h2c"} {
+		control := operatorForwardedHeaders(ctx, t, hosts["control"], protocol, true)
+		for header, value := range forgedAlternativeForwardedHeaders() {
+			expectHeader(t, control, strings.ToLower(header), value)
+		}
+	}
 	control := operatorForwardedHeaders(ctx, t, hosts["control"], "http", true)
 	expectHeader(t, control, "x-forwarded-host", "evil.example")
 	expectHeader(t, control, "x-forwarded-port", "4443")
@@ -142,7 +149,7 @@ func assessTrustedOperatorForwardedHeaders(ctx context.Context, t *testing.T, cf
 	expectHeader(t, headers, "x-forwarded-for", "198.51.100.8")
 }
 
-func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *envconf.Config, host, namespace string) {
+func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *envconf.Config, host, namespace string, routeNames []string, forwardedPrefix string) {
 	t.Helper()
 	client, err := cfg.NewClient()
 	require.NoError(t, err)
@@ -152,7 +159,7 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 	require.NoError(t, err)
 	replicas, err := discoverHAProxyReplicaCount(ctx, client)
 	require.NoError(t, err)
-	publication := forwardedPolicyPublication{client: hc, replicas: replicas, namespace: namespace}
+	publication := forwardedPolicyPublication{client: hc, replicas: replicas, namespace: namespace, routeNames: routeNames}
 	publication.baselineChecksum, err = publication.wait(ctx, false)
 	require.NoError(t, err)
 	configs := dyn.Resource(configGVR).Namespace(ControllerNamespace)
@@ -187,7 +194,7 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 		require.NoError(t, waitForForwardedConfigValidation(cleanupCtx, configs, restored))
 		_, err = publication.wait(cleanupCtx, false)
 		require.NoError(t, err)
-		waitForOperatorForwardedPolicy(cleanupCtx, t, host, false)
+		waitForOperatorForwardedPolicy(cleanupCtx, t, host, false, forwardedPrefix)
 	})
 	address := operatorForwardedHeaders(ctx, t, host, "http", false)["x-forwarded-for"]
 	require.NotNil(t, net.ParseIP(address))
@@ -200,13 +207,14 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 	require.NoError(t, waitForForwardedConfigValidation(ctx, configs, patched))
 	_, err = publication.wait(ctx, true)
 	require.NoError(t, err)
-	waitForOperatorForwardedPolicy(ctx, t, host, true)
+	waitForOperatorForwardedPolicy(ctx, t, host, true, forwardedPrefix)
 }
 
 type forwardedPolicyPublication struct {
 	client           hapticclient.Interface
 	replicas         int
 	namespace        string
+	routeNames       []string
 	baselineChecksum string
 }
 
@@ -244,7 +252,7 @@ func (p *forwardedPolicyPublication) wait(ctx context.Context, trusted bool) (st
 }
 
 func (p *forwardedPolicyPublication) matchesPolicy(content string, trusted bool) error {
-	for _, mode := range []string{"default", "add", "update", "ifmissing", "ignore", "control"} {
+	for _, mode := range p.routeNames {
 		if !strings.Contains(content, "backend "+p.namespace+"_"+mode+"_svc_") {
 			return fmt.Errorf("published config is missing the %s fixture backend", mode)
 		}
@@ -272,13 +280,13 @@ func waitForForwardedConfigValidation(ctx context.Context, configs dynamic.Resou
 		})
 }
 
-func waitForOperatorForwardedPolicy(ctx context.Context, t *testing.T, host string, trusted bool) {
+func waitForOperatorForwardedPolicy(ctx context.Context, t *testing.T, host string, trusted bool, forwardedPrefix string) {
 	t.Helper()
 	client := httpclient.New(t)
 	waitConfig := testutil.WaitConfig{InitialInterval: 100 * time.Millisecond, MaxInterval: 2 * time.Second, Timeout: 15 * time.Second, Multiplier: 2}
 	require.NoError(t, testutil.WaitForConditionWithDescription(ctx, waitConfig, "forwarded-header trust policy is deployed", func(ctx context.Context) (bool, error) {
 		defer client.CloseIdleConnections()
-		resp, err := client.GET(host, "/").Do(ctx)
+		resp, err := client.GET(host, "/").WithHeader("X-Forwarded-For", forgedForwardedFor).Do(ctx)
 		if err != nil {
 			return false, err
 		}
@@ -286,7 +294,7 @@ func waitForOperatorForwardedPolicy(ctx context.Context, t *testing.T, host stri
 			return false, fmt.Errorf("forwarding probe returned status=%d without expected echo", resp.Status)
 		}
 		value := resp.Echo.Headers["x-forwarded-for"]
-		if trusted && strings.HasPrefix(value, "198.51.100.9, ") || !trusted && net.ParseIP(value) != nil && value != "198.51.100.9" {
+		if trusted && strings.HasPrefix(value, forwardedPrefix+", ") || !trusted && net.ParseIP(value) != nil && value != forwardedPrefix {
 			return true, nil
 		}
 		return false, fmt.Errorf("X-Forwarded-For=%q while trusted=%t", value, trusted)
@@ -307,6 +315,9 @@ func operatorForwardedHeaders(ctx context.Context, t *testing.T, host, protocol 
 		req = req.WithHeader("X-Forwarded-Host", "evil.example").
 			WithHeader("X-Forwarded-Port", "4443").WithHeader("X-Forwarded-Proto", "forged").
 			WithHeader("X-Forwarded-For", forgedForwardedFor)
+		for header, value := range forgedAlternativeForwardedHeaders() {
+			req = req.WithHeader(header, value)
+		}
 	}
 	return forwardedHeaders(t, req)
 }
@@ -329,6 +340,9 @@ func operatorForwardedH2CHeaders(ctx context.Context, t *testing.T, host string,
 		req.Header.Set("X-Forwarded-Port", "4443")
 		req.Header.Set("X-Forwarded-Proto", "forged")
 		req.Header.Set("X-Forwarded-For", forgedForwardedFor)
+		for header, value := range forgedAlternativeForwardedHeaders() {
+			req.Header.Set(header, value)
+		}
 	}
 	resp, err := client.Do(req)
 	require.NoError(t, err)
