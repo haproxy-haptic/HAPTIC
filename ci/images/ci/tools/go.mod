@@ -1,6 +1,6 @@
 module github.com/haproxy-haptic/HAPTIC/ci-tools
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/boumenot/gocover-cobertura v1.5.0

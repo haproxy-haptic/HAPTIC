@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Build with Go 1.27.3 to reject compromised intermediate certificates in TLS verification (CVE-2026-111943).
+
 ## [0.7.0] - 2026-10-20
 
 HAPTIC 0.7 hardens two trust boundaries: raw HAProxy configuration annotations,
