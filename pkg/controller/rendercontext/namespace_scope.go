@@ -41,8 +41,8 @@ func (s *NamespaceScope) Check(keys []string) error {
 		target = keys[0] + "/" + keys[1]
 	}
 	allowed := strings.Join(s.namespaces, ", ")
-	return fmt.Errorf("%s %s cannot be read: %s limits the %s watch to %s. Reference %s in %s, or change %s",
-		s.resource, target, s.setting, s.resource, allowed, s.resource, allowed, s.setting)
+	return &NamespaceScopeError{message: fmt.Sprintf("%s %s cannot be read: %s limits the %s watch to %s. Reference %s in %s, or change %s",
+		s.resource, target, s.setting, s.resource, allowed, s.resource, allowed, s.setting)}
 }
 
 // NamespaceScopes returns the scope of each watched resource of cfg, or nil
@@ -59,4 +59,28 @@ func NamespaceScopes(cfg *config.Config) func(string) *NamespaceScope {
 		return nil
 	}
 	return func(name string) *NamespaceScope { return scopes[name] }
+}
+
+// NamespaceScopeError identifies a lookup forbidden by configured watch namespaces.
+type NamespaceScopeError struct {
+	message string
+}
+
+func (e *NamespaceScopeError) Error() string { return e.message }
+
+// IsNamespaceScopeViolation excludes mixed failures so negative tests cannot hide bad inputs.
+func IsNamespaceScopeViolation(err error) bool {
+	switch cause := err.(type) {
+	case *NamespaceScopeError:
+		return true
+	case interface{ Unwrap() []error }:
+		causes := cause.Unwrap()
+		return len(causes) > 0 && !slices.ContainsFunc(causes, func(child error) bool {
+			return !IsNamespaceScopeViolation(child)
+		})
+	case interface{ Unwrap() error }:
+		return IsNamespaceScopeViolation(cause.Unwrap())
+	default:
+		return false
+	}
 }

@@ -319,15 +319,16 @@ func convertValidationTests(crdTests map[string]v1alpha1.ValidationTest) (map[st
 	for testName := range crdTests {
 		crdTest := crdTests[testName]
 		testConfig := config.ValidationTest{
-			Description:       crdTest.Description,
-			Fixtures:          convertFixtures(crdTest.Fixtures),
-			HTTPFixtures:      convertHTTPFixtures(crdTest.HTTPResources),
-			CurrentServers:    convertCurrentServers(crdTest.CurrentServers),
-			CurrentFiles:      crdTest.CurrentFiles,
-			MinHAProxyVersion: crdTest.MinHAProxyVersion,
-			Requires:          crdTest.Requires,
-			RequiresFields:    crdTest.RequiresFields,
-			Assertions:        convertAssertions(crdTest.Assertions),
+			Description:              crdTest.Description,
+			UseDeploymentWatchScopes: crdTest.UseDeploymentWatchScopes,
+			Fixtures:                 convertFixtures(crdTest.Fixtures),
+			HTTPFixtures:             convertHTTPFixtures(crdTest.HTTPResources),
+			CurrentServers:           convertCurrentServers(crdTest.CurrentServers),
+			CurrentFiles:             crdTest.CurrentFiles,
+			MinHAProxyVersion:        crdTest.MinHAProxyVersion,
+			Requires:                 crdTest.Requires,
+			RequiresFields:           crdTest.RequiresFields,
+			Assertions:               convertAssertions(crdTest.Assertions),
 		}
 		// Parse test-specific extraContext if present
 		if len(crdTest.ExtraContext.Raw) > 0 {

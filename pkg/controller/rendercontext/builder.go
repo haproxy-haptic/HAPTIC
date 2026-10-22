@@ -322,8 +322,7 @@ func WithPlanMemo(memo *PlanMemo) Option {
 }
 
 // WithNamespaceScopes fails the render for a lookup outside a watch's
-// namespaces (see NamespaceScopes). Pass it for live stores only; fixture
-// stores hold whatever a test declares.
+// namespaces (see NamespaceScopes). Fixture tests opt in explicitly.
 func WithNamespaceScopes(scopeFor func(string) *NamespaceScope) Option {
 	return func(b *Builder) {
 		b.scopeFor = scopeFor

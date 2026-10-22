@@ -34,6 +34,7 @@ type ColdIncrementalRenderConfig struct {
 	Mode               rendercontext.RenderMode
 	TemplateContext    map[string]any
 	ResourceErrors     *rendercontext.ResourceErrorCollector
+	NamespaceScopes    func(string) *rendercontext.NamespaceScope
 	Logger             *slog.Logger
 	TypedResourceTypes map[string]reflect.Type
 	// Analysis, when set, must come from AnalyzeColdIncrementalRenders over
@@ -83,6 +84,7 @@ func NewColdIncrementalRender(
 	if state == nil {
 		return &ColdIncrementalRender{}, nil
 	}
+	state.scopeFor = cfg.NamespaceScopes
 	if cfg.StoreProvider == nil {
 		return nil, errors.New("cold incremental render requires a store provider")
 	}

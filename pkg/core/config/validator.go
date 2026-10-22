@@ -172,6 +172,9 @@ const GlobalValidationTestName = "_global"
 // which is why `assertions` is optional in the schema and enforced here, on the
 // merged config, instead.
 func validateValidationTests(cfg *Config) error {
+	if cfg.ValidationTests[GlobalValidationTestName].UseDeploymentWatchScopes {
+		return fmt.Errorf("validationTests._global.useDeploymentWatchScopes cannot apply to shared fixtures. Set it on each test that checks deployment scopes")
+	}
 	for name := range cfg.ValidationTests {
 		if name == GlobalValidationTestName {
 			continue

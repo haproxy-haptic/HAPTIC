@@ -83,7 +83,7 @@ marked "optional"):
 | `WithHTTPFetcher(templating.HTTPFetcher)` | Wires the `http` runtime variable so templates can call `http.Fetch(...)` |
 | `WithCurrentConfig(*renderplan.CurrentConfig)` | Adds `currentConfig` to the context so templates can reason about the running servers; nil on the first deployment. Production feeds it from the plan the fleet ACKed (or the last reconcile render until a pod ACKs), projected via `plan.CurrentConfig()`; the testrunner builds it from a test's `currentServers:` fixture |
 | `WithCapabilities(dataplane.Capabilities)` | Sets the HAProxy version capabilities exposed under `capabilities`. The testrunner passes the detected local capabilities so `controller validate` matches production; omit it and `Build()` still populates an all-false map |
-| `WithNamespaceScopes(NamespaceScopes(cfg))` | Fails the render when a `Fetch`/`GetSingle` keys on a namespace outside a watched resource's `namespaces`. Only the production renderer passes it: fixture stores hold what a test declares, so the testrunner must not apply a deployment's scope |
+| `WithNamespaceScopes(NamespaceScopes(cfg))` | Fails the render when a `Fetch`/`GetSingle` keys on a namespace outside a watched resource's `namespaces`. The production renderer always passes it; validation tests opt in with `useDeploymentWatchScopes: true` |
 
 `extraContext` is **not** an option — `Build()` reads `cfg.TemplatingSettings.ExtraContext`
 directly and always populates the `extraContext` key (with an empty map if the

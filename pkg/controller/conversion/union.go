@@ -90,6 +90,9 @@ func UnionValidationTests(sources []ValidationTestSource) (map[string]v1alpha1.V
 // mergeGlobalBaseline accumulates one source's `_global` contribution onto what
 // earlier sources contributed.
 func mergeGlobalBaseline(acc, add *v1alpha1.ValidationTest, accOrigin, addOrigin string) error {
+	if add.UseDeploymentWatchScopes {
+		return fmt.Errorf("%s: validationTests._global.useDeploymentWatchScopes cannot apply to shared fixtures. Set it on each test that checks deployment scopes", addOrigin)
+	}
 	if acc.Fixtures == nil && add.Fixtures != nil {
 		acc.Fixtures = make(map[string][]runtime.RawExtension, len(add.Fixtures))
 	}

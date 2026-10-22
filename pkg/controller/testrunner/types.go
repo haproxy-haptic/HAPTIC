@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/rendercontext"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/renderer"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
@@ -60,7 +61,8 @@ type Runner struct {
 	checkWithoutBinary func(haproxyConfig string) error
 
 	// coldAnalysis is built once and shared by every render of engineTemplate.
-	coldAnalysis func() *renderer.ColdIncrementalRenderAnalysis
+	coldAnalysis    func() *renderer.ColdIncrementalRenderAnalysis
+	namespaceScopes func(string) *rendercontext.NamespaceScope
 }
 
 // testEntry is a tuple of test name and test definition for worker processing.

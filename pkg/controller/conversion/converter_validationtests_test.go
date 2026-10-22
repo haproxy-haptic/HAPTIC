@@ -141,3 +141,19 @@ func TestConvertValidationTests(t *testing.T) {
 		assert.Equal(t, "blocked-1\nblocked-2", http[0].Content)
 	})
 }
+
+func TestConvertValidationTestDeploymentWatchScopes(t *testing.T) {
+	tests, err := convertValidationTests(map[string]v1alpha1.ValidationTest{
+		"scoped":   {UseDeploymentWatchScopes: true},
+		"isolated": {},
+	})
+	require.NoError(t, err)
+	assert.True(t, tests["scoped"].UseDeploymentWatchScopes)
+	assert.False(t, tests["isolated"].UseDeploymentWatchScopes)
+}
+
+func TestUnionRejectsGlobalDeploymentWatchScopes(t *testing.T) {
+	_, err := UnionValidationTests([]ValidationTestSource{{Origin: "operator", Tests: map[string]v1alpha1.ValidationTest{"_global": {UseDeploymentWatchScopes: true}}}})
+	require.ErrorContains(t, err, "validationTests._global.useDeploymentWatchScopes")
+	assert.Contains(t, err.Error(), "Set it on each test")
+}

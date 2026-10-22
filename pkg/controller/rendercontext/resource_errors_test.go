@@ -246,3 +246,22 @@ func TestResourceErrorCollector_ConcurrentRecord(t *testing.T) {
 		assert.Contains(t, err.Error(), fmt.Sprintf("read-%d", i))
 	}
 }
+
+func TestNamespaceScopeViolationRejectsMixedInputFailures(t *testing.T) {
+	scope := namespaceScopeOf("widgets", &config.WatchedResource{IndexBy: []string{config.NamespaceIndexPath}, Namespaces: []string{"allowed"}})
+	denied := scope.Check([]string{"foreign", "item"})
+	for _, test := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"scope", denied, true},
+		{"wrapped scopes", &ResourceInputError{cause: errors.Join(denied, fmt.Errorf("lookup: %w", denied))}, true},
+		{"scope and store failure", &ResourceInputError{cause: errors.Join(denied, errors.New("store unavailable"))}, false},
+		{"nested mixed errors", fmt.Errorf("rendering: %w", errors.Join(denied, errors.Join(denied, errors.New("invalid typed value")))), false},
+		{"ordinary error", errors.New("store unavailable"), false},
+		{"nil", nil, false},
+	} {
+		t.Run(test.name, func(t *testing.T) { assert.Equal(t, test.want, IsNamespaceScopeViolation(test.err)) })
+	}
+}
