@@ -103,6 +103,17 @@ class HistoryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.history()
 
+    def test_rerun_job_uses_only_the_successful_attempts_artifact(self):
+        earlier = dict(self.artifact, id=18, created_at="2026-10-13T00:30:00Z", digest="sha256:other")
+        self.api.all.side_effect = lambda path, field, **params: iter({
+            "workflow_runs": [self.run], "jobs": [self.job, self.churn],
+            "artifacts": [earlier, self.artifact]}[field])
+        self.assertEqual(self.history(), [{"runner_cpu_model": "cpu", "controller_rss_bytes": 100, "_job_id": 9}])
+        self.api.artifact.assert_called_once_with("owner/repo", 19, 2 * 1024 * 1024)
+        earlier["created_at"] = "2026-10-13T01:03:00Z"
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            self.history()
+
     def test_archive_paths_are_never_extracted_or_treated_as_metrics(self):
         for name in ("../scale-metrics.json", "other.json", "/scale-metrics.json"):
             self.api.artifact.return_value = self.archive(name)
