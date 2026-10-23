@@ -53,6 +53,12 @@ func TestGatewayRouteHostnamePrecedenceIncrementalTransitions(t *testing.T) {
 	cold.addHTTPRoute(t, broader)
 	assert.Equal(t, collision, cold.renderAndCommitCacheReady(t).HAProxyConfig)
 
+	fixture.addHTTPRoute(t, gatewayRouteAnalysisRouteWithPathType("broader-peer", "*.example.com", "PathPrefix", "/app/peer", ""))
+	sharedRank := fixture.renderAndCommitCacheReady(t).HAProxyConfig
+	assertGatewayHostnamePrecedence(t, sharedRank, true, 3)
+	fixture.deleteHTTPRoute(t, "broader-peer")
+	assert.Equal(t, collision, fixture.renderAndCommitCacheReady(t).HAProxyConfig)
+
 	fixture.updateHTTPRoute(t, gatewayRouteAnalysisRouteWithPathType(
 		"broader", "abc.example.com", "PathPrefix", "/app/longer", ""))
 	sameRank := fixture.renderAndCommitCacheReady(t).HAProxyConfig
