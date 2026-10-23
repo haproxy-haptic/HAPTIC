@@ -288,7 +288,7 @@ func (f *mixedTLSFixture) assertEncryptedHost(ctx context.Context, t *testing.T,
 func (f *mixedTLSFixture) probeServed(ctx context.Context, t *testing.T, host string, client *tls.Certificate) (body, certificate []byte) {
 	t.Helper()
 	var err error
-	require.NoError(t, testutil.WaitForConditionWithDescription(ctx, testutil.SlowWaitConfig(), "TLS probe of "+host,
+	require.NoError(t, testutil.WaitForConditionWithDescription(ctx, testutil.FastWaitConfig(), "TLS probe of "+host,
 		func(ctx context.Context) (bool, error) {
 			body, certificate, err = f.probeClient(ctx, host, client)
 			return !tunnelDropped(err), nil
