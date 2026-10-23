@@ -1077,6 +1077,10 @@ validation settings. Passthrough listeners forward the original TLS stream;
 they don't use the Gateway's frontend client-validation policy. A
 BackendTLSPolicy can encrypt the backend connection after termination.
 
+On a port with more than one TLS listener, HAProxy terminates each connection
+on an internal listener, so a terminated connection counts twice against the
+HAProxy connection limit (`maxconn`). Passthrough connections count once.
+
 This example expects two Services in `default`: `plaintext-app` accepts plaintext
 TCP on port `3000`, and `secure-app` accepts TLS for `encrypted.example.com` on
 port `8443`. Save the certificate and private key for `terminate.example.com` as
