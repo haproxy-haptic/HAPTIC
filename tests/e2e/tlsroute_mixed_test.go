@@ -24,12 +24,14 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -264,8 +266,7 @@ func (f *mixedTLSFixture) assertTerminated(ctx context.Context, t *testing.T) {
 
 func (f *mixedTLSFixture) assertTerminatedHost(ctx context.Context, t *testing.T, host string) {
 	t.Helper()
-	body, certificate, err := f.probe(ctx, host)
-	require.NoError(t, err)
+	body, certificate := f.probeServed(ctx, t, host, nil)
 	require.Equal(t, f.certificate, certificate, "terminating listener certificate")
 	require.Contains(t, string(body), "mixed-tls")
 	require.NotEqual(t, "encrypted", strings.TrimSpace(string(body)))
@@ -278,10 +279,27 @@ func (f *mixedTLSFixture) assertPassthrough(ctx context.Context, t *testing.T) {
 
 func (f *mixedTLSFixture) assertEncryptedHost(ctx context.Context, t *testing.T, host string) {
 	t.Helper()
-	body, certificate, err := f.probe(ctx, host)
-	require.NoError(t, err)
+	body, certificate := f.probeServed(ctx, t, host, nil)
 	require.Equal(t, f.backendCertificate, certificate, "passthrough must preserve the backend certificate")
 	require.Equal(t, "encrypted", strings.TrimSpace(string(body)))
+}
+
+// probeServed retries only a dropped port-forward tunnel (issue #48); any other error fails at once.
+func (f *mixedTLSFixture) probeServed(ctx context.Context, t *testing.T, host string, client *tls.Certificate) (body, certificate []byte) {
+	t.Helper()
+	var err error
+	require.NoError(t, testutil.WaitForConditionWithDescription(ctx, testutil.SlowWaitConfig(), "TLS probe of "+host,
+		func(ctx context.Context) (bool, error) {
+			body, certificate, err = f.probeClient(ctx, host, client)
+			return !tunnelDropped(err), nil
+		}))
+	require.NoError(t, err)
+	return body, certificate
+}
+
+func tunnelDropped(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED)
 }
 
 func (f *mixedTLSFixture) assertRejected(ctx context.Context, t *testing.T, host string) {
@@ -352,8 +370,7 @@ func TestTLSRouteMixedClientValidation(t *testing.T) {
 			f.assertPassthrough(ctx, t)
 			valid, err := tls.X509KeyPair(bundle.ClientCertPEM, bundle.ClientKeyPEM)
 			require.NoError(t, err)
-			body, certificate, err := f.probeClient(ctx, f.terminate, &valid)
-			require.NoError(t, err)
+			body, certificate := f.probeServed(ctx, t, f.terminate, &valid)
 			require.Equal(t, f.certificate, certificate)
 			require.Contains(t, string(body), "mixed-tls")
 			wrong, err := tls.X509KeyPair(bundle.WrongCertPEM, bundle.WrongKeyPEM)
@@ -363,8 +380,7 @@ func TestTLSRouteMixedClientValidation(t *testing.T) {
 			f.applyGateway(ctx, t, false)
 			f.waitListeners(ctx, t, false)
 			f.assertRejected(ctx, t, f.terminate)
-			body, certificate, err = f.probeClient(ctx, f.terminate, &valid)
-			require.NoError(t, err)
+			body, certificate = f.probeServed(ctx, t, f.terminate, &valid)
 			require.Equal(t, f.certificate, certificate)
 			require.Contains(t, string(body), "mixed-tls")
 			_, _, err = f.probeClient(ctx, f.terminate, &wrong)
@@ -380,8 +396,7 @@ func gatewayMTLSValidation(name string) map[string]any {
 
 func (f *mixedTLSFixture) assertUppercaseSNI(ctx context.Context, t *testing.T) {
 	t.Helper()
-	body, certificate, err := f.probe(ctx, strings.ToUpper(f.terminate))
-	require.NoError(t, err)
+	body, certificate := f.probeServed(ctx, t, strings.ToUpper(f.terminate), nil)
 	require.Equal(t, f.certificate, certificate)
 	require.Contains(t, string(body), "mixed-tls")
 }
@@ -496,14 +511,12 @@ func TestTLSRouteMultipleTerminationCertificates(t *testing.T) {
 			f.waitListeners(ctx, t, true)
 			f.port = ForwardGateway(ctx, t, f.namespace, "mixed", mixedTLSPort).Ports[mixedTLSPort]
 			f.assertTerminated(ctx, t)
-			body, certificate, err := f.probe(ctx, f.passthrough)
-			require.NoError(t, err)
+			body, certificate := f.probeServed(ctx, t, f.passthrough, nil)
 			require.Equal(t, secondCertificate, certificate)
 			require.Contains(t, string(body), "mixed-tls")
 			f.applyListeners(ctx, t, listeners[1:])
 			f.waitListeners(ctx, t, false)
-			body, certificate, err = f.probe(ctx, f.passthrough)
-			require.NoError(t, err)
+			body, certificate = f.probeServed(ctx, t, f.passthrough, nil)
 			require.Equal(t, secondCertificate, certificate)
 			require.Contains(t, string(body), "mixed-tls")
 			f.assertRejected(ctx, t, f.terminate)
