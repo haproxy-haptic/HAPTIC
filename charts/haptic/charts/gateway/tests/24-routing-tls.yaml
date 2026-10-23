@@ -121,7 +121,7 @@ validationTests:
 
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-9445$'}
 
-      - {type: not_contains, target: haproxy.cfg, pattern: 'use_backend .* req_ssl_sni -m str example\.com'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'use_backend .* req_ssl_sni,lower -m str example\.com'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s+tcp-request content reject$'}
   test-tlsroute-invalid-backend-rejects-on-chart-static:
     requires: [gateways, tlsroutes]
@@ -159,13 +159,13 @@ validationTests:
       - type: haproxy_valid
 
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend ssl-tcp$'}
-      - {type: not_contains, target: haproxy.cfg, pattern: 'use_backend .* req_ssl_sni -m str example\.com'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'use_backend .* req_ssl_sni,lower -m str example\.com'}
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)acl gw_default_gw_tlsroute_invalid_default_invalid_sni req_ssl_sni -m str example\.com'
+        pattern: 'set-var\(sess.gateway_tls_route_a53f7c2e9c88c8a3a25e9d683ac2e809314a1cbfae4601872b25c7456cc38280\) str\(reject\) if \{ req_ssl_hello_type 1 \} \{ var\(sess.gateway_tls_static_a53f7c2e9c88c8a3a25e9d683ac2e809314a1cbfae4601872b25c7456cc38280\) -m str f9b9ba4b769c64261d8ec260f7444b03546a0e80ff76ef77ec83a2b1e6afd162 \} !\{ var\(sess.gateway_tls_route_a53f7c2e9c88c8a3a25e9d683ac2e809314a1cbfae4601872b25c7456cc38280\) -m found \} \{ req_ssl_sni,lower -m str example\.com \}'
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^\s+tcp-request content reject if gw_default_gw_tlsroute_invalid_default_invalid_sni$'
+        pattern: 'tcp-request content reject if \{ var\(sess.gateway_tls_route_a53f7c2e9c88c8a3a25e9d683ac2e809314a1cbfae4601872b25c7456cc38280\) -m str reject \}'
   test-tlsroute-hostname-intersection-multi-gateway:
     requires: [gateways, tlsroutes]
     description: "Mirrors the upstream TLSRouteHostnameIntersection conformance fixture: four Gateways on port 443 (chart-static httpsPort), each with a different listener-hostname pattern (exact / *.example.com / *.com / empty). Each Gateway has TLSRoutes whose hostnames intersect with the parent listener pattern. Per Gateway-API spec, a SNI matching one Gateway's listener pattern but not claimed by any of THAT Gateway's routes must be rejected — even if a sibling Gateway on the same port has routes that would accept the SNI under a wider pattern. Without per-Gateway routing isolation the chart's union-style route_sni ACL would let `non.matching.com` reach G4's `*.com` backend via G3's `*.com` listener, breaking the spec contract."
@@ -278,34 +278,25 @@ validationTests:
     assertions:
       - type: haproxy_valid
 
-      # Each Gateway's listener_sni pattern is emitted as its OWN ACL
-      # (per-Gateway isolation). G1 (exact abc.example.com):
+      # Each Gateway retains its own listener claim and unmatched-route rejection.
       - type: contains
         target: haproxy.cfg
-        pattern: 'acl gw_default_gw_tlsroute_exact_hostname_x_1_listener_sni req_ssl_sni -m str abc\.example\.com'
+        pattern: 'set-var\(sess.gateway_tls_static_8748d3b2c508afaf7991a4bd4f57ac8d2d809d873dc6772c66f060fd202e3733\) str\(17f92ca5c5e526b59da8b40a6061af1ce782a53a58579ec9162d63c68f7f4e26\) if \{ req_ssl_hello_type 1 \} !\{ var\(sess.gateway_tls_static_8748d3b2c508afaf7991a4bd4f57ac8d2d809d873dc6772c66f060fd202e3733\) -m found \} \{ req_ssl_sni,lower -m str abc\.example\.com \}'
 
-      # G2 (more-specific wildcard *.example.com):
       - type: contains
         target: haproxy.cfg
-        pattern: 'acl gw_default_gw_tlsroute_more_specific_wc_hostname_x_2_listener_sni req_ssl_sni -m end \.example\.com'
+        pattern: 'set-var\(sess.gateway_tls_static_612878d1680ff597100390efabc22aa42c8dbf4db3d6c26a5b3024cccd230c17\) str\(9bf0b91c27a86a2379b825360d44bd1e54f8ef804a364ff89c2951eca3a47229\) if \{ req_ssl_hello_type 1 \} !\{ var\(sess.gateway_tls_static_612878d1680ff597100390efabc22aa42c8dbf4db3d6c26a5b3024cccd230c17\) -m found \} \{ req_ssl_sni,lower -m end \.example\.com \}'
 
-      # G3 (less-specific wildcard *.com):
       - type: contains
         target: haproxy.cfg
-        pattern: 'acl gw_default_gw_tlsroute_less_specific_wc_hostname_x_3_listener_sni req_ssl_sni -m end \.com'
+        pattern: 'set-var\(sess.gateway_tls_static_a68e6531afea8141658757a02f0b676d87ee00eefe84336854e7a5fdccc4ebda\) str\(0d0982cb7512d13c1fc3c90797a2fd6414d9da066ff5f26c65f482bef002d0f2\) if \{ req_ssl_hello_type 1 \} !\{ var\(sess.gateway_tls_static_a68e6531afea8141658757a02f0b676d87ee00eefe84336854e7a5fdccc4ebda\) -m found \} \{ req_ssl_sni,lower -m end \.com \}'
 
-      # G3's reject rule fires when its listener (`*.com`) matches but
-      # no G3 route claims the SNI (covers the test case where
-      # `non.matching.com` is sent — matches G3 listener, none of G3's
-      # routes claim it).
       - type: contains
         target: haproxy.cfg
-        pattern: 'tcp-request content reject if gw_default_gw_tlsroute_less_specific_wc_hostname_x_3_listener_sni !gw_default_gw_tlsroute_less_specific_wc_hostname_x_3_route_sni'
-      # G4 (empty listener) has no listener_sni ACL (catchall) — the
-      # reject just gates on its own route_sni:
+        pattern: 'tcp-request content reject if \{ req_ssl_hello_type 1 \} \{ var\(sess.gateway_tls_static_a68e6531afea8141658757a02f0b676d87ee00eefe84336854e7a5fdccc4ebda\) -m found \} !\{ var\(sess.gateway_tls_route_a68e6531afea8141658757a02f0b676d87ee00eefe84336854e7a5fdccc4ebda\) -m found \}'
       - type: contains
         target: haproxy.cfg
-        pattern: 'tcp-request content reject if !gw_default_gw_tlsroute_empty_hostname_x_4_route_sni'
+        pattern: 'tcp-request content reject if \{ req_ssl_hello_type 1 \} \{ var\(sess.gateway_tls_static_8805c6fed3e2e285bd97611dc48a9e318a32955a9f3fd757441e968a6e551a05\) -m found \} !\{ var\(sess.gateway_tls_route_8805c6fed3e2e285bd97611dc48a9e318a32955a9f3fd757441e968a6e551a05\) -m found \}'
   test-tlsroute-terminate-nondefault-port-frontend:
     requires: [gateways, tlsroutes]
     description: TLSRoute attached to a TLS Terminate listener on a non-chart- static port renders a per-port mode-tcp frontend with TLS termination on the bind.
@@ -349,7 +340,7 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s+bind \*:9444 ssl crt-list '}
       - type: contains
         target: haproxy.cfg
-        pattern: 'use_backend gtw_tls_default_tls-app_0 if \{ ssl_fc_sni -m str tls\.example\.com \}'
+        pattern: 'use_backend gtw_tls_default_tls-app_0 if \{ ssl_fc_sni,lower -m str tls\.example\.com \}'
       - type: not_contains
         target: haproxy.cfg
         pattern: 'use_backend gtw_tls_default_tls-app_0 if .*req_ssl_sni'
@@ -400,7 +391,7 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: 'tcp-request inspect-delay 5s'}
       - type: contains
         target: haproxy.cfg
-        pattern: 'use_backend gtw_tls_default_tls-app_0 if \{ req_ssl_sni -m str abc\.example\.com \}'
+        pattern: 'use_backend gtw_tls_default_tls-app_0 if \{ req_ssl_sni,lower -m str abc\.example\.com \}'
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s+tcp-request content reject if !allowed_sni$'}
   test-tlsroute-same-sni-on-two-passthrough-ports:
     requires: [gateways, tlsroutes]
@@ -440,8 +431,8 @@ validationTests:
     assertions:
       - type: haproxy_valid
 
-      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-6443$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_default_tls-app_0 if \{ req_ssl_sni -m str abc\.example\.com \}$'}
-      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-7443$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_default_tls-app_0 if \{ req_ssl_sni -m str abc\.example\.com \}$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-6443$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_default_tls-app_0 if \{ req_ssl_sni,lower -m str abc\.example\.com \}$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-7443$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_default_tls-app_0 if \{ req_ssl_sni,lower -m str abc\.example\.com \}$'}
       - {type: not_contains, target: haproxy.cfg, pattern: 'gtw_tls_default_tls-app_0_'}
 
   test-tlsroute-passthrough-basic:
@@ -470,7 +461,7 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: "backend gtw_tls_default_tls-app_0"}
       - type: contains
         target: haproxy.cfg
-        pattern: "use_backend gtw_tls_default_tls-app_0 if \\{ req_ssl_sni -m str abc\\.example\\.com \\}"
+        pattern: "use_backend gtw_tls_default_tls-app_0 if \\{ req_ssl_sni,lower -m str abc\\.example\\.com \\}"
       - {type: contains, target: haproxy.cfg, pattern: "frontend ssl-tcp"}
       - type: not_contains
         target: haproxy.cfg
@@ -523,7 +514,7 @@ validationTests:
       - {type: not_contains, target: haproxy.cfg, pattern: '10\.9\.9\.9'}
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^\s+tcp-request content reject if gw_default_gw_tlsroute_xns_listener_sni$'
+        pattern: 'tcp-request content reject if \{ var\(sess.gateway_tls_route_0f6e077e53f276c4ac16a8176d8f0aa36ff56f65add65e227bcfff55905eb9eb\) -m str reject \}'
 
   test-tlsroute-no-tls-listener:
     requires: [gateways, tlsroutes]
@@ -617,7 +608,7 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: "use_backend gtw_tls_default_tls-exact_0 if \\{ req_ssl_sni -m str abc\\.example\\.com \\}"
+        pattern: "use_backend gtw_tls_default_tls-exact_0 if \\{ req_ssl_sni,lower -m str abc\\.example\\.com \\}"
 
   test-tlsroute-section-name-no-match:
     requires: [gateways, tlsroutes]
@@ -684,9 +675,9 @@ validationTests:
       - type: haproxy_valid
       - {type: not_contains, target: haproxy.cfg, pattern: "backend gtw_tls_default_tls-bad-kind"}
 
-  test-tlsroute-mixed-termination-protocol-conflict:
+  test-tlsroute-mixed-termination-listeners-accepted:
     requires: [gatewayclasses, gateways]
-    description: "Mirrors the upstream Gateway API TLSRouteListenerMixedTerminationNotSupported conformance fixture: a Gateway with two TLS listeners on the same port, one in `tls."
+    description: Both TLS termination modes accept routes on one port and retain listener certificate isolation.
     fixtures:
       gatewayclasses:
         - apiVersion: gateway.networking.k8s.io/v1
@@ -739,19 +730,20 @@ validationTests:
     assertions:
       - type: haproxy_valid
 
-      # Both listeners' status: Accepted=False/ProtocolConflict.
       - type: match_count
         target: "status:gateway-conformance-infra/gateway-tlsroute-mixed-termination-not-supported:rendered"
-        pattern: '"reason":"ProtocolConflict","status":"False","type":"Accepted"'
-        expected: "2"
+        pattern: '"reason":"Accepted","status":"True","type":"Accepted"'
+        expected: "3"
       - type: match_count
         target: "status:gateway-conformance-infra/gateway-tlsroute-mixed-termination-not-supported:rendered"
         pattern: '"attachedRoutes":0'
         expected: "2"
       - type: match_count
         target: "status:gateway-conformance-infra/gateway-tlsroute-mixed-termination-not-supported:rendered"
-        pattern: '"supportedKinds":\[\]'
+        pattern: '"supportedKinds":\[\{"group":"gateway.networking.k8s.io","kind":"TLSRoute"\}\]'
         expected: "2"
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s+bind \*:8443$'}
+      - {type: contains, target: haproxy.cfg, pattern: 'bind unix@/etc/haproxy/gw-tls-8443-[0-9a-f]+\.sock mode 600 accept-proxy ssl crt-list'}
 
   test-proxy-protocol-passthrough-binds-on-ssl-tcp:
     requires: [gateways, tlsroutes]
@@ -851,7 +843,7 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^frontend ssl-tcp$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_default_tls-app_0_0 if \{ req_ssl_sni -m str abc\.example\.com \} \{ rand\(100\) -m int lt 70 \}\n  use_backend gtw_tls_default_tls-app_0_1 if \{ req_ssl_sni -m str abc\.example\.com \}$'
+        pattern: '(?m)^frontend ssl-tcp$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_default_tls-app_0_0 if \{ req_ssl_sni,lower -m str abc\.example\.com \} \{ rand\(100\) -m int lt 70 \} \{ var\(sess.gateway_tls_static_9387613615175d22f19cc5a4263f7d5c4525c0e425578bd2ce4f4c7f70855d4e\) -m str 2cb3050f02bf05b79f392b940783f49da9a81fc495ab99a884fea2e0c52a5426 \}\n  use_backend gtw_tls_default_tls-app_0_1 if \{ req_ssl_sni,lower -m str abc\.example\.com \} \{ var\(sess.gateway_tls_static_9387613615175d22f19cc5a4263f7d5c4525c0e425578bd2ce4f4c7f70855d4e\) -m str 2cb3050f02bf05b79f392b940783f49da9a81fc495ab99a884fea2e0c52a5426 \}$'
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend gtw_tls_default_tls-app_0_0\b[^\n]*\n(?:[ \t]+[^\n]*\n)*?[ \t]+server tls-a-pod 10\.0\.1\.1:8443'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend gtw_tls_default_tls-app_0_1\b[^\n]*\n(?:[ \t]+[^\n]*\n)*?[ \t]+server tls-b-pod 10\.0\.2\.1:8443'}
       - {type: not_contains, target: haproxy.cfg, pattern: 'gtw_tls_default_tls-app_0_2'}
@@ -894,7 +886,7 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^frontend gateway-tls-port-9443$\n(?:  [^\n]*\n|\n)*?  use_backend gw-tls-reject if \{ req_ssl_sni -m str abc\.example\.com \} \{ rand\(4\) -m int lt 1 \}\n  use_backend gtw_tls_default_tls-app_0_1 if \{ req_ssl_sni -m str abc\.example\.com \}$'
+        pattern: '(?m)^frontend gateway-tls-port-9443$\n(?:  [^\n]*\n|\n)*?  use_backend gw-tls-reject if \{ req_ssl_sni,lower -m str abc\.example\.com \} \{ rand\(4\) -m int lt 1 \}\n  use_backend gtw_tls_default_tls-app_0_1 if \{ req_ssl_sni,lower -m str abc\.example\.com \}$'
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend gw-tls-reject\b[^\n]*\n(?:[ \t]+[^\n]*\n)*?[ \t]+tcp-request content reject$'}
       - {type: match_count, target: haproxy.cfg, pattern: '(?m)^backend gw-tls-reject\b', expected: "1"}
       - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^backend gtw_tls_default_tls-app_0_0\b'}
@@ -939,4 +931,4 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^  use_backend gtw_tls_default_tls-app_0_0 if \{ ssl_fc_sni -m str tls\.example\.com \} \{ rand\(2\) -m int lt 1 \}\n  use_backend gtw_tls_default_tls-app_0_1 if \{ ssl_fc_sni -m str tls\.example\.com \}$'
+        pattern: '(?m)^  use_backend gtw_tls_default_tls-app_0_0 if \{ ssl_fc_sni,lower -m str tls\.example\.com \} \{ rand\(2\) -m int lt 1 \}\n  use_backend gtw_tls_default_tls-app_0_1 if \{ ssl_fc_sni,lower -m str tls\.example\.com \}$'

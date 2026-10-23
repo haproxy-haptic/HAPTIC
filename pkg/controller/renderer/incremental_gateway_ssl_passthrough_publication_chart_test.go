@@ -116,7 +116,7 @@ func TestGatewaySSLPassthroughPromotesCachedHTTPWinnerAndTracksTLSGateway(t *tes
 	fixture.addHTTPRoute(t, gatewaySSLPassthroughHTTPRoute("a-winner", "shared.example"))
 	fixture.addHTTPRoute(t, gatewaySSLPassthroughHTTPRoute("z-loser", "shared.example"))
 	fixture.addService(t)
-	fixture.addTLSRoute(t, gatewaySSLPassthroughTLSRoute("tls", "tls.example"))
+	fixture.addTLSRoute(t, gatewaySSLPassthroughTLSRoute("tls"))
 
 	withoutGateway := fixture.renderAndCommit(t)
 	assert.Contains(t, withoutGateway, "shared.example=ssl-passthrough-default-a-winner")
@@ -284,12 +284,12 @@ func gatewaySSLPassthroughHTTPRoute(name, hostname string) map[string]any {
 	}
 }
 
-func gatewaySSLPassthroughTLSRoute(name, hostname string) map[string]any {
+func gatewaySSLPassthroughTLSRoute(name string) map[string]any {
 	return map[string]any{
 		"apiVersion": "gateway.networking.k8s.io/v1", "kind": "TLSRoute",
 		"metadata": map[string]any{"namespace": "default", "name": name},
 		"spec": map[string]any{
-			"hostnames":  []any{hostname},
+			"hostnames":  []any{"tls.example"},
 			"parentRefs": []any{map[string]any{"name": "gateway"}},
 			"rules": []any{map[string]any{"backendRefs": []any{map[string]any{
 				"name": "echo", "port": int64(8443),

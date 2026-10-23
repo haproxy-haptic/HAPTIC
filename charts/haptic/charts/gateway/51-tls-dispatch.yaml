@@ -1,0 +1,130 @@
+templateSnippets:
+  util-gateway-tls-dispatch-frontend:
+    requires: [gateways, secrets]
+    template: |
+      {%- import "util-hostname-intersect-gateway" for HostnameRank -%}
+      {%- import "util-ssl-sni-use-backend-lines" for SNIUseBackendLines -%}
+      {%- import "util-backend" for Backend -%}
+      {%- var TLSRouteLines = func(route any, fetch, rejectBackend string) []any {
+        if dig(route, "invalid") == true {
+          route = map[string]any{"sni": dig(route, "sni"), "name": rejectBackend}
+        }
+        return SNIUseBackendLines(route, fetch)
+      } -%}
+      {%- macro TLSListenerBindOptions(certificate any) string -%}
+        {%- var certificatePath, _ = pathResolver.GetPath(dig_string(certificate, "", "crtlist"), "crt-list") %}
+        {{- " ssl crt-list " + certificatePath + " alpn h2,http/1.1" -}}
+        {{- dig_string(certificate, "", "ignoreErr") + dig_string(certificate, "", "tlsSuffix") -}}
+        {%- if extraContext | dig("tls", "sessionTickets", "enabled") | fallback(false) %}
+          {%- var ticketPath, _ = pathResolver.GetPath("tls-ticket-keys", "file") %}
+          {{- " tls-ticket-keys " + ticketPath -}}
+        {%- end %}
+      {%- end %}
+      {%- macro TLSDispatchFrontend(port int, portEntry map[string]any, allRoutes []any) %}
+        {{- render "gateway-terminating-listeners-100-gateway" -}}
+        {%%
+          var certificates = map[string]any{}
+          for _, certificate := range incremental_values("gateway-terminating-listeners", "listeners") {
+            var key = dig_string(certificate, "", "gatewayNamespace") + "/" +
+              dig_string(certificate, "", "gatewayName") + "/" + dig_string(certificate, "", "listenerName")
+            certificates[key] = certificate
+          }
+          var listeners = []any{}
+          var anyServable = false
+          for _, listenerAny := range toSlice(portEntry["listeners"]) {
+            var listener = listenerAny.(map[string]any)
+            var key = tostring(listener["gwNs"]) + "/" + tostring(listener["gwName"]) + "/" + tostring(listener["name"])
+            var id = sha256(key)
+            var rank = tostring(1000000 - toint(HostnameRank(tostring(listener["hostname"]))))
+            var routes = []any{}
+            for _, route := range allRoutes {
+              if toint(dig(route, "port") | fallback(0)) == toint(portEntry["sourcePort"]) &&
+                dig_string(route, "", "gw_namespace") == tostring(listener["gwNs"]) &&
+                dig_string(route, "", "gw_name") == tostring(listener["gwName"]) &&
+                dig_string(route, "", "listener_name") == tostring(listener["name"]) {
+                routes = append(routes, route)
+              }
+            }
+            var certificate = certificates[key]
+            var servable = listener["servable"] == true &&
+              (tostring(listener["mode"]) == "Passthrough" || certificate != nil)
+            if servable { anyServable = true }
+            listeners = append(listeners, map[string]any{
+              "rank": "0000000"[:7-len(rank)] + rank + "/" + key,
+              "id": id, "hostname": listener["hostname"], "mode": listener["mode"],
+              "servable": servable, "certificate": certificate, "routes": routes,
+              "name": "gateway-tls-" + tostring(port) + "-" + id,
+              "bridge": "gateway-tls-bridge-" + tostring(port) + "-" + id,
+              "socket": "unix@/etc/haproxy/gw-tls-" + tostring(port) + "-" + id + ".sock",
+            })
+          }
+          listeners = listeners | sort_by([]string{"$.rank"})
+          var rejectBackend = "gateway-tls-unmatched-" + tostring(port)
+        %%}
+        {%- if anyServable %}
+      frontend gateway-tls-port-{{ port }}
+          guid fe:gateway-tls-port-{{ port }}
+          mode tcp{{ render "util-log-format-tcp" }}
+          bind *:{{ port }}
+          tcp-request inspect-delay 5s
+          {# Select the listener before its routes: an unrouted or invalid listener must not fall through. #}
+          {%- for _, listener := range listeners %}
+            {%- var host = dig_string(listener, "", "hostname") %}
+            {%- var condition = "" %}
+            {%- if hasPrefix(host, "*.") %}
+              {%- condition = " { req_ssl_sni,lower -m end " + host[1:] + " }" %}
+            {%- else if host != "" %}
+              {%- condition = " { req_ssl_sni,lower -m str " + host + " }" %}
+            {%- end %}
+          tcp-request content set-var(sess.gateway_tls_listener) str({{ dig_string(listener, "", "id") }}) if { req_ssl_hello_type 1 } !{ var(sess.gateway_tls_listener) -m found }{{ condition }}
+          {%- end %}
+          tcp-request content reject if { req_ssl_hello_type 1 } !{ var(sess.gateway_tls_listener) -m found }
+          tcp-request content accept if { req_ssl_hello_type 1 }
+          tcp-request content reject if WAIT_END
+          {%- for _, listener := range listeners %}
+            {%- var selected = " { var(sess.gateway_tls_listener) -m str " + dig_string(listener, "", "id") + " }" %}
+            {%- if dig(listener, "servable") != true %}
+          use_backend {{ rejectBackend }} if{{ selected }}
+            {%- else if dig_string(listener, "", "mode") == "Terminate" %}
+          use_backend {{ dig_string(listener, "", "bridge") }} if{{ selected }}
+            {%- else %}
+              {%- for _, route := range toSlice(dig(listener, "routes")) %}
+                {%- for _, line := range TLSRouteLines(route, "req_ssl_sni,lower", rejectBackend) %}
+          {{ tostring(line) + selected }}
+                {%- end %}
+              {%- end %}
+            {%- end %}
+          {%- end %}
+          default_backend {{ rejectBackend }}
+
+          {%- for _, listener := range listeners %}
+            {%- if dig(listener, "servable") != true || dig_string(listener, "", "mode") != "Terminate" %}
+              {%- continue %}
+            {%- end %}
+            {%- var certificate = dig(listener, "certificate") %}
+            {%- var name = dig_string(listener, "", "name") %}
+            {%- var socket = dig_string(listener, "", "socket") %}
+            {%- var bridge = dig_string(listener, "", "bridge") %}
+      frontend {{ name }}
+          guid fe:{{ name }}
+          mode tcp{{ render "util-log-format-tcp" }}
+          bind {{ socket }} mode 600 accept-proxy{{ TLSListenerBindOptions(certificate) }}
+            {%- for _, route := range toSlice(dig(listener, "routes")) %}
+              {%- for _, line := range TLSRouteLines(route, "ssl_fc_sni,lower", rejectBackend) %}
+          {{ line }}
+              {%- end %}
+            {%- end %}
+          default_backend {{ rejectBackend }}
+
+      {{ Backend(map[string]any{
+        "name": bridge, "guid": "be:" + bridge, "mode": "tcp", "shape": "structural",
+        "servers": []any{map[string]any{"name": "terminate", "address": socket,
+          "extra": []any{map[string]any{"name": "send-proxy-v2"}}}},
+      }) }}
+          {%- end %}
+      {{ Backend(map[string]any{
+        "name": rejectBackend, "guid": "be:" + rejectBackend, "mode": "tcp",
+        "body": []any{"tcp-request content reject"},
+      }) }}
+        {%- end %}
+      {%- end %}

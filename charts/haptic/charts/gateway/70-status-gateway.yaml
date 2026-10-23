@@ -74,24 +74,6 @@ templateSnippets:
           if parentKind == "Gateway" {
             var gateway = resources.gateways.GetSingle(parentNamespace, parentName)
             if gateway == nil { continue }
-            var mixedTLSPorts = map[int]bool{}
-            if needsTLSProtocol {
-              for _, listener := range gateway.Spec.Listeners {
-                if listener.Protocol != "TLS" { continue }
-                var listenerPort = toint(listener.Port)
-                var listenerMode = listener.Tls.Mode
-                if listenerMode == "" { listenerMode = "Terminate" }
-                for _, sibling := range gateway.Spec.Listeners {
-                  if sibling.Protocol != "TLS" || toint(sibling.Port) != listenerPort { continue }
-                  var siblingMode = sibling.Tls.Mode
-                  if siblingMode == "" { siblingMode = "Terminate" }
-                  if siblingMode != listenerMode {
-                    mixedTLSPorts[listenerPort] = true
-                    break
-                  }
-                }
-              }
-            }
             for _, listener := range gateway.Spec.Listeners {
               if sectionName != "" && listener.Name != sectionName { continue }
               var listenerPort = toint(listener.Port)
@@ -100,7 +82,6 @@ templateSnippets:
               if listenerProtocol == "" { listenerProtocol = "HTTP" }
               if needsTLSProtocol && listenerProtocol != "TLS" { continue }
               if needsTCPProtocol && listenerProtocol != "TCP" { continue }
-              if needsTLSProtocol && mixedTLSPorts[listenerPort] { continue }
               if len(listener.AllowedRoutes.Kinds) > 0 {
                 var kindAllowed = false
                 for _, allowedKind := range listener.AllowedRoutes.Kinds {
@@ -536,21 +517,6 @@ templateSnippets:
             // the user requests an unsupported kind, supportedKinds
             // shrinks to the intersection). Computing once and reusing
             // ensures the two variants stay in lockstep.
-            //
-            // Pre-pass — detect mixed-termination on TLS listeners.
-            // When two TLS listeners share a port but disagree on
-            // tls.mode (one Passthrough, one Terminate), the spec
-            // demands Accepted=False/ProtocolConflict on every
-            // affected listener with attachedRoutes=0 (conformance
-            // test tlsroute-listener-mixed-termination-not-supported).
-            // SupportTLSRouteModeMixed is experimental and not
-            // declared by the chart, so this guard always fires.
-            // One entry per (port, mode), so a port with more than one entry
-            // is a port whose listeners disagree. Mode defaults to Terminate.
-            var tlsModesByPort = gateway.Spec.Listeners |
-              filter(l => l.Protocol == "TLS") |
-              unique_by(l => tostring(toint(l.Port)) + "/" + tostring(dig(l, "tls", "mode") | fallback("Terminate"))) |
-              group_by(l => tostring(toint(l.Port)))
             var listenerData = []any{}
             for _, listener := range gateway.Spec.Listeners {
               var listenerName = listener.Name
@@ -713,7 +679,8 @@ templateSnippets:
                 listenerAcceptedReason = "UnsupportedProtocol"
                 listenerAcceptedMessage = "Protocol " + protocol + " is not supported"
               }
-              if listenerAcceptedStatus == "True" && protocol == "HTTPS" && resolvedRefsStatus == "True" {
+              if listenerAcceptedStatus == "True" && resolvedRefsStatus == "True" &&
+                (protocol == "HTTPS" || (protocol == "TLS" && listener.Tls.Mode != "Passthrough")) {
                 var listenerPort = toint(listener.Port)
                 var frontendCAStatus = dig(frontendMTLSResolution, "defaultStatus")
                 for _, entry := range toSlice(dig(frontendMTLSResolution, "perPort")) {
@@ -768,27 +735,6 @@ templateSnippets:
                 programmedListenerStatus = "False"
                 programmedListenerReason = "Invalid"
                 programmedListenerMessage = resolvedRefsMessage
-              }
-
-              // ProtocolConflict — TLS listener with sibling on same
-              // port carrying the other tls.mode. The conformance test
-              // tlsroute-listener-mixed-termination-not-supported pins
-              // both Accepted=False/ProtocolConflict AND attachedRoutes=0.
-              // Per the spec the rejected listener also has empty
-              // supportedKinds — it can't accept routes of any kind, so
-              // reporting [TLSRoute] would be misleading.
-              if protocol == "TLS" {
-                var listenerPort = toint(listener.Port)
-                if len(tlsModesByPort[tostring(listenerPort)]) > 1 {
-                  listenerAcceptedStatus = "False"
-                  listenerAcceptedReason = "ProtocolConflict"
-                  listenerAcceptedMessage = "TLS listener mixes Passthrough and Terminate modes on the same port"
-                  programmedListenerStatus = "False"
-                  programmedListenerReason = "Invalid"
-                  programmedListenerMessage = listenerAcceptedMessage
-                  attached = 0
-                  supportedKinds = []any{}
-                }
               }
 
               listenerData = append(listenerData, map[string]any{

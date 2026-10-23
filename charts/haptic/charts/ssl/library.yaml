@@ -86,6 +86,7 @@ templateSnippets:
   util-ssl-sni-use-backend-lines:
     template: |-
       {%- var SNIUseBackendLines = func(entry any, fetch string) []any {
+        fetch = dig_string(entry, fetch, "sampleFetch")
         var sni = dig_string(entry, "", "sni")
         var condition = "{ " + fetch + " -m str " + sni + " }"
         if hasPrefix(sni, "*.") { condition = "{ " + fetch + " -m end " + sni[1:] + " }" }
@@ -105,6 +106,7 @@ templateSnippets:
           if i < len(targets) - 1 {
             line = line + " { rand(" + tostring(remaining) + ") -m int lt " + tostring(weight) + " }"
           }
+          if condition := dig_string(entry, "", "condition"); condition != "" { line = line + " " + condition }
           lines = append(lines, line)
           remaining = remaining - weight
         }
@@ -265,6 +267,7 @@ templateSnippets:
       {%- var _, _ = shared.ComputeIfAbsent("globalFeatures", func() any {
         return map[string]any{
           "sslPassthroughBackends":      []any{},
+          "tlsInspectionRequired":       false,
           "tlsCertificates":             []any{},
           "sslRedirectHosts":            []any{},
           "clientCertVerifyHosts":       map[string]any{},
@@ -373,7 +376,7 @@ templateSnippets:
       {%- var gf = shared.Get("globalFeatures").(map[string]any) %}
       {%- var passthroughBackends = SSLPassthroughBackends() %}
       {%%
-        if len(passthroughBackends) > 0 {
+        if len(passthroughBackends) > 0 || dig(gf, "tlsInspectionRequired") == true {
           gf["bindHTTPSDefault"] = true
           gf["needHTTPSFrontend"] = true
         }
@@ -620,7 +623,7 @@ templateSnippets:
       {%- import "util-ssl-passthrough-backends" for SSLPassthroughBackends -%}
       {%- var gfMap = shared.Get("globalFeatures").(map[string]any) -%}
       {%- var passthroughBackends = SSLPassthroughBackends() -%}
-      {%- var sslTCPOwnsPort = len(passthroughBackends) > 0 && tostring(gfMap | dig("bindHTTPSDefault")) == "true" -%}
+      {%- var sslTCPOwnsPort = (len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true) && tostring(gfMap | dig("bindHTTPSDefault")) == "true" -%}
       {%- if !sslTCPOwnsPort && tostring(extraContext | dig("proxyProtocol", "enabled") | fallback(false)) == "true" %}
       bind *:{{ toint(extraContext | dig("proxyProtocol", "httpsPort") | fallback(8444)) }} accept-proxy name https-proxy-protocol{{ render "util-ssl-bind-options" }}
       {%- end -%}
@@ -641,7 +644,7 @@ templateSnippets:
       {%- var gfMap = gf.(map[string]any) -%}
       {%- var passthroughBackends = SSLPassthroughBackends() -%}
       {%- var bindHTTPSDefault = tostring(gfMap | dig("bindHTTPSDefault")) == "true" -%}
-      {%- if len(passthroughBackends) > 0 && bindHTTPSDefault -%}
+      {%- if (len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true) && bindHTTPSDefault -%}
       # ssl/frontends-ssl-tcp
 
       frontend ssl-tcp
@@ -652,140 +655,8 @@ templateSnippets:
 
           # Extract SNI for routing decisions (wait up to 5s for client hello)
           tcp-request inspect-delay 5s
+          {{- on_own_lines(render_glob "ssl-tcp-request-*") | indent(2, true) }}
 
-          {# SNI claim contract: reject when a TLS-Passthrough listener's hostname
-              pattern matches but no TLSRoute under THAT Gateway claims the SNI; an SNI
-              matching no listener pattern falls through, since an HTTPS-terminating
-              listener may legitimately want it. The ACLs and rejects are per-Gateway
-              because one bind is shared by every Gateway on this port and a sibling
-              Gateway's wider pattern must not rescue an SNI this one doesn't claim.
-              The rejects MUST precede `tcp-request content accept` — accept ends the
-              tcp-request content phase, so a later reject never fires. Ingress-level
-              entries carry no Gateway identity and keep their fall-through. #}
-          {%%
-            var byGateway = map[string]any{}
-            var gwOrder = []any{}
-            var hasIngressEntry = false
-            var validPassthroughCount = 0
-            for _, backend := range passthroughBackends {
-              var b = backend.(map[string]any)
-              var bMode = tostring(b["mode"] | fallback("Passthrough"))
-              if bMode != "Passthrough" {
-                continue
-              }
-              var gwNs = tostring(b | dig("gw_namespace") | fallback(""))
-              var gwName = tostring(b | dig("gw_name") | fallback(""))
-              if gwName == "" {
-                hasIngressEntry = true
-                continue
-              }
-              var gwKey = gwNs + ":" + gwName
-              var gi map[string]any
-              if existing, ok := byGateway[gwKey]; ok {
-                gi = existing.(map[string]any)
-              } else {
-                gi = map[string]any{
-                  "ns":               gwNs,
-                  "name":             gwName,
-                  "listenerPatterns": map[string]bool{},
-                  "hasEmptyListener": false,
-                  "routeSNIs":        map[string]bool{},
-                  "invalidSNIs":      map[string]bool{},
-                }
-                byGateway[gwKey] = gi
-                gwOrder = append(gwOrder, gwKey)
-              }
-              var lh = tostring(b | dig("listener_hostname") | fallback(""))
-              if lh == "" {
-                gi["hasEmptyListener"] = true
-              } else {
-                gi["listenerPatterns"].(map[string]bool)[lh] = true
-              }
-              var bInvalid = tostring(b | dig("invalid") | fallback("false")) == "true"
-              var sni = tostring(b["sni"])
-              if bInvalid {
-                gi["invalidSNIs"].(map[string]bool)[sni] = true
-              } else {
-                gi["routeSNIs"].(map[string]bool)[sni] = true
-                validPassthroughCount = validPassthroughCount + 1
-              }
-            }
-            var gwOrderSorted = sort_strings(gwOrder)
-          %%}
-          {%- for _, gwKey := range gwOrderSorted %}
-            {%%
-              var gi = byGateway[tostring(gwKey)].(map[string]any)
-              var aclSan = "gw_" + replace(replace(replace(replace(tostring(gi["ns"]) + "_" + tostring(gi["name"]), "-", "_"), ".", "_"), ":", "_"), "/", "_")
-              var listenerPatterns = gi["listenerPatterns"].(map[string]bool)
-              var hasEmptyListener = gi["hasEmptyListener"].(bool)
-              var routeSNIs = gi["routeSNIs"].(map[string]bool)
-              var invalidSNIs = gi["invalidSNIs"].(map[string]bool)
-            %%}
-            {%%
-              var lpRaw = []any{}
-              for k := range listenerPatterns {
-                lpRaw = append(lpRaw, k)
-              }
-              var lpKeys = sort_strings(lpRaw)
-              var rsRaw = []any{}
-              for k := range routeSNIs {
-                rsRaw = append(rsRaw, k)
-              }
-              var rsKeys = sort_strings(rsRaw)
-              var invRaw = []any{}
-              for k := range invalidSNIs {
-                invRaw = append(invRaw, k)
-              }
-              var invKeys = sort_strings(invRaw)
-            %%}
-            {%- for _, lpAny := range lpKeys %}
-              {%- var lp = tostring(lpAny) %}
-              {%- if hasPrefix(lp, "*.") %}
-          acl {{ aclSan }}_listener_sni req_ssl_sni -m end {{ lp[1:] }}
-              {%- else %}
-          acl {{ aclSan }}_listener_sni req_ssl_sni -m str {{ lp }}
-              {%- end %}
-            {%- end %}
-            {%- for _, sniAny := range rsKeys %}
-              {%- var sni = tostring(sniAny) %}
-              {%- if hasPrefix(sni, "*.") %}
-          acl {{ aclSan }}_route_sni req_ssl_sni -m end {{ sni[1:] }}
-              {%- else %}
-          acl {{ aclSan }}_route_sni req_ssl_sni -m str {{ sni }}
-              {%- end %}
-            {%- end %}
-            {%- for _, sniAny := range invKeys %}
-              {%- var sni = tostring(sniAny) %}
-              {%- if hasPrefix(sni, "*.") %}
-          acl {{ aclSan }}_invalid_sni req_ssl_sni -m end {{ sni[1:] }}
-              {%- else %}
-          acl {{ aclSan }}_invalid_sni req_ssl_sni -m str {{ sni }}
-              {%- end %}
-            {%- end %}
-          {%- end %}
-          {%- for _, gwKey := range gwOrder %}
-            {%- var gi = byGateway[tostring(gwKey)].(map[string]any) %}
-            {%- var aclSan = "gw_" + replace(replace(replace(replace(tostring(gi["ns"]) + "_" + tostring(gi["name"]), "-", "_"), ".", "_"), ":", "_"), "/", "_") %}
-            {%- var listenerPatterns = gi["listenerPatterns"].(map[string]bool) %}
-            {%- var hasEmptyListener = gi["hasEmptyListener"].(bool) %}
-            {%- var routeSNIs = gi["routeSNIs"].(map[string]bool) %}
-            {%- var invalidSNIs = gi["invalidSNIs"].(map[string]bool) %}
-            {%- if hasEmptyListener %}
-              {#- An empty listener claims every SNI. With no valid route the route_sni
-                  ACL is never defined, so reject the invalid_sni patterns instead. -#}
-              {%- if len(routeSNIs) > 0 %}
-          tcp-request content reject if !{{ aclSan }}_route_sni
-              {%- else if len(invalidSNIs) > 0 %}
-          tcp-request content reject if {{ aclSan }}_invalid_sni
-              {%- end %}
-            {%- else %}
-              {%- if len(routeSNIs) > 0 %}
-          tcp-request content reject if {{ aclSan }}_listener_sni !{{ aclSan }}_route_sni
-              {%- else if len(listenerPatterns) > 0 %}
-          tcp-request content reject if {{ aclSan }}_listener_sni
-              {%- end %}
-            {%- end %}
-          {%- end %}
           tcp-request content accept if { req_ssl_hello_type 1 }
 
           # Route to passthrough backends by SNI: wildcard *.host → `-m end .host` (single-label
@@ -820,7 +691,7 @@ templateSnippets:
       {%- import "util-backend" for Backend -%}
       {%- import "util-ssl-passthrough-backends" for SSLPassthroughBackends -%}
       {%- var passthroughBackends = SSLPassthroughBackends() -%}
-      {%- if len(passthroughBackends) > 0 -%}
+      {%- if len(passthroughBackends) > 0 || dig(shared.Get("globalFeatures"), "tlsInspectionRequired") == true -%}
       {%- var serverExtra = []any{map[string]any{"name": "send-proxy-v2"}} -%}
       {#- Tells frontend https which ssl-tcp listener accepted the connection; the
           HTTP/3 alt-svc rules skip the PROXY-protocol one. -#}
@@ -857,7 +728,7 @@ templateSnippets:
       frontend https
           guid fe:https
           mode http{{ render "util-http-frontend-settings" }}
-      {%- if len(passthroughBackends) > 0 && bindHTTPSDefault %}
+      {%- if (len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true) && bindHTTPSDefault %}
           bind unix@/etc/haproxy/ssl-frontend.sock mode 660{{ render "util-ssl-bind-options" }} accept-proxy
       {%- else if bindHTTPSDefault %}
           bind *:{{ extraContext | dig("httpsPort") | fallback(8443) }}{{ render "util-ssl-bind-options" }}

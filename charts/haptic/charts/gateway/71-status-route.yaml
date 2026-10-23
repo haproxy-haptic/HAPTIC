@@ -595,15 +595,7 @@ templateSnippets:
              HTTPS protocol-default kinds don't include TLSRoute, so
              conformance treats this as "no listener accepts").
 
-          2. **ProtocolConflict guard** — when sibling listeners on the
-             same gateway/port mix Passthrough + Terminate, those
-             listeners are Accepted=False/ProtocolConflict (set by
-             util-generate-gateway-status-patches) and the spec says
-             they must NOT accept any route. We mirror that here with
-             NotAllowedByListeners on routes parented to those
-             listeners.
-
-          3. **Backend ref kind** — the spec restricts TLSRoute
+          2. **Backend ref kind** — the spec restricts TLSRoute
              backendRefs to core/v1 Service like the other routes; the
              ref-resolution loop matches HTTPRoute exactly.
 
@@ -715,18 +707,6 @@ templateSnippets:
                   var parentPort = toint(parentRef.Port)
                   if parentPort != 0 { parentRefStatus["port"] = parentPort }
 
-                  // Pre-compute mixed-mode map so we can flag listeners
-                  // that ProtocolConflict applies to.
-                  // One entry per (port, mode): a port with more than one is a
-                  // port whose listeners disagree. Mode defaults to Terminate.
-                  var tlsModesByPort = map[string][]resources.gateways.SpecListeners{}
-                  if gw != nil {
-                    tlsModesByPort = gw.Spec.Listeners |
-                      filter(l => l.Protocol == "TLS") |
-                      unique_by(l => tostring(toint(l.Port)) + "/" + tostring(dig(l, "tls", "mode") | fallback("Terminate"))) |
-                      group_by(l => tostring(toint(l.Port)))
-                  }
-
                   var acceptedStatus = "False"
                   var acceptedReason = "NotAllowedByListeners"
                   var acceptedMsg = "No listener accepts this route"
@@ -761,15 +741,6 @@ templateSnippets:
                       // explicit settings.
                       var listenerProto = ListenerProtocolOr(listener, "HTTP")
                       if listenerProto != "TLS" {
-                        sawKindNs = true
-                        continue
-                      }
-
-                      // ProtocolConflict guard: a TLS listener whose
-                      // sibling on the same port carries the other
-                      // mode is itself unaccepted; routes parented to
-                      // it must not be accepted either.
-                      if len(tlsModesByPort[tostring(listenerPort)]) > 1 {
                         sawKindNs = true
                         continue
                       }
@@ -927,7 +898,7 @@ templateSnippets:
         L4 raw-TCP routing. Mirrors the TLSRoute generator but simpler:
         TCPRoute has NO hostnames (no SNI) and no TLS mode, so there is no
         hostname-intersection step and no Passthrough/Terminate
-        ProtocolConflict guard. Attaches only to `protocol: TCP` listeners.
+        TLS-mode checks. Attaches only to `protocol: TCP` listeners.
 
         Conditions emitted per parentRef:
           - Accepted: True/Accepted | False/{NoMatchingParent,

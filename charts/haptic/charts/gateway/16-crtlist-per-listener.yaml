@@ -2,7 +2,7 @@ templateSnippets:
   # ============================================================================
   # Per-Gateway-listener crt-list emission
   #
-  # Each Gateway HTTPS listener gets its OWN crt-list file. Phase 4
+  # Each Gateway terminating listener gets its OWN crt-list file. Phase 4
   # (per-Gateway HAProxy bind) references this file via `bind ... ssl
   # crt-list <per-listener-crt-list>`, so the bind-line SSL options
   # are scoped to one (Gateway, listener) — different Gateways on the
@@ -35,16 +35,16 @@ templateSnippets:
         {{- BoundedName("gw-" + gwNs + "-" + gwName + "-" + listenerName, 243) + "-crtlist.txt" -}}
       {%- end %}
 
-  # One record per servable HTTPS listener, published per Gateway and replayed by
+  # One record per servable terminating listener, published per Gateway and replayed by
   # the crt-list and bind roots for unrelated changes (#226). A listener is
   # servable when its first certificateRef resolved for THIS Gateway (the
   # ReferenceGrant verdict is per Gateway) and its frontend validation is not
   # blocked. Invalid TLS options are checked in the owning Gateway context.
-  gateway-https-listeners-100-gateway:
+  gateway-terminating-listeners-100-gateway:
     requires: [gateways, secrets]
     incremental:
       source: gateways
-      group: gateway-https-listeners
+      group: gateway-terminating-listeners
       consumes: [gateway-tls-certificates, gateway-pod-port-allocations]
       optionalConsumes: [gateway-listener-mtls]
       effects: [publishValue, recordEvent]
@@ -66,7 +66,8 @@ templateSnippets:
           }
           for listenerIndex, listener := range gateway.Spec.Listeners {
             var listenerPort = toint(listener.Port)
-            if listener.Protocol != "HTTPS" || listener.Name == "" || listenerPort <= 0 {
+            if (listener.Protocol != "HTTPS" && (listener.Protocol != "TLS" || listener.Tls.Mode == "Passthrough")) ||
+              listener.Name == "" || listenerPort <= 0 {
               continue
             }
             var _, blocked = shared.Select("gateway-listener-mtls", "blocked", gatewayKey + "/" + listener.Name)
@@ -104,6 +105,7 @@ templateSnippets:
               "gatewayNamespace": namespace,
               "gatewayName": name,
               "listenerName": listener.Name,
+              "protocol": listener.Protocol,
               "hostname": listener.Hostname,
               "certKey": dig_string(resolved, "", "secret_namespace") + "/" + dig_string(resolved, "", "secret_name"),
               "crtlist": CrtlistName(namespace, name, listener.Name),
@@ -119,15 +121,15 @@ templateSnippets:
   features-160-gateway-crtlist-per-listener:
     requires: [gateways]
     template: |
-      {# One crt-list file per (Gateway, HTTPS listener), so bind-line SSL options
+      {# One crt-list file per (Gateway, terminating listener), so bind-line SSL options
           stay scoped to that listener. `ca-ignore-err` / `crt-ignore-err` are
           bind-scope keywords and belong to the bind root, not to the crt-list. #}
       {%- import "util-crtlist-line" for CrtListLine %}
       {{ render "util-tls-cert-by-secret" -}}
       {{- render "gateway-listener-mtls-100-gateway" default "" -}}
-      {{- render "gateway-https-listeners-100-gateway" -}}
+      {{- render "gateway-terminating-listeners-100-gateway" -}}
       {%- var certBySecret = shared.Get("tlsCertBySecret").(map[string]any) %}
-      {%- for _, entry := range incremental_values("gateway-https-listeners", "listeners") %}
+      {%- for _, entry := range incremental_values("gateway-terminating-listeners", "listeners") %}
         {%%
           var certKey = dig_string(entry, "", "certKey")
           var registered = certBySecret[certKey]

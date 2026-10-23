@@ -161,6 +161,20 @@ coverage; they are not permission to build a feature on Lua. Generic upstream
 schemas and operator-file transport remain generic. Do not expand exemptions or
 disable the check to introduce Lua.
 
+## Gateway API feature coverage
+
+**Implement all Gateway API features that HAProxy configuration alone can
+support.** This is standing user authorization, including Core and Extended
+features. Do not ask again whether to implement a feature merely because it is
+optional, lacks a production report, or adds native configuration complexity.
+Assess and qualify its performance, security, and lifecycle costs as part of the
+implementation. Resource-agnostic Go, chart library boundaries, validation, and
+the no-Lua rule still apply.
+
+If HAProxy configuration cannot implement a feature and a SPOA hub plugin is
+needed, present the capability gap and proposed plugin before building it. The
+user decides those cases individually; this rule does not authorize plugins.
+
 ## Complexity Must Pay for Itself (RULE #5)
 
 **Judge the total cost of a change against the problem actually observed, not each
@@ -171,6 +185,11 @@ Run this gate before writing code for any fix or feature that adds a watch, API 
 permission, background loop, fallback path, config knob, or dependency on another
 component. Run it again each time the same fix grows; judge the cumulative diff.
 Write the answers in the plan or PR as numbers or yes/no.
+
+For [native Gateway API features](#gateway-api-feature-coverage), the user has
+already decided to implement them. Record and address the costs without asking
+for that feature decision again. Plugin proposals still require a case-by-case
+decision.
 
 | # | Question | Questionable when |
 |---|---|---|

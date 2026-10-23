@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Helm chart
 
+#### Added
+
+- Serve TLSRoute termination and passthrough listeners on one port with isolated certificates and client-validation policies.
+
 #### Changed
 
 - **BREAKING:** `src-ip-header` no longer trusts client-sent `X-Real-IP`, `X-Client-IP`, or `Client-IP` by itself. List the L7 proxy in `forwardedHeaders.trustedProxies` or produce the header in an operator snippet; L4 PROXY-protocol client addresses need no header annotation.
@@ -27,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Fixed
 
 - HTTPRoute hostname specificity takes precedence over path length and header conditions when routes intersect the same listener hostname.
+- Keep TLS passthrough listener isolation on the shared HTTPS address after routes are removed or listener modes change; unmatched Gateway names still reach Ingress routes.
 - Drop client-sent `Forwarded`, `X-Forwarded-Prefix`, `X-Forwarded-Server`, `X-Real-IP`, `X-Client-IP`, and `Client-IP` before forwarding requests, while preserving trusted proxies and operator header changes ([#490](https://github.com/haproxy-haptic/HAPTIC/issues/490)).
 
 ## [0.7.0] - 2026-10-20

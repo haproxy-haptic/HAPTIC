@@ -28,7 +28,7 @@ import (
 func TestInvalidGatewayTLSOptionsDoNotRejectUnrelatedAdmission(t *testing.T) {
 	snippets := loadGatewayFeaturePublicationSnippets(t)
 	maps.Copy(snippets, loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
-		"gateway/16-crtlist-per-listener.yaml": {"gateway-https-listeners-100-gateway", "util-gateway-listener-crtlist-name"},
+		"gateway/16-crtlist-per-listener.yaml": {"gateway-terminating-listeners-100-gateway", "util-gateway-listener-crtlist-name"},
 		"gateway/92-listener-tls-options.yaml": {"util-gateway-listener-tls-options"},
 		"gateway/21-route-helpers.yaml":        {"util-bounded-name"},
 		"base/library.yaml":                    {"util-webhook-reject-or-warn", "util-config-injection-kind"},
@@ -37,8 +37,8 @@ func TestInvalidGatewayTLSOptionsDoNotRejectUnrelatedAdmission(t *testing.T) {
 {{ render "gateway-listener-mtls-100-gateway" }}
 {{ render "gateway-pod-port-candidates-100-gateway" }}
 {{ render "gateway-pod-port-allocations-200-leader" }}
-{{ render "gateway-https-listeners-100-gateway" }}
-# listeners={{ incremental_values("gateway-https-listeners", "listeners") | toJSON() }}`)
+{{ render "gateway-terminating-listeners-100-gateway" }}
+# listeners={{ incremental_values("gateway-terminating-listeners", "listeners") | toJSON() }}`)
 	fixture.config.TemplatingSettings.ExtraContext["perGatewayPodPortRange"] = 4096
 	gateway := gatewayTLSCertificateGateway("")
 	listener := gateway["spec"].(map[string]any)["listeners"].([]any)[0].(map[string]any)

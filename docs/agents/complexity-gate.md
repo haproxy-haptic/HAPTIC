@@ -5,6 +5,11 @@ The rule holds the gate itself; this page explains where each question comes fro
 the case that prompted it, and gives the shape of the note you send the user when the gate
 says "questionable".
 
+The user has given [standing authorization for Gateway API features implemented
+through HAProxy configuration alone](../../CLAUDE.md#gateway-api-feature-coverage).
+Assess and address their costs without asking again whether to implement them.
+Features requiring a SPOA hub plugin still need a case-by-case user decision.
+
 ## The failure mode
 
 An agent asked for "the proper fix" closes the first gap, sees a smaller remaining gap,
