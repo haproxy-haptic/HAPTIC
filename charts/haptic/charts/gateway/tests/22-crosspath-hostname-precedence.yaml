@@ -1,0 +1,1077 @@
+validationTests:
+  test-httproute-crosspath-hostname-exact:
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    fixtures:
+      gatewayclasses: &id001
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        metadata:
+          name: haptic
+        spec:
+          controllerName: haproxy.org/haptic
+      services: &id002
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v1
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v2
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: gateway
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/longer
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - '*.example.com'
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - abc.example.com
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  bind \*:18742$
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+      - set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_newer_app\-v2_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_newer_0"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app/longer\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_older_app\-v1_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_older_0"\ \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_(newer|older)_0\).*var\(req.gw_routeId\)
+  test-httproute-crosspath-hostname-wildcard:
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    fixtures:
+      gatewayclasses: *id001
+      services: *id002
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: gateway
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: '*.test.example.com'
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/longer
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - '*.example.com'
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - '*.test.example.com'
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  bind \*:18742$
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "\.test\.example\.com:18742".*
+      - set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "\.test\.example\.com:18742".*
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "\.test\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_newer_app\-v2_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_newer_0"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "\.test\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app/longer\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_older_app\-v1_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_older_0"\ \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_(newer|older)_0\).*var\(req.gw_routeId\)
+  test-httproute-crosspath-hostname-empty:
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    fixtures:
+      gatewayclasses: *id001
+      services: *id002
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: gateway
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/longer
+            backendRefs:
+            - name: app-v1
+              port: 80
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - '*.example.com'
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  bind \*:18742$
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+      - set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_newer_app\-v2_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_newer_0"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app/longer\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_older_app\-v1_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_older_0"\ \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_(newer|older)_0\).*var\(req.gw_routeId\)
+  test-httproute-crosspath-hostname-conditions:
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    fixtures:
+      gatewayclasses: *id001
+      services: *id002
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: gateway
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/longer
+              method: GET
+              headers:
+              - name: x-match
+                value: older
+              queryParams:
+              - name: version
+                value: older
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - '*.example.com'
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app
+              method: GET
+              headers:
+              - name: x-match
+                value: newer
+              queryParams:
+              - name: version
+                value: newer
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - abc.example.com
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  bind \*:18742$
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+      - set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app\(/\|\\\$\)"\ \}\ \{\ method\ GET\ \}\ \{\ req\.hdr\(x\-match\)\ "newer"\ \}\ \{\ urlp\(version\)\
+        "newer"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_newer_app\-v2_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_newer_0"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app/longer\(/\|\\\$\)"\ \}\ \{\ method\ GET\ \}\ \{\ req\.hdr\(x\-match\)\ "older"\ \}\ \{\ urlp\(version\)\
+        "older"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_older_app\-v1_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_older_0"\ \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_(newer|older)_0\).*var\(req.gw_routeId\)
+  test-httproute-crosspath-hostname-exact-path:
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    fixtures:
+      gatewayclasses: *id001
+      services: *id002
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: gateway
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: Exact
+                value: /app/longer
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - '*.example.com'
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - abc.example.com
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  bind \*:18742$
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+      - set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_newer_app\-v2_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_newer_0"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ "/app/longer"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_older_app\-v1_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_older_0"\ \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_(newer|older)_0\).*var\(req.gw_routeId\)
+  test-httproute-crosspath-hostname-gateway-isolation:
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    fixtures:
+      gatewayclasses:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        metadata:
+          name: haptic
+        spec:
+          controllerName: haproxy.org/haptic
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v1
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v2
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: exact
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: wildcard
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: exact
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/longer
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - '*.example.com'
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: exact
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - abc.example.com
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: isolated
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: wildcard
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/longer
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - abc.example.com
+    assertions:
+    - type: haproxy_valid
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18886".*
+      - set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18886".*
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18886".*\{\
+        path\ \-m\ reg\ "\^/app\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_newer_app\-v2_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_newer_0"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18886".*\{\
+        path\ \-m\ reg\ "\^/app/longer\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_older_app\-v1_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_older_0"\ \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_(newer|older)_0\).*var\(req.gw_routeId\)
+    - type: contains
+      target: map:path-prefix.map
+      pattern: (?m)^abc\.example\.com:18516/app/longer/ GW_ROUTE_ID:http:h_default_isolated_0$
+    - type: contains
+      target: map:route-winner.map
+      pattern: (?m)^h_default_isolated_0 h_default_isolated_0$
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_isolated_0\)
+  test-httproute-crosspath-hostname-quoted-path:
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    fixtures:
+      gatewayclasses:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        metadata:
+          name: haptic
+        spec:
+          controllerName: haproxy.org/haptic
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v1
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v2
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: gateway
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/longer
+              method: GET
+              headers:
+              - name: x-match
+                value: older
+              queryParams:
+              - name: version
+                value: older
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - '*.example.com'
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/"bad
+              method: GET
+              headers:
+              - name: x-match
+                value: newer
+              queryParams:
+              - name: version
+                value: newer
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - abc.example.com
+    assertions:
+    - type: contains
+      target: rendering_error
+      pattern: would break out of its routing ACL
+    extraContext:
+      renderMode: admission
+  test-httproute-crosspath-hostname-control-path:
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    fixtures:
+      gatewayclasses:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        metadata:
+          name: haptic
+        spec:
+          controllerName: haproxy.org/haptic
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v1
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v2
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: gateway
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/longer
+              method: GET
+              headers:
+              - name: x-match
+                value: older
+              queryParams:
+              - name: version
+                value: older
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - '*.example.com'
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: '/app/
+
+                  bad'
+              method: GET
+              headers:
+              - name: x-match
+                value: newer
+              queryParams:
+              - name: version
+                value: newer
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - abc.example.com
+    assertions:
+    - type: contains
+      target: rendering_error
+      pattern: whitespace or control characters
+    extraContext:
+      renderMode: admission
+  test-httproute-crosspath-hostname-ingress-isolation:
+    _helm_skip_test: '{{ if not .Values.controller.templateLibraries.ingress.enabled }}true{{ end }}'
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    - ingresses
+    fixtures:
+      gatewayclasses:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        metadata:
+          name: haptic
+        spec:
+          controllerName: haproxy.org/haptic
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v1
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v2
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: gateway
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app/longer
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - '*.example.com'
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - abc.example.com
+      ingresses:
+      - apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: ingress-owner
+          namespace: default
+        spec:
+          ingressClassName: haptic
+          rules:
+          - host: abc.example.com
+            http:
+              paths:
+              - path: /app/longer/ingress
+                pathType: Exact
+                backend:
+                  service:
+                    name: app-v1
+                    port:
+                      number: 80
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  bind \*:18742$
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+      - set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_newer_app\-v2_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_newer_0"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*\{\
+        path\ \-m\ reg\ "\^/app/longer\(/\|\\\$\)"\ \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: set\-var\(txn\.path_match\)\ str\(BACKEND:gw_h_default_older_app\-v1_80\)\ if\ \{\ var\(txn\.gw_rule_id\)\
+        \-m\ str\ "h_default_older_0"\ \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_(newer|older)_0\).*var\(req.gw_routeId\)
+    - type: contains
+      target: map:path-exact.map
+      pattern: '(?m)^abc\.example\.com/app/longer/ingress BACKEND:'
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(req.gw_route_type\) -m str http.*var\(txn.host_match\)
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(req.gw_route_type\) -m str http.*var\(txn.host_match\)
+  test-httproute-crosspath-hostname-conditional-same-path:
+    requires:
+    - gatewayclasses
+    - gateways
+    - httproutes
+    fixtures:
+      gatewayclasses:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        metadata:
+          name: haptic
+        spec:
+          controllerName: haproxy.org/haptic
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v1
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app-v2
+          namespace: default
+        spec:
+          ports:
+          - port: 80
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: gateway
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            hostname: abc.example.com
+            protocol: HTTP
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: older
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app
+              headers:
+              - name: x-match
+                value: older
+            backendRefs:
+            - name: app-v1
+              port: 80
+          hostnames:
+          - '*.example.com'
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: newer
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: gateway
+          rules:
+          - matches:
+            - path:
+                type: PathPrefix
+                value: /app
+            backendRefs:
+            - name: app-v2
+              port: 80
+          hostnames:
+          - abc.example.com
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  bind \*:18742$
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*var\(req.gw_route_type\) -m str http.*var\(txn.host_match\) -m
+        str "abc\.example\.com:18742"
+      - set-var\(txn.gw_rule_id\) str\(h_default_older_0\).*var\(txn.host_match\) -m str "abc\.example\.com:18742".*req.hdr\(x-match\)
+        "older"
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: set-var\(txn.gw_rule_id\) str\(h_default_newer_0\).*req.hdr\(x-match\)

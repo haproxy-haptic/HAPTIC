@@ -163,6 +163,16 @@ test-httproute-cors-origin-control-char-injection-admission-rejected
 test-httproute-cors-origin-injection-admission-rejected
 test-httproute-cors-origin-injection-reconcile-warns-and-skips
 test-httproute-cors-wildcard-methods-echo
+test-httproute-crosspath-hostname-conditional-same-path
+test-httproute-crosspath-hostname-conditions
+test-httproute-crosspath-hostname-control-path
+test-httproute-crosspath-hostname-empty
+test-httproute-crosspath-hostname-exact
+test-httproute-crosspath-hostname-exact-path
+test-httproute-crosspath-hostname-gateway-isolation
+test-httproute-crosspath-hostname-ingress-isolation
+test-httproute-crosspath-hostname-quoted-path
+test-httproute-crosspath-hostname-wildcard
 test-httproute-cross-route-conflicts
 test-httproute-duplicate-backend-different-ports
 test-httproute-grpcroute-precedence

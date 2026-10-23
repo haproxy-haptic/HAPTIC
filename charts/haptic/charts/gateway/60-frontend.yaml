@@ -159,6 +159,7 @@ templateSnippets:
     requires: [grpcroutes, httproutes, referencegrants, services]
     template: |
       {%- import "util-gateway-route-identity" for GatewayRoutePrefix -%}
+      {%- import "util-host-key" for MapKeyForHost -%}
       {%- import "util-backend-name-gateway-rule" for BackendNameGatewayRule -%}
       {%- import "util-backend-ref-valid" for BackendRefValid -%}
       {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
@@ -192,6 +193,7 @@ templateSnippets:
           if matchIndex >= 0 && matchIndex < len(matches) { match = matches[matchIndex] }
           var advancedScope = tostring(dig(entry, "advancedScope") | fallback(false)) == "true"
           if advancedScope {
+            var hostnamePrecedence = tostring(dig(entry, "hostnamePrecedence") | fallback(false)) == "true"
             var pathType = dig_string(entry, "PathPrefix", "pathType")
             var pathValue = dig_string(entry, "/", "pathValue")
             var hasMethod = false
@@ -243,7 +245,7 @@ templateSnippets:
             }
             var pathOnly = !hasMethod && len(headerSpecs) == 0 && len(parameterSpecs) == 0 && !hasGRPCMethod
             var matchValues = []any{}
-            if pathOnly { matchValues = append(matchValues, pathValue) }
+            if pathOnly || hostnamePrecedence { matchValues = append(matchValues, pathValue) }
             for _, header := range headerSpecs { matchValues = append(matchValues, dig_string(header, "", "value")) }
             for _, parameter := range parameterSpecs { matchValues = append(matchValues, dig_string(parameter, "", "value")) }
             if hasGRPCMethod { matchValues = append(matchValues, grpcService, grpcMethod) }
@@ -255,8 +257,13 @@ templateSnippets:
               _ = WebhookRejectOrWarn(route, "InvalidMatch", routeKind + " " + namespace + "/" + name + " has a match value containing " + matchInjection + ", which would break out of its routing ACL; the route is not applied. Remove double quotes and control characters from the match value.")
             } else {
               var conditions = []string{"!{ var(txn.gw_rule_id) -m found }"}
-              if pathOnly && routeKind == "HTTPRoute" {
-                conditions = append(conditions, "{ var(req.gw_routeId) -m beg \"" + GatewayRoutePrefix(routeKind, namespace, name) + "_\" }")
+              if (pathOnly || hostnamePrecedence) && routeKind == "HTTPRoute" {
+                if hostnamePrecedence {
+                  conditions = append(conditions, "{ var(req.gw_route_type) -m str http }")
+                  conditions = append(conditions, "{ var(txn.host_match) -m str \"" + MapKeyForHost(dig_string(entry, "", "hostname")) + "\" }")
+                } else {
+                  conditions = append(conditions, "{ var(req.gw_routeId) -m beg \"" + GatewayRoutePrefix(routeKind, namespace, name) + "_\" }")
+                }
                 if pathType == "Exact" {
                   conditions = append(conditions, "{ path \"" + pathValue + "\" }")
                 } else if pathType == "RegularExpression" {
