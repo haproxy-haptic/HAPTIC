@@ -36,17 +36,19 @@ def successful_job_metrics(api, repository, current_run, *, workflow, branch, jo
             if artifact["name"] == artifact_name and not artifact["expired"]]
         if not artifacts:
             continue
+        started = datetime.datetime.fromisoformat(jobs[0]["started_at"])
+        completed = datetime.datetime.fromisoformat(jobs[0]["completed_at"])
+        # A rerun job keeps every attempt's artifact under one name; only the successful attempt's upload counts.
+        artifacts = [artifact for artifact in artifacts
+                     if started <= datetime.datetime.fromisoformat(artifact["created_at"]) <= completed]
+        if not artifacts:
+            raise ValueError("Metrics artifact was not uploaded during the successful job")
         if len(artifacts) != 1:
             raise ValueError("Workflow metrics artifact is ambiguous")
         artifact = artifacts[0]
         source = artifact["workflow_run"]
         if source["id"] != run["id"] or source["head_sha"] != run["head_sha"] or source["head_branch"] != branch:
             raise ValueError("Metrics artifact does not match the workflow revision")
-        created = datetime.datetime.fromisoformat(artifact["created_at"])
-        started = datetime.datetime.fromisoformat(jobs[0]["started_at"])
-        completed = datetime.datetime.fromisoformat(jobs[0]["completed_at"])
-        if not started <= created <= completed:
-            raise ValueError("Metrics artifact was not uploaded during the successful job")
         try:
             content = api.artifact(repository, artifact["id"], 2 * 1024 * 1024)
         except urllib.error.HTTPError as error:

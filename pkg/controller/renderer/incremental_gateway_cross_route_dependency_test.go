@@ -308,7 +308,7 @@ func TestGatewaySSLPassthroughTLSBackendTracksExactRouteAndEndpoints(t *testing.
 	require.NoError(t, fixture.endpoints.Add(
 		sslPassthroughEndpoint("other", "tls", 9443, "10.0.1.2"), []string{"default", "other"},
 	))
-	route := gatewaySSLPassthroughTLSRoute("subject", "tls.example")
+	route := gatewaySSLPassthroughTLSRoute("subject")
 	require.NoError(t, fixture.tlsRoutes.Add(route, []string{"default", "subject"}))
 
 	cold := fixture.renderAndCommit(t)
@@ -329,7 +329,7 @@ func TestGatewaySSLPassthroughTLSBackendTracksExactRouteAndEndpoints(t *testing.
 	assert.Equal(t, cold.HAProxyConfig, unrelated.HAProxyConfig)
 	assert.Equal(t, uint64(1), fixture.service.incremental.graph.Counters(query).Executions)
 
-	changed := gatewaySSLPassthroughTLSRoute("subject", "tls.example")
+	changed := gatewaySSLPassthroughTLSRoute("subject")
 	changed["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)["backendRefs"] = []any{
 		map[string]any{"name": "other", "port": int64(8443)},
 	}

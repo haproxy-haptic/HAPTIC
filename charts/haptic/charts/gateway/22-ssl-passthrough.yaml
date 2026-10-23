@@ -53,7 +53,7 @@ templateSnippets:
         {#- Pass 2: TLSRoute (Gateway API spec — TLS Passthrough listener)
 
             For each TLSRoute / rule that survives the listener-attachment
-            filters (TLS protocol, Passthrough mode, no ProtocolConflict,
+            filters (TLS protocol, supported termination mode,
             allowedRoutes.kinds, allowedRoutes.namespaces, sectionName,
             port), emit one entry per (intersected route hostname ×
             listener hostname). Backend naming: gtw_tls_<ns>_<name>_<ruleIdx>,
@@ -147,21 +147,6 @@ templateSnippets:
               {%- if gw == nil %}
                 {%- continue %}
               {%- end %}
-              {%%
-                // ProtocolConflict: a TLS port that hosts both
-                // Passthrough and Terminate siblings yields no accepted
-                // listeners on that port (parity with status patches).
-                var portModes = map[int]map[string]bool{}
-                for _, l := range gw.Spec.Listeners {
-                  if l.Protocol == "TLS" {
-                    var lp = toint(l.Port)
-                    var lm = l.Tls.Mode
-                    if lm == "" { lm = "Terminate" }
-                    if portModes[lp] == nil { portModes[lp] = map[string]bool{} }
-                    portModes[lp][lm] = true
-                  }
-                }
-              %%}
               {%- for _, listener := range gw.Spec.Listeners %}
                 {%%
                   var lName = ListenerName(listener)
@@ -185,8 +170,6 @@ templateSnippets:
                   // per listener port with SNI-based use_backend +
                   // reject-default.
                   if lMode != "Passthrough" && lMode != "Terminate" { skipListener = true }
-                  var pm = portModes[lPort]
-                  if pm != nil && pm["Passthrough"] && pm["Terminate"] { skipListener = true }
                 %%}
                 {%- if skipListener %}
                   {%- continue %}
@@ -257,7 +240,7 @@ templateSnippets:
                   {%- if inter != "" %}
                     {%- snisForRule[inter] = true %}
                     {%%
-                      var legKey = prNs + "/" + prName + "\x00" + inter + "\x00" + fixed(lPort)
+                      var legKey = prNs + "/" + prName + "\x00" + lName + "\x00" + inter + "\x00" + fixed(lPort)
                       var routeHostnameRank = toint(HostnameRank(rhStr))
                       existingLeg, alreadySeen := legs[legKey]
                       if !alreadySeen {
@@ -267,6 +250,7 @@ templateSnippets:
                           "port":              lPort,
                           "mode":              lMode,
                           "listener_hostname": lHost,
+                          "listener_name": lName,
                           "gw_namespace":      prNs,
                           "gw_name":           prName,
                         }
@@ -337,13 +321,14 @@ templateSnippets:
                 entry["gw_namespace"] = leg["gw_namespace"]
                 entry["gw_name"] = leg["gw_name"]
                 entry["listener_hostname"] = leg["listener_hostname"]
+                entry["listener_name"] = leg["listener_name"]
                 entry["invalid"] = !ruleResolved
                 entry["targets"] = targetsFor(tostring(entry["name"]))
                 var precedence = fixed(1000000000 - toint(leg["route_hostname_rank"])) + "/" + ageRank
                 entry["rank"] = "1/tls/" + precedence + nsStr + "/" + route.Metadata.Name + "/" + fixed(ruleIdx)
                 show shared.Publish("backends", "1/tls/" + nsStr + "/" + route.Metadata.Name + "/" +
                   fixed(ruleIdx) + "/" + tostring(leg["gw_namespace"]) + "/" + tostring(leg["gw_name"]) + "/" +
-                  tostring(leg["sni"]) + "/" + fixed(toint(leg["port"])), entry)
+                  tostring(leg["listener_name"]) + "/" + tostring(leg["sni"]) + "/" + fixed(toint(leg["port"])), entry)
               %%}
             {%- end %}
           {%- end %}

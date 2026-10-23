@@ -45,8 +45,9 @@ templateSnippets:
       {%- import "util-ssl-bind-options-for-crtlist" for SSLBindOptionsForCrtlist %}
       {%- import "util-http3-bind" for HTTP3Bind %}
       {{ render "util-gateway-pod-port-allocator" -}}
-      {{- render "gateway-https-listeners-100-gateway" -}}
-      {%- for _, entry := range incremental_values("gateway-https-listeners", "listeners") %}
+      {{- render "gateway-terminating-listeners-100-gateway" -}}
+      {%- for _, entry := range incremental_values("gateway-terminating-listeners", "listeners") %}
+        {%- if dig_string(entry, "", "protocol") != "HTTPS" %}{%- continue %}{%- end %}
       bind *:{{ toint(dig(entry, "podPort")) }}{{ SSLBindOptionsForCrtlist(dig_string(entry, "", "crtlist")) }}{{ dig_string(entry, "", "ignoreErr") }}{{ dig_string(entry, "", "tlsSuffix") }}
         {%- var quicBind = HTTP3Bind(toint(dig(entry, "podPort")), dig_string(entry, "", "crtlist"), dig_string(entry, "", "ignoreErr") + dig_string(entry, "", "tlsSuffix")) %}
         {%- if quicBind != "" %}

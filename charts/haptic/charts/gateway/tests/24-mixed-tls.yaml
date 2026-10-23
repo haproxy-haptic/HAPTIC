@@ -1,0 +1,1248 @@
+validationTests:
+  test-tlsroute-mixed-termination-routing:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend gateway-tls-port-9443$
+    - type: contains
+      target: haproxy.cfg
+      pattern: bind unix@/etc/haproxy/gw-tls-9443-647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3\.sock mode 600 accept-proxy
+        ssl crt-list [^\n]*gw-default-mixed-terminate-crtlist
+    - type: contains
+      target: haproxy.cfg
+      pattern: server terminate unix@/etc/haproxy/gw-tls-9443-647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3\.sock send-proxy-v2
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gateway-tls-bridge-9443-647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3 if \{ var\(sess.gateway_tls_listener\)
+        -m str 647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3 \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_encrypted_0 if \{ req_ssl_sni,lower -m end \.example\.com \} \{ var\(sess.gateway_tls_listener\) -m
+        str 6689dd787133f9dd7d3c19b0b8ce9e6808f05280ab610e96a153514a00a679c8 \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_terminated_0 if \{ ssl_fc_sni,lower -m str tls\.example\.com \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?s)set-var\(sess.gateway_tls_listener\) str\(647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3\).*?set-var\(sess.gateway_tls_listener\)
+        str\(6689dd787133f9dd7d3c19b0b8ce9e6808f05280ab610e96a153514a00a679c8\)
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  default_backend gateway-tls-unmatched-9443$
+    - type: contains
+      target: haproxy.cfg
+      pattern: bind unix@/etc/haproxy/gw-tls-9443-[^ ]+ mode 600 accept-proxy ssl crt-list [^ ]+ alpn h2,http/1\.1
+
+  test-tlsroute-mixed-missing-certificate-isolation:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: missing-cert
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gateway-tls-unmatched-9443 if \{ var\(sess.gateway_tls_listener\) -m str 647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3
+        \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend gateway-tls-9443-647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3$
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_encrypted_0
+  test-tlsroute-mixed-unrouted-listener-isolation:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gateway-tls-bridge-9443-647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3
+    - type: contains
+      target: haproxy.cfg
+      pattern: '(?m)^frontend gateway-tls-9443-647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3$\n(?:  [^\n]*\n|\n)*?  default_backend
+        gateway-tls-unmatched-9443'
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_terminated
+  test-tlsroute-mixed-same-route-mode-separation:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: both
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_both_0_terminate if \{ ssl_fc_sni
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_both_0_passthrough if \{ req_ssl_sni
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: (?m)^backend gtw_tls_default_both_0 from
+  test-tlsroute-mixed-weighted-invalid-share:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: missing
+              port: 8080
+              weight: 1
+            - name: app
+              port: 8080
+              weight: 3
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gw-tls-reject if \{ ssl_fc_sni,lower -m str tls\.example\.com \} \{ rand\(4\) -m int lt 1 \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_terminated_0_1 if \{ ssl_fc_sni
+  test-tlsroute-mixed-secret-reference-denied:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+                namespace: other
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gateway-tls-unmatched-9443 if \{ var\(sess.gateway_tls_listener\) -m str 647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3
+        \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend gateway-tls-9443-647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3$
+  test-tlsroute-mixed-invalid-winner-rejects:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: missing
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: fallback
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?s)use_backend gateway-tls-unmatched-9443 if \{ ssl_fc_sni,lower -m str tls\.example\.com \}.*?use_backend gtw_tls_default_fallback_0
+        if \{ ssl_fc_sni,lower -m str tls\.example\.com \}
+  test-tlsroute-mixed-missing-client-ca-status:
+    requires:
+    - gateways
+    - gatewayclasses
+    - tlsroutes
+    extraContext:
+      controllerName: haproxy-haptic.org/controller
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+          tls:
+            frontend:
+              default:
+                validation:
+                  mode: AllowValidOnly
+                  caCertificateRefs:
+                  - group: ''
+                    kind: ConfigMap
+                    name: missing-ca
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+      gatewayclasses:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        metadata:
+          name: haptic
+        spec:
+          controllerName: haproxy-haptic.org/controller
+    assertions:
+    - type: haproxy_valid
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend gateway-tls-9443-647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3$
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_encrypted_0
+    - type: contains
+      target: status:default/mixed:rendered
+      pattern: '"reason":"NoValidCACertificate","status":"False","type":"Accepted"'
+    - type: contains
+      target: status:default/mixed:rendered
+      pattern: '"reason":"Accepted","status":"True","type":"Accepted"'
+  test-tlsroute-mixed-chart-https-ownership:
+    requires:
+    - gateways
+    - tlsroutes
+    extraContext:
+      perGatewayPodPortBase: 18000
+      perGatewayPodPortRange: 1000
+      httpsPort: 8443
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 8443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 8443
+            tls:
+              mode: Passthrough
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: website
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: https
+            hostname: web.example.com
+            protocol: HTTPS
+            port: 8443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend https$
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend gateway-tls-port-8443$
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend ssl-tcp$
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend gateway-tls-port-18837$
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gateway-tls-bridge-18837-647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_encrypted_0 if \{ req_ssl_sni,lower
+  test-tlsroute-single-termination-invalid-winner-rejects:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: missing
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?s)use_backend gateway-tls-unmatched-9443 if \{ ssl_fc_sni,lower -m str tls\.example\.com \}.*?use_backend gtw_tls_default_encrypted_0
+        if \{ ssl_fc_sni,lower -m end \.example\.com \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: (?m)^backend gtw_tls_default_terminated_0\b
+  test-tlsroute-passthrough-unrouted-listener-isolation:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(sess.gateway_tls_listener\) str\(647d237e187bb04de135cbf49f2a9a042d6b87c860b5797a95051be68b3935d3\).*req_ssl_sni,lower
+        -m str tls\.example\.com
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_encrypted_0 if \{ req_ssl_sni,lower -m end \.example\.com \} \{ var\(sess.gateway_tls_listener\) -m
+        str 6689dd787133f9dd7d3c19b0b8ce9e6808f05280ab610e96a153514a00a679c8 \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: bind unix@/etc/haproxy/gw-tls-9443-
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  default_backend gateway-tls-unmatched-9443$
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend ssl-tcp$
+    - type: contains
+      target: haproxy.cfg
+      pattern: tcp-request content reject if \{ req_ssl_hello_type 1 \} \{ var\(sess.gateway_tls_static_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\)
+        -m found \} !\{ var\(sess.gateway_tls_route_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\) -m found \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_encrypted_0 if \{ req_ssl_sni,lower -m end \.example\.com \} \{ var\(sess.gateway_tls_static_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\)
+        -m str 6689dd787133f9dd7d3c19b0b8ce9e6808f05280ab610e96a153514a00a679c8 \}
+  test-tlsroute-single-termination-catchall-listener:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+          hostnames:
+          - tls.example.com
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  bind \*:9443 ssl crt-list
+    - type: contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_default_terminated_0 if \{ ssl_fc_sni,lower -m str tls\.example\.com \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  tcp-request content reject if !allowed_sni$
+    - type: contains
+      target: haproxy.cfg
+      pattern: bind \*:9443 ssl crt-list [^ ]+ alpn h2,http/1\.1
+
+  test-tlsroute-static-passthrough-invalid-winner-rejects:
+    requires:
+    - gateways
+    - tlsroutes
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: terminated
+          namespace: default
+          creationTimestamp: '2024-01-01T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: missing
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: encrypted
+          namespace: default
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: passthrough
+          hostnames:
+          - '*.example.com'
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: TLSRoute
+        metadata:
+          name: fallback
+          namespace: default
+          creationTimestamp: '2024-01-02T00:00:00Z'
+        spec:
+          parentRefs:
+          - name: mixed
+            sectionName: terminate
+          hostnames:
+          - tls.example.com
+          rules:
+          - backendRefs:
+            - name: app
+              port: 8080
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: tcp-request content set-var\(sess.gateway_tls_route_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\) str\(reject\)
+    - type: contains
+      target: haproxy.cfg
+      pattern: tcp-request content reject if \{ var\(sess.gateway_tls_route_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\)
+        -m str reject \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: (?m)^backend gtw_tls_default_terminated_0\b
+
+  test-tlsroute-static-passthrough-all-routes-removed:
+    requires:
+    - gateways
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: terminate
+            hostname: tls.example.com
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes: []
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend ssl-tcp$
+    - type: contains
+      target: haproxy.cfg
+      pattern: tcp-request content reject if \{ req_ssl_hello_type 1 \} \{ var\(sess.gateway_tls_static_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\)
+        -m found \} !\{ var\(sess.gateway_tls_route_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\) -m found \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend gateway-tls-port-9443$
+
+  test-tlsroute-static-single-passthrough-without-route:
+    requires:
+    - gateways
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      tlsroutes: []
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend ssl-tcp$
+    - type: contains
+      target: haproxy.cfg
+      pattern: tcp-request content reject if \{ req_ssl_hello_type 1 \} \{ var\(sess.gateway_tls_static_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\)
+        -m found \} !\{ var\(sess.gateway_tls_route_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\) -m found \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(sess.gateway_tls_static_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\) str\(6689dd787133f9dd7d3c19b0b8ce9e6808f05280ab610e96a153514a00a679c8\)
+        if \{ req_ssl_hello_type 1 \} !\{ var\(sess.gateway_tls_static_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\) -m found
+        \} \{ req_ssl_sni,lower -m end \.example\.com \}
+
+  test-tlsroute-static-unrouted-listener-with-https:
+    requires:
+    - gateways
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: mixed
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: passthrough
+            hostname: '*.example.com'
+            protocol: TLS
+            port: 9443
+            tls:
+              mode: Passthrough
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          name: website
+          namespace: default
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: https
+            hostname: web.example.com
+            protocol: HTTPS
+            port: 8443
+            tls:
+              mode: Terminate
+              certificateRefs:
+              - name: shared-tls
+      tlsroutes: []
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          name: app
+          namespace: default
+        spec:
+          ports:
+          - port: 8080
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^frontend ssl-tcp$
+    - type: contains
+      target: haproxy.cfg
+      pattern: tcp-request content reject if \{ req_ssl_hello_type 1 \} \{ var\(sess.gateway_tls_static_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\)
+        -m found \} !\{ var\(sess.gateway_tls_route_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\) -m found \}
+    - type: not_contains
+      target: haproxy.cfg
+      pattern: use_backend gtw_tls_
+    - type: contains
+      target: haproxy.cfg
+      pattern: set-var\(sess.gateway_tls_static_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\) str\(6689dd787133f9dd7d3c19b0b8ce9e6808f05280ab610e96a153514a00a679c8\)
+        if \{ req_ssl_hello_type 1 \} !\{ var\(sess.gateway_tls_static_f946821fdbe24a744e81edbf560725dc27ebdb42154883867732789a26de2241\) -m found
+        \} \{ req_ssl_sni,lower -m end \.example\.com \}
+    - type: contains
+      target: haproxy.cfg
+      pattern: '(?m)^backend ssl-loopback(?: from [^\n]+)?$'
+    - type: contains
+      target: haproxy.cfg
+      pattern: (?m)^  default_backend ssl-loopback$
+    - type: contains
+      target: haproxy.cfg
+      pattern: bind unix@/etc/haproxy/ssl-frontend\.sock mode 660 ssl
+    extraContext:
+      perGatewayPodPortBase: 18000
+      perGatewayPodPortRange: 1000
+      httpsPort: 8443

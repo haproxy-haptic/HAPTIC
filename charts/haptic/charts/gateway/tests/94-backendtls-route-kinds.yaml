@@ -444,8 +444,8 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: 'backend gtw_tls_gateway-conformance-infra_tls-route_0_passthrough from haptic-be-'}
       - {type: contains, target: haproxy.cfg, pattern: *reencryptDefaultServer}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^defaults haptic-be-[0-9a-f]+ from haptic-base\n  mode tcp\n  default-server check$'}
-      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-8443$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_gateway-conformance-infra_tls-route_0_terminate if \{ ssl_fc_sni -m str tls\.example\.com \}$'}
-      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-9443$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_gateway-conformance-infra_tls-route_0_passthrough if \{ req_ssl_sni -m str tls\.example\.com \}$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-8443$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_gateway-conformance-infra_tls-route_0_terminate if \{ ssl_fc_sni,lower -m str tls\.example\.com \}$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-9443$\n(?:  [^\n]*\n|\n)*?  use_backend gtw_tls_gateway-conformance-infra_tls-route_0_passthrough if \{ req_ssl_sni,lower -m str tls\.example\.com \}$'}
       - {type: not_contains, target: haproxy.cfg, pattern: 'backend gtw_tls_gateway-conformance-infra_tls-route_0 from'}
 
   test-backendtlspolicy-grpcroute-unsupported-identity-rejects:

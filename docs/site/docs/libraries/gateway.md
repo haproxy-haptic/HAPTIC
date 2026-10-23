@@ -1047,7 +1047,7 @@ A TLSRoute attaches to a Gateway listener when every check in this table passes:
 | `parentRefs[].sectionName` | When set, only the named listener is considered |
 | `parentRefs[].port` | When set, only listeners on that port are considered |
 | Listener protocol | Must be `TLS`; both `tls.mode: Passthrough` and `tls.mode: Terminate` accept TLSRoutes (an empty mode defaults to `Terminate`) |
-| Mixed modes on one port | A port hosting both a `Passthrough` and a `Terminate` listener is a protocol conflict — no route attaches to either listener |
+| Mixed modes on one port | `Passthrough` and `Terminate` listeners share a port; SNI selects the listener before TLSRoute matching |
 | `allowedRoutes.kinds` | Honored; when omitted, the protocol default (TLSRoute on TLS listeners) applies |
 | `allowedRoutes.namespaces.from` | `Same`, `All`, and `Selector` (with `matchLabels`; `matchExpressions` isn't supported) |
 | `spec.hostnames` | The route needs at least one hostname — routing is SNI-based, so a TLSRoute without hostnames attaches nowhere. Each route hostname is intersected with the listener hostname (wildcards supported); the intersection becomes the SNI the frontend matches |
@@ -1055,12 +1055,119 @@ A TLSRoute attaches to a Gateway listener when every check in this table passes:
 ### Forwarding behavior
 
 - Passthrough routes can share the chart's HTTPS port with Ingress passthrough routes.
-- Use a separate port for a terminating TLS listener when the chart already uses its HTTPS port.
+- On that shared address, Gateway ports whose TLS listeners all use `Passthrough` retain their listener claims even after their final TLSRoute is removed. A matching listener with no valid matching route rejects the connection, including when an Ingress also matches. Remove or narrow the Gateway listener to release that hostname. Names outside all Gateway listener claims can still reach Ingress routes.
+- Use the per-Gateway Service for terminating or mixed TLS listeners. It forwards each listener port to an allocated HAProxy port, so the chart's HTTPS Service can use the same port number on its own address. The chart keeps ownership of its HTTPS bind.
 - Wildcard server names such as `*.example.com` match by suffix.
 - Connections with an unclaimed server name are rejected.
 - A rule splits its connections across its `backendRefs` by `weight` (default `1`; a `weight: 0` ref receives none). A ref's port defaults to 443.
 - The share of an invalid `backendRef` — a missing Service, another kind, or a cross-namespace ref without a ReferenceGrant — is rejected; a rule whose valid refs all have weight 0 rejects every connection.
 - BackendTLSPolicy can re-encrypt traffic after termination; it doesn't affect passthrough traffic.
+
+### Mixed termination on one port
+
+Use separate TLS listeners with different hostnames to terminate some connections
+and pass others through on the same port. HAPTIC selects the most specific
+listener hostname first: exact names precede wildcards, longer wildcard suffixes
+precede shorter ones, and a listener without a hostname comes last. If that
+listener has no matching route or a required certificate is unavailable, HAPTIC
+rejects the connection. It doesn't try a less specific listener.
+
+Each terminating listener uses its own certificate and client-certificate
+validation settings. Passthrough listeners forward the original TLS stream;
+they don't use the Gateway's frontend client-validation policy. A
+BackendTLSPolicy can encrypt the backend connection after termination.
+
+On a port with more than one TLS listener, HAProxy terminates each connection
+on an internal listener, so a terminated connection counts twice against the
+HAProxy connection limit (`maxconn`). Passthrough connections count once.
+
+This example expects two Services in `default`: `plaintext-app` accepts plaintext
+TCP on port `3000`, and `secure-app` accepts TLS for `encrypted.example.com` on
+port `8443`. Save the certificate and private key for `terminate.example.com` as
+`server.crt` and `server.key`, then create the Secret and routes:
+
+```bash
+kubectl create secret tls mixed-termination --namespace default \
+  --cert=server.crt --key=server.key --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f - <<'EOF'
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: mixed-tls
+  namespace: default
+spec:
+  gatewayClassName: haptic
+  listeners:
+    - name: terminate
+      protocol: TLS
+      port: 8883
+      hostname: terminate.example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: mixed-termination
+    - name: passthrough
+      protocol: TLS
+      port: 8883
+      hostname: encrypted.example.com
+      tls:
+        mode: Passthrough
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: terminated
+  namespace: default
+spec:
+  parentRefs:
+    - name: mixed-tls
+      sectionName: terminate
+  hostnames: [terminate.example.com]
+  rules:
+    - backendRefs:
+        - name: plaintext-app
+          port: 3000
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: TLSRoute
+metadata:
+  name: encrypted
+  namespace: default
+spec:
+  parentRefs:
+    - name: mixed-tls
+      sectionName: passthrough
+  hostnames: [encrypted.example.com]
+  rules:
+    - backendRefs:
+        - name: secure-app
+          port: 8443
+EOF
+```
+
+For mixed ports, HAPTIC inspects the ClientHello on a TCP frontend and forwards
+terminating connections through a private Unix socket to a TCP TLS frontend.
+PROXY protocol v2 preserves the client address across that local connection.
+The Unix socket doesn't expose another network port. Ports with multiple
+terminating listeners use the same isolation so their bind-level TLS options
+remain separate. A single terminating listener uses a direct TLS bind.
+
+Terminating TLSRoute listeners retain the `h2,http/1.1` defaults for
+Application-Layer Protocol Negotiation (ALPN). Per-listener ALPN configuration
+isn't supported.
+
+Each connection through a private TLS frontend adds one local connection and
+two file descriptors, plus its stream and buffer memory. It consumes two accepted
+connection slots in HAProxy's global `maxconn` limit. Size that limit and the pod's
+file-descriptor and memory budgets for direct connections plus twice the bridged
+connections, with headroom for concurrent handshakes. At the global limit, a
+public connection can wait for the private frontend to accept its local hop.
+Passthrough connections don't take that extra hop. Removing a passthrough sibling
+keeps the remaining terminating listener's certificate and client-validation policy.
+
+To return to a HAPTIC version that rejects mixed TLS modes, first move the
+listeners onto separate ports and verify their routes. The older version can't
+serve a mixed-mode Gateway.
 
 ### TLSRoute status
 
@@ -1069,7 +1176,7 @@ Each `parentRef` targeting a Gateway owned by this controller receives two condi
 - **Accepted**: `True`, or `False` with reason `NoMatchingParent` (`sectionName` or `port` matched no listener), `NoMatchingListenerHostname`, or `NotAllowedByListeners`
 - **ResolvedRefs**: `True`, or `False` with reason `InvalidKind` (a `backendRef` isn't a core/v1 Service), `RefNotPermitted` (cross-namespace ref without a ReferenceGrant), or `BackendNotFound`
 
-TLSRoutes count toward `attachedRoutes` on TLS listeners only; listeners on a mixed-mode port count zero. Status is written on the `deployed` outcome — `Accepted` turns `True` once HAProxy serves the route, not at render time.
+TLSRoutes count toward `attachedRoutes` on each TLS listener to which they attach. Status is written on the `deployed` outcome — `Accepted` turns `True` once HAProxy serves the route, not at render time.
 
 ### TLSRoute limitations
 

@@ -1,0 +1,80 @@
+templateSnippets:
+  util-gateway-static-tls-groups:
+    requires: [gateways]
+    template: |-
+      {{- render "gateway-listener-state-100-gateway" -}}
+      {%%
+        var groups = map[string]any{}
+        for _, listener := range incremental_values("gateway-listener-state", "listeners") {
+          if dig_string(listener, "", "protocol") != "TLS" { continue }
+          var gatewayKey = dig_string(listener, "", "gatewayNamespace") + "/" + dig_string(listener, "", "gatewayName")
+          var key = gatewayKey + "/" + tostring(dig(listener, "port"))
+          if groups[key] == nil {
+            groups[key] = map[string]any{"key": key, "modes": map[string]bool{}, "listeners": []any{}, "routes": []any{}}
+          }
+          var group = groups[key].(map[string]any)
+          var mode = dig_string(listener, "", "tls", "mode")
+          if mode == "" { mode = "Terminate" }
+          group["modes"].(map[string]bool)[mode] = true
+          var name = dig_string(listener, "", "name")
+          group["listeners"] = append(group["listeners"].([]any), map[string]any{
+            "name": name, "hostname": dig_string(listener, "", "hostname"),
+            "id": sha256(gatewayKey + "/" + name),
+          })
+        }
+        var passthrough = map[string]any{}
+        for key, group := range groups {
+          var modes = dig(group, "modes").(map[string]bool)
+          if len(modes) == 1 && modes["Passthrough"] { passthrough[key] = group }
+        }
+        shared.ComputeIfAbsent("gatewayStaticTLSGroups", func() any { return passthrough })
+        if len(passthrough) > 0 {
+          shared.Get("globalFeatures").(map[string]any)["tlsInspectionRequired"] = true
+        }
+      %%}
+
+  ssl-tcp-request-100-gateway-listener-claims:
+    requires: [gateways]
+    template: |
+      {%- import "util-hostname-intersect-gateway" for HostnameRank -%}
+      {%- var groups = shared.Get("gatewayStaticTLSGroups") %}
+      {%- if groups != nil %}
+        {%- var ordered = []any{} %}
+        {%- for _, group := range groups.(map[string]any) %}{%- ordered = append(ordered, group) %}{%- end %}
+        {%- for _, group := range ordered | sort_by([]string{"$.key"}) %}
+          {%%
+            var id = sha256(dig_string(group, "", "key"))
+            var selected = "sess.gateway_tls_static_" + id
+            var matched = "sess.gateway_tls_route_" + id
+            var listeners = []any{}
+            for _, listener := range toSlice(dig(group, "listeners")) {
+              var rank = tostring(1000000 - toint(HostnameRank(dig_string(listener, "", "hostname"))))
+              listeners = append(listeners, map[string]any{
+                "rank": "0000000"[:7-len(rank)] + rank + "/" + dig_string(listener, "", "name"),
+                "name": dig(listener, "name"), "hostname": dig(listener, "hostname"), "id": dig(listener, "id"),
+              })
+            }
+            var condition = func(host string) string {
+              if host == "" { return "" }
+              if hasPrefix(host, "*.") { return " { req_ssl_sni,lower -m end " + host[1:] + " }" }
+              return " { req_ssl_sni,lower -m str " + host + " }"
+            }
+          %%}
+          {%- for _, listener := range listeners | sort_by([]string{"$.rank"}) %}
+      tcp-request content set-var({{ selected }}) str({{ dig_string(listener, "", "id") }}) if { req_ssl_hello_type 1 } !{ var({{ selected }}) -m found }{{ condition(dig_string(listener, "", "hostname")) }}
+          {%- end %}
+          {%- for _, route := range toSlice(dig(group, "routes")) %}
+            {%- var listenerID = "" %}
+            {%- for _, listener := range listeners %}
+              {%- if dig_string(listener, "", "name") == dig_string(route, "", "listener_name") %}
+                {%- listenerID = dig_string(listener, "", "id") %}
+              {%- end %}
+            {%- end %}
+            {%- var verdict = "allow" %}
+            {%- if dig(route, "invalid") == true %}{%- verdict = "reject" %}{%- end %}
+      tcp-request content set-var({{ matched }}) str({{ verdict }}) if { req_ssl_hello_type 1 } { var({{ selected }}) -m str {{ listenerID }} } !{ var({{ matched }}) -m found }{{ condition(dig_string(route, "", "sni")) }}
+          {%- end %}
+      tcp-request content reject if { req_ssl_hello_type 1 } { var({{ selected }}) -m found } !{ var({{ matched }}) -m found }
+      tcp-request content reject if { var({{ matched }}) -m str reject }
+        {%- end %}
+      {%- end %}

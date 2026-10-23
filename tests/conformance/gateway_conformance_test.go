@@ -362,8 +362,7 @@ func installConformanceSchemes(t *testing.T, scheme *runtime.Scheme) {
 	require.NoError(t, apiextensionsv1.AddToScheme(scheme))
 }
 
-// supportedConformanceFeatures returns the standard-channel features the chart
-// implements, plus the retry-codes feature on an experimental-channel cluster.
+// Mixed TLS uses standard fields; retry codes require the experimental channel.
 func supportedConformanceFeatures(t *testing.T, c client.Client) sets.Set[features.FeatureName] {
 	t.Helper()
 	// Exclude only documented dataplane or architecture gaps from standard features.
@@ -405,6 +404,7 @@ func supportedConformanceFeatures(t *testing.T, c client.Client) sets.Set[featur
 		}
 		supported.Insert(f.Name)
 	}
+	supported.Insert(features.SupportTLSRouteModeMixed)
 	experimental, err := servesExperimentalChannel(t.Context(), c)
 	require.NoError(t, err)
 	if experimental {

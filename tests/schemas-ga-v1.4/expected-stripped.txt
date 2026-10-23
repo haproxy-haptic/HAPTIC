@@ -105,3 +105,16 @@ test-tlsroute-gateway-address-isolation
 test-tlsroute-multiple-gateway-parents
 test-tlsroute-static-gateway-address-isolation
 test-tlsroute-terminate-gateway-address-isolation
+test-tlsroute-mixed-chart-https-ownership
+test-tlsroute-mixed-invalid-winner-rejects
+test-tlsroute-mixed-missing-certificate-isolation
+test-tlsroute-mixed-missing-client-ca-status
+test-tlsroute-mixed-same-route-mode-separation
+test-tlsroute-mixed-secret-reference-denied
+test-tlsroute-mixed-termination-routing
+test-tlsroute-mixed-unrouted-listener-isolation
+test-tlsroute-mixed-weighted-invalid-share
+test-tlsroute-passthrough-unrouted-listener-isolation
+test-tlsroute-single-termination-catchall-listener
+test-tlsroute-single-termination-invalid-winner-rejects
+test-tlsroute-static-passthrough-invalid-winner-rejects

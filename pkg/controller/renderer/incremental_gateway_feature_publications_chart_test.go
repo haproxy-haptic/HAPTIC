@@ -181,7 +181,7 @@ const gatewayFeatureLegacyProjectionRoot = `{%- import "util-reference-grant-per
       for _, listener := range gateway.Spec.Listeners {
         gatewayListeners = append(gatewayListeners, map[string]any{
           "name": listener.Name, "hostname": listener.Hostname,
-          "port": listener.Port, "protocol": listener.Protocol,
+          "port": listener.Port, "protocol": listener.Protocol, "tls": map[string]any{"mode": listener.Tls.Mode},
         })
       }
       var perPort = []any{}
