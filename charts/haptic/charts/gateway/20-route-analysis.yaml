@@ -179,6 +179,9 @@ templateSnippets:
         var entries = []any{}
         var routeAdvanced = routeKind == "GRPCRoute"
         for _, hostname := range keys(effectiveHosts) {
+          if routeKind == "HTTPRoute" {
+            show shared.Publish("hostname-ranks:" + hostname, tostring(effectiveHosts[hostname]), true)
+          }
           if hasPrefix(hostname, "*.") {
             var suffix = hostname[2:]
             var fragment = "^[^.]+(?:\\.[^.]+)*\\." + sanitize_regex(suffix) + "$ ." + suffix + "\n"
@@ -215,6 +218,9 @@ templateSnippets:
                 routeAdvanced = true
               }
               var pathKey = hostname + "|" + pathType + "|" + pathValue
+              if routeKind == "HTTPRoute" {
+                show shared.Publish("hostname-paths:" + hostname, pathType + "|" + pathValue, true)
+              }
               var entryID = routeKey + "/" + fixed(ruleIndex) + "/" + fixed(matchIndex) + "/" + hostname
               var rawRank = rawKindRank + "\x00" + namespace + "/" + name + "\x00" +
                 hostname + "\x00" + fixed(ruleIndex) + "\x00" + fixed(matchIndex)
@@ -382,6 +388,9 @@ templateSnippets:
             }
             var routeID = GatewayRuleID(routeKind, namespace, name,
               toint(dig(candidate, "ruleIdx") | fallback(0)))
+            var hostnamePrecedence = routeKind == "HTTPRoute" &&
+              shared.Count("gateway-route-candidates", "hostname-ranks:" + dig_string(candidate, "", "hostname")) > 1 &&
+              (hasConflicts || shared.Count("gateway-route-candidates", "hostname-paths:" + dig_string(candidate, "", "hostname")) > 1)
             var finalized = merge(candidate, map[string]any{
               "hasConflicts": hasConflicts,
               "routeId": routeID,
@@ -392,7 +401,8 @@ templateSnippets:
               "groupKind": dig_string(pathCandidates[0], "", "kind"),
               "groupRouteNamespace": dig_string(pathCandidates[0], "", "routeNamespace"),
               "groupRouteName": dig_string(pathCandidates[0], "", "routeName"),
-              "advancedScope": tostring(dig(routeIndex, "advanced") | fallback(false)) == "true",
+              "hostnamePrecedence": hostnamePrecedence,
+              "advancedScope": hostnamePrecedence || tostring(dig(routeIndex, "advanced") | fallback(false)) == "true",
             })
             show shared.Publish("entries", entryID, finalized)
             finalizedEntryIDs = append(finalizedEntryIDs, entryID)
