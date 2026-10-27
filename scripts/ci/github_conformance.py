@@ -189,6 +189,9 @@ def diagnostics(directory, *, run=subprocess.run):
             ("haptic", "app.kubernetes.io/component=controller", "controller"),
             ("haptic", "app.kubernetes.io/component=controller", "validators"),
             ("haptic", "app.kubernetes.io/component=loadbalancer", "spoa-hub"),
+            ("gateway-conformance-infra", "app=infra-backend-v1", "infra-backend-v1"),
+            ("gateway-conformance-infra", "app=infra-backend-v2", "infra-backend-v2"),
+            ("gateway-conformance-infra", "app=infra-backend-v3", "infra-backend-v3"),
             ("metallb-system", "app=metallb,component=controller", "controller"),
             ("metallb-system", "app=metallb,component=speaker", "speaker"),
             ("kube-system", "k8s-app=kube-proxy", "kube-proxy")):
@@ -201,13 +204,30 @@ def diagnostics(directory, *, run=subprocess.run):
             if previous:
                 commands[name].append("--previous")
     results = {}
-    for name, command in commands.items():
+
+    def collect(name, command):
         with (directory / name).open("w") as stream:
             try:
                 result = run(command, stdout=stream, stderr=subprocess.STDOUT, timeout=30, check=False)
                 results[name] = {"exit_code": result.returncode}
             except (OSError, subprocess.TimeoutExpired) as error:
                 results[name] = {"error": str(error)}
+
+    for name, command in commands.items():
+        collect(name, command)
+    try:
+        pods = json.loads((directory / "pods.json").read_text())["items"]
+    except (ValueError, KeyError, TypeError) as error:
+        results["spoa-metrics"] = {"error": str(error)}
+    else:
+        for pod in pods:
+            metadata = pod.get("metadata", {})
+            if (metadata.get("namespace") == "haptic" and
+                    metadata.get("labels", {}).get("app.kubernetes.io/component") == "loadbalancer"):
+                name = metadata["name"]
+                collect(f"{name}-spoa.metrics", kubectl + ["exec", "-n", "haptic", name,
+                        "-c", "haproxy", "--", "curl", "--silent", "--show-error", "--fail",
+                        "--max-time", "10", "http://127.0.0.1:9095/metrics"])
     (directory / "collection.json").write_text(json.dumps(results, indent=2) + "\n")
 
 
