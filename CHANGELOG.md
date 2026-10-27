@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Fixed
 
-- Forward Ingress client-certificate headers on resumed TLS sessions.
+- Forward Ingress client-certificate headers on resumed TLS sessions and when annotation libraries coexist.
 
 - HTTPRoute hostname specificity takes precedence over path length and header conditions when routes intersect the same listener hostname.
 - Keep TLS passthrough listener isolation on the shared HTTPS address after routes are removed or listener modes change; unmatched Gateway names still reach Ingress routes.

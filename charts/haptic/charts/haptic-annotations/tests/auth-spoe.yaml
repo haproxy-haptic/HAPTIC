@@ -1140,6 +1140,47 @@ validationTests:
     assertions:
       - type: haproxy_valid
 
+  test-haptic-cert-headers-vendor-coexistence:
+    _helm_skip_test: '{{ if not .Values.controller.templateLibraries.haproxyIngress.enabled }}true{{ end }}'
+    description: Sanitize client-certificate headers before either annotation library restores identity.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: native
+            annotations: {haproxy-haptic.org/auth-tls-cert-header: "true"}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: mtls.example.com
+                http:
+                  paths:
+                    - {path: /native, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: vendor
+            annotations: {haproxy-ingress.github.io/auth-tls-cert-header: "true"}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: mtls.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - type: haproxy_valid
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - '# haptic/auth-tls-cert-header — drop any client-supplied identity headers'
+          - '# haproxy-ingress/auth-tls-cert-header — drop client-supplied identity headers'
+          - '# haproxy-ingress/auth-tls-cert-header \(default/vendor\)'
+          - 'http-request set-header X-SSL-Client-CN %\[ssl_c_s_dn\(CN\)\] if \{ ssl_c_used \} \{ var\(txn.resource_key\),map\('
+
   test-haptic-auth-tls-cert-header-cannot-be-forged:
     description: >-
       The X-SSL-Client-* headers are set only when a client certificate is

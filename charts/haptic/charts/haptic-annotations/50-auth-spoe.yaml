@@ -651,7 +651,7 @@ templateSnippets:
   # ============================================================================
   # mTLS — client-cert passthrough headers (frontend-filters)
   # ============================================================================
-  features-900-haptic-fragment-819-auth-tls-cert-header-strip:
+  features-900-haptic-fragment-689-auth-tls-cert-header-strip:
     requires: [ingresses]
     incremental:
       source: ingresses
@@ -664,10 +664,11 @@ templateSnippets:
         {{- shared.Publish("fragments", "global", "\n# haptic/auth-tls-cert-header — drop any client-supplied identity headers\n      http-request del-header X-SSL-Client-CN\n      http-request del-header X-SSL-Client-DN\n      http-request del-header X-SSL-Client-Cert") -}}
       {%- end -%}
 
-  frontend-filters-819-haptic-auth-tls-cert-header-strip:
+  # Sanitize before certificate-header writers at priority 690 and above.
+  frontend-filters-689-haptic-auth-tls-cert-header-strip:
     requires: [ingresses]
     template: |-
-      {%- for _, fragment := range incremental_values("features-900-haptic-fragment-819-auth-tls-cert-header-strip", "fragments") -%}{{- tostring(fragment) -}}{%- end -%}
+      {%- for _, fragment := range incremental_values("features-900-haptic-fragment-689-auth-tls-cert-header-strip", "fragments") -%}{{- tostring(fragment) -}}{%- end -%}
 
   # auth-tls-cert-header: the X-SSL-Client-* headers for a route that opted in,
   # from haptic-cert-header-routes.map ("<route id>" -> 1); the strip above
