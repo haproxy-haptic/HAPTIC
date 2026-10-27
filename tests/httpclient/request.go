@@ -37,9 +37,10 @@ import (
 type Request struct {
 	client *Client
 
-	scheme string // "http" or "https"
-	host   string
-	path   string
+	scheme     string // "http" or "https"
+	host       string
+	hostHeader string // overrides the Host header; host still sets the TLS SNI
+	path       string
 
 	method  string
 	headers http.Header
@@ -104,6 +105,13 @@ func (c *Client) HTTPS(host, path string) *Request {
 		method:  http.MethodGet,
 		headers: http.Header{},
 	}
+}
+
+// WithHostHeader sends host as the Host header while the TLS SNI keeps the
+// request's original host.
+func (r *Request) WithHostHeader(host string) *Request {
+	r.hostHeader = host
+	return r
 }
 
 // WithMethod overrides the HTTP method (default GET).
@@ -175,6 +183,9 @@ func (r *Request) Do(ctx context.Context) (*Response, error) {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
 	req.Host = r.host
+	if r.hostHeader != "" {
+		req.Host = r.hostHeader
+	}
 	if r.chunked {
 		req.ContentLength = -1
 		req.TransferEncoding = []string{"chunked"}

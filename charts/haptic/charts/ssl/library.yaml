@@ -443,9 +443,11 @@ templateSnippets:
         {%- end -%}
         {%- clientCAPaths[filename] = path -%}
       {%- end -%}
+      {%- var publishedVerifyHosts = map[string]bool{} -%}
       {%- for _, policyAny := range incremental_values("mtls-host-policies", "verifyHosts") -%}
         {%- var policy = policyAny.(map[string]any) -%}
         {%- var filename = tostring(policy["filename"]) -%}
+        {%- publishedVerifyHosts[tostring(policy["host"])] = true -%}
         {%- clientCertVerifyHosts[tostring(policy["host"])] = map[string]any{
           "ca_path": clientCAPaths[filename],
           "verify_mode": tostring(policy["verifyMode"]),
@@ -555,6 +557,30 @@ templateSnippets:
         {%- end -%}
       {%- end -%}
 
+      {#- A verified host without an exact line of its own would take the options of the
+          line HAProxy falls back to (a wildcard or the default), which verify nothing.
+          It keeps the certificate it is served today, with its own verification. -#}
+      {%- var certsBySni = map[string][]string{} -%}
+      {%- for _, tlsCert := range tlsCerts -%}
+        {%- var tc any = tlsCert -%}
+        {%- var certFilename = tostring(tc | dig("sanitized_filename") | fallback(tostring(tc | dig("secret_namespace")) + "_" + tostring(tc | dig("secret_name")) + ".pem")) -%}
+        {%- for _, sni := range coalesce(tc | dig("sni_patterns"), []any{}).([]any) -%}
+          {%- certsBySni[tostring(sni)] = append(certsBySni[tostring(sni)], certFilename) -%}
+        {%- end -%}
+      {%- end -%}
+      {%- var defaultCerts = []string{defaultCertFilename} -%}
+      {%- if ecdsaDefaultFilename != "" -%}{%- defaultCerts = []string{ecdsaDefaultFilename, defaultCertFilename} -%}{%- end -%}
+      {%- for _, host := range keys(publishedVerifyHosts) -%}
+        {%- if len(certsBySni[host]) == 0 -%}
+          {%- var certs = defaultCerts -%}
+          {%- var dot = index(host, ".") -%}
+          {%- if dot > 0 && len(certsBySni["*" + host[dot:]]) > 0 -%}{%- certs = certsBySni["*" + host[dot:]] -%}{%- end -%}
+          {%- for _, certFile := range certs -%}
+            {%- crtlistLines = append(crtlistLines, CrtListLine(certFile, clientCertVerifyHosts[host], host)) -%}
+          {%- end -%}
+        {%- end -%}
+      {%- end -%}
+
       {#- Trailing newline required by HAProxy's parser. -#}
       {%- var crtlistContent = (crtlistLines | toStringSlice() | join("\n")) + "\n" -%}
       {%- var _, crtListErr = fileRegistry.Register("crt-list", "certificate-list.txt", crtlistContent) -%}
@@ -613,6 +639,40 @@ templateSnippets:
       {%- for _, code := range keys(codes) %}
       # ssl/frontend-filters-ssl-redirect (code {{ code }})
       http-request redirect scheme https code {{ code }} if !{ ssl_fc } { var(txn.host),map_str({{ pathResolver.GetPath("ssl-redirect-" + code + ".map", "map") }}) -m found }
+      {%- end %}
+
+  # Verification belongs to the crt-list line SNI selected, so a request for a verified
+  # Host on a connection opened for another name (or none) skipped it; 421 makes the
+  # client reconnect with the right SNI.
+  frontend-filters-052-ssl-mtls-sni-host:
+    template: |
+      {%- import "util-register-map" for RegisterMap -%}
+      {%- if incremental_value_count("mtls-host-policies", "verifyHosts") > 0 -%}
+      {%%
+        var mapsVal, _ = shared.ComputeIfAbsent("sslMtlsHostMaps", func() any {
+          var exact = map[string]bool{}
+          var wildcard = map[string]bool{}
+          for _, p := range incremental_values("mtls-host-policies", "verifyHosts") {
+            var host = toLower(tostring(p.(map[string]any)["host"]))
+            if hasPrefix(host, "*.") {
+              wildcard["^[^.]+\\." + sanitize_regex(host[2:]) + "$ 1"] = true
+            } else {
+              exact[host + " 1"] = true
+            }
+          }
+          return []string{
+            RegisterMap("mtls-hosts.map", keys(exact), map[string]any{"ordered": false}),
+            RegisterMap("mtls-hosts-regex.map", keys(wildcard), map[string]any{}),
+          }
+        })
+        var maps = mapsVal.([]string)
+        var mismatch = "{ var(txn.mtls_host) -m found } !{ ssl_fc_sni,lower,strcmp(txn.host) eq 0 }"
+      %%}
+      # ssl/mtls-sni-host
+      http-request set-var(txn.mtls_host) str(1) if { ssl_fc } { var(txn.host),map({{ maps[0] }}) -m found }
+      http-request set-var(txn.mtls_host) str(1) if { ssl_fc } { var(txn.host),map_reg({{ maps[1] }}) -m found }
+      http-request set-var(txn.denied_by) str(mtls_sni_host_mismatch) if {{ mismatch }}
+      http-request return status 421 if {{ mismatch }}
       {%- end %}
 
   # HTTPS twin of base.yaml's http-bind-extra-010-proxy-protocol. Skipped when

@@ -14,6 +14,15 @@ _fx:
     data:
       ca.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJmakNDQVNXZ0F3SUJBZ0lVSkdvYlN1UzZ6K0lnWnVHejQwYU8xc01NL0RJd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1DQVhEVEkyTURVd09USXdORFV6TjFvWUR6SXhNall3TkRFMQpNakEwTlRNM1dqQVVNUkl3RUFZRFZRUUREQWxzYjJOaGJHaHZjM1F3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPClBRTUJCd05DQUFRZ1FnRDBWaEErcDNrTzgxWndSdW8yM3JLVmVVZ0FyZ3YwZ09obEpOakczN1lzNXJ4aHNXSk8KZWttODVOM3JDS1htRmlBNWp0RlNMTXBydlhqUnVEZlFvMU13VVRBZEJnTlZIUTRFRmdRVUs0T1lyMzY0eVlRZgpMYUFiUFZpcXlsS2wrcXN3SHdZRFZSMGpCQmd3Rm9BVUs0T1lyMzY0eVlRZkxhQWJQVmlxeWxLbCtxc3dEd1lEClZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSEFEQkVBaUI5R0RBaE5Uc29GblZWZVJPWVdVSE8KellnNzNQUG5OU2JDK1lhWnFaWHNoZ0lnWnpqVDkvdDNxUlAwMFVhMGJ3T1N6Z2tEcnVKd2lhM2dxNEYrNGdjVQpLdk09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
 
+  serverTLSSecret: &serverTLSSecret
+    apiVersion: v1
+    kind: Secret
+    metadata: { namespace: default, name: server-tls }
+    type: kubernetes.io/tls
+    data:
+      tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJmakNDQVNXZ0F3SUJBZ0lVSkdvYlN1UzZ6K0lnWnVHejQwYU8xc01NL0RJd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1DQVhEVEkyTURVd09USXdORFV6TjFvWUR6SXhNall3TkRFMQpNakEwTlRNM1dqQVVNUkl3RUFZRFZRUUREQWxzYjJOaGJHaHZjM1F3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPClBRTUJCd05DQUFRZ1FnRDBWaEErcDNrTzgxWndSdW8yM3JLVmVVZ0FyZ3YwZ09obEpOakczN1lzNXJ4aHNXSk8KZWttODVOM3JDS1htRmlBNWp0RlNMTXBydlhqUnVEZlFvMU13VVRBZEJnTlZIUTRFRmdRVUs0T1lyMzY0eVlRZgpMYUFiUFZpcXlsS2wrcXN3SHdZRFZSMGpCQmd3Rm9BVUs0T1lyMzY0eVlRZkxhQWJQVmlxeWxLbCtxc3dEd1lEClZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSEFEQkVBaUI5R0RBaE5Uc29GblZWZVJPWVdVSE8KellnNzNQUG5OU2JDK1lhWnFaWHNoZ0lnWnpqVDkvdDNxUlAwMFVhMGJ3T1N6Z2tEcnVKd2lhM2dxNEYrNGdjVQpLdk09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+      tls.key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUc4R2ZxNnd4aUY4aU9BakxqWnA3dXlJQ1RuY1JnMGtLOFVqR1VNc1BROGNvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFSUVJQTlGWVFQcWQ1RHZOV2NFYnFOdDZ5bFhsSUFLNEw5SURvWlNUWXh0KzJMT2E4WWJGaQpUbnBKdk9UZDZ3aWw1aFlnT1k3UlVpekthNzE0MGJnMzBBPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+
 validationTests:
   # ============================================================================
   # Basic auth
@@ -571,6 +580,79 @@ validationTests:
         pattern: "api.example.com https%3a%2f%2flogin.example.com%2fcert-required"
       - {type: contains, target: "map:haptic-cert-header-routes.map", pattern: '(?m)^default/\S+ 1$'}
       - {type: contains, target: haproxy.cfg, pattern: 'http-request set-header X-SSL-Client-Cert %\[ssl_c_der,base64\] if \{ ssl_fc_has_crt \} \{ var\(txn\.resource_key\),map\(\S*/haptic-cert-header-routes\.map\) -m found \}'}
+
+  test-haptic-auth-tls-host-without-own-certificate:
+    description: >-
+      A verified host with no certificate of its own gets its own crt-list line on
+      the certificate that already answers it, so its handshake verifies the client.
+    fixtures:
+      secrets: [*clientCASecret, *serverTLSSecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: on-default
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: a.example.com
+                http: *httpRoot
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: on-wildcard
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-verify-client: "optional"
+          spec:
+            ingressClassName: haptic
+            tls:
+              - hosts: ["*.wild.example.com"]
+                secretName: server-tls
+            rules:
+              - host: b.wild.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '\Adefault\.pem \[ocsp-update on\]\n'}
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '(?m)^default\.pem \[ocsp-update on ca-file \S+client-ca\.pem verify required\] a\.example\.com$'}
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '(?m)^default_server-tls\.pem \[ocsp-update on ca-file \S+client-ca\.pem verify optional\] b\.wild\.example\.com$'}
+
+  test-haptic-auth-tls-sni-must-match-host:
+    description: >-
+      A request for a verified Host on a TLS connection whose SNI names another
+      host, or none, never had its certificate checked, so it gets 421.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: verified
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: a.example.com
+                http: *httpRoot
+              - host: "*.wild.example.com"
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:mtls-hosts.map", pattern: '(?m)^a\.example\.com 1$'}
+      - {type: contains, target: "map:mtls-hosts-regex.map", pattern: '(?m)^\^\[\^\.\]\+\\\.wild\\\.example\\\.com\$ 1$'}
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - 'http-request set-var\(txn\.mtls_host\) str\(1\) if \{ ssl_fc \} \{ var\(txn\.host\),map_reg\(\S+/mtls-hosts-regex\.map\) -m found \}'
+          - 'http-request return status 421 if \{ var\(txn\.mtls_host\) -m found \} !\{ ssl_fc_sni,lower,strcmp\(txn\.host\) eq 0 \}'
+          - 'use_backend %\[var\(txn\.backend_name\)\]'
 
   test-haptic-auth-tls-match-subject:
     description: auth-tls-match-subject denies the route with 403 unless the client certificate's RFC 2253 subject DN matches the pattern.

@@ -54,6 +54,9 @@ func TestExplicitEndpointPreservesSNIAndVerifiesCertificate(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, http.StatusOK, response.Status)
 				require.Equal(t, hostname+" "+hostname+" /upgrade-check", string(response.Body))
+				response, err = client.HTTPS(host, "/upgrade-check").WithHostHeader("other.example.test").Do(t.Context())
+				require.NoError(t, err)
+				require.Equal(t, hostname+" other.example.test /upgrade-check", string(response.Body))
 			} else {
 				require.Error(t, err)
 			}

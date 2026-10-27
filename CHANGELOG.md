@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep TLS passthrough listener isolation on the shared HTTPS address after routes are removed or listener modes change; unmatched Gateway names still reach Ingress routes.
 - Drop client-sent `Forwarded`, `X-Forwarded-Prefix`, `X-Forwarded-Server`, `X-Real-IP`, `X-Client-IP`, and `Client-IP` before forwarding requests, while preserving trusted proxies and operator header changes ([#490](https://github.com/haproxy-haptic/HAPTIC/issues/490)).
 
+#### Security
+
+- Ingress client-certificate verification (`auth-tls-secret` in all three annotation libraries) also applies to hosts without a TLS certificate of their own, and a request whose SNI names another host gets `421`; before, both skipped verification.
+
 ## [0.7.0] - 2026-10-20
 
 HAPTIC 0.7 hardens two trust boundaries: raw HAProxy configuration annotations,

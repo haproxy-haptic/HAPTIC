@@ -301,7 +301,7 @@ Basic auth, client-certificate verification, external/forward auth, OAuth2-proxy
 | `haproxy-haptic.org/auth-tls-cn-header` | Sets the named request header (for example `X-Scope-OrgID`) to the verified client certificate's CN, and removes any value the client sent. Requires `auth-tls-secret`. |
 | `haproxy-haptic.org/auth-tls-error-page` | Redirects to the given URL when client-certificate (mTLS) verification fails. |
 | `haproxy-haptic.org/auth-tls-match-subject` | Answers `403` unless the client certificate's subject distinguished name (DN), in RFC 2253 form such as `CN=a,O=Example`, matches this regular expression. Requires `auth-tls-secret`. |
-| `haproxy-haptic.org/auth-tls-secret` | Enables client-certificate (mTLS) verification for the host using the CA in the named Secret; a host is required. |
+| `haproxy-haptic.org/auth-tls-secret` | Enables client-certificate (mTLS) verification for the host using the CA in the named Secret; a host is required. A request whose TLS SNI names a different host, or none, gets `421 Misdirected Request`. |
 | `haproxy-haptic.org/auth-tls-verify-client` | Sets client-certificate verification: `on` requires it, `optional` and `optional_no_ca` both map to `verify optional` (HAProxy has no distinct `optional_no_ca` mode), and `off` disables it. |
 | `haproxy-haptic.org/auth-type` | Enables basic authentication; the only accepted value is `basic`. |
 | `haproxy-haptic.org/auth-url` | Sets the external authentication service URL; requires the SPOA hub's external-auth plugin. |
