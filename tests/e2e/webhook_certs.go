@@ -184,7 +184,7 @@ func setupDefaultSSLCert(ctx context.Context) error {
 		NotAfter:     time.Now().AddDate(1, 0, 0),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:     []string{"*.example.com", "example.com"},
+		DNSNames:     []string{"*.example.com", "example.com", defaultCertificateMTLSHost},
 	}
 	cert, err := fixtures.NewCertificate(template, fixtures.RSA2048, nil)
 	if err != nil {

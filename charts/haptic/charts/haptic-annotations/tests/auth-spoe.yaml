@@ -618,7 +618,7 @@ validationTests:
                 http: *httpRoot
     assertions:
       - type: haproxy_valid
-      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '\Adefault\.pem \[ocsp-update on\]\n'}
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '\Adefault\.pem \[ocsp-update on\] !\*\n'}
       - {type: contains, target: "crt-list:certificate-list.txt", pattern: '(?m)^default\.pem \[ocsp-update on ca-file \S+client-ca\.pem verify required\] a\.example\.com$'}
       - {type: contains, target: "crt-list:certificate-list.txt", pattern: '(?m)^default_server-tls\.pem \[ocsp-update on ca-file \S+client-ca\.pem verify optional\] b\.wild\.example\.com$'}
 

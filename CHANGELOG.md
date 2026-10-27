@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Security
 
+- Enforce Ingress client-certificate verification when the default TLS certificate names the protected host.
+
 - Ingress client-certificate verification (`auth-tls-secret` in all three annotation libraries) also applies to hosts without a TLS certificate of their own, and a request whose SNI names another host gets `421`; before, both skipped verification.
 
 ## [0.7.0] - 2026-10-20
