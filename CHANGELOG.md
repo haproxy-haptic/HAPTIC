@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `validationTests.<name>.useDeploymentWatchScopes` checks fixtures against configured watch namespaces, including expected out-of-scope lookup rejections in `haptic preflight`.
 
+### Fixed
+
+- Validation tests no longer reject deterministic auxiliary files because their generated section markers change between renders.
+
 ### Security
 
 - Build with Go 1.27.3 to reject compromised intermediate certificates in TLS verification (CVE-2026-111943).
