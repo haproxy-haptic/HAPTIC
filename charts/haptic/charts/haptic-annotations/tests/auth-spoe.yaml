@@ -624,8 +624,9 @@ validationTests:
 
   test-haptic-auth-tls-sni-must-match-host:
     description: >-
-      A request for a verified Host on a TLS connection whose SNI names another
-      host, or none, never had its certificate checked, so it gets 421.
+      A request routed to a verified route over a TLS connection whose SNI isn't
+      one of the route's hosts, or is absent, never had its certificate checked,
+      so it gets 421. A host alias reaches the route without being a verified SNI.
     fixtures:
       secrets: [*clientCASecret]
       ingresses:
@@ -636,6 +637,7 @@ validationTests:
             name: verified
             annotations:
               haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/host-alias: "alias.example.com"
           spec:
             ingressClassName: haptic
             rules:
@@ -645,13 +647,16 @@ validationTests:
                 http: *httpRoot
     assertions:
       - type: haproxy_valid
-      - {type: contains, target: "map:mtls-hosts.map", pattern: '(?m)^a\.example\.com 1$'}
-      - {type: contains, target: "map:mtls-hosts-regex.map", pattern: '(?m)^\^\[\^\.\]\+\\\.wild\\\.example\\\.com\$ 1$'}
+      - {type: contains, target: "map:mtls-routes.map", pattern: '(?m)^default/verified 1$'}
+      - {type: contains, target: "map:mtls-route-sni.map", pattern: '(?m)^default/verified\|a\.example\.com 1$'}
+      - {type: not_contains, target: "map:mtls-route-sni.map", pattern: 'alias'}
+      - {type: contains, target: "map:mtls-route-sni-regex.map", pattern: '(?m)^\^default/verified\\\|\[\^\.\]\+\\\.wild\\\.example\\\.com\$ 1$'}
       - type: match_order
         target: haproxy.cfg
         patterns:
-          - 'http-request set-var\(txn\.mtls_host\) str\(1\) if \{ ssl_fc \} \{ var\(txn\.host\),map_reg\(\S+/mtls-hosts-regex\.map\) -m found \}'
-          - 'http-request return status 421 if \{ var\(txn\.mtls_host\) -m found \} !\{ ssl_fc_sni,lower,strcmp\(txn\.host\) eq 0 \}'
+          - 'http-request set-var\(txn\.resource_key\)'
+          - 'http-request set-var\(txn\.mtls_route_sni\) var\(txn\.resource_key\),concat\(\|,txn\.mtls_sni\) if \{ var\(txn\.mtls_sni\) -m found \}'
+          - 'http-request return status 421 if \{ ssl_fc \} \{ var\(txn\.resource_key\),map\(\S+/mtls-routes\.map\) -m found \} !\{ var\(txn\.mtls_route_sni\),map\(\S+/mtls-route-sni\.map\) -m found \} !\{ var\(txn\.mtls_route_sni\),map_reg\(\S+/mtls-route-sni-regex\.map\) -m found \}'
           - 'use_backend %\[var\(txn\.backend_name\)\]'
 
   test-haptic-auth-tls-match-subject:
