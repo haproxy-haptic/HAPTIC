@@ -478,6 +478,7 @@ func (r *Runner) buildRenderingContext(ctx context.Context, storeMap map[string]
 	// production renderer provides.
 	opts := append([]rendercontext.Option{
 		rendercontext.WithStores(resourceStores),
+		rendercontext.WithPlanTokenAuthority(r.planTokenAuthority),
 		rendercontext.WithNamespaceScopes(r.namespaceScopes),
 		rendercontext.WithHAProxyPodStore(haproxyPodStore),
 		rendercontext.WithHTTPFetcher(httpStore),
