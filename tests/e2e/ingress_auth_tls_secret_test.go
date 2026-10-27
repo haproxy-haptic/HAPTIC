@@ -105,18 +105,37 @@ func TestIngressAuthTLSSecret(t *testing.T) {
 				Annotations: map[string]string{
 					"haproxy-ingress.github.io/auth-tls-secret":        "auth-tls-client-ca",
 					"haproxy-ingress.github.io/auth-tls-verify-client": "on",
+					"haproxy-ingress.github.io/auth-tls-cert-header":   "true",
+				},
+			})
+			NewIngress(ctx, t, client, ns, &IngressSpec{
+				Name: "native-cert-headers", Host: host, Path: "/native-peer",
+				BackendService: backend.Service, BackendPort: backend.Port,
+				TLSSecretName: "auth-tls-server-tls",
+				Annotations: map[string]string{
+					"haproxy-haptic.org/auth-tls-secret":        "auth-tls-client-ca",
+					"haproxy-haptic.org/auth-tls-verify-client": "on",
+					"haproxy-haptic.org/auth-tls-cert-header":   "true",
 				},
 			})
 			return ctx
 		}).
 		Assess("valid client cert is admitted, request reaches backend", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
+			httpclient.New(t).HTTPS(host, "/native-peer").
+				WithClientCert(bundle.ClientCertPEM, bundle.ClientKeyPEM, bundle.CACertPEM).
+				ExpectEchoHeader(t, "X-SSL-Client-CN", "test-client")
 			resp := httpclient.New(t).HTTPS(host, "/").
 				WithClientCert(bundle.ClientCertPEM, bundle.ClientKeyPEM, bundle.CACertPEM).
-				ExpectOK(t)
+				ExpectEchoHeader(t, "X-SSL-Client-CN", "test-client")
 			if resp.Echo == nil {
 				t.Fatalf("expected echo-server JSON, got %d bytes", len(resp.Body))
 			}
+			return ctx
+		}).
+		Assess("client identity survives TLS session resumption", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			assertClientCertificateResumption(ctx, t, bundle, bundle.CACertPEM, host, "")
 			return ctx
 		}).
 		Assess("missing client cert is rejected at the TLS layer", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {

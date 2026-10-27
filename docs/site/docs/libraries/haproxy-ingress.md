@@ -889,7 +889,7 @@ annotations:
   haproxy-ingress.github.io/auth-tls-cert-header: "true"
 ```
 
-The `ssl_fc_has_crt` gate ensures the headers only flow when a cert was actually presented (relevant when `auth-tls-verify-client: optional` is in effect — connections without a cert get no headers rather than empty ones).
+Certificate headers are forwarded when the TLS session uses a client certificate, including on resumed sessions. With `auth-tls-verify-client: optional`, sessions without a client certificate get no certificate headers.
 
 ## Web application firewall (ModSecurity / Coraza)
 

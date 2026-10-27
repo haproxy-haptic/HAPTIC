@@ -510,7 +510,9 @@ templateSnippets:
       {%- if ecdsaDefaultFilename != "" -%}
         {%- crtlistLines = []any{CrtListLine(ecdsaDefaultFilename, defaultCfg, "*"), CrtListLine(defaultCertFilename, defaultCfg, "*")} -%}
       {%- else -%}
-        {%- crtlistLines = []any{CrtListLine(defaultCertFilename, defaultCfg, "")} -%}
+        {#- !* prevents the fallback's CN/SAN from shadowing per-host verification.
+            https://docs.haproxy.org/3.0/configuration.html#5.1-crt-list -#}
+        {%- crtlistLines = []any{CrtListLine(defaultCertFilename, defaultCfg, "!*")} -%}
       {%- end -%}
 
       {#- SNIs under one cert may need different per-line ssl-options (per-host
@@ -1141,12 +1143,7 @@ validationTests:
         pattern: 'default_default-ecdsa-cert\.pem \[ocsp-update on\] \*\ndefault\.pem \[ocsp-update on\] \*'
 
   test-ssl-single-default-cert-no-companion:
-    description: >-
-      Without ecdsaSecretName the default cert stays a SINGLE crt-list line with
-      the empty-SNI suffix (not "*"). Proves the dual-default path is opt-in and
-      that a single default works with any key type (RSA cert used here; the
-      default.pem template is algorithm-agnostic) — so RSA-only and ECDSA-only
-      defaults are unchanged.
+    description: A single default certificate stays a fallback without registering its CN or SAN names.
     extraContext: {tls: {defaultCertificate: {namespace: default, name: default-rsa-cert}}}
     fixtures:
       secrets:
@@ -1159,7 +1156,7 @@ validationTests:
             tls.key: *test_tls_key_rsa
     assertions:
       - type: haproxy_valid
-      - {type: contains, target: crt-list:certificate-list.txt, pattern: 'default\.pem \[ocsp-update on\]'}
+      - {type: contains, target: crt-list:certificate-list.txt, pattern: '(?m)^default\.pem \[ocsp-update on\] !\*$'}
       - type: not_contains
         target: crt-list:certificate-list.txt
         pattern: 'default\.pem \[ocsp-update on\] \*'

@@ -252,6 +252,13 @@ func (p *forwardedPolicyPublication) wait(ctx context.Context, trusted bool) (st
 }
 
 func (p *forwardedPolicyPublication) matchesPolicy(content string, trusted bool) error {
+	for _, line := range strings.Split(content, "\n") {
+		backend, found := strings.CutPrefix(line, "backend ")
+		namespaceStart := strings.Index(backend, "e2e-")
+		if found && namespaceStart >= 0 && !strings.HasPrefix(backend[namespaceStart:], p.namespace+"_") {
+			return fmt.Errorf("published config still contains another test's backend %q", backend)
+		}
+	}
 	for _, mode := range p.routeNames {
 		if !strings.Contains(content, "backend "+p.namespace+"_"+mode+"_svc_") {
 			return fmt.Errorf("published config is missing the %s fixture backend", mode)
@@ -261,6 +268,36 @@ func (p *forwardedPolicyPublication) matchesPolicy(content string, trusted bool)
 		return fmt.Errorf("published forwarding policy does not match trusted=%t", trusted)
 	}
 	return nil
+}
+
+func TestForwardedPolicyPublicationIsolation(t *testing.T) {
+	publication := forwardedPolicyPublication{namespace: "e2e-current-12345678", routeNames: []string{"default"}}
+	baseline := "backend e2e-current-12345678_default_svc_echo-server_80\n"
+	for _, candidate := range []struct {
+		name    string
+		backend string
+		foreign bool
+	}{
+		{name: "own Ingress"},
+		{name: "own Gateway", backend: "gw_h_e2e-current-12345678_route_echo-server_80"},
+		{name: "stale Ingress", backend: "e2e-predecessor-87654321_default_svc_echo-server_80", foreign: true},
+		{name: "stale HTTPRoute", backend: "gw_h_e2e-predecessor-87654321_route_echo-server_80", foreign: true},
+		{name: "stale GRPCRoute", backend: "gw_g_e2e-predecessor-87654321_route_echo-server_80", foreign: true},
+		{name: "stale TCPRoute", backend: "gtw_tcp_e2e-predecessor-87654321_route_0", foreign: true},
+	} {
+		t.Run(candidate.name, func(t *testing.T) {
+			content := baseline
+			if candidate.backend != "" {
+				content += "backend " + candidate.backend + "\n"
+			}
+			err := publication.matchesPolicy(content, false)
+			if candidate.foreign {
+				require.ErrorContains(t, err, "another test's backend")
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }
 
 func waitForForwardedConfigValidation(ctx context.Context, configs dynamic.ResourceInterface, expected *unstructured.Unstructured) error {

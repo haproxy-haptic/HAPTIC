@@ -269,7 +269,7 @@ validationTests:
         pattern: "http-request redirect location %\\[var\\(txn.host\\),map\\([^)]*mtls-error\\.map\\),url_dec\\(1\\)\\] code 302 if \\{ ssl_c_verify gt 0 \\}"
       - type: contains
         target: haproxy.cfg
-        pattern: "http-request set-header X-SSL-Client-Cert %\\[ssl_c_der,base64\\] if \\{ ssl_fc_has_crt \\}"
+        pattern: "http-request set-header X-SSL-Client-Cert %\\[ssl_c_der,base64\\] if \\{ ssl_c_used \\}"
 
   test-haproxy-ingress-auth-tls-error-page-injection-rejected:
     description: An auth-tls-error-page value containing whitespace (or newlines, tabs, etc.) must fail loudly — without validation, the value would be interpolated into a `http-request redirect location <url>` direct...

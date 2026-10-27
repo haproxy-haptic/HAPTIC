@@ -651,7 +651,7 @@ templateSnippets:
   # ============================================================================
   # mTLS — client-cert passthrough headers (frontend-filters)
   # ============================================================================
-  features-900-haptic-fragment-819-auth-tls-cert-header-strip:
+  features-900-haptic-fragment-689-auth-tls-cert-header-strip:
     requires: [ingresses]
     incremental:
       source: ingresses
@@ -664,10 +664,11 @@ templateSnippets:
         {{- shared.Publish("fragments", "global", "\n# haptic/auth-tls-cert-header — drop any client-supplied identity headers\n      http-request del-header X-SSL-Client-CN\n      http-request del-header X-SSL-Client-DN\n      http-request del-header X-SSL-Client-Cert") -}}
       {%- end -%}
 
-  frontend-filters-819-haptic-auth-tls-cert-header-strip:
+  # Sanitize before certificate-header writers at priority 690 and above.
+  frontend-filters-689-haptic-auth-tls-cert-header-strip:
     requires: [ingresses]
     template: |-
-      {%- for _, fragment := range incremental_values("features-900-haptic-fragment-819-auth-tls-cert-header-strip", "fragments") -%}{{- tostring(fragment) -}}{%- end -%}
+      {%- for _, fragment := range incremental_values("features-900-haptic-fragment-689-auth-tls-cert-header-strip", "fragments") -%}{{- tostring(fragment) -}}{%- end -%}
 
   # auth-tls-cert-header: the X-SSL-Client-* headers for a route that opted in,
   # from haptic-cert-header-routes.map ("<route id>" -> 1); the strip above
@@ -708,9 +709,9 @@ templateSnippets:
         var routes = tostring(routesVal)
       %%}
       {{ "\n" }}# haptic/auth-tls-cert-header
-      http-request set-header X-SSL-Client-CN %[ssl_c_s_dn(CN)] if { ssl_fc_has_crt } { var(txn.resource_key),map({{ routes }}) -m found }
-      http-request set-header X-SSL-Client-DN %[ssl_c_s_dn] if { ssl_fc_has_crt } { var(txn.resource_key),map({{ routes }}) -m found }
-      http-request set-header X-SSL-Client-Cert %[ssl_c_der,base64] if { ssl_fc_has_crt } { var(txn.resource_key),map({{ routes }}) -m found }
+      http-request set-header X-SSL-Client-CN %[ssl_c_s_dn(CN)] if { ssl_c_used } { var(txn.resource_key),map({{ routes }}) -m found }
+      http-request set-header X-SSL-Client-DN %[ssl_c_s_dn] if { ssl_c_used } { var(txn.resource_key),map({{ routes }}) -m found }
+      http-request set-header X-SSL-Client-Cert %[ssl_c_der,base64] if { ssl_c_used } { var(txn.resource_key),map({{ routes }}) -m found }
       {%- end %}
 
   # auth-tls-match-subject: one rule per route, because HAProxy can't take a regex from a map.
@@ -807,7 +808,7 @@ templateSnippets:
       {%- for _, name := range names %}
       {%- var match = "{ var(txn.resource_key),concat(|" + toLower(tostring(name)) + "),map(" + routes + ") -m found }" %}
       http-request del-header {{ name }} if {{ match }}
-      http-request set-header {{ name }} %[ssl_c_s_dn(CN)] if { ssl_fc_has_crt } {{ match }}
+      http-request set-header {{ name }} %[ssl_c_s_dn(CN)] if { ssl_c_used } {{ match }}
       {%- end %}
       {%- end %}
 
