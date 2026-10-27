@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -386,18 +387,26 @@ func TestStateRetriesResetConnectionThenSucceeds(t *testing.T) {
 
 func TestStateGivesUpAfterConnectRetries(t *testing.T) {
 	t.Parallel()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	closed := "http://" + listener.Addr().String()
-	require.NoError(t, listener.Close())
-
-	c := newTestClient(t, closed)
+	c := newTestClient(t, refusingURL(t))
 	start := time.Now()
-	_, err = c.State(context.Background(), api.StateRead{})
+	_, err := c.State(context.Background(), api.StateRead{})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, syscall.ECONNREFUSED)
 	// One attempt plus ConnectRetries retries, each preceded by the backoff.
 	assert.GreaterOrEqual(t, time.Since(start), time.Duration(api.ConnectRetries)*10*time.Millisecond)
+}
+
+// refusingURL holds a bound, never-listening port: a closed listener's port can be
+// rebound by a parallel test's server during the retries and then accept the dial.
+func refusingURL(t *testing.T) string {
+	t.Helper()
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = syscall.Close(fd) })
+	require.NoError(t, syscall.Bind(fd, &syscall.SockaddrInet4{Addr: [4]byte{127, 0, 0, 1}}))
+	sa, err := syscall.Getsockname(fd)
+	require.NoError(t, err)
+	return fmt.Sprintf("http://127.0.0.1:%d", sa.(*syscall.SockaddrInet4).Port)
 }
 
 func TestApplyDoesNotRetryOnceThePartsWereRead(t *testing.T) {
