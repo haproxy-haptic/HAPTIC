@@ -30,7 +30,7 @@ import (
 )
 
 func TestHapticDefaultCertificateMTLS(t *testing.T) {
-	t.Parallel()
+	// Hostname-less Gateway tests replace the shared default certificate.
 	bundle, err := generateMTLSBundle(defaultCertificateMTLSHost)
 	if err != nil {
 		t.Fatalf("generate mTLS bundle: %v", err)
