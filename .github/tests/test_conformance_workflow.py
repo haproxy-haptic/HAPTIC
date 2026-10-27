@@ -167,15 +167,51 @@ class ConformanceWorkflowTests(unittest.TestCase):
     def test_diagnostics_survive_missing_pods_and_timed_out_commands(self):
         with tempfile.TemporaryDirectory() as directory:
             run = Mock(side_effect=[subprocess.TimeoutExpired("docker", 30)]
-                       + [subprocess.CompletedProcess("kubectl", 1)] * 23)
+                       + [subprocess.CompletedProcess("kubectl", 1)] * 29)
             diagnostics(Path(directory), run=run)
-            self.assertEqual(run.call_count, 24)
+            self.assertEqual(run.call_count, 30)
             results = json.loads((Path(directory) / "collection.json").read_text())
             self.assertIn("error", results["containers.txt"])
             self.assertEqual(results["pods.json"], {"exit_code": 1})
             for call in run.call_args_list:
                 self.assertNotIn("secrets", call.args[0])
                 self.assertEqual(call.kwargs["timeout"], 30)
+
+    def test_diagnostics_retain_backend_logs_and_each_replica_mirror_outcomes(self):
+        def run(command, **kwargs):
+            stream = kwargs["stdout"]
+            if "get" in command and "pods" in command:
+                pods = [{"metadata": {"name": name, "namespace": namespace,
+                         "labels": {"app.kubernetes.io/component": component}}}
+                        for name, namespace, component in (
+                            ("haproxy-a", "haptic", "loadbalancer"),
+                            ("haproxy-b", "haptic", "loadbalancer"),
+                            ("controller-a", "haptic", "controller"),
+                            ("other", "other", "loadbalancer"))]
+                stream.write(json.dumps({"items": pods}))
+            if "curl" in command:
+                if "haproxy-a" in command:
+                    raise subprocess.TimeoutExpired(command, 30)
+                stream.write('plugin_mirror_dispatch_outcomes_total{outcome="error"} 6\n')
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            recorded = Mock(side_effect=run)
+            diagnostics(Path(directory), run=recorded)
+            results = json.loads((Path(directory) / "collection.json").read_text())
+            self.assertIn("error", results["haproxy-a-spoa.metrics"])
+            self.assertEqual(results["haproxy-b-spoa.metrics"], {"exit_code": 0})
+            self.assertIn('outcome="error"', (Path(directory) / "haproxy-b-spoa.metrics").read_text())
+            self.assertFalse((Path(directory) / "controller-a-spoa.metrics").exists())
+            self.assertFalse((Path(directory) / "other-spoa.metrics").exists())
+            for backend in ("infra-backend-v1", "infra-backend-v2", "infra-backend-v3"):
+                self.assertEqual(results[f"gateway-conformance-infra-{backend}-{backend}-current.log"],
+                                 {"exit_code": 0})
+            metrics = [call for call in recorded.call_args_list if "curl" in call.args[0]]
+            self.assertEqual(len(metrics), 2)
+            for call in metrics:
+                self.assertEqual(call.args[0][-1], "http://127.0.0.1:9095/metrics")
+                self.assertNotIn("shell", call.kwargs)
 
     def test_diagnostics_attribute_unreachable_vips_to_a_network_layer(self):
         with tempfile.TemporaryDirectory() as directory:
