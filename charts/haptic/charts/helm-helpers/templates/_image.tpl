@@ -6,13 +6,13 @@ fsGroup on the HAProxy pod and runAsUser on the agent container, which must
 share the volume group with HAProxy.
 */}}
 
-{{/*
-Controller image
-Combines base tag (defaults to Chart.AppVersion) with HAProxy version suffix
-Example: ghcr.io/haproxy-haptic/haptic:0.1.0-alpha.12-haproxy3.2
-*/}}
+{{/* Controller image shared by the controller, agent, and lifecycle hooks. */}}
 {{- define "haptic.controller.image" -}}
+{{- if .Values.controller.image.digest -}}
+{{- printf "%s@%s" .Values.controller.image.repository .Values.controller.image.digest -}}
+{{- else -}}
 {{- printf "%s:%s-haproxy%s" .Values.controller.image.repository (.Values.controller.image.tag | default .Chart.AppVersion) .Values.haproxyVersion -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

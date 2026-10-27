@@ -53,7 +53,8 @@ workflows too.
 | `haproxyEnterprisePatchVersions` | map | See values.yaml | Per-`haproxyVersion` enterprise revision pins (for example `"3.2": "3.2r1"`). Used when `haproxy.enterprise.enabled=true` |
 | `controller.image.repository` | string | `ghcr.io/haproxy-haptic/haptic` | Controller image repository |
 | `controller.image.pullPolicy` | string | `IfNotPresent` | Image pull policy |
-| `controller.image.tag` | string | `""` | Controller image tag *without* the HAProxy-series suffix; empty uses the chart `appVersion`. The rendered reference is always `<tag>-haproxy<haproxyVersion>`, so the suffix is appended to an explicit value too |
+| `controller.image.tag` | string | `""` | Controller image tag *without* the HAProxy-series suffix; empty uses the chart `appVersion`. Without a digest, the rendered tag is `<tag>-haproxy<haproxyVersion>`, including for explicit tags |
+| `controller.image.digest` | string | `""` | SHA-256 image digest (`sha256:` plus 64 lowercase hex digits); overrides `tag` and renders `<repository>@<digest>` for the controller, agent, and lifecycle hooks. Choose the image built for your `haproxyVersion` and chart version |
 | `nameOverride` | string | `""` | Override chart name |
 | `fullnameOverride` | string | `""` | Override full release name |
 | `commonLabels` | map | `{}` | Labels added to every chart-rendered resource on top of the standard `app.kubernetes.io/*` set |

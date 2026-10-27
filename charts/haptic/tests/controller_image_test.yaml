@@ -1,0 +1,90 @@
+suite: controller image references
+templates:
+  - deployment.yaml
+  - haproxy-deployment.yaml
+  - crd-upgrade-hook.yaml
+  - pre-rollout-validation-hook.yaml
+tests:
+  - it: defaults to the chart version and selected HAProxy series
+    template: deployment.yaml
+    chart:
+      appVersion: "9.8.7"
+    set:
+      haproxyVersion: "3.2"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "ghcr.io/haproxy-haptic/haptic:9.8.7-haproxy3.2"
+
+  - it: appends the HAProxy series to an explicit base tag
+    template: deployment.yaml
+    chart:
+      appVersion: "9.8.7"
+    set:
+      controller.image.tag: "custom"
+      haproxyVersion: "3.0"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "ghcr.io/haproxy-haptic/haptic:custom-haproxy3.0"
+
+  - it: uses a digest without a tag or HAProxy suffix
+    template: deployment.yaml
+    chart:
+      appVersion: "9.8.7"
+    set:
+      controller.image.digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "ghcr.io/haproxy-haptic/haptic@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+  - it: gives the digest precedence over a tag in a custom registry
+    template: deployment.yaml
+    chart:
+      appVersion: "9.8.7"
+    set:
+      controller.image.repository: "registry.example:5000/team/haptic"
+      controller.image.tag: "ignored"
+      controller.image.digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      haproxyVersion: "3.2"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "registry.example:5000/team/haptic@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+  - it: pins the HAProxy agent
+    template: haproxy-deployment.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      controller.image.digest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[?(@.name=="agent")].image
+          value: "ghcr.io/haproxy-haptic/haptic@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+
+  - it: pins the CRD upgrade hook
+    template: crd-upgrade-hook.yaml
+    documentSelector:
+      path: kind
+      value: Job
+    set:
+      controller.image.digest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "ghcr.io/haproxy-haptic/haptic@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+
+  - it: pins the pre-rollout validation hook
+    template: pre-rollout-validation-hook.yaml
+    documentSelector:
+      path: kind
+      value: Job
+    set:
+      controller.image.digest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "ghcr.io/haproxy-haptic/haptic@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
