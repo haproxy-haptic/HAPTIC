@@ -122,8 +122,10 @@ controller:
   image:
     repository: ghcr.io/haproxy-haptic/haptic
     pullPolicy: IfNotPresent  # @schema enum: [Always, IfNotPresent, Never]
-    # Overrides the image tag whose default is the chart appVersion.
+    # Base tag; the chart appends -haproxy<haproxyVersion>. Empty uses appVersion.
     tag: ""
+    # Pins controller, agent, and hook Pod images by SHA-256 digest; overrides tag.
+    digest: ""  # @schema pattern: ^$|^sha256:[a-f0-9]{64}$
   # Deployment-level annotations (different from pod annotations).
   deploymentAnnotations: {}  # @schema skipProperties; additionalProperties: true
   # reloader.stakater.com/auto: "true"

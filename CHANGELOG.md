@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 
+- Pin controller, agent, and lifecycle hook images with `controller.image.digest`.
+
 - Serve TLSRoute termination and passthrough listeners on one port with isolated certificates and client-validation policies.
 - `haproxy-haptic.org/auth-tls-match-subject` limits a host to client certificates whose subject DN matches a regular expression.
 - `haproxy-haptic.org/auth-tls-cn-header` forwards the verified client certificate's CN in a request header you name, such as `X-Scope-OrgID`.

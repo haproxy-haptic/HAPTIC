@@ -30,6 +30,20 @@ tests:
       - failedTemplate:
           errorPattern: "at '/controller/image/pullPolicy': value must be one of"
 
+  - it: rejects an incomplete controller digest
+    set:
+      controller.image.digest: sha256:1234
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/controller/image/digest':.*pattern"
+
+  - it: rejects a controller digest with a tag embedded in it
+    set:
+      controller.image.digest: "main@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/controller/image/digest':.*pattern"
+
   - it: rejects an unsupported HAProxy series and names the supported ones
     set:
       haproxyVersion: "3.1"
