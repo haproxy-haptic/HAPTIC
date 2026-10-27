@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Added
 
 - Serve TLSRoute termination and passthrough listeners on one port with isolated certificates and client-validation policies.
+- `haproxy-haptic.org/auth-tls-match-subject` limits a host to client certificates whose subject DN matches a regular expression.
+- `haproxy-haptic.org/auth-tls-cn-header` forwards the verified client certificate's CN in a request header you name, such as `X-Scope-OrgID`.
 
 #### Changed
 
@@ -33,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTPRoute hostname specificity takes precedence over path length and header conditions when routes intersect the same listener hostname.
 - Keep TLS passthrough listener isolation on the shared HTTPS address after routes are removed or listener modes change; unmatched Gateway names still reach Ingress routes.
 - Drop client-sent `Forwarded`, `X-Forwarded-Prefix`, `X-Forwarded-Server`, `X-Real-IP`, `X-Client-IP`, and `Client-IP` before forwarding requests, while preserving trusted proxies and operator header changes ([#490](https://github.com/haproxy-haptic/HAPTIC/issues/490)).
+
+#### Security
+
+- Ingress client-certificate verification (`auth-tls-secret` in all three annotation libraries) also applies to hosts without a TLS certificate of their own, and a request whose SNI names another host gets `421`; before, both skipped verification.
 
 ## [0.7.0] - 2026-10-20
 

@@ -13,6 +13,7 @@ templateSnippets:
         - "metadata.annotations['haproxy-haptic.org/cache-stale-if-error']"
         - "metadata.annotations['haproxy-haptic.org/cache-revalidate']"
         - "metadata.annotations['haproxy-haptic.org/auth-tls-cert-header']"
+        - "metadata.annotations['haproxy-haptic.org/auth-tls-cn-header']"
         - "metadata.annotations['haproxy-haptic.org/cache-key']"
         - "metadata.annotations['haproxy-haptic.org/cache-strip-set-cookie']"
       group: haptic-cache-records
@@ -22,6 +23,8 @@ templateSnippets:
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if tostring(props["enabled"]) == "true" && ingress != nil && ingress.Metadata.Annotations["haproxy-haptic.org/cache-enable"] == "true" -%}
         {%- var id = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
+        {%- var certIdentityForwarded = ingress.Metadata.Annotations["haproxy-haptic.org/auth-tls-cert-header"] -%}
+        {%- if strip(ingress.Metadata.Annotations["haproxy-haptic.org/auth-tls-cn-header"]) != "" -%}{%- certIdentityForwarded = "true" -%}{%- end -%}
         {{- shared.Publish("records", id, map[string]any{
           "id": id,
           "ttl": ingress.Metadata.Annotations["haproxy-haptic.org/cache-ttl"],
@@ -31,7 +34,7 @@ templateSnippets:
           "staleWhileRevalidate": ingress.Metadata.Annotations["haproxy-haptic.org/cache-stale-while-revalidate"],
           "staleIfError": ingress.Metadata.Annotations["haproxy-haptic.org/cache-stale-if-error"],
           "revalidate": ingress.Metadata.Annotations["haproxy-haptic.org/cache-revalidate"],
-          "authTLSCertHeader": ingress.Metadata.Annotations["haproxy-haptic.org/auth-tls-cert-header"],
+          "authTLSCertHeader": certIdentityForwarded,
           "cacheKey": ingress.Metadata.Annotations["haproxy-haptic.org/cache-key"],
           "stripSetCookie": ingress.Metadata.Annotations["haproxy-haptic.org/cache-strip-set-cookie"],
         }) -}}

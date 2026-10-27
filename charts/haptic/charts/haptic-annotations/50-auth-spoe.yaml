@@ -604,7 +604,7 @@ templateSnippets:
                 {{- fail("Ingress " + ns + "/" + name + " has haproxy-haptic.org/auth-tls-secret set but a rule without a host. Client-cert verification is keyed by SNI / host; host-less rules can't be enforced. Add an explicit host to the rule.") -}}
               {%- end %}
               {{- shared.Publish("verifyHosts", "haptic-annotations/" + ns + "/" + name + "/" + tostring(ruleIndex), map[string]any{
-                "host": host, "filename": caFilename, "verifyMode": verifyMode,
+                "host": host, "route": ns + "/" + name, "filename": caFilename, "verifyMode": verifyMode,
               }) -}}
             {%- end %}
           {%- end %}
@@ -711,6 +711,104 @@ templateSnippets:
       http-request set-header X-SSL-Client-CN %[ssl_c_s_dn(CN)] if { ssl_fc_has_crt } { var(txn.resource_key),map({{ routes }}) -m found }
       http-request set-header X-SSL-Client-DN %[ssl_c_s_dn] if { ssl_fc_has_crt } { var(txn.resource_key),map({{ routes }}) -m found }
       http-request set-header X-SSL-Client-Cert %[ssl_c_der,base64] if { ssl_fc_has_crt } { var(txn.resource_key),map({{ routes }}) -m found }
+      {%- end %}
+
+  # auth-tls-match-subject: one rule per route, because HAProxy can't take a regex from a map.
+  frontend-filters-076-haptic-auth-tls-match-subject:
+    requires: [ingresses]
+    template: |
+      {{- render "haptic-match-subject-publications" -}}
+      {%- for _, rule := range incremental_values("haptic-match-subject", "rule") %}
+      {{ tostring(rule) }}
+      {%- end %}
+
+  haptic-match-subject-publications:
+    requires: [ingresses]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/auth-tls-match-subject']"]
+      group: haptic-match-subject
+      effects: [publishValue]
+    template: |-
+      {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
+      {%- import "util-escape-dquote-value" for EscapeDquoteValue -%}
+      {%- import "util-haptic-require-client-cert-verify" for RequireClientCertVerify -%}
+      {%- var ingress = resources.ingresses.GetSingle(
+        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
+      {%- if ingress != nil -%}
+        {%- var pattern = ingress.Metadata.Annotations["haproxy-haptic.org/auth-tls-match-subject"] -%}
+        {%- if pattern != "" -%}
+          {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
+          {{- RequireClientCertVerify(ingress, "haproxy-haptic.org/auth-tls-match-subject") -}}
+          {%- var injection = ConfigInjectionKind(pattern, "line") -%}
+          {%- if injection != "" -%}
+            {{- fail("Ingress " + key + " has haproxy-haptic.org/auth-tls-match-subject with " + injection + ", which would break the client-certificate check. Remove it from the pattern.") -}}
+          {%- end -%}
+          {{- shared.Publish("rule", key, "# haptic/auth-tls-match-subject (" + key + ")\nhttp-request deny deny_status 403 if { var(txn.resource_key) -m str " + key + " } !{ ssl_c_s_dn(,0,rfc2253) -m reg \"" + EscapeDquoteValue(pattern) + "\" }") -}}
+        {%- end -%}
+      {%- end -%}
+
+  # A certificate the route's own host doesn't verify proves nothing about the caller.
+  util-haptic-require-client-cert-verify:
+    template: |-
+      {%- macro RequireClientCertVerify(ingress *resources.ingresses.T, annotation string) -%}
+        {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
+        {%- if ingress.Metadata.Annotations["haproxy-haptic.org/auth-tls-secret"] == "" -%}
+          {{- fail("Ingress " + key + " sets " + annotation + " without haproxy-haptic.org/auth-tls-secret, so no client certificate is verified for its hosts and the annotation can't be enforced. Add haproxy-haptic.org/auth-tls-secret.") -}}
+        {%- end -%}
+        {%- if toLower(ingress.Metadata.Annotations["haproxy-haptic.org/auth-tls-verify-client"]) == "off" -%}
+          {{- fail("Ingress " + key + " sets " + annotation + " with haproxy-haptic.org/auth-tls-verify-client: off, so no client certificate is verified for its hosts and the annotation can't be enforced. Set auth-tls-verify-client to on or optional.") -}}
+        {%- end -%}
+      {%- end macro -%}
+
+  # auth-tls-cn-header: one del/set pair per distinct header name, selected by
+  # haptic-cn-header-routes.map ("<route id>|<lowercased header>" -> 1).
+  features-821-haptic-auth-tls-cn-header:
+    requires: [ingresses]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/auth-tls-cn-header']"]
+      group: haptic-cn-header
+      effects: [publishValue]
+    template: |-
+      {%- import "util-haptic-require-client-cert-verify" for RequireClientCertVerify -%}
+      {%- var ingress = resources.ingresses.GetSingle(
+        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
+      {%- if ingress != nil -%}
+        {%- var header = strip(ingress.Metadata.Annotations["haproxy-haptic.org/auth-tls-cn-header"]) -%}
+        {%- if header != "" -%}
+          {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
+          {{- RequireClientCertVerify(ingress, "haproxy-haptic.org/auth-tls-cn-header") -}}
+          {%- if !regex_search(header, "^[A-Za-z0-9!$&*+.^_~-]+$") -%}
+            {{- fail("Ingress " + key + " has haproxy-haptic.org/auth-tls-cn-header '" + header + "', which isn't a valid header name, so the CN can't be forwarded. Use letters, digits and '-'.") -}}
+          {%- end -%}
+          {{- shared.Publish("name", key, header) -}}
+          {{- shared.Publish("route", key, key + "|" + toLower(header) + " 1") -}}
+        {%- end -%}
+      {%- end -%}
+
+  frontend-filters-821-haptic-auth-tls-cn-header:
+    requires: [ingresses]
+    template: |
+      {%- import "util-register-map" for RegisterMap -%}
+      {%- if incremental_value_count("haptic-cn-header", "route") > 0 -%}
+      {%%
+        var routesVal, _ = shared.ComputeIfAbsent("hapticCNHeaderMap", func() any {
+          var lines = []string{}
+          for _, r := range sort_strings(incremental_values("haptic-cn-header", "route")) {
+            lines = append(lines, tostring(r))
+          }
+          return RegisterMap("haptic-cn-header-routes.map", lines, map[string]any{"ordered": false})
+        })
+        var routes = tostring(routesVal)
+        var names = sort_strings(incremental_values("haptic-cn-header", "name")) | unique_by(n => toLower(tostring(n)))
+      %%}
+      {{ "\n" }}# haptic/auth-tls-cn-header
+      {%- for _, name := range names %}
+      {%- var match = "{ var(txn.resource_key),concat(|" + toLower(tostring(name)) + "),map(" + routes + ") -m found }" %}
+      http-request del-header {{ name }} if {{ match }}
+      http-request set-header {{ name }} %[ssl_c_s_dn(CN)] if { ssl_fc_has_crt } {{ match }}
+      {%- end %}
       {%- end %}
 
   # ============================================================================

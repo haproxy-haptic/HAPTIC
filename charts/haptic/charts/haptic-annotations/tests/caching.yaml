@@ -1142,6 +1142,40 @@ validationTests:
         pattern: "http-request set-header X-Haptic-Cache-Vary %\\[ssl_c_s_dn\\(CN\\),base64\\] if \\{ var\\(txn\\.policy_id\\) -m str default/cert-only \\}"
       - { type: contains, target: "map:haptic-cache-private.map", pattern: "(?m)^default/cert-only 1$" }
 
+  test-haptic-cache-cn-header-varies-on-certificate:
+    description: A route forwarding the client CN in a header of its choosing varies the cache on the certificate, as auth-tls-cert-header does.
+    extraContext: *extracontextCacheVarnish
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: { namespace: default, name: client-ca }
+          type: Opaque
+          data:
+            ca.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJmakNDQVNXZ0F3SUJBZ0lVSkdvYlN1UzZ6K0lnWnVHejQwYU8xc01NL0RJd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1DQVhEVEkyTURVd09USXdORFV6TjFvWUR6SXhNall3TkRFMQpNakEwTlRNM1dqQVVNUkl3RUFZRFZRUUREQWxzYjJOaGJHaHZjM1F3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPClBRTUJCd05DQUFRZ1FnRDBWaEErcDNrTzgxWndSdW8yM3JLVmVVZ0FyZ3YwZ09obEpOakczN1lzNXJ4aHNXSk8KZWttODVOM3JDS1htRmlBNWp0RlNMTXBydlhqUnVEZlFvMU13VVRBZEJnTlZIUTRFRmdRVUs0T1lyMzY0eVlRZgpMYUFiUFZpcXlsS2wrcXN3SHdZRFZSMGpCQmd3Rm9BVUs0T1lyMzY0eVlRZkxhQWJQVmlxeWxLbCtxc3dEd1lEClZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSEFEQkVBaUI5R0RBaE5Uc29GblZWZVJPWVdVSE8KellnNzNQUG5OU2JDK1lhWnFaWHNoZ0lnWnpqVDkvdDNxUlAwMFVhMGJ3T1N6Z2tEcnVKd2lhM2dxNEYrNGdjVQpLdk09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: cn-only
+            annotations:
+              haproxy-haptic.org/cache-enable: "true"
+              haproxy-haptic.org/cache-ttl: "60"
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-cn-header: "X-Scope-OrgID"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: cn-only.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: haproxy.cfg
+        pattern: "http-request set-header X-Haptic-Cache-Vary %\\[ssl_c_s_dn\\(CN\\),base64\\] if \\{ var\\(txn\\.policy_id\\) -m str default/cn-only \\}"
+      - { type: contains, target: "map:haptic-cache-private.map", pattern: "(?m)^default/cn-only 1$" }
+
   test-haptic-cache-consumer-groups-without-identity-denies:
     description: >-
       Consumer-group authorization on a cache-enabled route without an identity

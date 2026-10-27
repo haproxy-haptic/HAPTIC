@@ -19,7 +19,7 @@ capabilities, see the [HAPTIC annotation reference](./libraries/haptic-annotatio
 | Basic authentication | `auth-type`, `auth-secret`, `auth-realm` | `auth-secret`, `auth-realm` | `auth-type`, `auth-secret`, `auth-secret-type`, `auth-realm`, `satisfy` |
 | External authentication ([Stream Processing Offload Agent (SPOA) hub](operations/spoa-hub.md)) | — | `auth-url`, `auth-signin`, `auth-method`, `auth-headers-request`, `auth-headers-succeed`, `auth-headers-fail` | `auth-url`, `auth-signin`, `auth-method`, `auth-response-headers` |
 | OAuth2 proxy | — | `oauth`, `oauth-uri-prefix`, `oauth-headers` | — |
-| Client certificate (incoming mTLS) | — | `auth-tls-secret`, `auth-tls-verify-client`, `auth-tls-error-page`, `auth-tls-cert-header` | `auth-tls-secret`, `auth-tls-verify-client`, `auth-tls-match-cn`, `auth-tls-error-page`, `auth-tls-pass-certificate-to-upstream` |
+| Client certificate (incoming mTLS) | — | `auth-tls-secret`, `auth-tls-verify-client`, `auth-tls-match-subject`, `auth-tls-error-page`, `auth-tls-cert-header`, `auth-tls-cn-header` | `auth-tls-secret`, `auth-tls-verify-client`, `auth-tls-match-cn`, `auth-tls-error-page`, `auth-tls-pass-certificate-to-upstream` |
 | Allowlist / Denylist | `allow-list`, `deny-list` | `allowlist-source-range`, `denylist-source-range` | `whitelist-source-range`, `denylist-source-range` |
 | SSL redirect | `ssl-redirect`, `ssl-redirect-code` | `ssl-redirect`, `ssl-redirect-code` | `ssl-redirect`, `force-ssl-redirect` |
 | URL redirects | `request-redirect`, `request-redirect-code` | `redirect-to`, `redirect-to-code`, `app-root`, `default-backend-redirect`, … | `permanent-redirect`, `temporal-redirect`, `from-to-www-redirect`, `app-root`, … |

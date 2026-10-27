@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -127,6 +128,15 @@ func TestHapticClientMTLS(t *testing.T) {
 			httpclient.New(t).HTTPS(host, "/").
 				WithClientCert(bundle.ClientCertPEM, bundle.ClientKeyPEM, bundle.CACertPEM).
 				ExpectEchoHeader(t, "X-SSL-Client-CN", "test-client")
+			return ctx
+		}).
+		Assess("a request for the host over another name's TLS connection is misdirected", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			// The other name's handshake verifies no client certificate, so serving
+			// this Host there would skip mTLS entirely.
+			httpclient.New(t).HTTPS("ingress-haptic-clientmtls-other.localdev.me", "/").
+				WithHostHeader(host).
+				ExpectStatus(t, http.StatusMisdirectedRequest)
 			return ctx
 		}).
 		Assess("missing client cert is rejected at the TLS layer", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {

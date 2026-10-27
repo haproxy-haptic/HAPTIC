@@ -6,6 +6,22 @@ _fx:
       - path: /
         pathType: Prefix
         backend: {service: { name: echo, port: { number: 80 } }}
+  clientCASecret: &clientCASecret
+    apiVersion: v1
+    kind: Secret
+    metadata: { namespace: default, name: client-ca }
+    type: Opaque
+    data:
+      ca.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJmakNDQVNXZ0F3SUJBZ0lVSkdvYlN1UzZ6K0lnWnVHejQwYU8xc01NL0RJd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1DQVhEVEkyTURVd09USXdORFV6TjFvWUR6SXhNall3TkRFMQpNakEwTlRNM1dqQVVNUkl3RUFZRFZRUUREQWxzYjJOaGJHaHZjM1F3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPClBRTUJCd05DQUFRZ1FnRDBWaEErcDNrTzgxWndSdW8yM3JLVmVVZ0FyZ3YwZ09obEpOakczN1lzNXJ4aHNXSk8KZWttODVOM3JDS1htRmlBNWp0RlNMTXBydlhqUnVEZlFvMU13VVRBZEJnTlZIUTRFRmdRVUs0T1lyMzY0eVlRZgpMYUFiUFZpcXlsS2wrcXN3SHdZRFZSMGpCQmd3Rm9BVUs0T1lyMzY0eVlRZkxhQWJQVmlxeWxLbCtxc3dEd1lEClZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSEFEQkVBaUI5R0RBaE5Uc29GblZWZVJPWVdVSE8KellnNzNQUG5OU2JDK1lhWnFaWHNoZ0lnWnpqVDkvdDNxUlAwMFVhMGJ3T1N6Z2tEcnVKd2lhM2dxNEYrNGdjVQpLdk09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+
+  serverTLSSecret: &serverTLSSecret
+    apiVersion: v1
+    kind: Secret
+    metadata: { namespace: default, name: server-tls }
+    type: kubernetes.io/tls
+    data:
+      tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJmakNDQVNXZ0F3SUJBZ0lVSkdvYlN1UzZ6K0lnWnVHejQwYU8xc01NL0RJd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1DQVhEVEkyTURVd09USXdORFV6TjFvWUR6SXhNall3TkRFMQpNakEwTlRNM1dqQVVNUkl3RUFZRFZRUUREQWxzYjJOaGJHaHZjM1F3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPClBRTUJCd05DQUFRZ1FnRDBWaEErcDNrTzgxWndSdW8yM3JLVmVVZ0FyZ3YwZ09obEpOakczN1lzNXJ4aHNXSk8KZWttODVOM3JDS1htRmlBNWp0RlNMTXBydlhqUnVEZlFvMU13VVRBZEJnTlZIUTRFRmdRVUs0T1lyMzY0eVlRZgpMYUFiUFZpcXlsS2wrcXN3SHdZRFZSMGpCQmd3Rm9BVUs0T1lyMzY0eVlRZkxhQWJQVmlxeWxLbCtxc3dEd1lEClZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSEFEQkVBaUI5R0RBaE5Uc29GblZWZVJPWVdVSE8KellnNzNQUG5OU2JDK1lhWnFaWHNoZ0lnWnpqVDkvdDNxUlAwMFVhMGJ3T1N6Z2tEcnVKd2lhM2dxNEYrNGdjVQpLdk09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+      tls.key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUc4R2ZxNnd4aUY4aU9BakxqWnA3dXlJQ1RuY1JnMGtLOFVqR1VNc1BROGNvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFSUVJQTlGWVFQcWQ1RHZOV2NFYnFOdDZ5bFhsSUFLNEw5SURvWlNUWXh0KzJMT2E4WWJGaQpUbnBKdk9UZDZ3aWw1aFlnT1k3UlVpekthNzE0MGJnMzBBPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
 
 validationTests:
   # ============================================================================
@@ -564,6 +580,259 @@ validationTests:
         pattern: "api.example.com https%3a%2f%2flogin.example.com%2fcert-required"
       - {type: contains, target: "map:haptic-cert-header-routes.map", pattern: '(?m)^default/\S+ 1$'}
       - {type: contains, target: haproxy.cfg, pattern: 'http-request set-header X-SSL-Client-Cert %\[ssl_c_der,base64\] if \{ ssl_fc_has_crt \} \{ var\(txn\.resource_key\),map\(\S*/haptic-cert-header-routes\.map\) -m found \}'}
+
+  test-haptic-auth-tls-host-without-own-certificate:
+    description: >-
+      A verified host with no certificate of its own gets its own crt-list line on
+      the certificate that already answers it, so its handshake verifies the client.
+    fixtures:
+      secrets: [*clientCASecret, *serverTLSSecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: on-default
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: a.example.com
+                http: *httpRoot
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: on-wildcard
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-verify-client: "optional"
+          spec:
+            ingressClassName: haptic
+            tls:
+              - hosts: ["*.wild.example.com"]
+                secretName: server-tls
+            rules:
+              - host: b.wild.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '\Adefault\.pem \[ocsp-update on\]\n'}
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '(?m)^default\.pem \[ocsp-update on ca-file \S+client-ca\.pem verify required\] a\.example\.com$'}
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '(?m)^default_server-tls\.pem \[ocsp-update on ca-file \S+client-ca\.pem verify optional\] b\.wild\.example\.com$'}
+
+  test-haptic-auth-tls-sni-must-match-host:
+    description: >-
+      A request routed to a verified route over a TLS connection whose SNI isn't
+      one of the route's hosts, or is absent, never had its certificate checked,
+      so it gets 421. A host alias reaches the route without being a verified SNI.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: verified
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/host-alias: "alias.example.com"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: a.example.com
+                http: *httpRoot
+              - host: "*.wild.example.com"
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:mtls-routes.map", pattern: '(?m)^default/verified 1$'}
+      - {type: contains, target: "map:mtls-route-sni.map", pattern: '(?m)^default/verified\|a\.example\.com 1$'}
+      - {type: not_contains, target: "map:mtls-route-sni.map", pattern: 'alias'}
+      - {type: contains, target: "map:mtls-route-sni-regex.map", pattern: '(?m)^\^default/verified\\\|\[\^\.\]\+\\\.wild\\\.example\\\.com\$ 1$'}
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - 'http-request set-var\(txn\.resource_key\)'
+          - 'http-request set-var\(txn\.mtls_route_sni\) var\(txn\.resource_key\),concat\(\|,txn\.mtls_sni\) if \{ var\(txn\.mtls_sni\) -m found \}'
+          - 'http-request return status 421 if \{ ssl_fc \} \{ var\(txn\.resource_key\),map\(\S+/mtls-routes\.map\) -m found \} !\{ var\(txn\.mtls_route_sni\),map\(\S+/mtls-route-sni\.map\) -m found \} !\{ var\(txn\.mtls_route_sni\),map_reg\(\S+/mtls-route-sni-regex\.map\) -m found \}'
+          - 'use_backend %\[var\(txn\.backend_name\)\]'
+
+  test-haptic-auth-tls-match-subject:
+    description: auth-tls-match-subject denies the route with 403 unless the client certificate's RFC 2253 subject DN matches the pattern.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: tenant-a
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-match-subject: "^CN=a(,|$)"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: a.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'http-request deny deny_status 403 if \{ var\(txn\.resource_key\) -m str default/tenant-a \} !\{ ssl_c_s_dn\(,0,rfc2253\) -m reg "\^CN=a\(,\|\\\$\)" \}'
+
+  test-haptic-auth-tls-match-subject-needs-secret:
+    description: Without auth-tls-secret no certificate is verified for the host, so a subject match is refused instead of silently checking nothing.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: bad
+            annotations:
+              haproxy-haptic.org/auth-tls-match-subject: "CN=a"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: bad.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "Ingress default/bad sets haproxy-haptic.org/auth-tls-match-subject without haproxy-haptic.org/auth-tls-secret"}
+
+  test-haptic-auth-tls-match-subject-verify-off:
+    description: auth-tls-verify-client off disables verification, so a subject match is refused.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: bad
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-verify-client: "off"
+              haproxy-haptic.org/auth-tls-match-subject: "CN=a"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: bad.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "Ingress default/bad sets haproxy-haptic.org/auth-tls-match-subject with haproxy-haptic.org/auth-tls-verify-client: off"}
+
+  test-haptic-auth-tls-match-subject-injection:
+    description: A control character in the pattern would break the deny rule onto a second line.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: bad
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-match-subject: "CN=a\nhttp-request allow"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: bad.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "Ingress default/bad has haproxy-haptic.org/auth-tls-match-subject with a control character"}
+
+  test-haptic-auth-tls-cn-header:
+    description: >-
+      auth-tls-cn-header sets the named header to the verified CN. Routes naming
+      the same header in different case share one rule pair keyed by the route
+      map, and the client-supplied value is dropped before the set.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: loki
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-cn-header: "X-Scope-OrgID"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: loki.example.com
+                http: *httpRoot
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: tempo
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-verify-client: "optional"
+              haproxy-haptic.org/auth-tls-cn-header: "x-scope-orgid"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: tempo.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-cn-header-routes.map", pattern: '(?m)^default/loki\|x-scope-orgid 1$'}
+      - {type: contains, target: "map:haptic-cn-header-routes.map", pattern: '(?m)^default/tempo\|x-scope-orgid 1$'}
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - 'http-request del-header X-Scope-OrgID if \{ var\(txn\.resource_key\),concat\(\|x-scope-orgid\),map\(\S*/haptic-cn-header-routes\.map\) -m found \}'
+          - 'http-request set-header X-Scope-OrgID %\[ssl_c_s_dn\(CN\)\] if \{ ssl_fc_has_crt \} \{ var\(txn\.resource_key\),concat\(\|x-scope-orgid\),map\(\S*/haptic-cn-header-routes\.map\) -m found \}'
+      # One rule pair per distinct header name, whatever its spelling.
+      - {type: not_contains, target: haproxy.cfg, pattern: 'set-header x-scope-orgid '}
+
+  test-haptic-auth-tls-cn-header-needs-secret:
+    description: Without auth-tls-secret no certificate is verified for the host, so forwarding a CN is refused.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: bad
+            annotations:
+              haproxy-haptic.org/auth-tls-cn-header: "X-Scope-OrgID"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: bad.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "Ingress default/bad sets haproxy-haptic.org/auth-tls-cn-header without haproxy-haptic.org/auth-tls-secret"}
+
+  test-haptic-auth-tls-cn-header-invalid-name:
+    description: A header name outside the token charset would break the generated rule, so it's refused.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: bad
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-cn-header: "X Scope#OrgID"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: bad.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "Ingress default/bad has haproxy-haptic.org/auth-tls-cn-header 'X Scope#OrgID', which isn't a valid header name"}
 
   # ============================================================================
   # External auth (SPOE) — requires spoa-hub loaded

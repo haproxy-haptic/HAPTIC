@@ -80,9 +80,15 @@ _migrationCoverage:
       haproxy-haptic.org/auth-tls-cert-header:
         status: supported
         note: "Forwards X-SSL-Client-CN/DN/Cert to the backend on hosts that presented a client cert (gated on ssl_fc_has_crt)."
+      haproxy-haptic.org/auth-tls-cn-header:
+        status: supported
+        note: "Sets the named request header to the verified client certificate's CN and drops a client-supplied value; requires auth-tls-secret."
       haproxy-haptic.org/auth-tls-error-page:
         status: supported
         note: "Registers host→URL into gf[\"mtlsErrorHosts\"]; base emits the ssl_c_verify-gated redirect (map-only, reload-free)."
+      haproxy-haptic.org/auth-tls-match-subject:
+        status: supported
+        note: "403 unless the client certificate's RFC 2253 subject DN matches the regex (nginx auth-tls-match-cn semantics); requires auth-tls-secret."
       haproxy-haptic.org/auth-tls-secret:
         status: supported
         note: "SNI-keyed client-cert CA verify; ca.crt written via fileRegistry and registered into gf[\"clientCertVerifyHosts\"]; host required (host-less rule fails)."
