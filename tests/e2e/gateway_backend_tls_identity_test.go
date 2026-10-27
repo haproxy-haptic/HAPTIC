@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -25,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
@@ -77,22 +79,15 @@ func TestGatewayBackendTLSIdentity(t *testing.T) {
 			rejectUnsupportedBackendIdentities(ctx, t, policies)
 			require.NotNil(t, request.ExpectOK(t).Echo)
 
-			policy, err = policies.Get(ctx, "backend-identity", metav1.GetOptions{})
-			require.NoError(t, err)
-			unstructured.RemoveNestedField(policy.Object, "spec", "validation", "subjectAltNames")
-			require.NoError(t, unstructured.SetNestedField(policy.Object, "different-sni.localdev.me", "spec", "validation", "hostname"))
-			_, err = policies.Update(ctx, policy, metav1.UpdateOptions{})
-			require.NoError(t, err)
+			require.NoError(t, patchBackendIdentityValidation(ctx, t, policies, map[string]any{
+				"hostname": "different-sni.localdev.me", "subjectAltNames": nil,
+			}))
 			request.ExpectStatus(t, http.StatusServiceUnavailable)
 
-			policy, err = policies.Get(ctx, "backend-identity", metav1.GetOptions{})
-			require.NoError(t, err)
-			require.NoError(t, unstructured.SetNestedField(policy.Object, host, "spec", "validation", "hostname"))
-			require.NoError(t, unstructured.SetNestedSlice(policy.Object, []any{
-				map[string]any{"type": "Hostname", "hostname": host},
-			}, "spec", "validation", "subjectAltNames"))
-			_, err = policies.Update(ctx, policy, metav1.UpdateOptions{})
-			require.NoError(t, err)
+			require.NoError(t, patchBackendIdentityValidation(ctx, t, policies, map[string]any{
+				"hostname":        host,
+				"subjectAltNames": []any{map[string]any{"type": "Hostname", "hostname": host}},
+			}))
 			require.NotNil(t, request.ExpectOK(t).Echo)
 			return ctx
 		}).Feature()
@@ -130,7 +125,7 @@ func rejectUnsupportedBackendIdentities(ctx context.Context, t *testing.T, polic
 		originalSpec, _, err := unstructured.NestedMap(policy.Object, "spec")
 		require.NoError(t, err)
 		require.NoError(t, unstructured.SetNestedSlice(policy.Object, sans, "spec", "validation", "subjectAltNames"))
-		_, err = policies.Update(ctx, policy, metav1.UpdateOptions{})
+		err = patchBackendIdentityValidation(ctx, t, policies, map[string]any{"subjectAltNames": sans})
 		require.ErrorContains(t, err, "subjectAltNames must contain exactly one Hostname entry")
 		stored, err := policies.Get(ctx, policy.GetName(), metav1.GetOptions{})
 		require.NoError(t, err)
@@ -142,6 +137,14 @@ func rejectUnsupportedBackendIdentities(ctx context.Context, t *testing.T, polic
 		_, err = policies.Create(ctx, policy, metav1.CreateOptions{})
 		require.ErrorContains(t, err, "subjectAltNames must contain exactly one Hostname entry")
 	}
+}
+
+func patchBackendIdentityValidation(ctx context.Context, t *testing.T, policies dynamic.ResourceInterface, validation map[string]any) error {
+	t.Helper()
+	patch, err := json.Marshal(map[string]any{"spec": map[string]any{"validation": validation}})
+	require.NoError(t, err)
+	_, err = policies.Patch(ctx, "backend-identity", types.MergePatchType, patch, metav1.PatchOptions{})
+	return err
 }
 
 func TestGatewayTCPBackendTLS(t *testing.T) {

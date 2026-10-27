@@ -105,6 +105,7 @@ func TestIngressAuthTLSSecret(t *testing.T) {
 				Annotations: map[string]string{
 					"haproxy-ingress.github.io/auth-tls-secret":        "auth-tls-client-ca",
 					"haproxy-ingress.github.io/auth-tls-verify-client": "on",
+					"haproxy-ingress.github.io/auth-tls-cert-header":   "true",
 				},
 			})
 			return ctx
@@ -117,6 +118,11 @@ func TestIngressAuthTLSSecret(t *testing.T) {
 			if resp.Echo == nil {
 				t.Fatalf("expected echo-server JSON, got %d bytes", len(resp.Body))
 			}
+			return ctx
+		}).
+		Assess("client identity survives TLS session resumption", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			assertClientCertificateResumption(ctx, t, bundle, bundle.CACertPEM, host, "")
 			return ctx
 		}).
 		Assess("missing client cert is rejected at the TLS layer", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {

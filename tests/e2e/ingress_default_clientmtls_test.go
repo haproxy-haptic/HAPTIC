@@ -67,6 +67,7 @@ func TestHapticDefaultCertificateMTLS(t *testing.T) {
 					"haproxy-haptic.org/auth-tls-verify-client": "on",
 					"haproxy-haptic.org/auth-tls-match-subject": "CN=test-client",
 					"haproxy-haptic.org/auth-tls-cn-header":     "X-MTLS-CN",
+					"haproxy-haptic.org/auth-tls-cert-header":   "true",
 				},
 			})
 			NewIngress(ctx, t, client, ns, &IngressSpec{
@@ -80,6 +81,11 @@ func TestHapticDefaultCertificateMTLS(t *testing.T) {
 			httpclient.New(t).HTTPS(defaultCertificateMTLSHost, "/").
 				WithClientCert(bundle.ClientCertPEM, bundle.ClientKeyPEM, serverCA).
 				ExpectEchoHeader(t, "X-MTLS-CN", "test-client")
+			return ctx
+		}).
+		Assess("client identity survives TLS session resumption", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			assertClientCertificateResumption(ctx, t, bundle, serverCA, defaultCertificateMTLSHost, "X-MTLS-CN")
 			return ctx
 		}).
 		Assess("missing or untrusted client certificates fail TLS", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {

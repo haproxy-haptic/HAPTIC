@@ -579,7 +579,7 @@ validationTests:
         target: map:mtls-error.map
         pattern: "api.example.com https%3a%2f%2flogin.example.com%2fcert-required"
       - {type: contains, target: "map:haptic-cert-header-routes.map", pattern: '(?m)^default/\S+ 1$'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-header X-SSL-Client-Cert %\[ssl_c_der,base64\] if \{ ssl_fc_has_crt \} \{ var\(txn\.resource_key\),map\(\S*/haptic-cert-header-routes\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-header X-SSL-Client-Cert %\[ssl_c_der,base64\] if \{ ssl_c_used \} \{ var\(txn\.resource_key\),map\(\S*/haptic-cert-header-routes\.map\) -m found \}'}
 
   test-haptic-auth-tls-host-without-own-certificate:
     description: >-
@@ -789,7 +789,7 @@ validationTests:
         target: haproxy.cfg
         patterns:
           - 'http-request del-header X-Scope-OrgID if \{ var\(txn\.resource_key\),concat\(\|x-scope-orgid\),map\(\S*/haptic-cn-header-routes\.map\) -m found \}'
-          - 'http-request set-header X-Scope-OrgID %\[ssl_c_s_dn\(CN\)\] if \{ ssl_fc_has_crt \} \{ var\(txn\.resource_key\),concat\(\|x-scope-orgid\),map\(\S*/haptic-cn-header-routes\.map\) -m found \}'
+          - 'http-request set-header X-Scope-OrgID %\[ssl_c_s_dn\(CN\)\] if \{ ssl_c_used \} \{ var\(txn\.resource_key\),concat\(\|x-scope-orgid\),map\(\S*/haptic-cn-header-routes\.map\) -m found \}'
       # One rule pair per distinct header name, whatever its spelling.
       - {type: not_contains, target: haproxy.cfg, pattern: 'set-header x-scope-orgid '}
 
@@ -1146,7 +1146,7 @@ validationTests:
       present, so without a strip a caller on plain HTTP — or on HTTPS presenting
       no certificate — had their own value forwarded to the application as the
       verified subject. The strip is unconditional for the route; the set stays
-      gated on ssl_fc_has_crt.
+      gated on ssl_c_used.
     fixtures:
       ingresses:
         - apiVersion: networking.k8s.io/v1
@@ -1174,7 +1174,7 @@ validationTests:
         target: haproxy.cfg
         patterns:
           - 'http-request del-header X-SSL-Client-CN\n'
-          - "http-request set-header X-SSL-Client-CN %\\[ssl_c_s_dn\\(CN\\)\\] if \\{ ssl_fc_has_crt \\}"
+          - "http-request set-header X-SSL-Client-CN %\\[ssl_c_s_dn\\(CN\\)\\] if \\{ ssl_c_used \\}"
   test-haptic-basic-auth-missing-secret-rejected-at-admission:
     description: >-
       Writing an Ingress that asks for basic auth with a Secret that does not
