@@ -114,7 +114,7 @@ HAProxy images. It preserves the release's other values:
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.7.0 --namespace haptic --reuse-values \
+  --version 0.8.0 --namespace haptic --reuse-values \
   --set-string haproxyVersion=3.3 \
   --set-string haproxy.image.tag= --set-string controller.image.tag=
 ```

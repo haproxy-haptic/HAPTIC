@@ -77,7 +77,7 @@ config — open the [playground](/playground/).
 
     ```bash
     helm install haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-      --version 0.7.0 \
+      --version 0.8.0 \
       --namespace haptic --create-namespace \
       --set haproxy.service.type=LoadBalancer \
       --set controller.config.templatingSettings.extraContext.statusPatches.enabled=false   # Hold route status until verification
@@ -87,7 +87,7 @@ config — open the [playground](/playground/).
 
     ```bash
     helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-      --version 0.7.0 \
+      --version 0.8.0 \
       --namespace haptic --reuse-values \
       --set haproxy.service.type=LoadBalancer \
       --set controller.config.templatingSettings.extraContext.statusPatches.enabled=false   # Hold route status until verification
@@ -130,7 +130,7 @@ config — open the [playground](/playground/).
 
     ```bash
     helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-      --version 0.7.0 \
+      --version 0.8.0 \
       --namespace haptic --reuse-values \
       --set controller.config.templatingSettings.extraContext.statusPatches.enabled=true
     ```
@@ -186,7 +186,7 @@ class-less resources.
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.7.0 --namespace haptic --reuse-values \
+  --version 0.8.0 --namespace haptic --reuse-values \
   --set controller.templateLibraries.nginxIngress.enabled=true
 ```
 
@@ -455,7 +455,7 @@ Enable the compatibility library on your existing HAPTIC release:
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.7.0 --namespace haptic --reuse-values \
+  --version 0.8.0 --namespace haptic --reuse-values \
   --set controller.templateLibraries.haproxyIngress.enabled=true
 ```
 
@@ -478,7 +478,7 @@ Enable the compatibility library on your existing HAPTIC release:
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.7.0 --namespace haptic --reuse-values \
+  --version 0.8.0 --namespace haptic --reuse-values \
   --set controller.templateLibraries.haproxytech.enabled=true
 ```
 

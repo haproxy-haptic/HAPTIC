@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-28
+
 HAPTIC 0.8 adds client-certificate identity checks and headers for Ingress,
 and serves TLSRoute termination and passthrough listeners on the same port.
 It also closes Ingress client-certificate verification bypasses and tightens
