@@ -474,6 +474,10 @@ func (h *ConfigChangeHandler) recordParsed(event *events.ConfigParsedEvent) {
 		h.inFlight.generation == h.candidateGeneration && sameParsedCandidate(h.inFlight.event, event) {
 		return
 	}
+	if h.queuedParsed == nil && h.retryCandidate != nil &&
+		h.retryCandidate.generation == h.candidateGeneration && sameParsedCandidate(h.retryCandidate.event, event) {
+		return
+	}
 	h.candidateGeneration++
 	h.clearValidationRetry()
 	h.mu.Lock()

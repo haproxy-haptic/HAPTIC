@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Preserve successful configuration validation when identical library updates arrive during the test run, avoiding redundant validation and false timeout rejections ([#522](https://github.com/haproxy-haptic/HAPTIC/issues/522)).
+- Coalesce identical configuration updates during validation and retry backoff to preserve passing results and avoid redundant tests and false timeout rejections ([#522](https://github.com/haproxy-haptic/HAPTIC/issues/522)).
 
 ## [0.8.0] - 2026-10-28
 

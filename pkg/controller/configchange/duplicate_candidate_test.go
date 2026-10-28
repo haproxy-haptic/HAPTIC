@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/events"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/testutil"
 	coreconfig "github.com/haproxy-haptic/HAPTIC/pkg/core/config"
@@ -102,5 +104,44 @@ func TestConfigChangeHandler_DuplicateIdentityDoesNotHideChanges(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConfigChangeHandler_DuplicateDuringRetryPreservesBackoff(t *testing.T) {
+	bus, logger := testutil.NewTestBusAndLogger()
+	handler := NewConfigChangeHandler(bus, logger, make(chan *ReloadRequest, 1), []string{"gated"}, time.Second)
+	requests := bus.SubscribeTypes("retry-duplicate-validator", 100, events.EventTypeConfigValidationRequest)
+	bus.Start()
+	t.Cleanup(handler.cleanup)
+	parsed := events.NewConfigParsedEvent(&coreconfig.Config{}, nil, "candidate", "credentials")
+	handler.recordParsed(parsed)
+	candidate := handler.queuedParsed
+	handler.queuedParsed = nil
+	handler.applyValidationOutcome(validationOutcome{
+		candidate:        candidate,
+		inconclusive:     true,
+		validationErrors: map[string][]string{"gated": {"schema temporarily unavailable"}},
+	})
+
+	handler.handleLoopEvent(t.Context(), events.NewConfigParsedEvent(&coreconfig.Config{}, nil, "candidate", "credentials"))
+	require.Same(t, candidate, handler.retryCandidate, "a duplicate must retain the pending retry")
+	require.Equal(t, validationRetryInitialBackoff, handler.retryBackoff)
+	require.Nil(t, handler.queuedParsed)
+	testutil.AssertNoEvent[*events.ConfigValidationRequest](t, requests, testutil.NoEventTimeout)
+
+	select {
+	case <-handler.retryTimer.Chan():
+		handler.retryTimer.Fired()
+	case <-time.After(testutil.LongTimeout):
+		t.Fatal("pending retry did not fire")
+	}
+	handler.startValidationRetry(t.Context())
+	request := testutil.WaitForEvent[*events.ConfigValidationRequest](t, requests, testutil.LongTimeout)
+	bus.Publish(events.NewConfigValidationResponse(request.RequestID(), "gated", true, nil))
+	select {
+	case outcome := <-handler.validationDone:
+		require.True(t, outcome.valid)
+	case <-time.After(testutil.LongTimeout):
+		t.Fatal("scheduled retry did not complete")
 	}
 }
