@@ -5,7 +5,14 @@ you plan to deploy. Each section lists configuration changes and the steps neede
 to keep your existing routes working. For routine chart upgrades, see
 [Upgrading with Helm](deploying-with-helm.md#upgrading).
 
-## Forwarding-header changes after 0.7.0
+<a id="forwarding-header-changes-after-070"></a>
+
+## Upgrading to 0.8
+
+0.8 tightens forwarding-header trust and enforces Ingress client-certificate
+verification when the Ingress uses the default TLS certificate.
+
+### Check forwarding-header trust
 
 HAPTIC now removes client-sent `Forwarded`, `X-Forwarded-Prefix`,
 `X-Forwarded-Server`, `X-Real-IP`, `X-Client-IP`, and `Client-IP` unless their
@@ -19,6 +26,19 @@ The annotation alone no longer trusts these client-supplied headers.
 For direct clients behind an L4 load balancer sending PROXY protocol, remove
 the header annotation: HAPTIC already receives the client address from PROXY
 protocol. Don't add client networks to `trustedProxies` to restore the old behavior.
+
+### Check clients of protected Ingresses
+
+If an Ingress sets `auth-tls-secret`, its client-certificate policy now also
+applies when it uses the default TLS certificate, including when that certificate
+names the protected host. Clients must satisfy the configured policy on those
+hosts too. A request to a protected host with a different or absent TLS SNI gets
+`421 Misdirected Request`.
+
+Client-certificate headers are now forwarded on resumed TLS sessions as well as
+new sessions. The configured headers replace client-supplied values. See
+[client-certificate authentication](libraries/haptic-annotations.md#authentication-mtls-and-waf)
+for the annotation settings.
 
 ## Upgrading to 0.7
 
