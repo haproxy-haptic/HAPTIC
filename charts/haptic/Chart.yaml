@@ -110,27 +110,9 @@ annotations:
 
   # Release highlights; full notes are in the root CHANGELOG.md.
   artifacthub.io/changes: |
-    - kind: security
-      description: Ingress client-certificate verification is enforced with default TLS certificates and rejects SNI/Host mismatches
-    - kind: security
-      description: Untrusted forwarding and client-address headers are removed before requests reach backends
-    - kind: changed
-      description: "Breaking: src-ip-header requires a trusted L7 proxy or an operator-generated header"
-    - kind: added
-      description: TLSRoute termination and passthrough listeners share one port with isolated certificates and client-validation policies
-    - kind: added
-      description: Ingress client-certificate subject matching and configurable CN headers
-    - kind: added
-      description: Pin controller, agent, and lifecycle hook images with controller.image.digest
     - kind: fixed
-      description: Ingress client-certificate headers survive TLS session resumption and annotation-library coexistence
-    - kind: fixed
-      description: HTTPRoute hostname specificity takes precedence over path length and header conditions
-    - kind: fixed
-      description: Validation tests preserve deterministic section markers in auxiliary files
-    - kind: security
-      description: Go 1.27.3 and golang.org/x/net 0.62.0 security updates
-  artifacthub.io/containsSecurityUpdates: "true"
+      description: Identical configuration updates preserve passing validation results and retry backoff instead of triggering redundant tests and false timeout rejections
+  artifacthub.io/containsSecurityUpdates: "false"
 
   # Links
   artifacthub.io/links: |
