@@ -111,27 +111,25 @@ annotations:
   # Release highlights; full notes are in the root CHANGELOG.md.
   artifacthub.io/changes: |
     - kind: security
-      description: "Breaking: raw HAProxy configuration annotations are rejected unless ingressPermissions.allowRawHAProxyConfig is true"
+      description: Ingress client-certificate verification is enforced with default TLS certificates and rejects SNI/Host mismatches
     - kind: security
-      description: "Breaking: HTTP frontends replace client-sent X-Forwarded-For and -Proto and drop -Host and -Port; list L7 proxies in forwardedHeaders.trustedProxies"
+      description: Untrusted forwarding and client-address headers are removed before requests reach backends
     - kind: changed
-      description: "Breaking: haproxy-ingress forwardfor add and update now match upstream (add replaces, update appends)"
-    - kind: changed
-      description: The pre-upgrade hook rolls the controller to the new image before applying new templates
+      description: "Breaking: src-ip-header requires a trusted L7 proxy or an operator-generated header"
     - kind: added
-      description: Per-resource watch namespaces and an opt-in to read Secrets only in the release namespace
+      description: TLSRoute termination and passthrough listeners share one port with isolated certificates and client-validation policies
     - kind: added
-      description: haptic_config_validated and haptic_config_validation_total metrics and the HAProxyControllerConfigNotValidated alert
+      description: Ingress client-certificate subject matching and configurable CN headers
+    - kind: added
+      description: Pin controller, agent, and lifecycle hook images with controller.image.digest
     - kind: fixed
-      description: Helm upgrades no longer restart the controller iteration mid-rollout
+      description: Ingress client-certificate headers survive TLS session resumption and annotation-library coexistence
     - kind: fixed
-      description: A controller no longer stops deploying when the render gate's verdict overtakes its render
+      description: HTTPRoute hostname specificity takes precedence over path length and header conditions
     - kind: fixed
-      description: pod-maxconn follows the HAProxy replica count at runtime; a rollout no longer reloads every HAProxy pod twice
-    - kind: fixed
-      description: Frequent per-pod status writes no longer block HAProxyCfg publication
-    - kind: fixed
-      description: Varnish preflight uses available images, and custom TCP PROXY frontends pass validation
+      description: Validation tests preserve deterministic section markers in auxiliary files
+    - kind: security
+      description: Go 1.27.3 and golang.org/x/net 0.62.0 security updates
   artifacthub.io/containsSecurityUpdates: "true"
 
   # Links
