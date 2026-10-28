@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Coalesce identical configuration updates during validation and retry backoff to preserve passing results and avoid redundant tests and false timeout rejections ([#522](https://github.com/haproxy-haptic/HAPTIC/issues/522)).
+
 ## [0.8.0] - 2026-10-28
 
 HAPTIC 0.8 adds client-certificate identity checks and headers for Ingress,
