@@ -24,11 +24,13 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -289,9 +291,19 @@ func (f *mixedTLSFixture) assertEncryptedHost(ctx context.Context, t *testing.T,
 
 func (f *mixedTLSFixture) probeServed(ctx context.Context, t *testing.T, host string, client *tls.Certificate) (body, certificate []byte) {
 	t.Helper()
-	body, certificate, err := f.probeClient(ctx, host, client)
+	var err error
+	require.NoError(t, testutil.WaitForConditionWithDescription(ctx, testutil.FastWaitConfig(), "TLS probe of "+host,
+		func(ctx context.Context) (bool, error) {
+			body, certificate, err = f.probeClient(ctx, host, client)
+			return !connectionDropped(err), nil
+		}))
 	require.NoError(t, err)
 	return body, certificate
+}
+
+func connectionDropped(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED)
 }
 
 func (f *mixedTLSFixture) assertRejected(ctx context.Context, t *testing.T, host string) {
