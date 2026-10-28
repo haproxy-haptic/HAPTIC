@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"sync"
 	"time"
 
@@ -371,8 +372,8 @@ func (h *ConfigChangeHandler) Start(ctx context.Context) error {
 			h.startValidationRetry(ctx)
 		case outcome := <-h.validationDone:
 			h.validationInFlight = false
-			h.inFlight = nil
 			h.drainQueuedEvents()
+			h.inFlight = nil
 			h.applyValidationOutcome(outcome)
 			h.startQueuedValidation(ctx)
 		case <-h.startupReplay:
@@ -465,6 +466,14 @@ func (h *ConfigChangeHandler) isRunningVersion(version string) bool {
 // recordParsed assigns an authority generation and retires any restart armed
 // by an older candidate. The newest parked candidate wins.
 func (h *ConfigChangeHandler) recordParsed(event *events.ConfigParsedEvent) {
+	// Repeated library snapshots must not supersede their own validation (#522).
+	if h.queuedParsed != nil && sameParsedCandidate(h.queuedParsed.event, event) {
+		return
+	}
+	if h.queuedParsed == nil && h.inFlight != nil &&
+		h.inFlight.generation == h.candidateGeneration && sameParsedCandidate(h.inFlight.event, event) {
+		return
+	}
 	h.candidateGeneration++
 	h.clearValidationRetry()
 	h.mu.Lock()
@@ -501,6 +510,21 @@ func (h *ConfigChangeHandler) recordParsed(event *events.ConfigParsedEvent) {
 			"skipped_version", h.queuedParsed.event.Version, "newer_version", event.Version)
 	}
 	h.queuedParsed = &validationCandidate{generation: h.candidateGeneration, event: event}
+}
+
+// ResourceVersion may change on metadata-only writes; source UID must not.
+func sameParsedCandidate(a, b *events.ConfigParsedEvent) bool {
+	if a == nil || b == nil || a.Version == "" || a.Version != b.Version ||
+		a.SecretVersion != b.SecretVersion || len(a.Sources) != len(b.Sources) || !reflect.DeepEqual(a.Config, b.Config) {
+		return false
+	}
+	for i := range a.Sources {
+		x, y := a.Sources[i], b.Sources[i]
+		if x.Namespace != y.Namespace || x.Name != y.Name || x.Generation != y.Generation || x.UID != y.UID {
+			return false
+		}
+	}
+	return true
 }
 
 // startEffectiveValidation validates the newest raw configuration against a
