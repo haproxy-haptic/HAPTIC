@@ -74,7 +74,7 @@ func newMixedTLSStaticFixture(ctx context.Context, t *testing.T, cfg *envconf.Co
 	f.applyListeners(ctx, t, listeners)
 	f.waitListeners(ctx, t, true)
 	f.static = *f.mixedTLSFixture
-	f.static.port = ForwardService(t, HAProxyDeploymentName, 443).HTTPSPort
+	f.static.address = serviceTCPAddress(ctx, t, f.client, HAProxyDeploymentName, 443)
 	f.static.assertRejected(ctx, t, f.terminate)
 	f.assertIngressHTTPS(ctx, t)
 	backend := NewTLSResponderBackend(ctx, t, f.client, f.namespace, "ingress", f.ingressPassthroughHost)
@@ -90,7 +90,7 @@ func newMixedTLSStaticFixture(ctx context.Context, t *testing.T, cfg *envconf.Co
 	f.applyRoute(ctx, t, "terminated", f.terminate, "terminate", f.plain)
 	f.applyRoute(ctx, t, "encrypted", "*."+f.namespace+".localdev.me", "passthrough", f.encrypted)
 	f.waitListeners(ctx, t, true)
-	f.port = ForwardGateway(ctx, t, f.namespace, "mixed", f.listenerPort).Ports[f.listenerPort]
+	f.address = f.serviceAddress(ctx, t)
 	return f
 }
 
