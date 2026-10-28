@@ -33,7 +33,7 @@ Choose the installed version in the documentation menu; `dev` also describes
 unreleased features.
 
 ```bash
-helm install haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic --version 0.8.0 --namespace haptic --create-namespace
+helm install haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic --version 0.8.1 --namespace haptic --create-namespace
 ```
 
 This installs the controller, two HAProxy replicas, and the default routing

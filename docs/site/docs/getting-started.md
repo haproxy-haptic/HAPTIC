@@ -32,7 +32,7 @@ unreleased features.
 
 ```bash
 helm install haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.8.0 \
+  --version 0.8.1 \
   --namespace haptic --create-namespace
 ```
 

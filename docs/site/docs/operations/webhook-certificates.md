@@ -81,7 +81,7 @@ settings in `haptic-values.yaml`:
 
 ```bash
 helm install haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.8.0 --namespace haptic \
+  --version 0.8.1 --namespace haptic \
   --values haptic-values.yaml \
   --set controller.webhook.certManager.enabled=false \
   --set-file controller.webhook.caBundle=webhook-ca.base64
