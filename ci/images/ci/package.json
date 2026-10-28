@@ -13,6 +13,7 @@
     "micromark-extension-math": {
       "katex": "$katex"
     },
-    "smol-toml": "$smol-toml"
+    "smol-toml": "$smol-toml",
+    "re2js": "2.8.7"
   }
 }
