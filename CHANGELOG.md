@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Helm chart
+
+#### Changed
+
+- Published release charts select matching multi-platform controller image digests by default, including agents and lifecycle hooks; explicit image tags and digests retain precedence ([#527](https://github.com/haproxy-haptic/HAPTIC/issues/527)).
+
 ## [0.8.1] - 2026-10-29
 
 ### Fixed

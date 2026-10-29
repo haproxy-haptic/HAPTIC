@@ -60,6 +60,14 @@ gh workflow run snapshot.yml --repo "$haptic_repo" --ref main \
 
 ## Release process
 
+After publishing and signing controller images, the chart job resolves each
+supported HAProxy series to its multi-platform index digest and verifies the
+signature against that release's workflow identity. It adds `release-images.json`
+to a staging copy of the distributed chart before packaging. Source charts and
+image-embedded charts retain their tag fallback; the pre-rollout hook mounts the
+distributed metadata into its embedded chart for matching renders. See
+[ADR-0038](https://github.com/haproxy-haptic/HAPTIC/blob/main/docs/adr/0038-release-controller-image-digests.md).
+
 Releases go through a pull request (PR). After the merged commit passes canonical
 CI, the tagging workflow creates its missing release
 tag and dispatches publication.

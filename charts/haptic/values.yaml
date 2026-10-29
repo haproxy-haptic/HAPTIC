@@ -122,7 +122,7 @@ controller:
   image:
     repository: ghcr.io/haproxy-haptic/haptic
     pullPolicy: IfNotPresent  # @schema enum: [Always, IfNotPresent, Never]
-    # Base tag; the chart appends -haproxy<haproxyVersion>. Empty uses appVersion.
+    # Base tag with an appended HAProxy suffix; empty uses release digest metadata, then appVersion.
     tag: ""
     # Pins controller, agent, and hook Pod images by SHA-256 digest; overrides tag.
     digest: ""  # @schema pattern: ^$|^sha256:[a-f0-9]{64}$
