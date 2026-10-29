@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,6 +28,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/e2e-framework/klient"
+
+	haproxyv1alpha1 "github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
 )
 
 // Wait for the resource the test just applied to report the controller's
@@ -148,4 +151,21 @@ func routeParentsAtCurrentGeneration(obj *unstructured.Unstructured) (ready bool
 		}
 	}
 	return true, ""
+}
+
+func configMarkerRemovalReloaded(cfg *haproxyv1alpha1.HAProxyCfg, marker string, replicas int) (bool, error) {
+	content, err := haproxyCfgContent(cfg)
+	if err != nil {
+		return false, err
+	}
+	if replicas < 1 || cfg.Spec.Checksum == "" || strings.Contains(content, marker) || len(cfg.Status.DeployedToPods) < replicas {
+		return false, nil
+	}
+	for index := range cfg.Status.DeployedToPods {
+		pod := &cfg.Status.DeployedToPods[index]
+		if pod.Checksum != cfg.Spec.Checksum || pod.AppliedPlanID == "" || pod.RunningPlanID != pod.AppliedPlanID || pod.LastError != "" {
+			return false, nil
+		}
+	}
+	return true, nil
 }
