@@ -66,7 +66,12 @@ class ReleaseTests(unittest.TestCase):
                     "# https://github.com/haproxy-haptic/HAPTIC/blob/v0.1.0/README.md\n"
                 ),
                 "charts/haptic/templates/NOTES.txt": "https://haproxy-haptic.org/docs/dev/\n",
-                "README.md": "helm install haptic --version 0.1.0\n",
+                "README.md": (
+                    "helm install haptic --version 0.1.0\n"
+                    "https://haproxy-haptic.org/docs/0.1.0/getting-started/\n"
+                    "https://haproxy-haptic.org/docs/0.1.0/template-libraries/\n"
+                    "https://haproxy-haptic.org/docs/dev/development/agent-skill/\n"
+                ),
                 "docs/site/docs/install.md": "helm upgrade haptic --version 0.1.0\n",
                 "docs/site/docs/upgrade-notes.md": (
                     "helm pull chart --version 0.1.0\n"
@@ -114,6 +119,10 @@ class ReleaseTests(unittest.TestCase):
                 with self.subTest(version=version):
                     run("bash", "scripts/release.sh", version)
                     self.assertEqual(run("git", "status", "--porcelain"), "")
+                    readme = run("git", "show", "HEAD:README.md")
+                    self.assertIn(f"https://haproxy-haptic.org/docs/{version}/getting-started/", readme)
+                    self.assertIn(f"https://haproxy-haptic.org/docs/{version}/template-libraries/", readme)
+                    self.assertIn("https://haproxy-haptic.org/docs/dev/development/agent-skill/", readme)
                     for path in ("charts/haptic/README.md", "charts/haptic/values.yaml"):
                         committed = run("git", "show", "HEAD:" + path)
                         self.assertIn(
