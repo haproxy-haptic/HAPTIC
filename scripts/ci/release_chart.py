@@ -17,7 +17,7 @@ ROLES = {"controller", "agent", "apply-crds", "preflight"}
 def render(chart, values):
     raw = subprocess.check_output(["helm", "template", "haptic", str(chart), "--namespace", "haptic",
                                    "--api-versions", "gateway.networking.k8s.io/v1/GatewayClass",
-                                   "--values", str(values)], text=True)
+                                   "--values", "-"], input=values, text=True)
     return [doc for doc in yaml.safe_load_all(raw) if doc]
 
 
@@ -70,16 +70,13 @@ def verify_chart_directory(chart, embedded, directory):
                   "credentials": {"dataplane": {"password": "release-parity-fixture"}},
                   "defaultSSLCertificate": {"create": True, "cert": "fixture-cert", "key": "fixture-key",
                                             "certManager": {"enabled": False}}}
-        values_file = directory / "values.yaml"
-        values_file.write_text(yaml.safe_dump(values))
-        documents = render(chart, values_file)
+        documents = render(chart, yaml.safe_dump(values))
         verify_roles(documents, expected)
         secret = next(doc for doc in documents if doc["kind"] == "Secret" and
                       "release-images.json" in doc.get("stringData", {}))
         if secret["stringData"]["release-images.json"] != metadata_bytes:
             raise ValueError("Preflight Secret changed the release image metadata")
-        values_file.write_text(secret["stringData"]["values.yaml"])
-        if documents != render(replay, values_file):
+        if documents != render(replay, secret["stringData"]["values.yaml"]):
             raise ValueError("Preflight file overlay does not reproduce the complete release render")
 
 
