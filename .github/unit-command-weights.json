@@ -235,6 +235,14 @@
     "parallel": false,
     "seconds": 0.0
   },
+  "TestReleaseChartImageSelectionAndPreflightParity": {
+    "parallel": false,
+    "seconds": 152.11
+  },
+  "TestReleaseChartRejectsInvalidMetadata": {
+    "parallel": false,
+    "seconds": 20.9
+  },
   "TestRemoveConfigHooksIn": {
     "parallel": false,
     "seconds": 0.0

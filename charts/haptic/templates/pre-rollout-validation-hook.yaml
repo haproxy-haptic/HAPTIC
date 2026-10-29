@@ -56,6 +56,10 @@ stringData:
   {{- end }}
   values.yaml: |
     {{- $hookValues | toYaml | nindent 4 }}
+  {{- if .Files.Glob "release-images.json" }}
+  release-images.json: |
+    {{- .Files.Get "release-images.json" | nindent 4 }}
+  {{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -236,6 +240,13 @@ spec:
             - name: values
               mountPath: /haptic/values
               readOnly: true
+            {{- if .Files.Glob "release-images.json" }}
+            {{/* Keep the embedded preflight render identical to the distributed chart (ADR-0038). */}}
+            - name: values
+              mountPath: /usr/share/haptic/chart/release-images.json
+              subPath: release-images.json
+              readOnly: true
+            {{- end }}
             # The test runner writes rendered configs for `haproxy -c`; the
             # container filesystem is read-only.
             - name: tmp

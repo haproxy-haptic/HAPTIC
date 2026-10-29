@@ -12,6 +12,11 @@ identity="https://github.com/${GITHUB_WORKFLOW_REF}"
 verification=(--certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com)
 mkdir -p .publication
 
+[[ "$GITHUB_WORKFLOW_REF" == "${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/v${version}" ]] || {
+    printf 'Run release publication from the matching version tag\n' >&2
+    exit 1
+}
+
 [[ "$(yq -r '.version' charts/haptic/Chart.yaml)" == "$version" &&
    "$(yq -r '.appVersion' charts/haptic/Chart.yaml)" == "$version" &&
    "$(git rev-parse "refs/tags/v${version}^{commit}")" == "$(git rev-parse HEAD)" ]] || {
@@ -77,7 +82,17 @@ case "$phase" in
         cp dist/checksums.txt dist/checksums.txt.sigstore.json .publication/
         ;;
     chart)
-        helm package charts/haptic --destination .publication
+        # shellcheck source=../versions.env
+        source versions.env
+        [[ ! -e charts/haptic/release-images.json ]]
+        rm -rf .publication/chart
+        mkdir -p .publication/chart
+        cp -a charts/haptic/. .publication/chart/
+        python3 -m scripts.ci.release_images --repository "$repository" --version "$version" \
+            --series $HAPROXY_VERSIONS --identity "$identity" \
+            --output .publication/chart/release-images.json
+        helm package .publication/chart --destination .publication
+        python3 -m scripts.ci.release_chart --chart ".publication/haptic-${version}.tgz" --embedded charts/haptic
         helm push ".publication/haptic-${version}.tgz" "oci://${repository}/charts"
         digest="$(digest_of "${repository}/charts/haptic:${version}")"
         reference="${repository}/charts/haptic@${digest}"

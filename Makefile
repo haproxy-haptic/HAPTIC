@@ -482,7 +482,7 @@ else
 endif
 
 test-release: ## Verify release ordering and version-file staging
-	python3 -m unittest scripts/tests/test_release.py scripts/tests/test_spoa_release_image.py scripts/tests/test_spoa_plugins.py
+	python3 -m unittest scripts/tests/test_release.py scripts/tests/test_release_images.py scripts/tests/test_spoa_release_image.py scripts/tests/test_spoa_plugins.py
 
 test-agent-docker: ## Run the agent docker suite (real HAProxy + agent containers, no cluster)
 	@echo "Running agent docker tests against HAProxy $(HAPROXY_VERSION)..."

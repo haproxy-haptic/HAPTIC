@@ -47,6 +47,25 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 self.assertIn("--env BUILDX_NO_DEFAULT_OCI_ARTIFACT=true", text)
                 self.assertNotIn("BUILDX_NO_DEFAULT_ATTESTATIONS", text)
 
+    def test_chart_packages_signed_image_metadata_and_checks_parity_before_pushing(self):
+        chart = self.script[self.script.index("    chart)"):]
+        stages = ["cp -a charts/haptic/.", "scripts.ci.release_images", "helm package .publication/chart",
+                  "scripts.ci.release_chart", "helm push"]
+        positions = [chart.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('--series $HAPROXY_VERSIONS --identity "$identity"', chart)
+        self.assertIn('--chart ".publication/haptic-${version}.tgz" --embedded charts/haptic', chart)
+
+    def test_release_signature_identity_requires_the_matching_tag(self):
+        start = self.script.index('[[ "$GITHUB_WORKFLOW_REF" ==')
+        guard = self.script[start:self.script.index("\n}\n", start) + 3]
+        for ref, expected in (("refs/tags/v1.2.3", 0), ("refs/tags/v1.2.2", 1), ("refs/heads/main", 1)):
+            with self.subTest(ref=ref):
+                prefix = ('GITHUB_REPOSITORY=owner/repo version=1.2.3\n'
+                          f'GITHUB_WORKFLOW_REF=owner/repo/.github/workflows/release.yml@{ref}\n')
+                result = subprocess.run(["bash", "-c", prefix + guard], capture_output=True, check=False)
+                self.assertEqual(result.returncode, expected)
+
     def test_every_controller_and_varnish_image_attests_its_own_repository(self):
         start = self.script.index("        for variant in $HAPROXY_VERSIONS varnish; do")
         loop = self.script[start:self.script.index("        done\n", start) + len("        done\n")]

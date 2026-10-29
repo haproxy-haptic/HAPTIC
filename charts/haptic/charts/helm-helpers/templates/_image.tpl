@@ -8,10 +8,37 @@ share the volume group with HAProxy.
 
 {{/* Controller image shared by the controller, agent, and lifecycle hooks. */}}
 {{- define "haptic.controller.image" -}}
+{{- $releaseDigest := include "haptic.controller.releaseDigest" . -}}
 {{- if .Values.controller.image.digest -}}
 {{- printf "%s@%s" .Values.controller.image.repository .Values.controller.image.digest -}}
+{{- else if .Values.controller.image.tag -}}
+{{- printf "%s:%s-haproxy%s" .Values.controller.image.repository .Values.controller.image.tag .Values.haproxyVersion -}}
+{{- else if $releaseDigest -}}
+{{- printf "%s@%s" .Values.controller.image.repository $releaseDigest -}}
 {{- else -}}
-{{- printf "%s:%s-haproxy%s" .Values.controller.image.repository (.Values.controller.image.tag | default .Chart.AppVersion) .Values.haproxyVersion -}}
+{{- printf "%s:%s-haproxy%s" .Values.controller.image.repository .Chart.AppVersion .Values.haproxyVersion -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "haptic.controller.releaseDigest" -}}
+{{- if .Files.Glob "release-images.json" -}}
+{{- $metadata := .Files.Get "release-images.json" | mustFromJson -}}
+{{- if or (ne $metadata.version .Chart.Version) (ne $metadata.version .Chart.AppVersion) -}}
+{{- fail "release-images.json version differs from the chart; use an unmodified release chart" -}}
+{{- end -}}
+{{- if not (kindIs "map" $metadata.digests) -}}
+{{- fail "release-images.json has no digest map; use an unmodified release chart" -}}
+{{- end -}}
+{{- if ne (len $metadata.digests) (len .Values.haproxyPatchVersions) -}}
+{{- fail "release-images.json does not cover the supported HAProxy series; use an unmodified release chart" -}}
+{{- end -}}
+{{- range $series, $_ := .Values.haproxyPatchVersions -}}
+{{- $digest := index $metadata.digests $series -}}
+{{- if not (and (kindIs "string" $digest) (regexMatch "^sha256:[a-f0-9]{64}$" (toString $digest))) -}}
+{{- fail (printf "release-images.json has no valid digest for HAProxy %s; use an unmodified release chart" $series) -}}
+{{- end -}}
+{{- end -}}
+{{- required "release-images.json has no digest for the selected HAProxy series" (index $metadata.digests .Values.haproxyVersion) -}}
 {{- end -}}
 {{- end -}}
 

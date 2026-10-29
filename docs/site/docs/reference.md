@@ -48,12 +48,12 @@ workflows too.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `controller.replicaCount` | int | `2` | Number of controller replicas (2+ recommended for HA with leader election) |
-| `haproxyVersion` | string | `"3.4"` | HAProxy major.minor series: `3.0`, `3.2`, `3.3`, or `3.4`. Drives both the controller image tag suffix (`:<version>-haproxy<haproxyVersion>`) and — combined with `haproxyPatchVersions` — the HAProxy pod image tag |
+| `haproxyVersion` | string | `"3.4"` | HAProxy major.minor series: `3.0`, `3.2`, `3.3`, or `3.4`. Selects the controller release digest or tag suffix and, with `haproxyPatchVersions`, the HAProxy pod image tag |
 | `haproxyPatchVersions` | map | See values.yaml | Tested Community Edition patch versions for each HAProxy series. |
 | `haproxyEnterprisePatchVersions` | map | See values.yaml | Per-`haproxyVersion` enterprise revision pins (for example `"3.2": "3.2r1"`). Used when `haproxy.enterprise.enabled=true` |
 | `controller.image.repository` | string | `ghcr.io/haproxy-haptic/haptic` | Controller image repository |
 | `controller.image.pullPolicy` | string | `IfNotPresent` | Image pull policy |
-| `controller.image.tag` | string | `""` | Controller image tag *without* the HAProxy-series suffix; empty uses the chart `appVersion`. Without a digest, the rendered tag is `<tag>-haproxy<haproxyVersion>`, including for explicit tags |
+| `controller.image.tag` | string | `""` | Explicit base tag renders `<tag>-haproxy<haproxyVersion>`. Empty selects the packaged release digest, or the chart `appVersion` tag in source and development charts without digest metadata |
 | `controller.image.digest` | string | `""` | SHA-256 image digest (`sha256:` plus 64 lowercase hex digits); overrides `tag` and renders `<repository>@<digest>` for the controller, agent, and lifecycle hooks. Choose the image built for your `haproxyVersion` and chart version |
 | `nameOverride` | string | `""` | Override chart name |
 | `fullnameOverride` | string | `""` | Override full release name |
@@ -61,6 +61,18 @@ workflows too.
 | `commonAnnotations` | map | `{}` | Annotations added to every chart-rendered resource that has an `annotations` block |
 | `controller.deploymentAnnotations` | map | `{}` | Extra annotations on the controller Deployment. |
 | `extraDeploy` | list or map | `{}` | Free-form Kubernetes resources to render alongside the chart. Each entry is rendered through `tpl` so it can reference chart values. Map form (keys → manifests) is convenient for composing across multiple values files |
+
+Published release charts bundle multi-platform controller image digests for every
+supported HAProxy series. Changing only `controller.image.repository` retains the
+release digest; your mirror must preserve the image index bytes. An explicit
+`controller.image.digest` takes precedence over an explicit `controller.image.tag`,
+which takes precedence over the packaged digest. Invalid release metadata fails
+rendering. The pre-rollout hook receives the same metadata and retains the
+chart/image version check.
+
+Source and development charts without release metadata use
+`<repository>:<appVersion>-haproxy<haproxyVersion>`. Set an explicit tag or digest
+when testing another build.
 
 ## Controller core
 
