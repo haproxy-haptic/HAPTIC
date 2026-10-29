@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
+	hapticclient "github.com/haproxy-haptic/HAPTIC/pkg/generated/clientset/versioned"
 	"github.com/haproxy-haptic/HAPTIC/tests/testutil"
 )
 
@@ -144,8 +145,31 @@ func (f *mixedTLSStaticFixture) assertStaticRouteRemoval(ctx context.Context, t 
 	t.Helper()
 	client, err := dynamic.NewForConfig(f.client.RESTConfig())
 	require.NoError(t, err)
-	require.NoError(t, client.Resource(tlsRouteGVR).Namespace(f.namespace).Delete(ctx, "encrypted", metav1.DeleteOptions{}))
-	require.NoError(t, testutil.WaitForConditionWithDescription(ctx, testutil.SlowWaitConfig(), "unrouted static listener rejects with healthy Ingress", func(ctx context.Context) (bool, error) {
+	runtimeClient, err := hapticclient.NewForConfig(f.client.RESTConfig())
+	require.NoError(t, err)
+	replicas, err := discoverHAProxyReplicaCount(ctx, f.client)
+	require.NoError(t, err)
+	removalCtx, cancel := context.WithTimeout(ctx, testutil.SlowWaitConfig().Timeout)
+	defer cancel()
+	marker := "gtw_tls_" + f.namespace + "_encrypted_"
+	require.NoError(t, testutil.WaitForConditionWithDescription(removalCtx, testutil.SlowWaitConfig(), "TLS route is published before deletion", func(ctx context.Context) (bool, error) {
+		cfg, err := runtimeClient.HaproxyTemplateICV1alpha1().HAProxyCfgs(ControllerNamespace).Get(ctx, HAProxyConfigName+"-haproxycfg", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		content, err := haproxyCfgContent(cfg)
+		return err == nil && strings.Contains(content, marker), err
+	}))
+	require.NoError(t, client.Resource(tlsRouteGVR).Namespace(f.namespace).Delete(removalCtx, "encrypted", metav1.DeleteOptions{}))
+	require.NoError(t, testutil.WaitForConditionWithDescription(removalCtx, testutil.SlowWaitConfig(), "unrouted static listener rejects with healthy Ingress", func(ctx context.Context) (bool, error) {
+		cfg, err := runtimeClient.HaproxyTemplateICV1alpha1().HAProxyCfgs(ControllerNamespace).Get(ctx, HAProxyConfigName+"-haproxycfg", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		deployed, err := configMarkerRemovalReloaded(cfg, marker, replicas)
+		if err != nil || !deployed {
+			return false, err
+		}
 		_, _, rejected := f.static.probe(ctx, f.terminate)
 		body, certificate, err := f.static.probe(ctx, f.ingressPassthroughHost)
 		return rejected != nil && err == nil && bytes.Equal(certificate, f.ingressTLSCertificate) && strings.TrimSpace(string(body)) == "ingress", nil
