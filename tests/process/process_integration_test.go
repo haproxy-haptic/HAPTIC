@@ -153,10 +153,14 @@ func TestExecutorReapsDescendantsAfterParentExits(t *testing.T) {
 func assertListenerGone(t *testing.T, address string) {
 	t.Helper()
 	require.NotEmpty(t, address)
+	dialer := net.Dialer{Timeout: 100 * time.Millisecond}
+	require.NoError(t, waitForListenerClosed(t.Context(), address, dialer.DialContext))
+}
+
+func waitForListenerClosed(ctx context.Context, address string, dial func(context.Context, string, string) (net.Conn, error)) error {
 	cfg := testutil.WaitConfig{Timeout: time.Second, InitialInterval: time.Millisecond, MaxInterval: 10 * time.Millisecond, Multiplier: 2}
-	require.NoError(t, testutil.Poll(t.Context(), cfg, "descendant listener closed after SIGKILL", func(ctx context.Context) (testutil.PollResult, error) {
-		dialer := net.Dialer{Timeout: 100 * time.Millisecond}
-		conn, err := dialer.DialContext(ctx, "tcp", address)
+	return testutil.Poll(ctx, cfg, "descendant listener closed after SIGKILL", func(ctx context.Context) (testutil.PollResult, error) {
+		conn, err := dial(ctx, "tcp", address)
 		if conn != nil {
 			_ = conn.Close()
 			return testutil.PollPending, nil
@@ -164,9 +168,63 @@ func assertListenerGone(t *testing.T, address string) {
 		if errors.Is(err, syscall.ECONNREFUSED) {
 			return testutil.PollSucceeded, nil
 		}
-		if errors.Is(err, syscall.ECONNRESET) {
+		var networkError net.Error
+		if errors.Is(err, syscall.ECONNRESET) || errors.As(err, &networkError) && networkError.Timeout() {
 			return testutil.PollPending, err
 		}
 		return testutil.PollFailed, fmt.Errorf("checking descendant listener: %w", err)
-	}))
+	})
+}
+
+func TestListenerClosureRetriesTransientTimeout(t *testing.T) {
+	calls := 0
+	err := waitForListenerClosed(t.Context(), "127.0.0.1:1", func(context.Context, string, string) (net.Conn, error) {
+		calls++
+		if calls == 1 {
+			return nil, &net.OpError{Op: "dial", Net: "tcp", Err: context.DeadlineExceeded}
+		}
+		return nil, syscall.ECONNREFUSED
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, calls)
+}
+
+func TestListenerClosureRequiresDefinitiveRefusal(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	calls := 0
+	err := waitForListenerClosed(ctx, "127.0.0.1:2", func(context.Context, string, string) (net.Conn, error) {
+		calls++
+		if calls == 3 {
+			cancel()
+		}
+		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: context.DeadlineExceeded}
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 3, calls)
+}
+
+func TestListenerClosureWaitsForLiveConnectionToClose(t *testing.T) {
+	connection, peer := net.Pipe()
+	defer peer.Close()
+	calls := 0
+	err := waitForListenerClosed(t.Context(), "127.0.0.1:3", func(context.Context, string, string) (net.Conn, error) {
+		calls++
+		if calls == 1 {
+			return connection, nil
+		}
+		return nil, syscall.ECONNREFUSED
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, calls)
+}
+
+func TestListenerClosurePreservesPermanentErrors(t *testing.T) {
+	calls := 0
+	err := waitForListenerClosed(t.Context(), "127.0.0.1:4", func(context.Context, string, string) (net.Conn, error) {
+		calls++
+		return nil, syscall.EACCES
+	})
+	require.ErrorIs(t, err, syscall.EACCES)
+	require.Equal(t, 1, calls)
 }

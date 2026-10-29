@@ -10,9 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-29
+
 ### Fixed
 
-- Coalesce identical configuration updates during validation and retry backoff to preserve passing results and avoid redundant tests and false timeout rejections ([#522](https://github.com/haproxy-haptic/HAPTIC/issues/522)).
+- Identical configuration updates no longer discard passing validation results or restart retry backoff, avoiding redundant tests and false timeout rejections ([#522](https://github.com/haproxy-haptic/HAPTIC/issues/522)).
+
+### Known issues
+
+- An intermittent `HTTPRouteRequestMirror` conformance failure remains under investigation: affected runs did not observe mirrored requests in backend logs ([#517](https://github.com/haproxy-haptic/HAPTIC/issues/517)).
 
 ## [0.8.0] - 2026-10-28
 
