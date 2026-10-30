@@ -77,7 +77,7 @@ config — open the [playground](/playground/).
 
     ```bash
     helm install haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-      --version 0.7.0 \
+      --version 0.8.1 \
       --namespace haptic --create-namespace \
       --set haproxy.service.type=LoadBalancer \
       --set controller.config.templatingSettings.extraContext.statusPatches.enabled=false   # Hold route status until verification
@@ -87,7 +87,7 @@ config — open the [playground](/playground/).
 
     ```bash
     helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-      --version 0.7.0 \
+      --version 0.8.1 \
       --namespace haptic --reuse-values \
       --set haproxy.service.type=LoadBalancer \
       --set controller.config.templatingSettings.extraContext.statusPatches.enabled=false   # Hold route status until verification
@@ -130,7 +130,7 @@ config — open the [playground](/playground/).
 
     ```bash
     helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-      --version 0.7.0 \
+      --version 0.8.1 \
       --namespace haptic --reuse-values \
       --set controller.config.templatingSettings.extraContext.statusPatches.enabled=true
     ```
@@ -186,7 +186,7 @@ class-less resources.
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.7.0 --namespace haptic --reuse-values \
+  --version 0.8.1 --namespace haptic --reuse-values \
   --set controller.templateLibraries.nginxIngress.enabled=true
 ```
 
@@ -219,11 +219,14 @@ vector:
     controllerClass: k8s.io/ingress-nginx
 ```
 
-That reproduces `nginx_ingress_controller_requests` and the six histograms, with
+That reproduces `nginx_ingress_controller_requests_total` and the six histograms, with
 the label set `ingress-nginx` uses — `status`, `method`, `path`, `namespace`,
 `ingress`, `service`, `host`, `controller_class`, `controller_namespace`,
 `controller_pod`. See [Request metrics](operations/monitoring.md#request-metrics)
 for what each family measures.
+
+The original `nginx_ingress_controller_requests` remains a compatibility alias.
+Use the `_total` name in new queries; don't sum the two aliases.
 
 You gain one label: `term`, HAProxy's termination state, which distinguishes a
 backend that refused the connection (`SC--`) from one that timed out without
@@ -455,7 +458,7 @@ Enable the compatibility library on your existing HAPTIC release:
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.7.0 --namespace haptic --reuse-values \
+  --version 0.8.1 --namespace haptic --reuse-values \
   --set controller.templateLibraries.haproxyIngress.enabled=true
 ```
 
@@ -478,7 +481,7 @@ Enable the compatibility library on your existing HAPTIC release:
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.7.0 --namespace haptic --reuse-values \
+  --version 0.8.1 --namespace haptic --reuse-values \
   --set controller.templateLibraries.haproxytech.enabled=true
 ```
 

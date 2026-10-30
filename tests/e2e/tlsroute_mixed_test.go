@@ -29,7 +29,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -56,7 +55,7 @@ type mixedTLSFixture struct {
 	passthrough        string
 	plain              BackendRef
 	encrypted          BackendRef
-	port               int
+	address            string
 	listenerPort       int
 	certificate        []byte
 	backendCertificate []byte
@@ -72,7 +71,7 @@ func TestTLSRouteMixedTerminationLifecycle(t *testing.T) {
 			f.applyGateway(ctx, t, false)
 			f.applyRoute(ctx, t, "terminated", f.terminate, "terminate", f.plain)
 			f.waitListeners(ctx, t, false)
-			f.port = ForwardGateway(ctx, t, f.namespace, "mixed", mixedTLSPort).Ports[mixedTLSPort]
+			f.address = f.serviceAddress(ctx, t)
 			f.assertTerminated(ctx, t)
 			f.assertALPN(ctx, t)
 
@@ -134,6 +133,12 @@ func newMixedTLSFixture(ctx context.Context, t *testing.T, cfg *envconf.Config) 
 	f.certificate = f.secretCertificate(ctx, t, "terminate-cert", "tls.crt")
 	f.backendCertificate = f.secretCertificate(ctx, t, "encrypted-tls", "tls.pem")
 	return f
+}
+
+func (f *mixedTLSFixture) serviceAddress(ctx context.Context, t *testing.T) string {
+	t.Helper()
+	service := waitForGatewayService(ctx, t, f.namespace, "mixed")
+	return serviceTCPAddress(ctx, t, f.client, service, f.listenerPort)
 }
 
 func (f *mixedTLSFixture) secretCertificate(ctx context.Context, t *testing.T, name, key string) []byte {
@@ -235,7 +240,7 @@ func (f *mixedTLSFixture) probeClient(ctx context.Context, host string, clientCe
 	if clientCertificate != nil {
 		dialer.Config.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return clientCertificate, nil }
 	}
-	connection, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(f.port)))
+	connection, err := dialer.DialContext(ctx, "tcp", f.address)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -284,20 +289,19 @@ func (f *mixedTLSFixture) assertEncryptedHost(ctx context.Context, t *testing.T,
 	require.Equal(t, "encrypted", strings.TrimSpace(string(body)))
 }
 
-// probeServed retries only a dropped port-forward tunnel (issue #48); any other error fails at once.
 func (f *mixedTLSFixture) probeServed(ctx context.Context, t *testing.T, host string, client *tls.Certificate) (body, certificate []byte) {
 	t.Helper()
 	var err error
 	require.NoError(t, testutil.WaitForConditionWithDescription(ctx, testutil.FastWaitConfig(), "TLS probe of "+host,
 		func(ctx context.Context) (bool, error) {
 			body, certificate, err = f.probeClient(ctx, host, client)
-			return !tunnelDropped(err), nil
+			return !connectionDropped(err), nil
 		}))
 	require.NoError(t, err)
 	return body, certificate
 }
 
-func tunnelDropped(err error) bool {
+func connectionDropped(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED)
 }
@@ -356,7 +360,7 @@ func TestTLSRouteMixedClientValidation(t *testing.T) {
 			f.applyRoute(ctx, t, "terminated", f.terminate, "terminate", f.plain)
 			f.applyRoute(ctx, t, "encrypted", "*."+f.namespace+".localdev.me", "passthrough", f.encrypted)
 			f.waitListeners(ctx, t, true)
-			f.port = ForwardGateway(ctx, t, f.namespace, "mixed", mixedTLSPort).Ports[mixedTLSPort]
+			f.address = f.serviceAddress(ctx, t)
 			f.assertTerminated(ctx, t)
 			f.assertPassthrough(ctx, t)
 			bundle, err := generateMTLSBundle(f.terminate)
@@ -409,7 +413,7 @@ func (f *mixedTLSFixture) assertALPN(ctx context.Context, t *testing.T) {
 			MinVersion: tls.VersionTLS12, ServerName: f.terminate, NextProtos: []string{protocol},
 			InsecureSkipVerify: true, // #nosec G402 -- The fixture's exact certificate is pinned below.
 		}}
-		connection, err := dialer.DialContext(probeCtx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(f.port)))
+		connection, err := dialer.DialContext(probeCtx, "tcp", f.address)
 		cancel()
 		require.NoError(t, err)
 		state := connection.(*tls.Conn).ConnectionState()
@@ -509,7 +513,7 @@ func TestTLSRouteMultipleTerminationCertificates(t *testing.T) {
 			f.applyRoute(ctx, t, "terminated", f.terminate, "terminate", f.plain)
 			f.applyRoute(ctx, t, "second", f.passthrough, "passthrough", f.plain)
 			f.waitListeners(ctx, t, true)
-			f.port = ForwardGateway(ctx, t, f.namespace, "mixed", mixedTLSPort).Ports[mixedTLSPort]
+			f.address = f.serviceAddress(ctx, t)
 			f.assertTerminated(ctx, t)
 			body, certificate := f.probeServed(ctx, t, f.passthrough, nil)
 			require.Equal(t, secondCertificate, certificate)

@@ -32,11 +32,12 @@ import (
 // directly from the CLI or from the DryRunValidator.
 type Runner struct {
 	// engineTemplate is shared; paths and filter state belong to each render.
-	engineTemplate  templating.Engine
-	validationPaths *dataplane.ValidationPaths // Base paths (used to create worker-specific paths)
-	config          *config.Config
-	logger          *slog.Logger
-	workers         int
+	engineTemplate     templating.Engine
+	planTokenAuthority *rendercontext.PlanTokenAuthority
+	validationPaths    *dataplane.ValidationPaths // Base paths (used to create worker-specific paths)
+	config             *config.Config
+	logger             *slog.Logger
+	workers            int
 	// checkGate bounds concurrent `haproxy -c` runs across workers. Without a
 	// dedicated gate the workers serialize behind dataplane's single-slot default
 	// gate, defeating the pool; sized to the worker count in RunTests.

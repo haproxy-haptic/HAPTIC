@@ -93,22 +93,48 @@ tests:
           path: metadata.namespace
           value: my-namespace
 
-  - it: should include dashboard json file
+  - it: should include controller and traffic dashboard json files
     asserts:
       - exists:
           path: data["haptic.json"]
+      - exists:
+          path: data["haptic-traffic.json"]
 
-  - it: should include dashboard title in json
+  - it: should include dashboard titles in json
     asserts:
       - matchRegex:
           path: data["haptic.json"]
-          pattern: "HAPTIC"
+          pattern: "HAPTIC Controller"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "HAPTIC Traffic"
 
-  - it: should include dashboard uid in json
+  - it: should include dashboard uids in json
     asserts:
       - matchRegex:
           path: data["haptic.json"]
-          pattern: "haptic"
+          pattern: '"uid": "haptic"'
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "haptic-traffic"
+
+  - it: should include request and backend metrics in traffic dashboard
+    asserts:
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "haptic_ingress_controller_requests_total"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "haproxy_server_status"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "server=~"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "docs\\.haproxy\\.org/3\\.4/configuration\\.html#8\\.5"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "No 5xx responses in the selected time range"
 
   - it: should include reconciliation metrics in dashboard
     asserts:
@@ -140,17 +166,23 @@ tests:
           path: data["haptic.json"]
           pattern: "haptic_reconciliation_queue_wait_seconds"
 
-  - it: should include validation test duration metrics in dashboard
+  - it: should include configuration validation outcomes in dashboard
     asserts:
       - matchRegex:
+          path: data["haptic.json"]
+          pattern: "haptic_config_validation_total"
+      - notMatchRegex:
           path: data["haptic.json"]
           pattern: "haptic_validation_test_duration_seconds"
 
-  - it: should include event dropping metrics in dashboard
+  - it: should include observability event drop counts in dashboard
     asserts:
       - matchRegex:
           path: data["haptic.json"]
-          pattern: "haptic_events_dropped_by_subscriber_total"
+          pattern: "haptic_events_dropped_observability_total"
+      - notMatchRegex:
+          path: data["haptic.json"]
+          pattern: "rate\\(haptic_events_dropped_observability_total"
 
   - it: should include critical event dropping metrics in dashboard
     asserts:

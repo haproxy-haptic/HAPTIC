@@ -76,7 +76,7 @@ func TestHAProxyIngressUniqueOnlyComponentsReuseExactResourceFragments(t *testin
 	assert.Contains(t, first.HAProxyConfig, "\n# Ingress: default/regex (1 regex paths)\n^regex\\.example\\.test(?:/items/[0-9]+$) BACKEND:default_regex_svc_echo_80")
 	assert.Contains(t, first.HAProxyConfig, "\n# Ingress: default/alias server-alias\nalias-a.example.test primary.example.test\nalias-b.example.test primary.example.test")
 	assert.Contains(t, first.HAProxyConfig, "\n# Ingress: default/alias-regex server-alias-regex\n^(?:^regex-[a-z]+\\.example\\.test$)$ regex-primary.example.test")
-	assert.Contains(t, first.HAProxyConfig, "\n# haproxy-ingress/auth-tls-cert-header (default/mtls)\nhttp-request set-header X-SSL-Client-CN %[ssl_c_s_dn(CN)] if { ssl_fc_has_crt } { var(txn.resource_key) -m str default/mtls }\nhttp-request set-header X-SSL-Client-DN %[ssl_c_s_dn] if { ssl_fc_has_crt } { var(txn.resource_key) -m str default/mtls }\nhttp-request set-header X-SSL-Client-Cert %[ssl_c_der,base64] if { ssl_fc_has_crt } { var(txn.resource_key) -m str default/mtls }")
+	assert.Contains(t, first.HAProxyConfig, "\n# haproxy-ingress/auth-tls-cert-header (default/mtls)\nhttp-request set-header X-SSL-Client-CN %[ssl_c_s_dn(CN)] if { ssl_c_used } { var(txn.resource_key) -m str default/mtls }\nhttp-request set-header X-SSL-Client-DN %[ssl_c_s_dn] if { ssl_c_used } { var(txn.resource_key) -m str default/mtls }\nhttp-request set-header X-SSL-Client-Cert %[ssl_c_der,base64] if { ssl_c_used } { var(txn.resource_key) -m str default/mtls }")
 	assert.Equal(t, map[string]int{
 		"ingresses/alias":       2,
 		"ingresses/alias-regex": 2,

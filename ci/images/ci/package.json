@@ -4,7 +4,7 @@
   "dependencies": {
     "braces": "file:./shims/braces",
     "katex": "0.19.0",
-    "markdownlint-cli2": "0.23.3",
+    "markdownlint-cli2": "0.24.0",
     "smol-toml": "1.9.1"
   },
   "overrides": {
@@ -13,6 +13,7 @@
     "micromark-extension-math": {
       "katex": "$katex"
     },
-    "smol-toml": "$smol-toml"
+    "smol-toml": "$smol-toml",
+    "re2js": "2.8.7"
   }
 }

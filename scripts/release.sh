@@ -121,6 +121,7 @@ PREV_ESC=$(printf '%s' "$PREV_VERSION" | sed 's/[][\.^$*]/\\&/g')
 VERSION_DOC_FILES=$(grep -rlF -- "$PREV_VERSION" \
     README.md charts/haptic/README.md docs/site/docs 2>/dev/null || true)
 python3 scripts/update-release-docs.py "$PREV_VERSION" "$VERSION" "$DEFAULT_HAPROXY" $VERSION_DOC_FILES
+sed -i "s|haproxy-haptic.org/docs/$PREV_ESC/|haproxy-haptic.org/docs/$VERSION/|g" README.md
 # Shipped chart links must resolve to its release; see docs/site/docs/development/releasing.md.
 sed -i \
     -e "s|haproxy-haptic.org/docs/dev/|haproxy-haptic.org/docs/$VERSION/|g" \

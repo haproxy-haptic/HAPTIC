@@ -18,7 +18,7 @@ gate enabled:
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.7.0 --namespace haptic \
+  --version 0.8.1 --namespace haptic \
   -f haptic-values.yaml \
   --set controller.templateLibraries.kubernetesBackends.podReadinessGate.enabled=true
 ```

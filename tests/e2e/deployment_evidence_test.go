@@ -25,6 +25,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	haproxyv1alpha1 "github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
 )
 
 func TestControllerIdentityPodsRejectIncompleteEvidence(t *testing.T) {
@@ -127,6 +129,48 @@ func TestControllerStatsRequireEverySelectedPodAndMetric(t *testing.T) {
 func TestConfigMarkerEvidenceRejectsPartialContent(t *testing.T) {
 	require.NoError(t, requireConfigMarkers("backend a\nbackend b\n", []string{"backend a", "backend b"}))
 	require.ErrorContains(t, requireConfigMarkers("backend a\n", []string{"backend a", "backend b", "backend c"}), "2/3 markers not yet in rendered config (first missing: backend b)")
+}
+
+func TestConfigMarkerRemovalRequiresFleetReload(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		mutate   func(*haproxyv1alpha1.HAProxyCfg)
+		replicas int
+		want     bool
+	}{
+		{name: "fully running", replicas: 2, want: true},
+		{name: "no replicas", replicas: 0},
+		{name: "missing replica", replicas: 3},
+		{name: "route still published", replicas: 2, mutate: func(c *haproxyv1alpha1.HAProxyCfg) { c.Spec.Content = "use_backend removed-route" }},
+		{name: "missing checksum", replicas: 2, mutate: func(c *haproxyv1alpha1.HAProxyCfg) { c.Spec.Checksum = "" }},
+		{name: "old checksum", replicas: 2, mutate: func(c *haproxyv1alpha1.HAProxyCfg) { c.Status.DeployedToPods[1].Checksum = "old" }},
+		{name: "missing plan", replicas: 2, mutate: func(c *haproxyv1alpha1.HAProxyCfg) {
+			c.Status.DeployedToPods[1].AppliedPlanID = ""
+			c.Status.DeployedToPods[1].RunningPlanID = ""
+		}},
+		{name: "pending reload", replicas: 2, mutate: func(c *haproxyv1alpha1.HAProxyCfg) { c.Status.DeployedToPods[1].RunningPlanID = "old" }},
+		{name: "runtime operations without reload", replicas: 2, mutate: func(c *haproxyv1alpha1.HAProxyCfg) {
+			c.Status.DeployedToPods[1].RunningPlanID = "old"
+			c.Status.DeployedToPods[1].WorkerOpsPlanID = "new"
+		}},
+		{name: "failed sync", replicas: 2, mutate: func(c *haproxyv1alpha1.HAProxyCfg) { c.Status.DeployedToPods[1].LastError = "failed" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &haproxyv1alpha1.HAProxyCfg{
+				Spec: haproxyv1alpha1.HAProxyCfgSpec{Content: "tcp-request content reject", Checksum: "current"},
+				Status: haproxyv1alpha1.HAProxyCfgStatus{DeployedToPods: []haproxyv1alpha1.PodDeploymentStatus{
+					{PodName: "a", Checksum: "current", AppliedPlanID: "new", RunningPlanID: "new"},
+					{PodName: "b", Checksum: "current", AppliedPlanID: "new", RunningPlanID: "new"},
+				}},
+			}
+			if tc.mutate != nil {
+				tc.mutate(cfg)
+			}
+			got, err := configMarkerRemovalReloaded(cfg, "removed-route", tc.replicas)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestRateLimitBurstPreservesUnjudgeableMeasurements(t *testing.T) {

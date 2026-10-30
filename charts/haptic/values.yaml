@@ -122,8 +122,10 @@ controller:
   image:
     repository: ghcr.io/haproxy-haptic/haptic
     pullPolicy: IfNotPresent  # @schema enum: [Always, IfNotPresent, Never]
-    # Overrides the image tag whose default is the chart appVersion.
+    # Base tag with an appended HAProxy suffix; empty uses release digest metadata, then appVersion.
     tag: ""
+    # Pins controller, agent, and hook Pod images by SHA-256 digest; overrides tag.
+    digest: ""  # @schema pattern: ^$|^sha256:[a-f0-9]{64}$
   # Deployment-level annotations (different from pod annotations).
   deploymentAnnotations: {}  # @schema skipProperties; additionalProperties: true
   # reloader.stakater.com/auto: "true"
@@ -382,7 +384,7 @@ controller:
   # HAProxyTemplateConfig and the controller merges them in the order fixed by
   # templates/_libraries.tpl (haptic.libraryFiles); see ADR-0014. Merge-order
   # docs and per-library references:
-  # https://haproxy-haptic.org/docs/0.7.0/template-libraries/
+  # https://haproxy-haptic.org/docs/0.8.1/template-libraries/
   templateLibraries:
     # Resource-agnostic core. Defines the haproxyConfig template and the
     # render_glob extension points the other libraries plug into.
@@ -421,7 +423,7 @@ controller:
       experimentalChannel: false
     # Required shared Ingress-scoped macros for all enabled annotation libraries
     # below (level 2.5). Rationale:
-    # https://github.com/haproxy-haptic/HAPTIC/blob/v0.7.0/docs/adr/0003-annotation-compat-scaffold-level-2-5.md
+    # https://github.com/haproxy-haptic/HAPTIC/blob/v0.8.1/docs/adr/0003-annotation-compat-scaffold-level-2-5.md
     ingressAnnotationsCompat:
       enabled: true
     # Governance rule engine. Generic over any watched resource, so it is
@@ -2537,7 +2539,7 @@ vector:
     # `vector image tag` customManager in renovate.json — keep the comment
     # directly above the `tag:` line or the manager stops matching it.
     # renovate: datasource=docker depName=timberio/vector
-    tag: "0.59.0-debian"
+    tag: "0.60.0-debian"
 
   # Port the /metrics endpoint listens on: vector's own series, the hub's
   # re-exported ones and the log-derived and request metrics. 9598 is vector's
@@ -2584,6 +2586,8 @@ vector:
     pathLabel: true
     # The equivalent of ingress-nginx's --metrics-per-host.
     hostLabel: true
+    # HAProxy's selected server name, matching the native exporter's server label.
+    serverLabel: false
 
     # Not ingress-nginx's, which are weak in both domains; the migration guide has
     # a snippet to restore them. Durations are a strict SUPERSET of its
@@ -2615,6 +2619,7 @@ vector:
     # The three upstream timers are recorded only when the phase happened, so a
     # request HAProxy answered itself lands in `requests` and nowhere else.
     metrics:
+      # Emits requests_total and its unsuffixed compatibility alias.
       requests: true
       request_duration_seconds: true
       response_duration_seconds: true
@@ -2726,7 +2731,7 @@ vector:
       enabled: true
       field: denied_by
       kind: enum  # @schema enum: [enum, numeric]
-      values: ["api_key", "api_key_unavailable", "backend_tls_unavailable", "basic_auth", "basic_auth_unavailable", "body_too_large", "cache_origin_internal_backend", "consumer_groups", "consumer_groups_unavailable", "content_type", "external_auth", "external_auth_unavailable", "gw_sni_host_mismatch", "hmac", "hmac_body_incomplete", "hmac_no_content_length", "hmac_unavailable", "jwt_algorithm", "jwt_audience", "jwt_expired", "jwt_issuer", "jwt_key_unavailable", "jwt_not_yet_valid", "jwt_required_claim", "jwt_signature", "jwt_unavailable", "method_not_allowed", "mtls_unavailable", "policy_consumer_missing", "rate_limit_connections", "rate_limit_local", "rate_limit_shared", "rate_limit_shared_invalid", "rate_limit_shared_unavailable", "required_header", "route_policy_unavailable", "schema_body_incomplete", "schema_body_too_large", "schema_duplicate_content_length", "schema_invalid", "schema_no_content_length", "schema_unavailable", "schema_unsupported_media_type", "waf", "waf_body_chunked", "waf_body_content_type", "waf_body_duplicate_content_length", "waf_body_incomplete", "waf_body_too_large", "waf_policy_unavailable", "waf_status_400", "waf_status_413", "waf_unavailable"]
+      values: ["api_key", "api_key_unavailable", "backend_tls_unavailable", "basic_auth", "basic_auth_unavailable", "body_too_large", "cache_origin_internal_backend", "consumer_groups", "consumer_groups_unavailable", "content_type", "external_auth", "external_auth_unavailable", "gw_sni_host_mismatch", "hmac", "hmac_body_incomplete", "hmac_no_content_length", "hmac_unavailable", "jwt_algorithm", "jwt_audience", "jwt_expired", "jwt_issuer", "jwt_key_unavailable", "jwt_not_yet_valid", "jwt_required_claim", "jwt_signature", "jwt_unavailable", "method_not_allowed", "mtls_sni_host_mismatch", "mtls_unavailable", "policy_consumer_missing", "rate_limit_connections", "rate_limit_local", "rate_limit_shared", "rate_limit_shared_invalid", "rate_limit_shared_unavailable", "required_header", "route_policy_unavailable", "schema_body_incomplete", "schema_body_too_large", "schema_duplicate_content_length", "schema_invalid", "schema_no_content_length", "schema_unavailable", "schema_unsupported_media_type", "waf", "waf_body_chunked", "waf_body_content_type", "waf_body_duplicate_content_length", "waf_body_incomplete", "waf_body_too_large", "waf_policy_unavailable", "waf_status_400", "waf_status_413", "waf_unavailable"]
       metric: denied_total
       tag: reason
 

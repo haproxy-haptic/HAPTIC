@@ -270,9 +270,9 @@ templateSnippets:
           show shared.Unique("haproxy-ingress-mtls-cert-header", "strip", "\n# haproxy-ingress/auth-tls-cert-header — drop client-supplied identity headers\nhttp-request del-header X-SSL-Client-CN\nhttp-request del-header X-SSL-Client-DN\nhttp-request del-header X-SSL-Client-Cert\n")
           var cond = "{ var(txn.resource_key) -m str " + key + " }"
           var block = "# haproxy-ingress/auth-tls-cert-header (" + key + ")"
-          block += "\nhttp-request set-header X-SSL-Client-CN %[ssl_c_s_dn(CN)] if { ssl_fc_has_crt } " + cond
-          block += "\nhttp-request set-header X-SSL-Client-DN %[ssl_c_s_dn] if { ssl_fc_has_crt } " + cond
-          block += "\nhttp-request set-header X-SSL-Client-Cert %[ssl_c_der,base64] if { ssl_fc_has_crt } " + cond + "\n"
+          block += "\nhttp-request set-header X-SSL-Client-CN %[ssl_c_s_dn(CN)] if { ssl_c_used } " + cond
+          block += "\nhttp-request set-header X-SSL-Client-DN %[ssl_c_s_dn] if { ssl_c_used } " + cond
+          block += "\nhttp-request set-header X-SSL-Client-Cert %[ssl_c_der,base64] if { ssl_c_used } " + cond + "\n"
           show shared.Unique("haproxy-ingress-mtls-cert-header", "resource/" + key, block)
         }
       %%}

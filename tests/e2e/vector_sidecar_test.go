@@ -13,10 +13,14 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
@@ -345,5 +349,57 @@ func assessVectorSocketLog(ctx context.Context, t *testing.T, cfg *envconf.Confi
 	if got := recordString(t, rec, "host"); got != host {
 		t.Errorf("host = %q, want %q", got, host)
 	}
+	pod := recordString(t, rec, "instance_pod")
+	err = testutil.WaitForCondition(ctx, testutil.FastWaitConfig(), func(c context.Context) (bool, error) {
+		body, err := apiProxyGet(c, pod, VectorMetricsPort, "metrics")
+		if err != nil {
+			return false, err
+		}
+		return requestCounterAliasesMatch(body, ns, "echo-vector-log", recordString(t, rec, "server"))
+	})
+	if err != nil {
+		t.Fatalf("request counter aliases did not expose matching observations on %s: %v", pod, err)
+	}
+	assertVectorHistogramReload(ctx, t, cfg, pod, ns, host)
 	return ctx
+}
+
+func requestCounterAliasesMatch(body, namespace, ingress, server string) (bool, error) {
+	parser := expfmt.NewTextParser(model.UTF8Validation)
+	families, err := parser.TextToMetricFamilies(strings.NewReader(body))
+	if err != nil {
+		return false, err
+	}
+	var aliases [2]map[string]float64
+	for index, name := range []string{"haptic_ingress_controller_requests_total", "haptic_ingress_controller_requests"} {
+		family := families[name]
+		if family == nil || family.GetType().String() != "COUNTER" {
+			return false, fmt.Errorf("%s is not exposed as a counter", name)
+		}
+		aliases[index] = make(map[string]float64)
+		positive := false
+		for _, sample := range family.Metric {
+			labels := metricLabels(sample)
+			if labels["namespace"] == model.LabelValue(namespace) && labels["ingress"] == model.LabelValue(ingress) {
+				if selected, enabled := labels["server"]; enabled && selected != model.LabelValue(server) {
+					return false, fmt.Errorf("%s server = %q, want access-log server %q", name, selected, server)
+				}
+				value := sample.GetCounter().GetValue()
+				aliases[index][labels.String()] = value
+				positive = positive || value > 0
+			}
+		}
+		if !positive {
+			return false, fmt.Errorf("%s has no observations for %s/%s", name, namespace, ingress)
+		}
+	}
+	return maps.Equal(aliases[0], aliases[1]), nil
+}
+
+func metricLabels(sample *dto.Metric) model.LabelSet {
+	labels := make(model.LabelSet)
+	for _, label := range sample.Label {
+		labels[model.LabelName(label.GetName())] = model.LabelValue(label.GetValue())
+	}
+	return labels
 }

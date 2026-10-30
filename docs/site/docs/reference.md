@@ -48,18 +48,31 @@ workflows too.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `controller.replicaCount` | int | `2` | Number of controller replicas (2+ recommended for HA with leader election) |
-| `haproxyVersion` | string | `"3.4"` | HAProxy major.minor series: `3.0`, `3.2`, `3.3`, or `3.4`. Drives both the controller image tag suffix (`:<version>-haproxy<haproxyVersion>`) and — combined with `haproxyPatchVersions` — the HAProxy pod image tag |
+| `haproxyVersion` | string | `"3.4"` | HAProxy major.minor series: `3.0`, `3.2`, `3.3`, or `3.4`. Selects the controller release digest or tag suffix and, with `haproxyPatchVersions`, the HAProxy pod image tag |
 | `haproxyPatchVersions` | map | See values.yaml | Tested Community Edition patch versions for each HAProxy series. |
 | `haproxyEnterprisePatchVersions` | map | See values.yaml | Per-`haproxyVersion` enterprise revision pins (for example `"3.2": "3.2r1"`). Used when `haproxy.enterprise.enabled=true` |
 | `controller.image.repository` | string | `ghcr.io/haproxy-haptic/haptic` | Controller image repository |
 | `controller.image.pullPolicy` | string | `IfNotPresent` | Image pull policy |
-| `controller.image.tag` | string | `""` | Controller image tag *without* the HAProxy-series suffix; empty uses the chart `appVersion`. The rendered reference is always `<tag>-haproxy<haproxyVersion>`, so the suffix is appended to an explicit value too |
+| `controller.image.tag` | string | `""` | Explicit base tag renders `<tag>-haproxy<haproxyVersion>`. Empty selects the packaged release digest, or the chart `appVersion` tag in source and development charts without digest metadata |
+| `controller.image.digest` | string | `""` | SHA-256 image digest (`sha256:` plus 64 lowercase hex digits); overrides `tag` and renders `<repository>@<digest>` for the controller, agent, and lifecycle hooks. Choose the image built for your `haproxyVersion` and chart version |
 | `nameOverride` | string | `""` | Override chart name |
 | `fullnameOverride` | string | `""` | Override full release name |
 | `commonLabels` | map | `{}` | Labels added to every chart-rendered resource on top of the standard `app.kubernetes.io/*` set |
 | `commonAnnotations` | map | `{}` | Annotations added to every chart-rendered resource that has an `annotations` block |
 | `controller.deploymentAnnotations` | map | `{}` | Extra annotations on the controller Deployment. |
 | `extraDeploy` | list or map | `{}` | Free-form Kubernetes resources to render alongside the chart. Each entry is rendered through `tpl` so it can reference chart values. Map form (keys → manifests) is convenient for composing across multiple values files |
+
+Published release charts bundle multi-platform controller image digests for every
+supported HAProxy series. Changing only `controller.image.repository` retains the
+release digest; your mirror must preserve the image index bytes. An explicit
+`controller.image.digest` takes precedence over an explicit `controller.image.tag`,
+which takes precedence over the packaged digest. Invalid release metadata fails
+rendering. The pre-rollout hook receives the same metadata and retains the
+chart/image version check.
+
+Source and development charts without release metadata use
+`<repository>:<appVersion>-haproxy<haproxyVersion>`. Set an explicit tag or digest
+when testing another build.
 
 ## Controller core
 
@@ -634,11 +647,11 @@ Pod-level scheduling fields (`nodeSelector`, `tolerations`, `affinity`, etc.) li
 | `controller.monitoring.prometheusRule.defaultRules.agentInvariantViolated` | bool | `true` | Include the `HAProxyAgentInvariantViolated` critical rule: an agent observed one of its own invariants failing — a defect, not an operator error |
 | `controller.monitoring.prometheusRule.defaultRules.recoveryReloadFailed` | bool | `true` | Include the `HAProxyAgentRecoveryReloadFailed` critical rule: a pod rolled back to its last known good file set but the recovery reload failed, so its worker matches neither the rejected apply nor the restored files |
 | `controller.monitoring.prometheusRule.defaultRules.agentVersionSkew` | bool | `true` | Include the `HAProxyAgentVersionSkew` warning rule: a pod's agent doesn't match the controller, so some or all applies reload; expected during a rolling upgrade, a defect after one |
-| `controller.monitoring.grafanaDashboard.enabled` | bool | `false` | Create a ConfigMap holding the Grafana dashboard JSON (picked up by the Grafana sidecar via the configured discovery label) |
+| `controller.monitoring.grafanaDashboard.enabled` | bool | `false` | Create a ConfigMap holding the controller and traffic Grafana dashboard JSON (picked up by the Grafana sidecar via the configured discovery label) |
 | `controller.monitoring.grafanaDashboard.labels` | map | `{grafana_dashboard: "1"}` | Discovery labels for the Grafana sidecar |
 | `controller.monitoring.grafanaDashboard.annotations` | map | `{grafana_folder: "HAProxy"}` | Annotations on the dashboard ConfigMap; the folder annotation must match `grafana.sidecar.dashboards.folderAnnotation` |
 | `controller.monitoring.grafanaDashboard.namespace` | string | `""` | Namespace for the dashboard ConfigMap (defaults to release namespace) |
-| `controller.monitoring.grafanaDashboard.useBuiltIn` | bool | `true` | Use the built-in dashboard (curated subset of controller metrics); set `false` to provide your own JSON via `customDashboard` |
+| `controller.monitoring.grafanaDashboard.useBuiltIn` | bool | `true` | Use the built-in controller and traffic dashboards; set `false` to provide one JSON document via `customDashboard` |
 | `controller.monitoring.grafanaDashboard.customDashboard` | map | `{}` | Custom dashboard JSON, only consulted when `useBuiltIn: false` |
 
 ## HAProxy deployment
@@ -847,7 +860,7 @@ A [Vector](https://vector.dev) container on every HAProxy pod. It receives the a
 | `vector.enabled` | bool | `true` | Run the Vector sidecar on each HAProxy pod. When enabled, the access log goes to `vector.socketPath` instead of stdout and surfaces under `kubectl logs <pod> -c vector`. Set to `false` to log straight to the HAProxy container's stdout and scrape the hub directly; HAProxy's exporter is scraped directly either way |
 | `vector.image.repository` | string | `timberio/vector` | Vector image repository |
 | `vector.image.pullPolicy` | string | `IfNotPresent` | Image pull policy |
-| `vector.image.tag` | string | `0.59.0-debian` | Pinned Vector version. An empty tag is rejected |
+| `vector.image.tag` | string | `0.60.0-debian` | Pinned Vector version. An empty tag is rejected |
 | `vector.metricsPort` | int | `9598` | Port serving Vector's `/metrics`: its own series, the log-derived and request metrics, and the hub's re-exported ones. Rejected at render time if it collides with an `haproxy.ports.*` entry or the hub's metrics port |
 | `vector.sizeMetricsPort` | int | `9599` | Exporter port for request and response size histograms, with byte buckets separate from duration buckets. Present only when either size family is enabled; must not collide with another metrics or HAProxy port |
 | `vector.socketPath` | string | `/run/vector/haproxy.sock` | Unix datagram socket HAProxy writes access-log records to. Must be an absolute path with no whitespace — HAProxy's `log <path>` form requires one |
@@ -859,6 +872,7 @@ A [Vector](https://vector.dev) container on every HAProxy pod. It receives the a
 | `vector.requestMetrics.terminationStateLabel` | bool | `true` | Add HAProxy's four-character termination state as `term` to every family. It distinguishes connection failures, timeouts, and aborts. Set `false` to reduce series count |
 | `vector.requestMetrics.pathLabel` | bool | `true` | Add `path`, the matched **route** — the path template you wrote, so it's bounded by the number of rules rather than by traffic. Turning it off also switches off the HAProxy-side route lookup, saving four map lookups per request as well as series |
 | `vector.requestMetrics.hostLabel` | bool | `true` | Add `host`. The equivalent of `ingress-nginx`'s `--metrics-per-host` |
+| `vector.requestMetrics.serverLabel` | bool | `false` | Add HAProxy's selected server name as `server` to every request metric. Matches the native exporter's `server` label; empty when no server was selected. Each target adds series per route and label combination |
 | `vector.requestMetrics.durationBuckets` | list | 15 boundaries, 1 ms to 60 s | Positive, strictly ascending boundaries in seconds for the four duration histograms. Defaults include ingress-nginx's time buckets, plus 1 ms, 2.5 ms, 30 s, and 60 s |
 | `vector.requestMetrics.sizeBuckets` | list | 12 boundaries, 100 B to 100 MB | Boundaries in bytes for the two size histograms. These differ from ingress-nginx's buckets; queries using `_sum` and `_count` don't depend on bucket boundaries |
 | `vector.requestMetrics.cardinalityLimit.enabled` | bool | `true` | Limit distinct label values per metric. Applies to request metrics; state resets when Vector restarts. Investigate a tripped limit for unexpected label values |

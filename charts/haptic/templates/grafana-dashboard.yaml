@@ -20,7 +20,9 @@ metadata:
 data:
   {{- if $gd.useBuiltIn }}
   haptic.json: |-
-{{ .Files.Get "dashboards/haptic.json" | indent 4 }}
+{{ .Files.Get "dashboards/haptic-controller.json" | indent 4 }}
+  haptic-traffic.json: |-
+{{ .Files.Get "dashboards/haptic-traffic.json" | indent 4 }}
   {{- else }}
   haptic.json: |
 {{ $gd.customDashboard | toJson | indent 4 }}

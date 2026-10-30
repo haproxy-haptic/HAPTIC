@@ -10,29 +10,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Helm chart
+
+#### Added
+
+- Optional `vector.requestMetrics.serverLabel` identifies the selected upstream server in request counters and duration histograms ([#533](https://github.com/haproxy-haptic/HAPTIC/issues/533)).
+
+#### Changed
+
+- Split the built-in Grafana dashboard into dedicated controller and traffic dashboards, with route, status, termination-state, latency, throughput, and backend-target diagnostics. The existing `haptic.json` ConfigMap key and `haptic` dashboard UID remain the controller view; `haptic-traffic.json` and UID `haptic-traffic` are new.
+
+- Published release charts select matching multi-platform controller image digests by default, including agents and lifecycle hooks; explicit image tags and digests retain precedence ([#527](https://github.com/haproxy-haptic/HAPTIC/issues/527)).
+
+#### Fixed
+
+- Vector preserves request histogram counts when configuration reloads change the metric pipeline inputs ([#532](https://github.com/haproxy-haptic/HAPTIC/issues/532)).
+
+- Vector forwards newline-terminated access logs without extra blank stdout records ([#534](https://github.com/haproxy-haptic/HAPTIC/issues/534)).
+
+- Grafana panels use registered configuration-validation outcomes and observability-drop counts instead of an absent histogram and an event-dependent subscriber series ([#530](https://github.com/haproxy-haptic/HAPTIC/issues/530)).
+- Request counters expose the conventional `_requests_total` name while retaining the unsuffixed counter as a compatibility alias ([#531](https://github.com/haproxy-haptic/HAPTIC/issues/531)).
+
+## [0.8.1] - 2026-10-29
+
+### Fixed
+
+- Identical configuration updates no longer discard passing validation results or restart retry backoff, avoiding redundant tests and false timeout rejections ([#522](https://github.com/haproxy-haptic/HAPTIC/issues/522)).
+
+### Known issues
+
+- An intermittent `HTTPRouteRequestMirror` conformance failure remains under investigation: affected runs did not observe mirrored requests in backend logs ([#517](https://github.com/haproxy-haptic/HAPTIC/issues/517)).
+
+## [0.8.0] - 2026-10-28
+
+HAPTIC 0.8 adds client-certificate identity checks and headers for Ingress,
+and serves TLSRoute termination and passthrough listeners on the same port.
+It also closes Ingress client-certificate verification bypasses and tightens
+trust of client-address headers.
+
+**Before upgrading:** if you use `src-ip-header`, check which proxies may set
+that header. Routes protected by client-certificate verification now enforce it
+when using the default TLS certificate too. Read the
+[upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-08).
+
 ### Added
 
 - `validationTests.<name>.useDeploymentWatchScopes` checks fixtures against configured watch namespaces, including expected out-of-scope lookup rejections in `haptic preflight`.
 
+### Fixed
+
+- Validation tests no longer reject deterministic auxiliary files because their generated section markers change between renders.
+
 ### Security
 
 - Build with Go 1.27.3 to reject compromised intermediate certificates in TLS verification (CVE-2026-111943).
+- Update `golang.org/x/net` to 0.62.0 for HTML parsing and rendering security fixes ([#519](https://github.com/haproxy-haptic/HAPTIC/pull/519)).
 
 ### Helm chart
 
 #### Added
 
 - Serve TLSRoute termination and passthrough listeners on one port with isolated certificates and client-validation policies.
+- `haproxy-haptic.org/auth-tls-match-subject` limits a host to client certificates whose subject DN matches a regular expression.
+- `haproxy-haptic.org/auth-tls-cn-header` forwards the verified client certificate's CN in a request header you name, such as `X-Scope-OrgID`.
+- Pin controller, agent, and lifecycle hook images with `controller.image.digest`.
 
 #### Changed
 
 - **BREAKING:** `src-ip-header` no longer trusts client-sent `X-Real-IP`, `X-Client-IP`, or `Client-IP` by itself. List the L7 proxy in `forwardedHeaders.trustedProxies` or produce the header in an operator snippet; L4 PROXY-protocol client addresses need no header annotation.
+- Update the bundled Vector image to 0.60.0.
 
 #### Fixed
 
+- Forward Ingress client-certificate headers on resumed TLS sessions and when annotation libraries coexist.
 - HTTPRoute hostname specificity takes precedence over path length and header conditions when routes intersect the same listener hostname.
 - Keep TLS passthrough listener isolation on the shared HTTPS address after routes are removed or listener modes change; unmatched Gateway names still reach Ingress routes.
-- Drop client-sent `Forwarded`, `X-Forwarded-Prefix`, `X-Forwarded-Server`, `X-Real-IP`, `X-Client-IP`, and `Client-IP` before forwarding requests, while preserving trusted proxies and operator header changes ([#490](https://github.com/haproxy-haptic/HAPTIC/issues/490)).
+
+#### Security
+
+- Enforce Ingress client-certificate verification with default TLS certificates, including when the certificate names the protected host.
+- Reject requests to a client-certificate-protected Ingress with `421` when TLS SNI names another host or is absent, instead of bypassing verification.
+- Drop untrusted client-sent `Forwarded`, `X-Forwarded-Prefix`, `X-Forwarded-Server`, `X-Real-IP`, `X-Client-IP`, and `Client-IP` headers, while preserving trusted proxies and operator header changes ([#490](https://github.com/haproxy-haptic/HAPTIC/issues/490)).
+
+### Known issues
+
+- An intermittent `HTTPRouteRequestMirror` conformance failure remains under investigation: affected runs did not observe mirrored requests in backend logs ([#517](https://github.com/haproxy-haptic/HAPTIC/issues/517)).
 
 ## [0.7.0] - 2026-10-20
 

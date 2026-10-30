@@ -355,7 +355,7 @@ The chart already grants the Lease permissions needed for leader election.
 
     ```bash
     helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-      --version 0.7.0 --namespace haptic --values haptic-values.yaml
+      --version 0.8.1 --namespace haptic --values haptic-values.yaml
     kubectl rollout status deployment/haptic-controller -n haptic
     ```
 
@@ -363,7 +363,7 @@ The chart already grants the Lease permissions needed for leader election.
 
     ```bash
     helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-      --version 0.7.0 --namespace haptic --values haptic-values.yaml
+      --version 0.8.1 --namespace haptic --values haptic-values.yaml
     ```
 
 3. Wait for both controller replicas to become ready:

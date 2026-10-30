@@ -155,7 +155,7 @@ templateSnippets:
               {{- fail("Ingress " + ns + "/" + name + " has haproxy-ingress.github.io/auth-tls-secret set but a rule without a host. Client-cert verification is keyed by SNI / host; host-less rules can't be enforced. Add an explicit host to the rule.") -}}
             {%- end %}
             {{- shared.Publish("verifyHosts", "haproxy-ingress/" + ns + "/" + name + "/" + tostring(ruleIndex), map[string]any{
-              "host": host, "filename": caFilename, "verifyMode": verifyMode,
+              "host": host, "route": ns + "/" + name, "filename": caFilename, "verifyMode": verifyMode,
             }) -}}
           {%- end %}
             {%- end %}

@@ -834,6 +834,8 @@ Create the Secret from your client CA bundle in the Ingress's namespace:
 kubectl -n default create secret generic client-ca --from-file=ca.crt=ca.crt
 ```
 
+A host without a TLS certificate of its own keeps the certificate that answers it today (a wildcard or the default certificate) and still verifies the client. A request routed to the Ingress over a TLS connection whose Server Name Indication (SNI) isn't one of its hosts, or is absent, gets `421 Misdirected Request`, so the client reconnects with the right SNI.
+
 Set an explicit `host` on every protected Ingress rule. HAPTIC rejects
 protected rules without one.
 
@@ -887,7 +889,7 @@ annotations:
   haproxy-ingress.github.io/auth-tls-cert-header: "true"
 ```
 
-The `ssl_fc_has_crt` gate ensures the headers only flow when a cert was actually presented (relevant when `auth-tls-verify-client: optional` is in effect — connections without a cert get no headers rather than empty ones).
+Certificate headers are forwarded when the TLS session uses a client certificate, including on resumed sessions. With `auth-tls-verify-client: optional`, sessions without a client certificate get no certificate headers.
 
 ## Web application firewall (ModSecurity / Coraza)
 

@@ -87,6 +87,7 @@ func New(
 
 	return &Runner{
 		engineTemplate:     engine,
+		planTokenAuthority: rendercontext.NewPlanTokenAuthority(),
 		validationPaths:    validationPaths,
 		config:             cfg,
 		logger:             logger.With("component", "test-runner"),

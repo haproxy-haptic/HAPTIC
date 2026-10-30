@@ -72,6 +72,8 @@ This package implements a pure test runner component that executes embedded vali
 - **Assertions** render with `AssertionExtraContext`: `templatingSettings.testExtraContext` < `_global` < the test's own `extraContext`. The deployment's `extraContext` never reaches them, like live resources never reach a fixture store.
 - **`assertDeploymentRenders`** renders the same fixtures with `DeploymentExtraContext` (`extraContext` < `_global` < the test's) and checks validity only: the render succeeds, and `haproxy -c` passes where the test asserts `haproxy_valid` and the bytes differ from the first render. Any render error fails it, `fail()` included: in a reconcile render a `fail()` stops the whole config. Skipped when the two contexts are equal, when the first render failed, and for `rendering_error` tests.
 
+The runner retains one sealed plan-token authority per immutable engine, matching production. Each render still creates its own registry, declarations, and output.
+
 Every render of the runner's engine (assertion, determinism re-render, deployment) shares one `renderer.ColdIncrementalRenderAnalysis`, built once per runner from the config and engine alone. Share only such config-derived, read-only data across renders; never a render's output or state, or the determinism re-render stops being independent.
 
 `extraContext.renderMode` and `extraContext.admissionSubject` become builder options (`ExtraContextOptions`): the builder owns both globals and would overwrite promoted keys.

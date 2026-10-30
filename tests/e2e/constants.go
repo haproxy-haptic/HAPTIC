@@ -27,6 +27,8 @@ import (
 // it creates its own kind cluster and helm-installs the chart. None of these
 // constants depend on scripts/start-dev-env.sh having been run.
 const (
+	defaultCertificateMTLSHost = "ingress-haptic-default-clientmtls.localdev.me"
+
 	// HelmReleaseName is the helm release name used to install the chart.
 	HelmReleaseName = "haptic"
 

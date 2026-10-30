@@ -191,7 +191,7 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 		}
 		restored, err := patch(cleanupCtx, patched, operation, previous)
 		require.NoError(t, err)
-		require.NoError(t, waitForForwardedConfigValidation(cleanupCtx, configs, restored))
+		require.NoError(t, waitForConfigValidation(cleanupCtx, configs, restored))
 		_, err = publication.wait(cleanupCtx, false)
 		require.NoError(t, err)
 		waitForOperatorForwardedPolicy(cleanupCtx, t, host, false, forwardedPrefix)
@@ -204,7 +204,7 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 	}
 	patched, err = patch(ctx, original, "add", map[string]any{"trustedProxies": []string{prefix}})
 	require.NoError(t, err)
-	require.NoError(t, waitForForwardedConfigValidation(ctx, configs, patched))
+	require.NoError(t, waitForConfigValidation(ctx, configs, patched))
 	_, err = publication.wait(ctx, true)
 	require.NoError(t, err)
 	waitForOperatorForwardedPolicy(ctx, t, host, true, forwardedPrefix)
@@ -252,6 +252,13 @@ func (p *forwardedPolicyPublication) wait(ctx context.Context, trusted bool) (st
 }
 
 func (p *forwardedPolicyPublication) matchesPolicy(content string, trusted bool) error {
+	for _, line := range strings.Split(content, "\n") {
+		backend, found := strings.CutPrefix(line, "backend ")
+		namespaceStart := strings.Index(backend, "e2e-")
+		if found && namespaceStart >= 0 && !strings.HasPrefix(backend[namespaceStart:], p.namespace+"_") {
+			return fmt.Errorf("published config still contains another test's backend %q", backend)
+		}
+	}
 	for _, mode := range p.routeNames {
 		if !strings.Contains(content, "backend "+p.namespace+"_"+mode+"_svc_") {
 			return fmt.Errorf("published config is missing the %s fixture backend", mode)
@@ -263,8 +270,38 @@ func (p *forwardedPolicyPublication) matchesPolicy(content string, trusted bool)
 	return nil
 }
 
-func waitForForwardedConfigValidation(ctx context.Context, configs dynamic.ResourceInterface, expected *unstructured.Unstructured) error {
-	return testutil.WaitForConditionWithDescription(ctx, testutil.SlowWaitConfig(), "patched forwarding policy is validated",
+func TestForwardedPolicyPublicationIsolation(t *testing.T) {
+	publication := forwardedPolicyPublication{namespace: "e2e-current-12345678", routeNames: []string{"default"}}
+	baseline := "backend e2e-current-12345678_default_svc_echo-server_80\n"
+	for _, candidate := range []struct {
+		name    string
+		backend string
+		foreign bool
+	}{
+		{name: "own Ingress"},
+		{name: "own Gateway", backend: "gw_h_e2e-current-12345678_route_echo-server_80"},
+		{name: "stale Ingress", backend: "e2e-predecessor-87654321_default_svc_echo-server_80", foreign: true},
+		{name: "stale HTTPRoute", backend: "gw_h_e2e-predecessor-87654321_route_echo-server_80", foreign: true},
+		{name: "stale GRPCRoute", backend: "gw_g_e2e-predecessor-87654321_route_echo-server_80", foreign: true},
+		{name: "stale TCPRoute", backend: "gtw_tcp_e2e-predecessor-87654321_route_0", foreign: true},
+	} {
+		t.Run(candidate.name, func(t *testing.T) {
+			content := baseline
+			if candidate.backend != "" {
+				content += "backend " + candidate.backend + "\n"
+			}
+			err := publication.matchesPolicy(content, false)
+			if candidate.foreign {
+				require.ErrorContains(t, err, "another test's backend")
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func waitForConfigValidation(ctx context.Context, configs dynamic.ResourceInterface, expected *unstructured.Unstructured) error {
+	return testutil.WaitForConditionWithDescription(ctx, testutil.SlowWaitConfig(), "patched configuration is validated",
 		func(ctx context.Context) (bool, error) {
 			current, err := configs.Get(ctx, expected.GetName(), metav1.GetOptions{})
 			if err != nil {

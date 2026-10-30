@@ -18,13 +18,33 @@
 
 _helm_load:
   enable: '{{ .Values.vector.enabled }}'
+  inject:
+    - path: validationTests.test-vector-request-counter-disabled
+      from: _test_request_counter_pipeline_off
+      when: &requestMetricsOff '{{- if not (dig "requestMetrics" "enabled" false .Values.vector) }}true{{ end -}}'
   unset:
     # ~10 KB of span-building VRL, absent unless spans are actually exported.
     - path: templateSnippets.vector-span-transform
       when: '{{- if not (dig "tracing" "otlp" "endpoint" "" (.Values.controller.config.templatingSettings.extraContext | default dict)) }}true{{ end -}}'
     # Likewise the per-request metric pipeline when nothing consumes it.
     - path: templateSnippets.vector-request-metrics-transform
-      when: &requestMetricsOff '{{- if not (dig "requestMetrics" "enabled" false .Values.vector) }}true{{ end -}}'
+      when: *requestMetricsOff
+
+_test_request_counter_pipeline_off:
+  description: Disabling request metrics removes both counter aliases and every histogram while Vector still exports its own metrics.
+  fixtures: {}
+  extraContext:
+    vector:
+      metricsPort: 9598
+      sizeMetricsPort: 9599
+      logMetrics: {__replace__: true}
+      requestMetrics: {enabled: false}
+  assertions:
+    - type: haproxy_valid
+    - {type: not_contains, target: file:vector.yaml, pattern: '(?m)^        name: requests(_total)?$'}
+    - {type: not_contains, target: file:vector.yaml, pattern: 'request_metrics_|(?m)^    buckets:|metrics_sizes:'}
+    - {type: contains, target: file:vector.yaml, pattern: '(?s)vector_metrics:\s+type: internal_metrics'}
+    - {type: contains, target: file:vector.yaml, pattern: '(?s)metrics:\s+type: prometheus_exporter\s+inputs: \[metrics_stream\]\s+address: 0\.0\.0\.0:9598'}
 
 files:
   vector.yaml:
@@ -170,6 +190,8 @@ files:
           # HAProxy must be able to write to a socket vector created. Both
           # containers run as the pod's runAsUser, so this is belt-and-braces.
           socket_file_mode: 0o666
+          framing:
+            method: newline_delimited
           decoding:
             codec: bytes
       {%- if toint(hubPort) > 0 %}
@@ -191,9 +213,32 @@ files:
         vector_metrics:
           type: internal_metrics
 
-      {%- if omitEmpty || otlpEndpoint != "" || len(logMetrics) > 0 || rmOn %}
-
       transforms:
+        {# Keep exporter inputs stable so topology changes retain histogram state. #}
+        metrics_stream:
+          type: filter
+          inputs:
+        {%- if toint(hubPort) > 0 %}
+            - spoa_hub_metrics
+        {%- end %}
+        {%- for _, k := range keys(logMetrics) %}
+            - {{ k }}_metric
+        {%- end %}
+        {%- for _, i := range rmCoreInputs %}
+            - {{ i }}
+        {%- end %}
+            - vector_metrics
+          condition:
+            type: is_metric
+      {%- if len(rmSizeInputs) > 0 %}
+        metrics_size_stream:
+          type: filter
+          inputs:
+          {%- for _, i := range rmSizeInputs %}
+            - {{ i }}
+          {%- end %}
+          condition:
+            type: is_metric
       {%- end %}
       {%- if otlpEndpoint != "" %}
       {{ render "vector-span-transform" default "" }}
@@ -356,15 +401,7 @@ files:
         # (see status-extra-100-prometheus-exporter in the base library).
         metrics:
           type: prometheus_exporter
-        {%- var sinkInputs = []string{} %}
-        {%- if toint(hubPort) > 0 %}{% sinkInputs = append(sinkInputs, "spoa_hub_metrics") %}{% end %}
-        {%- for _, k := range keys(logMetrics) %}{% sinkInputs = append(sinkInputs, k + "_metric") %}{% end %}
-        {%- for _, i := range rmCoreInputs %}{% sinkInputs = append(sinkInputs, i) %}{% end %}
-        {%- sinkInputs = append(sinkInputs, "vector_metrics") %}
-          inputs:
-        {%- for _, i := range sinkInputs %}
-            - {{ i }}
-        {%- end %}
+          inputs: [metrics_stream]
           address: 0.0.0.0:{{ toint(metricsPort) }}
       {#- Per-SINK in vector, no per-metric override — which is why the size
           histograms get their own exporter below. -#}
@@ -377,10 +414,7 @@ files:
         # Byte-size histograms only; same PodMonitor, second endpoint.
         metrics_sizes:
           type: prometheus_exporter
-          inputs:
-          {%- for _, i := range rmSizeInputs %}
-            - {{ i }}
-          {%- end %}
+          inputs: [metrics_size_stream]
           address: 0.0.0.0:{{ toint(vec | dig("sizeMetricsPort") | fallback(9599)) }}
           buckets: {{ bucketList("sizeBuckets") }}
       {%- end %}
@@ -423,6 +457,7 @@ templateSnippets:
       {%- if (rm | dig("pathLabel")) == true %}{% tagLines = append(tagLines, "path: \"{{rm_path}}\"") %}{% end -%}
       {%- if (rm | dig("hostLabel")) == true %}{% tagLines = append(tagLines, "host: \"{{rm_host}}\"") %}{% end -%}
       {%- if (rm | dig("terminationStateLabel")) == true %}{% tagLines = append(tagLines, "term: \"{{rm_term}}\"") %}{% end -%}
+      {%- if (rm | dig("serverLabel")) == true %}{% tagLines = append(tagLines, "server: \"{{rm_server}}\"") %}{% end -%}
       {%- tagLines = append(tagLines, "controller_class: \"" + ctrlClass + "\"") -%}
       {%- tagLines = append(tagLines, "controller_namespace: \"" + ctrlNs + "\"") -%}
       {#- Absolute output indentation: these are emitted straight after `tags:`. -#}
@@ -465,6 +500,10 @@ templateSnippets:
             .rm_svc = string(o.service) ?? ""
             .rm_method = string(o.method) ?? ""
             .rm_pod = string(o.instance_pod) ?? ""
+      {%- if (rm | dig("serverLabel")) == true %}
+            .rm_server = string(o.server) ?? ""
+            if .rm_server == "<NOSRV>" { .rm_server = "" }
+      {%- end %}
             .rm_host = string(o.host) ?? ""
             # The route key carries the host as a prefix; the label wants the path.
             .rm_path = replace(string(o.route) ?? "", r'^[^/]*', "")
@@ -502,11 +541,15 @@ templateSnippets:
             var out = ""
             for _, n := range names {
               if mOn(n) {
-                out = out + "\n      - type: " + defs[n][0] +
+                var metricNames = []string{n}
+                if n == "requests" { metricNames = []string{"requests_total", "requests"} }
+                for _, metricName := range metricNames {
+                  out = out + "\n      - type: " + defs[n][0] +
                       "\n        field: " + defs[n][1] +
-                      "\n        name: " + n +
+                      "\n        name: " + metricName +
                       "\n        namespace: " + prefix +
                       "\n        tags:" + tagBlock
+                }
               }
             }
             return out
@@ -862,6 +905,9 @@ validationTests:
         description: Socket path must come from the operator value
       - type: contains
         target: file:vector.yaml
+        pattern: 'method: newline_delimited'
+      - type: contains
+        target: file:vector.yaml
         pattern: 'codec: bytes'
         description: >-
           Byte passthrough, not JSON decoding — the global log target carries
@@ -1047,8 +1093,8 @@ validationTests:
         pattern: 'omitEmptyLogFields must be a boolean'
         description: Scriggo treats any non-empty string as truthy, so the CR path needs the type check too
 
-  test-vector-exporter-reads-sources-directly:
-    description: The exporter reads its sources directly — no metric-name filter sits between them
+  test-vector-exporter-stable-input:
+    description: The exporter uses a stable metric stream without filtering metric names
     fixtures: {}
     extraContext:
       vector:
@@ -1059,15 +1105,15 @@ validationTests:
         dataDir: /var/lib/vector
     assertions:
       - {type: haproxy_valid, description: HAProxy config must still be valid}
-      # Named, not `type: filter`: the request-metrics pipeline uses filters for
-      # its validity gates.
       - type: not_contains
         target: file:vector.yaml
         pattern: 'metrics_filtered:'
       - type: contains
         target: file:vector.yaml
-        pattern: '(?s)metrics:\s+type: prometheus_exporter\s+inputs:(\s+- [A-Za-z_]+)*\s+- vector_metrics'
-        description: The exporter reads vector's own metrics directly
+        pattern: '(?s)metrics_stream:\s+type: filter\s+inputs:(\s+- [A-Za-z_]+)*\s+- vector_metrics\s+condition:\s+type: is_metric'
+      - type: contains
+        target: file:vector.yaml
+        pattern: 'inputs: \[metrics_stream\]'
 
   test-vector-config-no-spoa-hub:
     description: Without a hub metrics port, no dangling spoa_hub scrape source or input is emitted
@@ -1233,6 +1279,7 @@ validationTests:
           durationBuckets: [0.001, 0.005, 10, 30, 60]
           sizeBuckets: [100, 1000, 100000000]
           cardinalityLimit: {enabled: true, valueLimit: 500, action: drop_tag}
+          serverLabel: true
           metrics:
             __replace__: true
             requests: true
@@ -1246,6 +1293,8 @@ validationTests:
       - type: haproxy_valid
       # Every family, under the configured prefix.
       - {type: contains, target: file:vector.yaml, pattern: '(?m)^        name: requests$'}
+      - {type: contains, target: file:vector.yaml, pattern: '(?m)^        name: requests_total$'}
+      - {type: contains, target: file:vector.yaml, pattern: 'server: "\{\{rm_server\}\}"'}
       - {type: contains, target: file:vector.yaml, pattern: '(?m)^        name: request_duration_seconds$'}
       - {type: contains, target: file:vector.yaml, pattern: '(?m)^        name: response_duration_seconds$'}
       - {type: contains, target: file:vector.yaml, pattern: '(?m)^        name: connect_duration_seconds$'}
@@ -1373,6 +1422,7 @@ validationTests:
           terminationStateLabel: false
           pathLabel: false
           hostLabel: false
+          serverLabel: false
           durationBuckets: [0.001, 1]
           sizeBuckets: [100, 1000]
           cardinalityLimit: {enabled: false}
@@ -1383,6 +1433,8 @@ validationTests:
       - type: contains
         target: file:vector.yaml
         pattern: '(?m)^        namespace: nginx_ingress_controller$'
+      - {type: contains, target: file:vector.yaml, pattern: '(?m)^        name: requests_total$'}
+      - {type: contains, target: file:vector.yaml, pattern: '(?m)^        name: requests$'}
       - {type: contains, target: file:vector.yaml, pattern: 'controller_class: "k8s\.io/ingress-nginx"'}
       # Positive control: the labels that stay are still emitted, so the absence
       # assertions below are testing the opt-outs rather than a broken render.
@@ -1394,6 +1446,7 @@ validationTests:
         description: terminationStateLabel false must drop the tag, not blank it
       - {type: not_contains, target: file:vector.yaml, pattern: 'path: "\{\{rm_path\}\}"'}
       - {type: not_contains, target: file:vector.yaml, pattern: 'host: "\{\{rm_host\}\}"'}
+      - {type: not_contains, target: file:vector.yaml, pattern: 'server: "\{\{rm_server\}\}"'}
       # Only `requests` is on, so neither the size exporter nor the upstream
       # branches should exist at all.
       - type: not_contains
@@ -1437,13 +1490,15 @@ validationTests:
         pattern: '(?s)request_metrics_guard:\s+type: tag_cardinality_limit\s+inputs: \[request_metrics_core, request_metrics_connect\]'
       - {type: contains, target: file:vector.yaml, pattern: 'value_limit: 250'}
       - {type: contains, target: file:vector.yaml, pattern: 'limit_exceeded_action: drop_event'}
-      # Both sinks read the guards, the sizes branch included.
+      # Fan-in keeps exporter inputs unchanged when upstream transforms change.
       - type: contains
         target: file:vector.yaml
-        pattern: '(?s)metrics:\s+type: prometheus_exporter\s+inputs:(\s+- [A-Za-z_]+)*\s+- request_metrics_guard'
+        pattern: '(?s)metrics_stream:\s+type: filter\s+inputs:(\s+- [A-Za-z_]+)*\s+- request_metrics_guard'
       - type: contains
         target: file:vector.yaml
-        pattern: '(?s)metrics_sizes:\s+type: prometheus_exporter\s+inputs:\s+- request_metrics_size_guard'
+        pattern: '(?s)metrics_size_stream:\s+type: filter\s+inputs:\s+- request_metrics_size_guard'
+      - {type: contains, target: file:vector.yaml, pattern: '(?s)metrics:\s+type: prometheus_exporter\s+inputs: \[metrics_stream\]'}
+      - {type: contains, target: file:vector.yaml, pattern: '(?s)metrics_sizes:\s+type: prometheus_exporter\s+inputs: \[metrics_size_stream\]'}
       # The guard applies to these metrics only: the hub re-export's label set is
       # already bounded and must stay intact.
       - type: not_contains
@@ -1469,6 +1524,24 @@ validationTests:
       - {type: not_contains, target: file:vector.yaml, pattern: 'metrics_sizes:'}
       # Positive control: the rest of the pipeline is untouched.
       - {type: contains, target: file:vector.yaml, pattern: '(?m)^    address: 0\.0\.0\.0:9598$'}
+
+  test-vector-request-counter-disabled:
+    description: Disabling requests removes both aliases while duration observations remain enabled.
+    fixtures: {}
+    extraContext:
+      vector:
+        metricsPort: 9598
+        sizeMetricsPort: 9599
+        logMetrics: {__replace__: true}
+        requestMetrics:
+          enabled: true
+          durationBuckets: [0.001, 1]
+          sizeBuckets: [100, 1000]
+          metrics: {__replace__: true, requests: false, request_duration_seconds: true}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: file:vector.yaml, pattern: '(?m)^        name: request_duration_seconds$'}
+      - {type: not_contains, target: file:vector.yaml, pattern: '(?m)^        name: requests(_total)?$'}
 
   test-vector-request-metrics-rejects-bad-prefix:
     _helm_skip_test: *requestMetricsOff

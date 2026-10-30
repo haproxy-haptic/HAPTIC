@@ -926,6 +926,8 @@ Create the Secret from your client CA bundle in the Ingress's namespace:
 kubectl -n default create secret generic client-ca --from-file=ca.crt=ca.crt
 ```
 
+A host without a TLS certificate of its own keeps the certificate that answers it today (a wildcard or the default certificate) and still verifies the client. A request routed to the Ingress over a TLS connection whose Server Name Indication (SNI) isn't one of its hosts, or is absent, gets `421 Misdirected Request`, so the client reconnects with the right SNI.
+
 Set an explicit `host` on every protected Ingress rule. HAPTIC rejects
 protected rules without one.
 
