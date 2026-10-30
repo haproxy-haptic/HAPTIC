@@ -37,12 +37,12 @@ release in the [versioned documentation](https://haproxy-haptic.org/docs/) befor
 following setup instructions.
 
 ```bash
-helm install my-controller oci://ghcr.io/haproxy-haptic/haptic/charts/haptic --version 0.8.1
+helm install my-controller oci://ghcr.io/haproxy-haptic/haptic/charts/haptic --version 0.9.0
 ```
 
-The chart ships with [template libraries](https://haproxy-haptic.org/docs/0.8.1/template-libraries/) for Kubernetes Ingress and Gateway API enabled by default. Use them for standard routing, or extend them with your own templates.
+The chart ships with [template libraries](https://haproxy-haptic.org/docs/0.9.0/template-libraries/) for Kubernetes Ingress and Gateway API enabled by default. Use them for standard routing, or extend them with your own templates.
 
-For complete setup instructions including HAProxy pod deployment, see the [Getting Started](https://haproxy-haptic.org/docs/0.8.1/getting-started/) guide.
+For complete setup instructions including HAProxy pod deployment, see the [Getting Started](https://haproxy-haptic.org/docs/0.9.0/getting-started/) guide.
 
 ## Development
 

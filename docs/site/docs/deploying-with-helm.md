@@ -21,14 +21,14 @@ For a first installation and an optional sample route, follow [Getting started](
 
 ```bash
 helm install haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.8.1 --namespace haptic --create-namespace
+  --version 0.9.0 --namespace haptic --create-namespace
 ```
 
 With custom values:
 
 ```bash
 helm install haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.8.1 --namespace haptic --create-namespace \
+  --version 0.9.0 --namespace haptic --create-namespace \
   -f haptic-values.yaml
 ```
 
@@ -106,7 +106,7 @@ gatewayClass:
 
 ```bash
 helm install haptic-team-b oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.8.1 \
+  --version 0.9.0 \
   --namespace haptic-team-b --create-namespace \
   -f team-b-values.yaml
 ```
@@ -122,7 +122,7 @@ Pass your complete values file when upgrading. If you configured the release wit
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.8.1 --namespace haptic \
+  --version 0.9.0 --namespace haptic \
   -f haptic-values.yaml
 ```
 
@@ -130,7 +130,7 @@ For an installation with no custom settings, you can upgrade without a values fi
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.8.1 --namespace haptic
+  --version 0.9.0 --namespace haptic
 ```
 
 [Check the Deployments](#check-the-installation) after an upgrade.

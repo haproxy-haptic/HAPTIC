@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-30
+
 HAPTIC 0.9 pins release charts to signed image digests, splits the Grafana
 dashboard into controller and traffic views, and fixes request-metric data loss
 in the Vector sidecar.

@@ -61,7 +61,7 @@ Agent mutual TLS:
 {{- end }}
   Persistent renewal failures can expire certificates and stop agent updates.
   Check expiry and recovery procedures:
-    https://haproxy-haptic.org/docs/0.8.1/operations/agent-certificates/#check-expiry
+    https://haproxy-haptic.org/docs/0.9.0/operations/agent-certificates/#check-expiry
 {{- else }}
   Your certificate manager must renew both identities and maintain peer trust.
 {{- end }}
@@ -158,4 +158,4 @@ Next Steps:
 {{- end }}
 
 Documentation:
-  https://haproxy-haptic.org/docs/0.8.1/
+  https://haproxy-haptic.org/docs/0.9.0/
