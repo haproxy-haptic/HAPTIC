@@ -867,20 +867,7 @@ func TestIncrementalBatchHTTPCapabilityRejectsSwallowedCrossGenerationEffect(t *
 		_, _ = w.Write([]byte("poison"))
 	}))
 	t.Cleanup(server.Close)
-	bus, logger := testutil.NewTestBusAndLogger()
-	httpComponent := controllerhttpstore.New(bus, logger, -time.Hour)
-	state := newHTTPRegistryTestState()
-	session := &incrementalRenderSession{
-		state:            state,
-		httpComponent:    httpComponent,
-		httpWrapper:      controllerhttpstore.NewHTTPStoreWrapper(t.Context(), httpComponent, logger, nil, controllerhttpstore.SourceModeReadOnly),
-		cold:             true,
-		cachePublishable: true,
-		httpKnown:        map[httpInputIdentity]httpInputSpec{},
-		httpRetained:     map[uint64]struct{}{},
-		freshResults:     map[incremental.QueryKey]*authenticatedFreshComponentResult{},
-		httpExecuted:     map[incremental.QueryKey][]incrementalHTTPEffect{},
-	}
+	session := newBatchCapabilityHTTPSession(t)
 	batch, authority := prepareBatchCapabilityGenerationBatch(t, session)
 	preparedA := prepareBatchCapabilityGenerationItem(t, session, batch, authority, "A")
 	preparedB := prepareBatchCapabilityGenerationItem(t, session, batch, authority, "B")
@@ -896,7 +883,7 @@ func TestIncrementalBatchHTTPCapabilityRejectsSwallowedCrossGenerationEffect(t *
 	assert.Zero(t, requests.Load(), "a revoked HTTP capability must reject before network I/O")
 	assert.Empty(t, preparedA.httpFetcher.result())
 	assert.Empty(t, preparedB.httpFetcher.result(), "a retained A capability must not add an HTTP effect to B")
-	assert.Empty(t, state.httpSpecs, "a revoked HTTP capability must not mutate the shared HTTP registry")
+	assert.Empty(t, session.state.httpSpecs, "a revoked HTTP capability must not mutate the shared HTTP registry")
 	_, err := session.finishPreparedComponent(preparedA, "")
 	assert.Error(t, err, "a swallowed call on a revoked HTTP capability must poison result publication")
 	_, err = session.finishPreparedComponent(preparedB, "")
@@ -910,20 +897,7 @@ func TestIncrementalBatchHTTPCapabilitySupportsConcurrentActiveCalls(t *testing.
 		_, _ = w.Write([]byte("content"))
 	}))
 	t.Cleanup(server.Close)
-	bus, logger := testutil.NewTestBusAndLogger()
-	httpComponent := controllerhttpstore.New(bus, logger, -time.Hour)
-	state := newHTTPRegistryTestState()
-	session := &incrementalRenderSession{
-		state:            state,
-		httpComponent:    httpComponent,
-		httpWrapper:      controllerhttpstore.NewHTTPStoreWrapper(t.Context(), httpComponent, logger, nil, controllerhttpstore.SourceModeReadOnly),
-		cold:             true,
-		cachePublishable: true,
-		httpKnown:        map[httpInputIdentity]httpInputSpec{},
-		httpRetained:     map[uint64]struct{}{},
-		freshResults:     map[incremental.QueryKey]*authenticatedFreshComponentResult{},
-		httpExecuted:     map[incremental.QueryKey][]incrementalHTTPEffect{},
-	}
+	session := newBatchCapabilityHTTPSession(t)
 	batch, authority := prepareBatchCapabilityGenerationBatch(t, session)
 	prepared := prepareBatchCapabilityGenerationItem(t, session, batch, authority, "A")
 	httpCapability := prepared.templateContext["http"].(templating.HTTPFetcher)
@@ -953,7 +927,7 @@ func TestIncrementalBatchHTTPCapabilitySupportsConcurrentActiveCalls(t *testing.
 
 	assert.Equal(t, int64(1), requests.Load(), "the read-only wrapper must coalesce concurrent network reads")
 	assert.Len(t, prepared.httpFetcher.result(), 1)
-	assert.Len(t, state.httpSpecs, 1)
+	assert.Len(t, session.state.httpSpecs, 1)
 	_, err := session.finishPreparedComponent(prepared, "")
 	require.NoError(t, err)
 }
@@ -1022,20 +996,7 @@ func TestIncrementalBatchRevokedCapabilitiesRejectConcurrentSwallowedCalls(t *te
 		_, _ = w.Write([]byte("poison"))
 	}))
 	t.Cleanup(server.Close)
-	bus, logger := testutil.NewTestBusAndLogger()
-	httpComponent := controllerhttpstore.New(bus, logger, -time.Hour)
-	state := newHTTPRegistryTestState()
-	session := &incrementalRenderSession{
-		state:            state,
-		httpComponent:    httpComponent,
-		httpWrapper:      controllerhttpstore.NewHTTPStoreWrapper(t.Context(), httpComponent, logger, nil, controllerhttpstore.SourceModeReadOnly),
-		cold:             true,
-		cachePublishable: true,
-		httpKnown:        map[httpInputIdentity]httpInputSpec{},
-		httpRetained:     map[uint64]struct{}{},
-		freshResults:     map[incremental.QueryKey]*authenticatedFreshComponentResult{},
-		httpExecuted:     map[incremental.QueryKey][]incrementalHTTPEffect{},
-	}
+	session := newBatchCapabilityHTTPSession(t)
 	batch, authority := prepareBatchCapabilityGenerationBatch(t, session)
 	effectEngine, err := templating.New(map[string]string{
 		"event":  `{{ recordEvent(renderSubject, "Late", "poison") }}`,
@@ -1054,9 +1015,6 @@ func TestIncrementalBatchRevokedCapabilitiesRejectConcurrentSwallowedCalls(t *te
 	readerB := preparedB.reader.(*batchCapabilityTrackingReader)
 	resourceA, err := batchCapabilityResourceCall(preparedA.templateContext["resources"], "List")
 	require.NoError(t, err)
-	sharedA := preparedA.templateContext["shared"].(templating.SharedContributionContext)
-	planA := preparedA.templateContext["planRegistry"].(templating.IncrementalBackendPlanRegistrar)
-	httpA := preparedA.templateContext["http"].(templating.HTTPFetcher)
 	require.NoError(t, preparedA.activate())
 	preparedA.deactivate()
 	require.NoError(t, preparedB.activate())
@@ -1067,9 +1025,9 @@ func TestIncrementalBatchRevokedCapabilitiesRejectConcurrentSwallowedCalls(t *te
 	done := make(chan struct{}, callers)
 	probe := &revokedBatchCapabilityProbe{
 		resource:     resourceA,
-		shared:       sharedA,
-		plan:         planA,
-		http:         httpA,
+		shared:       preparedA.templateContext["shared"].(templating.SharedContributionContext),
+		plan:         preparedA.templateContext["planRegistry"].(templating.IncrementalBackendPlanRegistrar),
+		http:         preparedA.templateContext["http"].(templating.HTTPFetcher),
 		effectEngine: effectEngine,
 		preparedA:    preparedA,
 		preparedB:    preparedB,
@@ -1417,4 +1375,21 @@ func recoverBatchCapabilityPanic(call func()) (recovered any) {
 	defer func() { recovered = recover() }()
 	call()
 	return nil
+}
+
+func newBatchCapabilityHTTPSession(t *testing.T) *incrementalRenderSession {
+	t.Helper()
+	bus, logger := testutil.NewTestBusAndLogger()
+	httpComponent := controllerhttpstore.New(bus, logger, -time.Hour)
+	return &incrementalRenderSession{
+		state:            newHTTPRegistryTestState(),
+		httpComponent:    httpComponent,
+		httpWrapper:      controllerhttpstore.NewHTTPStoreWrapper(t.Context(), httpComponent, logger, nil, controllerhttpstore.SourceModeReadOnly),
+		cold:             true,
+		cachePublishable: true,
+		httpKnown:        map[httpInputIdentity]httpInputSpec{},
+		httpRetained:     map[uint64]struct{}{},
+		freshResults:     map[incremental.QueryKey]*authenticatedFreshComponentResult{},
+		httpExecuted:     map[incremental.QueryKey][]incrementalHTTPEffect{},
+	}
 }

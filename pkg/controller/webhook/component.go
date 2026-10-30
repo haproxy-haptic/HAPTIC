@@ -300,8 +300,7 @@ func (c *Component) startOwned(ctx context.Context) error {
 		return fmt.Errorf("webhook server failed before bind: %w", err)
 	case <-ctx.Done():
 		c.serverCancel()
-		<-serverErrCh
-		return ctx.Err()
+		return errors.Join(ctx.Err(), <-serverErrCh)
 	}
 
 	c.logger.Info("Webhook server started",

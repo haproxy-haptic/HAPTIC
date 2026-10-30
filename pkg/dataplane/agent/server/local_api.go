@@ -65,7 +65,9 @@ func (s *Server) serveUnix(ctx context.Context, listener net.Listener, handler h
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), grace)
 	defer cancel()
 	err := server.Shutdown(shutdownCtx)
-	<-done
+	if serveErr := <-done; !errors.Is(serveErr, http.ErrServerClosed) {
+		err = errors.Join(err, serveErr)
+	}
 	if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 		s.logger.Warn("could not remove local agent socket", "error", removeErr)
 	}
