@@ -48,6 +48,13 @@ class VerifyRunTests(unittest.TestCase):
                                         sleep=sleeps.append)
         self.assertEqual(len(unrelated), 2)
 
+    def test_rereads_while_a_rerun_attempt_omits_carried_over_jobs(self):
+        reads = [[dict(self.job, name="other")], [dict(self.job, name="other"), self.job]]
+        sleeps = []
+        jobs = VERIFY.settled_jobs(lambda: reads.pop(0), {"unit", "other"}, sleep=sleeps.append)
+        self.assertEqual(self.check(jobs), [{"name": "unit", "id": 123}])
+        self.assertEqual(len(sleeps), 1)
+
     def test_provenance_cannot_cross_revision_repository_run_or_attempt(self):
         for key, value in (("head_sha", "stale"), ("run_attempt", 1), ("repository", {"full_name": "another/repo"})):
             run = copy.deepcopy(self.run)
