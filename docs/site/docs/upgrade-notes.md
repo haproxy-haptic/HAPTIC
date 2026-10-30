@@ -15,8 +15,8 @@ multi-platform image digests unless you set `controller.image.tag` or
 
 If you set `controller.image.repository` to a mirror, the chart still selects the
 release digest, so your mirror must keep the original image index. Mirrors copied
-with `crane copy` or `skopeo copy --all` keep it. Images pulled, retagged, and pushed
-with `docker push` usually don't, and their pods fail with `ImagePullBackOff`.
+with `crane copy` or `skopeo copy --all` keep it. Images copied with `docker pull`
+and `docker push` usually don't, and their pods fail with `ImagePullBackOff`.
 
 Compare the two digests:
 
