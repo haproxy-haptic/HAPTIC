@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-30
+
+HAPTIC 0.9 pins release charts to signed image digests, splits the Grafana
+dashboard into controller and traffic views, and fixes request-metric data loss
+in the Vector sidecar.
+
+**Before upgrading:** if you install from an image mirror, check that it keeps
+the original image index. Read the
+[upgrade notes](./docs/site/docs/upgrade-notes.md#upgrading-to-09).
+
 ### Helm chart
 
 #### Added
@@ -18,20 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Changed
 
-- Split the built-in Grafana dashboard into dedicated controller and traffic dashboards, with route, status, termination-state, latency, throughput, and backend-target diagnostics. The existing `haptic.json` ConfigMap key and `haptic` dashboard UID remain the controller view; `haptic-traffic.json` and UID `haptic-traffic` are new.
-
 - Published release charts select matching multi-platform controller image digests by default, including agents and lifecycle hooks; explicit image tags and digests retain precedence ([#527](https://github.com/haproxy-haptic/HAPTIC/issues/527)).
+- The built-in Grafana dashboard is split into controller and traffic dashboards, adding route, status, termination-state, latency, throughput, and backend-target panels. The `haptic.json` ConfigMap key and `haptic` UID remain the controller view; `haptic-traffic.json` and UID `haptic-traffic` are new.
+- Request counters use the conventional `_requests_total` name; the unsuffixed counter remains as a compatibility alias ([#531](https://github.com/haproxy-haptic/HAPTIC/issues/531)).
 
 #### Fixed
 
-- Vector preserves request histogram counts when configuration reloads change the metric pipeline inputs ([#532](https://github.com/haproxy-haptic/HAPTIC/issues/532)).
-
-- Vector's Prometheus exporters omit sample timestamps, so Prometheus no longer drops request metrics as out-of-order samples ([#537](https://github.com/haproxy-haptic/HAPTIC/issues/537)).
-
+- Prometheus no longer drops Vector request metrics as out-of-order samples: the exporters omit sample timestamps ([#537](https://github.com/haproxy-haptic/HAPTIC/issues/537)).
+- Vector keeps request histogram counts when a configuration reload changes the metric pipeline inputs ([#532](https://github.com/haproxy-haptic/HAPTIC/issues/532)).
 - Vector forwards newline-terminated access logs without extra blank stdout records ([#534](https://github.com/haproxy-haptic/HAPTIC/issues/534)).
-
-- Grafana panels use registered configuration-validation outcomes and observability-drop counts instead of an absent histogram and an event-dependent subscriber series ([#530](https://github.com/haproxy-haptic/HAPTIC/issues/530)).
-- Request counters expose the conventional `_requests_total` name while retaining the unsuffixed counter as a compatibility alias ([#531](https://github.com/haproxy-haptic/HAPTIC/issues/531)).
+- Grafana panels read registered configuration-validation outcomes and observability-drop counts instead of an absent histogram and an event-dependent subscriber series ([#530](https://github.com/haproxy-haptic/HAPTIC/issues/530)).
 
 ## [0.8.1] - 2026-10-29
 

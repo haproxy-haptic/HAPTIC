@@ -5,8 +5,8 @@ type: application
 # The oldest Kubernetes release still maintained upstream. Never below 1.33: the
 # HAProxy pod's helpers are native sidecars, which outlive HAProxy while it drains.
 kubeVersion: ">=1.35.0-0"
-version: 0.8.1
-appVersion: "0.8.1"
+version: 0.9.0
+appVersion: "0.9.0"
 # Template libraries are packaged as conditional subcharts so a release only
 # carries the source of the libraries it enables — disabled subcharts are
 # pruned from the Helm release Secret, keeping it under the 1 MiB limit. The
@@ -84,7 +84,7 @@ annotations:
   # Document all component images (Artifact Hub standard)
   artifacthub.io/images: |
     - name: controller
-      image: ghcr.io/haproxy-haptic/haptic:0.8.1-haproxy3.4
+      image: ghcr.io/haproxy-haptic/haptic:0.9.0-haproxy3.4
       platforms:
         - linux/amd64
         - linux/arm64
@@ -95,12 +95,12 @@ annotations:
         - linux/amd64
         - linux/arm64
     - name: spoa-hub
-      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.8.1
+      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.9.0
       platforms:
         - linux/amd64
         - linux/arm64
     - name: varnish
-      image: ghcr.io/haproxy-haptic/haptic/varnish:0.8.1
+      image: ghcr.io/haproxy-haptic/haptic/varnish:0.9.0
       platforms:
         - linux/amd64
         - linux/arm64
@@ -110,14 +110,26 @@ annotations:
 
   # Release highlights; full notes are in the root CHANGELOG.md.
   artifacthub.io/changes: |
+    - kind: added
+      description: Optional vector.requestMetrics.serverLabel adds the selected upstream server to request metrics
+    - kind: changed
+      description: Release charts select matching multi-platform controller image digests by default; explicit tags and digests take precedence
+    - kind: changed
+      description: The Grafana dashboard is split into controller and traffic dashboards
+    - kind: changed
+      description: Request counters use the conventional _requests_total name and keep the unsuffixed alias
     - kind: fixed
-      description: Identical configuration updates preserve passing validation results and retry backoff instead of triggering redundant tests and false timeout rejections
+      description: Prometheus no longer drops Vector request metrics as out-of-order samples
+    - kind: fixed
+      description: Vector keeps request histogram counts across configuration reloads and no longer emits blank access-log records
+    - kind: fixed
+      description: Grafana panels read registered validation-outcome and observability-drop series
   artifacthub.io/containsSecurityUpdates: "false"
 
   # Links
   artifacthub.io/links: |
     - name: Documentation
-      url: https://haproxy-haptic.org/docs/0.8.1/
+      url: https://haproxy-haptic.org/docs/0.9.0/
     - name: Issue Tracker
       url: https://github.com/haproxy-haptic/HAPTIC/issues
 
