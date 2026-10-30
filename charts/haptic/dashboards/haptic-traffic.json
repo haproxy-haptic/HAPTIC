@@ -1,0 +1,2020 @@
+{
+  "uid": "haptic-traffic",
+  "title": "HAPTIC Traffic",
+  "description": "Incident-first HAPTIC dataplane traffic, route, backend-target, HAProxy capacity and failure diagnostics.",
+  "tags": [
+    "d4s",
+    "networking",
+    "haptic",
+    "traffic"
+  ],
+  "editable": false,
+  "timezone": "utc",
+  "refresh": "1m",
+  "schemaVersion": 41,
+  "version": 2,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "HAPTIC Controller",
+      "type": "link",
+      "url": "/d/haptic-controller/haptic-controller",
+      "targetBlank": false,
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data Source",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false,
+        "current": {
+          "selected": false,
+          "text": "default",
+          "value": "default"
+        },
+        "options": [],
+        "regex": "",
+        "skipUrlSync": false
+      },
+      {
+        "name": "namespace",
+        "label": "HAPTIC release",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{}, namespace)",
+          "refId": "namespace"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{}, namespace)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "haptic_pod",
+        "label": "HAPTIC pod",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haproxy_server_status{namespace=~\"$namespace\"}, pod)",
+          "refId": "haptic_pod"
+        },
+        "definition": "label_values(haproxy_server_status{namespace=~\"$namespace\"}, pod)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "workload_namespace",
+        "label": "Application namespace",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\"}, exported_namespace)",
+          "refId": "workload_namespace"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\"}, exported_namespace)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "ingress",
+        "label": "Ingress",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\"}, ingress)",
+          "refId": "ingress"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\"}, ingress)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\"}, service)",
+          "refId": "service"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\"}, service)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "host",
+        "label": "Domain",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\"}, host)",
+          "refId": "host"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\"}, host)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "path",
+        "label": "URL matcher",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\"}, path)",
+          "refId": "path"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\"}, path)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "method",
+        "label": "Method",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\"}, method)",
+          "refId": "method"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\"}, method)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "status",
+        "label": "Status code",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\"}, status)",
+          "refId": "status"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\"}, status)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "termination",
+        "label": "Termination state",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\"}, term)",
+          "refId": "termination"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\"}, term)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "backend_target",
+        "label": "Backend target pod",
+        "type": "query",
+        "hide": 0,
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": {
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}, server)",
+          "refId": "backend_target"
+        },
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}, server)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Incident overview",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "title": "Request rate",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "legendFormat": "requests/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      },
+      "description": "Traffic volume across the application-route filters above. This is context, not a health signal."
+    },
+    {
+      "id": 3,
+      "title": "Route and HTTP status producing most 5xx",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(1, sum by (exported_namespace,ingress,service,host,path,status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])))",
+          "legendFormat": "HTTP {{status}} · {{exported_namespace}}/{{ingress}} {{host}}{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "No 5xx responses in the selected time range",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "textMode": "value_and_name"
+      },
+      "description": "Application route and HTTP status with the largest current 5xx rate. The value measures affected requests; the name distinguishes failures such as 503 and 504."
+    },
+    {
+      "id": 4,
+      "title": "Application routes producing 5xx",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])) > 0) or vector(0)",
+          "legendFormat": "routes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "textMode": "auto"
+      },
+      "description": "Number of distinct application routes currently producing 5xx responses. The adjacent card names the route with the greatest affected-request rate."
+    },
+    {
+      "id": 5,
+      "title": "Unavailable backend target pods",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(min by (proxy,server) (haproxy_server_status{namespace=~\"$namespace\",pod=~\"$haptic_pod\",server=~\"$backend_target\",state=\"UP\"}) == 0) or vector(0)",
+          "legendFormat": "targets"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background",
+        "textMode": "auto"
+      },
+      "description": "Number of configured backend target pods that at least one HAPTIC replica currently sees as unavailable; the target-pod row names them."
+    },
+    {
+      "id": 6,
+      "title": "Fleet denied request rate",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(haproxy_frontend_requests_denied_total{namespace=~\"$namespace\",pod=~\"$haptic_pod\"}[$__rate_interval]))",
+          "legendFormat": "denied/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      },
+      "description": "HAProxy frontend denials do not carry route labels. This fleet-level signal cannot attribute a denial to an Ingress."
+    },
+    {
+      "id": 7,
+      "title": "Backend target pods with queued requests",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(max by (proxy,server) (haproxy_server_current_queue{namespace=~\"$namespace\",pod=~\"$haptic_pod\",server=~\"$backend_target\"}) > 0) or vector(0)",
+          "legendFormat": "targets"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "textMode": "auto"
+      },
+      "description": "Number of populated backend target pods currently queueing requests."
+    },
+    {
+      "id": 8,
+      "title": "Traffic by HTTP status",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "legendFormat": "HTTP {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Request rate split by the HTTP status emitted by Vector. Broad classes hide materially different failures such as 401, 404, 503 and 504."
+    },
+    {
+      "id": 17,
+      "title": "4xx ratio by route and termination state",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max((topk(15, sum by (exported_namespace,ingress,service,host,path,term,status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"4..\",term=~\"$termination\"}[$__rate_interval])) / ignoring(term,status) group_left clamp_min(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",term=~\"$termination\"}[$__rate_interval])), 1e-9))), 1)",
+          "legendFormat": "HTTP {{status}} · {{term}} · {{exported_namespace}}/{{ingress}} {{host}}{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Contribution of each HTTP 4xx status and HAProxy termination state to all requests for the application route. Stacked components sum to the route 4xx ratio. Aggregated across the selected HAPTIC pods."
+    },
+    {
+      "id": 9,
+      "title": "5xx ratio by route and termination state",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max((topk(15, sum by (exported_namespace,ingress,service,host,path,term,status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])) / ignoring(term,status) group_left clamp_min(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",term=~\"$termination\"}[$__rate_interval])), 1e-9))), 1)",
+          "legendFormat": "HTTP {{status}} · {{term}} · {{exported_namespace}}/{{ingress}} {{host}}{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Contribution of each HTTP 5xx status and HAProxy termination state to all requests for the application route. Stacked components sum to the route 5xx ratio. Aggregated across the selected HAPTIC pods."
+    },
+    {
+      "id": 15,
+      "title": "Request rate by route",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(15, sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
+          "legendFormat": "{{exported_namespace}}/{{ingress}} {{host}}{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Request rate per application route, aggregated across the selected HAPTIC pods."
+    },
+    {
+      "id": 10,
+      "title": "Find the affected application or route",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "panels": []
+    },
+    {
+      "id": 13,
+      "title": "Abnormal HAProxy termination states by route",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(15, sum by (exported_namespace,ingress,service,host,path,term) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\",term!~\"^(--|----)$\"}[$__rate_interval])))",
+          "legendFormat": "{{term}} · {{exported_namespace}}/{{service}} {{host}}{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Non-normal HAProxy termination states split by route. `----` is normal; examples include SC (server connection failed), cD (client timeout while sending data), and PC (proxy connection/socket limit). Look up every code in the [HAProxy 3.4 termination-state reference](https://docs.haproxy.org/3.4/configuration.html#8.5)."
+    },
+    {
+      "id": 16,
+      "title": "Find the broken backend target pod",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "panels": []
+    },
+    {
+      "id": 61,
+      "title": "Request rate by backend target pod",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(20, sum by (exported_namespace,ingress,service,host,path,server) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
+          "legendFormat": "{{server}} · {{exported_namespace}}/{{service}} {{host}}{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Exact request rate sent to each selected backend target pod, retaining its application route. This exposes uneven load and a single silent replica."
+    },
+    {
+      "id": 62,
+      "title": "5xx ratio by backend target pod and HTTP status",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 32
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max((topk(20, sum by (exported_namespace,ingress,service,host,path,server,status,term) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])) / ignoring(status,term) group_left clamp_min(sum by (exported_namespace,ingress,service,host,path,server) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",term=~\"$termination\"}[$__rate_interval])), 1e-9))), 1)",
+          "legendFormat": "{{server}} · HTTP {{status}} · {{term}} · {{exported_namespace}}/{{service}} {{host}}{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Exact 5xx contribution per backend target, HTTP status and termination state. A single broken replica is visible even when healthy siblings dilute the route-wide ratio."
+    },
+    {
+      "id": 63,
+      "title": "Unavailable targets by HAPTIC pod (empty is healthy)",
+      "type": "state-timeline",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 32
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (pod,proxy,server) (haproxy_server_status{namespace=~\"$namespace\",pod=~\"$haptic_pod\",server=~\"$backend_target\",state=\"UP\"}) == 0",
+          "legendFormat": "{{proxy}} · {{server}} via {{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 1,
+          "noValue": "All selected targets are available",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Unavailable",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "always",
+        "alignValue": "left",
+        "rowHeight": 0.8,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "description": "Exception-only timeline: it creates a row only while a concrete backend target is unavailable from a concrete HAPTIC pod. No rows means every selected target is available. Use the HAPTIC pod and backend target pod filters to narrow a failure."
+    },
+    {
+      "id": 64,
+      "title": "Target connection errors",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (proxy,server) (rate(haproxy_server_connection_errors_total{namespace=~\"$namespace\",pod=~\"$haptic_pod\",server=~\"$backend_target\"}[$__rate_interval]))",
+          "legendFormat": "{{proxy}} · {{server}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Failed connections attributed to the concrete backend pod."
+    },
+    {
+      "id": 65,
+      "title": "Target response errors",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 40
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (proxy,server) (rate(haproxy_server_response_errors_total{namespace=~\"$namespace\",pod=~\"$haptic_pod\",server=~\"$backend_target\"}[$__rate_interval]))",
+          "legendFormat": "{{proxy}} · {{server}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Invalid or failed responses attributed to the concrete backend pod."
+    },
+    {
+      "id": 66,
+      "title": "Target health-check failures",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 40
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (proxy,server) (rate(haproxy_server_check_failures_total{namespace=~\"$namespace\",pod=~\"$haptic_pod\",server=~\"$backend_target\"}[$__rate_interval]))",
+          "legendFormat": "{{proxy}} · {{server}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Active health-check failures attributed to the concrete backend pod."
+    },
+    {
+      "id": 20,
+      "title": "Explain the traffic",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "panels": []
+    },
+    {
+      "id": 23,
+      "title": "Requests by method",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 49
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (method) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "legendFormat": "{{method}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "HTTP method distribution inside the selected application-route scope."
+    },
+    {
+      "id": 24,
+      "title": "Requests by domain",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 49
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (host) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Traffic grouped by configured domain."
+    },
+    {
+      "id": 25,
+      "title": "Requests by application",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 49
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (exported_namespace,ingress,service) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "legendFormat": "{{exported_namespace}}/{{service}} ({{ingress}})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Traffic grouped by Kubernetes namespace, Service and Ingress."
+    },
+    {
+      "id": 30,
+      "title": "Locate latency in the request path",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "panels": []
+    },
+    {
+      "id": 31,
+      "title": "Request p95 by application route",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 58
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_request_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
+          "legendFormat": "{{exported_namespace}}/{{service}} {{host}}{{path}}",
+          "exemplar": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Raw latency remains separated by route. Compare a route with its own history or expectation, never with an unrelated endpoint."
+    },
+    {
+      "id": 32,
+      "title": "Upstream phase p95 by application route",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 58
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_connect_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
+          "legendFormat": "connect · {{exported_namespace}}/{{service}} {{host}}{{path}}",
+          "exemplar": true
+        },
+        {
+          "refId": "B",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_header_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
+          "legendFormat": "first header · {{exported_namespace}}/{{service}} {{host}}{{path}}",
+          "exemplar": true
+        },
+        {
+          "refId": "C",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
+          "legendFormat": "full upstream · {{exported_namespace}}/{{service}} {{host}}{{path}}",
+          "exemplar": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Route-preserving phase split. Filter to an affected route before using it to localize delay to connect, first byte, or response transfer."
+    },
+    {
+      "id": 33,
+      "title": "Request rate vs weekly seasonal prediction by route",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 66
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(15, sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
+          "legendFormat": "actual · {{exported_namespace}}/{{service}} {{host}}{{path}}",
+          "exemplar": true
+        },
+        {
+          "refId": "B",
+          "expr": "topk(15, quantile without (week) (0.5, label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 166h)), \"week\", \"1w\", \"\", \"\") or label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 334h)), \"week\", \"2w\", \"\", \"\") or label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 502h)), \"week\", \"3w\", \"\", \"\") or label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 670h)), \"week\", \"4w\", \"\", \"\")))",
+          "legendFormat": "predicted · {{exported_namespace}}/{{service}} {{host}}{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^predicted ·/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    8
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Actual route RPS against a robust weekly seasonal prediction: the median of four-hour windows centred on the same time of day 1, 2, 3 and 4 weeks ago. Missing weeks are ignored, so confidence grows as history accumulates. This follows the GitLab Prometheus seasonal-baseline pattern and compares every route only with itself."
+    },
+    {
+      "id": 34,
+      "title": "Upstream response p95 vs weekly seasonal prediction by route",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 66
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(15, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
+          "legendFormat": "actual · {{exported_namespace}}/{{service}} {{host}}{{path}}",
+          "exemplar": true
+        },
+        {
+          "refId": "B",
+          "expr": "topk(15, quantile without (week) (0.5, label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 166h))), \"week\", \"1w\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 334h))), \"week\", \"2w\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 502h))), \"week\", \"3w\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 670h))), \"week\", \"4w\", \"\", \"\")))",
+          "legendFormat": "predicted · {{exported_namespace}}/{{service}} {{host}}{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^predicted ·/"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    8
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 2
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Actual upstream-response p95 against the median p95 of four-hour windows centred on the same time of day 1, 2, 3 and 4 weeks ago. Each route is compared only with its own seasonal history; missing weeks are ignored."
+    },
+    {
+      "id": 50,
+      "title": "HAProxy fleet capacity",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      },
+      "panels": []
+    },
+    {
+      "id": 51,
+      "title": "Connection capacity by pod",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 76
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "clamp_max((haproxy_process_current_connections{namespace=~\"$namespace\",pod=~\"$haptic_pod\"} / clamp_min(haproxy_process_hard_max_connections{namespace=~\"$namespace\",pod=~\"$haptic_pod\"}, 1)), 1)",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Current connections divided by the HAProxy process hard maximum, separately for every ingress pod."
+    },
+    {
+      "id": 52,
+      "title": "Idle time by pod",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 76
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "haproxy_process_idle_time_percent{namespace=~\"$namespace\",pod=~\"$haptic_pod\"}",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "HAProxy scheduler idle percentage per ingress pod; sustained low values indicate CPU saturation."
+    },
+    {
+      "id": 53,
+      "title": "Run queue by pod",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 76
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "haproxy_process_current_run_queue{namespace=~\"$namespace\",pod=~\"$haptic_pod\"}",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Runnable HAProxy tasks waiting for CPU, separately per ingress pod."
+    },
+    {
+      "id": 54,
+      "title": "Frontend network throughput",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 84
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pod) (rate(haproxy_frontend_bytes_in_total{namespace=~\"$namespace\",pod=~\"$haptic_pod\"}[$__rate_interval])) * 8",
+          "legendFormat": "{{pod}} inbound"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (pod) (rate(haproxy_frontend_bytes_out_total{namespace=~\"$namespace\",pod=~\"$haptic_pod\"}[$__rate_interval])) * -8",
+          "legendFormat": "{{pod}} outbound"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bps",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisCenteredZero": true
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "limit": 20
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": true
+        }
+      },
+      "description": "Total frontend throughput per ingress pod, summed across its frontends. Inbound is positive above zero; outbound is mirrored below zero so direction and imbalance are visible at a glance."
+    }
+  ]
+}

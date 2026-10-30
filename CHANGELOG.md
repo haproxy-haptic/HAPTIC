@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Added
 
 - Optional `vector.requestMetrics.serverLabel` identifies the selected upstream server in request counters and duration histograms ([#533](https://github.com/haproxy-haptic/HAPTIC/issues/533)).
+- Split the built-in Grafana dashboard into controller and incident-first traffic dashboards with route, HTTP status, termination-state, and backend-target diagnostics.
 
 #### Changed
 

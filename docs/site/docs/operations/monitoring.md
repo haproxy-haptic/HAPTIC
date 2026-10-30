@@ -520,15 +520,26 @@ The full names, toggle keys, and default thresholds also appear on the [Chart Va
 ## Dashboard examples
 
 Enable `controller.monitoring.grafanaDashboard.enabled` as shown above to install
-the supplied dashboard. If Grafana doesn't use a dashboard-discovery sidecar,
-export the same JSON from the default release and import it in Grafana:
+the supplied **HAPTIC Controller** and **HAPTIC Traffic** dashboards. The controller
+dashboard covers reconciliation, admission, rendering, and deployment health. The
+traffic dashboard starts with route-level errors and request rate, then drills into
+HTTP status, HAProxy termination state, and individual backend targets.
+Set `vector.requestMetrics.serverLabel: true` to populate its per-target request-rate
+and error-ratio panels. Leave it disabled if the extra backend-target label would
+exceed your Prometheus cardinality budget; HAProxy health and connection-error panels
+still identify targets without that request label.
+
+If Grafana doesn't use a dashboard-discovery sidecar, export both JSON documents
+from the default release and import them in Grafana:
 
 ```bash
 kubectl get configmap haptic-grafana-dashboard -n haptic \
-  -o jsonpath='{.data.haptic\.json}' > haptic-dashboard.json
+  -o jsonpath='{.data.haptic-controller\.json}' > haptic-controller.json
+kubectl get configmap haptic-grafana-dashboard -n haptic \
+  -o jsonpath='{.data.haptic-traffic\.json}' > haptic-traffic.json
 ```
 
-Choose **Dashboards → New → Import** and upload `haptic-dashboard.json`.
+Choose **Dashboards → New → Import** and upload both JSON files.
 Select the Prometheus data source that scrapes HAPTIC. You don't need to build a
 dashboard from the metric catalogue.
 
