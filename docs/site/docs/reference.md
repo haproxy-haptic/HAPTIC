@@ -647,11 +647,11 @@ Pod-level scheduling fields (`nodeSelector`, `tolerations`, `affinity`, etc.) li
 | `controller.monitoring.prometheusRule.defaultRules.agentInvariantViolated` | bool | `true` | Include the `HAProxyAgentInvariantViolated` critical rule: an agent observed one of its own invariants failing — a defect, not an operator error |
 | `controller.monitoring.prometheusRule.defaultRules.recoveryReloadFailed` | bool | `true` | Include the `HAProxyAgentRecoveryReloadFailed` critical rule: a pod rolled back to its last known good file set but the recovery reload failed, so its worker matches neither the rejected apply nor the restored files |
 | `controller.monitoring.prometheusRule.defaultRules.agentVersionSkew` | bool | `true` | Include the `HAProxyAgentVersionSkew` warning rule: a pod's agent doesn't match the controller, so some or all applies reload; expected during a rolling upgrade, a defect after one |
-| `controller.monitoring.grafanaDashboard.enabled` | bool | `false` | Create a ConfigMap holding the Grafana dashboard JSON (picked up by the Grafana sidecar via the configured discovery label) |
+| `controller.monitoring.grafanaDashboard.enabled` | bool | `false` | Create a ConfigMap holding the controller and traffic Grafana dashboard JSON (picked up by the Grafana sidecar via the configured discovery label) |
 | `controller.monitoring.grafanaDashboard.labels` | map | `{grafana_dashboard: "1"}` | Discovery labels for the Grafana sidecar |
 | `controller.monitoring.grafanaDashboard.annotations` | map | `{grafana_folder: "HAProxy"}` | Annotations on the dashboard ConfigMap; the folder annotation must match `grafana.sidecar.dashboards.folderAnnotation` |
 | `controller.monitoring.grafanaDashboard.namespace` | string | `""` | Namespace for the dashboard ConfigMap (defaults to release namespace) |
-| `controller.monitoring.grafanaDashboard.useBuiltIn` | bool | `true` | Use the built-in dashboard (curated subset of controller metrics); set `false` to provide your own JSON via `customDashboard` |
+| `controller.monitoring.grafanaDashboard.useBuiltIn` | bool | `true` | Use the built-in controller and traffic dashboards; set `false` to provide one JSON document via `customDashboard` |
 | `controller.monitoring.grafanaDashboard.customDashboard` | map | `{}` | Custom dashboard JSON, only consulted when `useBuiltIn: false` |
 
 ## HAProxy deployment

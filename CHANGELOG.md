@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Changed
 
+- Split the built-in Grafana dashboard into dedicated controller and traffic dashboards, with route, status, termination-state, latency, throughput, and backend-target diagnostics. The existing `haptic.json` ConfigMap key and `haptic` dashboard UID remain the controller view; `haptic-traffic.json` and UID `haptic-traffic` are new.
+
 - Published release charts select matching multi-platform controller image digests by default, including agents and lifecycle hooks; explicit image tags and digests retain precedence ([#527](https://github.com/haproxy-haptic/HAPTIC/issues/527)).
 
 #### Fixed
