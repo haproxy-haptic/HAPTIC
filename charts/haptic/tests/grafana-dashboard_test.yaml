@@ -93,81 +93,98 @@ tests:
           path: metadata.namespace
           value: my-namespace
 
-  - it: should include dashboard json file
+  - it: should include controller and traffic dashboard json files
     asserts:
       - exists:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
+      - exists:
+          path: data["haptic-traffic.json"]
 
-  - it: should include dashboard title in json
+  - it: should include dashboard titles in json
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
-          pattern: "HAPTIC"
+          path: data["haptic-controller.json"]
+          pattern: "HAPTIC Controller"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "HAPTIC Traffic"
 
-  - it: should include dashboard uid in json
+  - it: should include dashboard uids in json
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
-          pattern: "haptic"
+          path: data["haptic-controller.json"]
+          pattern: "haptic-controller"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "haptic-traffic"
+
+  - it: should include request and backend metrics in traffic dashboard
+    asserts:
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "haptic_ingress_controller_requests_total"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "haproxy_server_status"
 
   - it: should include reconciliation metrics in dashboard
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_reconciliation_total"
 
   - it: should include deployment metrics in dashboard
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_deployment_total"
 
   - it: should include leader election metrics in dashboard
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_leader_election_is_leader"
 
   - it: should include resource count metrics in dashboard
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_resource_count"
 
   - it: should include reconciliation queue wait metrics in dashboard
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_reconciliation_queue_wait_seconds"
 
   - it: should include configuration validation outcomes in dashboard
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_config_validation_total"
       - notMatchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_validation_test_duration_seconds"
 
   - it: should include observability event drop counts in dashboard
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_events_dropped_observability_total"
       - notMatchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "rate\\(haptic_events_dropped_observability_total"
 
   - it: should include critical event dropping metrics in dashboard
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_events_dropped_critical_total"
 
   - it: should include webhook request metrics in dashboard
     asserts:
       - matchRegex:
-          path: data["haptic.json"]
+          path: data["haptic-controller.json"]
           pattern: "haptic_webhook_requests_total"
 
   - it: should use custom dashboard when useBuiltIn is false

@@ -520,17 +520,22 @@ The full names, toggle keys, and default thresholds also appear on the [Chart Va
 ## Dashboard examples
 
 Enable `controller.monitoring.grafanaDashboard.enabled` as shown above to install
-the supplied dashboard. If Grafana doesn't use a dashboard-discovery sidecar,
-export the same JSON from the default release and import it in Grafana:
+the supplied controller and traffic dashboards. If Grafana doesn't use a
+dashboard-discovery sidecar, export both JSON documents from the default release
+and import them in Grafana:
 
 ```bash
 kubectl get configmap haptic-grafana-dashboard -n haptic \
-  -o jsonpath='{.data.haptic\.json}' > haptic-dashboard.json
+  -o jsonpath='{.data.haptic-controller\.json}' > haptic-controller-dashboard.json
+kubectl get configmap haptic-grafana-dashboard -n haptic \
+  -o jsonpath='{.data.haptic-traffic\.json}' > haptic-traffic-dashboard.json
 ```
 
-Choose **Dashboards → New → Import** and upload `haptic-dashboard.json`.
-Select the Prometheus data source that scrapes HAPTIC. You don't need to build a
-dashboard from the metric catalogue.
+Choose **Dashboards → New → Import** and upload both files. Select the Prometheus
+data source that scrapes HAPTIC. The controller dashboard covers control-plane
+health; the traffic dashboard covers request rate, errors, duration, routes,
+termination states, and backend targets. You don't need to build dashboards
+from the metric catalogue.
 
 ## Troubleshoot monitoring {#operational-insights}
 
