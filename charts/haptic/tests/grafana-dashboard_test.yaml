@@ -126,6 +126,15 @@ tests:
       - matchRegex:
           path: data["haptic-traffic.json"]
           pattern: "haproxy_server_status"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "server=~"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "docs\\.haproxy\\.org/3\\.4/configuration\\.html#8\\.5"
+      - matchRegex:
+          path: data["haptic-traffic.json"]
+          pattern: "No 5xx responses in the selected time range"
 
   - it: should include reconciliation metrics in dashboard
     asserts:

@@ -1,7 +1,7 @@
 {
   "uid": "haptic-traffic",
   "title": "HAPTIC Traffic",
-  "description": "Incident-first HTTP traffic view: RED signals, route and application attribution, HAProxy termination causes, upstream phases, and backend target health.",
+  "description": "Incident-first HTTP traffic view: request rate, errors, duration, route and backend-target attribution, HAProxy termination causes, upstream phases, and target health.",
   "tags": [
     "haproxy",
     "haptic",
@@ -290,10 +290,10 @@
           "uid": "${datasource}"
         },
         "query": {
-          "query": "label_values(haproxy_server_status{namespace=~\"$namespace\"}, server)",
+          "query": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}, server)",
           "refId": "backend_target"
         },
-        "definition": "label_values(haproxy_server_status{namespace=~\"$namespace\"}, server)",
+        "definition": "label_values(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}, server)",
         "includeAll": true,
         "allValue": ".*",
         "multi": true,
@@ -336,7 +336,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "expr": "sum(rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
           "legendFormat": "requests/s"
         }
       ],
@@ -373,13 +373,14 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(1, sum by (exported_namespace,ingress,service,host,path,status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])))",
+          "expr": "topk(1, sum by (exported_namespace,ingress,service,host,path,status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])))",
           "legendFormat": "HTTP {{status}} · {{exported_namespace}}/{{ingress}} {{host}}{{path}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
+          "noValue": "No 5xx responses in the selected time range",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -427,7 +428,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])) > 0) or vector(0)",
+          "expr": "count(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])) > 0) or vector(0)",
           "legendFormat": "routes"
         }
       ],
@@ -605,7 +606,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "expr": "sum by (status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
           "legendFormat": "HTTP {{status}}"
         }
       ],
@@ -665,7 +666,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "clamp_max((topk(15, sum by (exported_namespace,ingress,service,host,path,term,status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"4..\",term=~\"$termination\"}[$__rate_interval])) / ignoring(term,status) group_left clamp_min(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",term=~\"$termination\"}[$__rate_interval])), 1e-9))), 1)",
+          "expr": "clamp_max((topk(15, sum by (exported_namespace,ingress,service,host,path,term,status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"4..\",term=~\"$termination\"}[$__rate_interval])) / ignoring(term,status) group_left clamp_min(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",term=~\"$termination\"}[$__rate_interval])), 1e-9))), 1)",
           "legendFormat": "HTTP {{status}} · {{term}} · {{exported_namespace}}/{{ingress}} {{host}}{{path}}"
         }
       ],
@@ -727,7 +728,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "clamp_max((topk(15, sum by (exported_namespace,ingress,service,host,path,term,status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])) / ignoring(term,status) group_left clamp_min(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",term=~\"$termination\"}[$__rate_interval])), 1e-9))), 1)",
+          "expr": "clamp_max((topk(15, sum by (exported_namespace,ingress,service,host,path,term,status) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])) / ignoring(term,status) group_left clamp_min(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",term=~\"$termination\"}[$__rate_interval])), 1e-9))), 1)",
           "legendFormat": "HTTP {{status}} · {{term}} · {{exported_namespace}}/{{ingress}} {{host}}{{path}}"
         }
       ],
@@ -789,7 +790,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(15, sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
+          "expr": "topk(15, sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
           "legendFormat": "{{exported_namespace}}/{{ingress}} {{host}}{{path}}"
         }
       ],
@@ -862,7 +863,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(15, sum by (exported_namespace,ingress,service,host,path,term) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\",term!~\"^(--|----)$\"}[$__rate_interval])))",
+          "expr": "topk(15, sum by (exported_namespace,ingress,service,host,path,term) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\",term!~\"^(--|----)$\"}[$__rate_interval])))",
           "legendFormat": "{{term}} · {{exported_namespace}}/{{service}} {{host}}{{path}}"
         }
       ],
@@ -903,7 +904,7 @@
           "hideZeros": true
         }
       },
-      "description": "Non-normal HAProxy termination states split by route. `----` is normal; examples include SC (server connection failed), cD (client timeout while sending data), and PC (proxy connection/socket limit)."
+      "description": "Non-normal HAProxy termination states split by route. `----` is normal; examples include SC (server connection failed), cD (client timeout while sending data), and PC (proxy connection/socket limit). Look up every code in the [HAProxy 3.4 termination-state reference](https://docs.haproxy.org/3.4/configuration.html#8.5)."
     },
     {
       "id": 16,
@@ -935,8 +936,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (proxy,server) (rate(haproxy_server_http_requests_total{namespace=~\"$namespace\",pod=~\"$haptic_pod\",server=~\"$backend_target\"}[$__rate_interval]))",
-          "legendFormat": "{{proxy}} · {{server}}"
+          "expr": "topk(20, sum by (exported_namespace,ingress,service,host,path,server) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
+          "legendFormat": "{{server}} · {{exported_namespace}}/{{service}} {{host}}{{path}}"
         }
       ],
       "fieldConfig": {
@@ -972,11 +973,11 @@
           "hideZeros": true
         }
       },
-      "description": "Requests HAProxy actually sent to each populated backend target. Maintenance/free slots are removed at scrape time."
+      "description": "Exact request rate sent to each selected backend target pod, retaining its application route. This exposes uneven load and a single silent replica."
     },
     {
       "id": 62,
-      "title": "5xx ratio by backend target pod",
+      "title": "5xx ratio by backend target pod and HTTP status",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -991,8 +992,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "clamp_max((sum by (proxy,server) (rate(haproxy_server_http_responses_total{namespace=~\"$namespace\",pod=~\"$haptic_pod\",server=~\"$backend_target\",code=\"5xx\"}[$__rate_interval])) / clamp_min(sum by (proxy,server) (rate(haproxy_server_http_responses_total{namespace=~\"$namespace\",pod=~\"$haptic_pod\",server=~\"$backend_target\"}[$__rate_interval])), 1e-9)), 1)",
-          "legendFormat": "{{proxy}} · {{server}}"
+          "expr": "clamp_max((topk(20, sum by (exported_namespace,ingress,service,host,path,server,status,term) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"5..\",term=~\"$termination\"}[$__rate_interval])) / ignoring(status,term) group_left clamp_min(sum by (exported_namespace,ingress,service,host,path,server) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",term=~\"$termination\"}[$__rate_interval])), 1e-9))), 1)",
+          "legendFormat": "{{server}} · HTTP {{status}} · {{term}} · {{exported_namespace}}/{{service}} {{host}}{{path}}"
         }
       ],
       "fieldConfig": {
@@ -1030,7 +1031,7 @@
           "hideZeros": true
         }
       },
-      "description": "Directly exposes a single backend pod returning errors while its siblings remain healthy."
+      "description": "Exact 5xx contribution per backend target, HTTP status and termination state. A single broken replica is visible even when healthy siblings dilute the route-wide ratio."
     },
     {
       "id": 63,
@@ -1286,7 +1287,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (method) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "expr": "sum by (method) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
           "legendFormat": "{{method}}"
         }
       ],
@@ -1346,7 +1347,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (host) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "expr": "sum by (host) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
           "legendFormat": "{{host}}"
         }
       ],
@@ -1406,7 +1407,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (exported_namespace,ingress,service) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
+          "expr": "sum by (exported_namespace,ingress,service) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))",
           "legendFormat": "{{exported_namespace}}/{{service}} ({{ingress}})"
         }
       ],
@@ -1479,7 +1480,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_request_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_request_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
           "legendFormat": "{{exported_namespace}}/{{service}} {{host}}{{path}}",
           "exemplar": true
         }
@@ -1536,19 +1537,19 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(10, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_connect_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_connect_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
           "legendFormat": "connect · {{exported_namespace}}/{{service}} {{host}}{{path}}",
           "exemplar": true
         },
         {
           "refId": "B",
-          "expr": "topk(10, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_header_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_header_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
           "legendFormat": "first header · {{exported_namespace}}/{{service}} {{host}}{{path}}",
           "exemplar": true
         },
         {
           "refId": "C",
-          "expr": "topk(10, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
           "legendFormat": "full upstream · {{exported_namespace}}/{{service}} {{host}}{{path}}",
           "exemplar": true
         }
@@ -1605,13 +1606,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(15, sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
+          "expr": "topk(15, sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval])))",
           "legendFormat": "actual · {{exported_namespace}}/{{service}} {{host}}{{path}}",
           "exemplar": true
         },
         {
           "refId": "B",
-          "expr": "topk(15, quantile without (week) (0.5, label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[4h] offset 166h)), \"week\", \"1w\", \"\", \"\") or label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[4h] offset 334h)), \"week\", \"2w\", \"\", \"\") or label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[4h] offset 502h)), \"week\", \"3w\", \"\", \"\") or label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[4h] offset 670h)), \"week\", \"4w\", \"\", \"\")))",
+          "expr": "topk(15, quantile without (week) (0.5, label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 166h)), \"week\", \"1w\", \"\", \"\") or label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 334h)), \"week\", \"2w\", \"\", \"\") or label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 502h)), \"week\", \"3w\", \"\", \"\") or label_replace(sum by (exported_namespace,ingress,service,host,path) (rate(haptic_ingress_controller_requests_total{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 670h)), \"week\", \"4w\", \"\", \"\")))",
           "legendFormat": "predicted · {{exported_namespace}}/{{service}} {{host}}{{path}}"
         }
       ],
@@ -1695,13 +1696,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(15, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
+          "expr": "topk(15, histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[$__rate_interval]))))",
           "legendFormat": "actual · {{exported_namespace}}/{{service}} {{host}}{{path}}",
           "exemplar": true
         },
         {
           "refId": "B",
-          "expr": "topk(15, quantile without (week) (0.5, label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[4h] offset 166h))), \"week\", \"1w\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[4h] offset 334h))), \"week\", \"2w\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[4h] offset 502h))), \"week\", \"3w\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",status=~\"$status\",term=~\"$termination\"}[4h] offset 670h))), \"week\", \"4w\", \"\", \"\")))",
+          "expr": "topk(15, quantile without (week) (0.5, label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 166h))), \"week\", \"1w\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 334h))), \"week\", \"2w\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 502h))), \"week\", \"3w\", \"\", \"\") or label_replace(histogram_quantile(0.95, sum by (exported_namespace,ingress,service,host,path,le) (rate(haptic_ingress_controller_response_duration_seconds_bucket{namespace=~\"$namespace\",controller_pod=~\"$haptic_pod\",exported_namespace=~\"$workload_namespace\",ingress=~\"$ingress\",service=~\"$service\",host=~\"$host\",path=~\"$path\",method=~\"$method\",server=~\"$backend_target\",status=~\"$status\",term=~\"$termination\"}[4h] offset 670h))), \"week\", \"4w\", \"\", \"\")))",
           "legendFormat": "predicted · {{exported_namespace}}/{{service}} {{host}}{{path}}"
         }
       ],

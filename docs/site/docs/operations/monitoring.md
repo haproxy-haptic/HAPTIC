@@ -537,6 +537,12 @@ health; the traffic dashboard covers request rate, errors, duration, routes,
 termination states, and backend targets. You don't need to build dashboards
 from the metric catalogue.
 
+Enable `vector.requestMetrics.serverLabel` as described in
+[Finding errors on one upstream target](#finding-errors-on-one-upstream-target)
+to populate the traffic dashboard's cascading backend-target filter and exact
+per-target HTTP status panels. The HAProxy health and transport panels work
+without that optional request label.
+
 ## Troubleshoot monitoring {#operational-insights}
 
 <a id="key-health-indicators"></a>
