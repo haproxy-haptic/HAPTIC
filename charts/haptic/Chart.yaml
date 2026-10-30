@@ -110,8 +110,20 @@ annotations:
 
   # Release highlights; full notes are in the root CHANGELOG.md.
   artifacthub.io/changes: |
+    - kind: added
+      description: Optional vector.requestMetrics.serverLabel adds the selected upstream server to request metrics
+    - kind: changed
+      description: Release charts select matching multi-platform controller image digests by default; explicit tags and digests take precedence
+    - kind: changed
+      description: The Grafana dashboard is split into controller and traffic dashboards
+    - kind: changed
+      description: Request counters use the conventional _requests_total name and keep the unsuffixed alias
     - kind: fixed
-      description: Identical configuration updates preserve passing validation results and retry backoff instead of triggering redundant tests and false timeout rejections
+      description: Prometheus no longer drops Vector request metrics as out-of-order samples
+    - kind: fixed
+      description: Vector keeps request histogram counts across configuration reloads and no longer emits blank access-log records
+    - kind: fixed
+      description: Grafana panels read registered validation-outcome and observability-drop series
   artifacthub.io/containsSecurityUpdates: "false"
 
   # Links

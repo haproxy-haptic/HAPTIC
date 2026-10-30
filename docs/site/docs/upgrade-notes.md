@@ -5,6 +5,36 @@ you plan to deploy. Each section lists configuration changes and the steps neede
 to keep your existing routes working. For routine chart upgrades, see
 [Upgrading with Helm](deploying-with-helm.md#upgrading).
 
+## Upgrading to 0.9
+
+0.9 pins the controller, agent, and lifecycle-hook images to the release's
+multi-platform image digests unless you set `controller.image.tag` or
+`controller.image.digest`.
+
+### Check your image mirror
+
+If you set `controller.image.repository` to a mirror, the chart still selects the
+release digest, so your mirror must keep the original image index. Mirrors copied
+with `crane copy` or `skopeo copy --all` keep it. Images pulled, retagged, and pushed
+with `docker push` usually don't, and their pods fail with `ImagePullBackOff`.
+
+Compare the two digests:
+
+```bash
+read -r -p 'Mirror repository (for example registry.example.com/haptic): ' mirror_repository
+read -r -p 'haproxyVersion (for example 3.4): ' haproxy_series
+docker buildx imagetools inspect "ghcr.io/haproxy-haptic/haptic:0.9.0-haproxy$haproxy_series" | grep '^Digest:'
+docker buildx imagetools inspect "$mirror_repository:0.9.0-haproxy$haproxy_series" | grep '^Digest:'
+```
+
+If they differ, upgrade with an explicit tag:
+
+```bash
+helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
+  --version 0.9.0 --namespace haptic -f haptic-values.yaml \
+  --set-string controller.image.tag=0.9.0
+```
+
 <a id="forwarding-header-changes-after-070"></a>
 
 ## Upgrading to 0.8
