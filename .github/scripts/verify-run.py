@@ -80,10 +80,11 @@ def job_inventory(base, attempt):
 
 
 def settled_jobs(fetch, required, delays=(5, 10, 20, 40, 60), sleep=time.sleep):
-    """Re-read jobs this one needs while the API still reports them unfinished; it lags the job graph (#360)."""
+    """Re-read while needed jobs are unfinished or absent; the API lags the job graph and rerun copies (#360)."""
     jobs = fetch()
     for delay in delays:
-        if all(job["status"] == "completed" for job in jobs if job["name"] in required):
+        completed = {job["name"] for job in jobs if job["status"] == "completed"}
+        if required <= completed:
             break
         sleep(delay)
         jobs = fetch()
