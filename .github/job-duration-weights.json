@@ -319,6 +319,14 @@
     "upgrade-0.8.1-minimum": {
       "seconds": 684,
       "estimated_from": "upgrade-0.8.0-minimum"
+    },
+    "upgrade-0.9.0-current": {
+      "seconds": 674,
+      "estimated_from": "upgrade-0.8.1-current"
+    },
+    "upgrade-0.9.0-minimum": {
+      "seconds": 684,
+      "estimated_from": "upgrade-0.8.1-minimum"
     }
   },
   "early_jobs": [
