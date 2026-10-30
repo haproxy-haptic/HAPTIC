@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Vector preserves request histogram counts when configuration reloads change the metric pipeline inputs ([#532](https://github.com/haproxy-haptic/HAPTIC/issues/532)).
 
+- Vector's Prometheus exporters omit sample timestamps, so Prometheus no longer drops request metrics as out-of-order samples ([#537](https://github.com/haproxy-haptic/HAPTIC/issues/537)).
+
 - Vector forwards newline-terminated access logs without extra blank stdout records ([#534](https://github.com/haproxy-haptic/HAPTIC/issues/534)).
 
 - Grafana panels use registered configuration-validation outcomes and observability-drop counts instead of an absent histogram and an event-dependent subscriber series ([#530](https://github.com/haproxy-haptic/HAPTIC/issues/530)).

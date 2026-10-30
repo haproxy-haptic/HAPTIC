@@ -403,6 +403,8 @@ files:
           type: prometheus_exporter
           inputs: [metrics_stream]
           address: 0.0.0.0:{{ toint(metricsPort) }}
+          {#- A sample timestamp is the last event's; it moves backwards between scrapes and Prometheus drops the sample (#537). #}
+          suppress_timestamp: true
       {#- Per-SINK in vector, no per-metric override — which is why the size
           histograms get their own exporter below. -#}
       {%- if rmCoreOn || rmConnOn || rmRespOn %}
@@ -416,6 +418,7 @@ files:
           type: prometheus_exporter
           inputs: [metrics_size_stream]
           address: 0.0.0.0:{{ toint(vec | dig("sizeMetricsPort") | fallback(9599)) }}
+          suppress_timestamp: true
           buckets: {{ bucketList("sizeBuckets") }}
       {%- end %}
 
@@ -1499,6 +1502,8 @@ validationTests:
         pattern: '(?s)metrics_size_stream:\s+type: filter\s+inputs:\s+- request_metrics_size_guard'
       - {type: contains, target: file:vector.yaml, pattern: '(?s)metrics:\s+type: prometheus_exporter\s+inputs: \[metrics_stream\]'}
       - {type: contains, target: file:vector.yaml, pattern: '(?s)metrics_sizes:\s+type: prometheus_exporter\s+inputs: \[metrics_size_stream\]'}
+      - {type: contains, target: file:vector.yaml, pattern: '(?s)metrics:\s+type: prometheus_exporter\s+inputs: \[metrics_stream\]\s+address: [^\n]+\s+suppress_timestamp: true'}
+      - {type: contains, target: file:vector.yaml, pattern: '(?s)metrics_sizes:\s+type: prometheus_exporter\s+inputs: \[metrics_size_stream\]\s+address: [^\n]+\s+suppress_timestamp: true'}
       # The guard applies to these metrics only: the hub re-export's label set is
       # already bounded and must stay intact.
       - type: not_contains
