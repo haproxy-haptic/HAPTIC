@@ -807,7 +807,7 @@
           },
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "s"
+          "unit": "ops"
         },
         "overrides": []
       },
@@ -821,24 +821,12 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "histogram_quantile(0.50, sum(rate(haptic_validation_test_duration_seconds_bucket{namespace=~\"$namespace\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p50",
+          "expr": "sum(rate(haptic_config_validation_total{namespace=~\"$namespace\"}[$__rate_interval])) by (result)",
+          "legendFormat": "{{result}}",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "histogram_quantile(0.95, sum(rate(haptic_validation_test_duration_seconds_bucket{namespace=~\"$namespace\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p95",
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "histogram_quantile(0.99, sum(rate(haptic_validation_test_duration_seconds_bucket{namespace=~\"$namespace\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p99",
-          "refId": "C"
         }
       ],
-      "title": "Validation Test Duration Percentiles",
+      "title": "Configuration Validation Outcomes",
       "type": "timeseries"
     },
     {
@@ -1020,7 +1008,7 @@
           },
           "mappings": [],
           "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "ops"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -1034,12 +1022,12 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(rate(haptic_events_dropped_by_subscriber_total{namespace=~\"$namespace\"}[$__rate_interval])) by (pod, subscriber)",
-          "legendFormat": "{{pod}} {{subscriber}}",
+          "expr": "sum(haptic_events_dropped_observability_total{namespace=~\"$namespace\"}) by (pod)",
+          "legendFormat": "{{pod}}",
           "refId": "A"
         }
       ],
-      "title": "Events Dropped Rate by Subscriber",
+      "title": "Observability Event Drops",
       "type": "timeseries"
     },
     {

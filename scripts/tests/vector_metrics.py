@@ -1,5 +1,6 @@
 """Run behavioral assertions against the chart's rendered Vector transforms."""
 
+import copy
 import json
 import pathlib
 import sys
@@ -7,8 +8,29 @@ import sys
 import yaml
 
 work = pathlib.Path(sys.argv[1])
+server_label_enabled = sys.argv[2] == "true"
+documents = list(yaml.safe_load_all((work / "chart.yaml").read_text()))
+if len(sys.argv) > 3 and sys.argv[3] == "--prepare":
+    configs = [document for document in documents
+               if document and document.get("kind") == "HAProxyTemplateConfig"]
+    if len(configs) != 1:
+        sys.exit("the chart must render exactly one HAProxyTemplateConfig")
+    vector = configs[0]["spec"]["templatingSettings"]["extraContext"]["vector"]
+    if vector["requestMetrics"].get("serverLabel") is not server_label_enabled:
+        sys.exit("the chart did not project vector.requestMetrics.serverLabel")
+    selected_tests = []
+    for document in documents:
+        tests = (document or {}).get("spec", {}).get("validationTests", {})
+        if "test-vector-omit-empty-log-fields" in tests:
+            selected_tests.append(tests["test-vector-omit-empty-log-fields"])
+    if len(selected_tests) != 1:
+        sys.exit("the chart must render exactly one Vector log-preservation test")
+    selected_tests[0]["extraContext"]["vector"] = copy.deepcopy(vector)
+    (work / "native-chart.yaml").write_text(yaml.safe_dump_all(documents, sort_keys=False))
+    sys.exit(0)
+
 images = set()
-for document in yaml.safe_load_all((work / "chart.yaml").read_text()):
+for document in documents:
     if not document or document.get("kind") != "Deployment":
         continue
     spec = document["spec"]["template"]["spec"]
@@ -28,6 +50,19 @@ for line in rendered.split("#### vector.yaml", 1)[1].splitlines():
         continue
     body.append(line)
 config = yaml.safe_load("\n".join(body))
+for compact in (False, True):
+    forwarding = {
+        "data_dir": "/tmp/vector-forwarding",
+        "sources": {"haproxy_log": copy.deepcopy(config["sources"]["haproxy_log"])},
+        "sinks": {"stdout": copy.deepcopy(config["sinks"]["stdout"])},
+    }
+    forwarding["sources"]["haproxy_log"]["path"] = "/probe/haproxy.sock"
+    if compact:
+        forwarding["transforms"] = {"log_drop_empty": copy.deepcopy(config["transforms"]["log_drop_empty"])}
+    else:
+        forwarding["sinks"]["stdout"]["inputs"] = ["haproxy_log"]
+    (work / f"forwarding-{str(compact).lower()}.yaml").write_text(yaml.safe_dump(forwarding, sort_keys=False))
+
 transforms = config["transforms"]
 for transform in transforms.values():
     transform["inputs"] = ["test_access_log" if name == "haproxy_log" else name
@@ -53,6 +88,7 @@ def case(name, message, outputs=(), absent=()):
 base = {
     "status": 200, "method": "GET", "resource": "team/route", "service": "echo",
     "instance_pod": "haproxy-1", "host": "example.com", "route": "example.com/api/*",
+    "server": "echo-abc123",
     "term": "----", "bytes": 4096, "bytes_in": 128,
     "total_time_ms": 25, "request_time_ms": 2, "queue_time_ms": 3,
     "connect_time_ms": 4, "response_time_ms": 5,
@@ -69,6 +105,7 @@ checks = [output("request_metrics_base", '\n'.join([
     'assert_eq!(.rm_bytes_in, 128)', 'assert_eq!(.rm_req_dur, 0.025)',
     'assert_eq!(.rm_upstream, 0.020)', 'assert_eq!(.rm_connect, 0.004)',
     'assert_eq!(.rm_header, 0.005)',
+    'assert_eq!(.rm_server, "echo-abc123")' if server_label_enabled else 'assert!(!exists(.rm_server))',
 ]))]
 for key, metric, value in [
     ("rateLimitDegraded", "degraded_rate_limit_total", 1),
@@ -85,7 +122,7 @@ checks.append(output("observe_deniedBy_metric", '\n'.join([
 ])))
 
 for transform, values in [
-    ("request_metrics_core", {"requests": 1.0, "request_duration_seconds": 0.025}),
+    ("request_metrics_core", {"requests_total": 1.0, "requests": 1.0, "request_duration_seconds": 0.025}),
     ("request_metrics_sizes", {"request_size": 128.0, "response_size": 4096.0}),
     ("request_metrics_connect", {"connect_duration_seconds": 0.004}),
     ("request_metrics_response", {"header_duration_seconds": 0.005, "response_duration_seconds": 0.020}),
@@ -95,9 +132,10 @@ for transform, values in [
         'assert_eq!(.tags.status, "200")', 'assert_eq!(.tags.namespace, "team")',
         'assert_eq!(.tags.ingress, "route")', 'assert_eq!(.tags.service, "echo")',
         'assert_eq!(.tags.method, "GET")', 'assert_eq!(.tags.controller_pod, "haproxy-1")',
+        'assert_eq!(.tags.server, "echo-abc123")' if server_label_enabled else 'assert!(!exists(.tags.server))',
         f'expected = {json.dumps(values)}',
         'value = get!(expected, [string!(.name)])',
-        'if .name == "requests" { assert_eq!(.counter.value, value) } else {',
+        'if .name == "requests" || .name == "requests_total" { assert_eq!(.counter.value, value) } else {',
         '  assert_eq!(.distribution.samples[0].value, value)',
         '  assert_eq!(.distribution.samples[0].rate, 1)',
         '  assert_eq!(.distribution.statistic, "histogram")',
@@ -105,6 +143,21 @@ for transform, values in [
     ])))
 
 cases = [case("request fields and feature counters", json.dumps(base), checks)]
+for name, server in [("no selected server", "<NOSRV>"), ("empty server", ""),
+                     ("non-string server", None), ("missing server", None)]:
+    record = dict(base, server=server)
+    if name == "missing server":
+        del record["server"]
+    server_checks = [output("request_metrics_base",
+                            'assert_eq!(.rm_server, "")' if server_label_enabled
+                            else 'assert!(!exists(.rm_server))')]
+    for transform in ["request_metrics_core", "request_metrics_sizes",
+                      "request_metrics_connect", "request_metrics_response"]:
+        server_checks.append(output("observe_" + transform,
+                                    'assert_eq!(.tags.server, "")' if server_label_enabled
+                                    else 'assert!(!exists(.tags.server))'))
+    cases.append(case(name, json.dumps(record), server_checks))
+
 for name, text in [
     ("process message", "[NOTICE] worker started"),
     ("truncated JSON", '{"status": 200'),

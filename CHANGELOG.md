@@ -12,9 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Helm chart
 
+#### Added
+
+- Optional `vector.requestMetrics.serverLabel` identifies the selected upstream server in request counters and duration histograms ([#533](https://github.com/haproxy-haptic/HAPTIC/issues/533)).
+
 #### Changed
 
 - Published release charts select matching multi-platform controller image digests by default, including agents and lifecycle hooks; explicit image tags and digests retain precedence ([#527](https://github.com/haproxy-haptic/HAPTIC/issues/527)).
+
+#### Fixed
+
+- Vector preserves request histogram counts when configuration reloads change the metric pipeline inputs ([#532](https://github.com/haproxy-haptic/HAPTIC/issues/532)).
+
+- Vector forwards newline-terminated access logs without extra blank stdout records ([#534](https://github.com/haproxy-haptic/HAPTIC/issues/534)).
+
+- Grafana panels use registered configuration-validation outcomes and observability-drop counts instead of an absent histogram and an event-dependent subscriber series ([#530](https://github.com/haproxy-haptic/HAPTIC/issues/530)).
+- Request counters expose the conventional `_requests_total` name while retaining the unsuffixed counter as a compatibility alias ([#531](https://github.com/haproxy-haptic/HAPTIC/issues/531)).
 
 ## [0.8.1] - 2026-10-29
 

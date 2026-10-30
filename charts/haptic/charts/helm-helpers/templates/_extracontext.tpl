@@ -299,6 +299,7 @@
             "terminationStateLabel" $rm.terminationStateLabel
             "pathLabel" $rm.pathLabel
             "hostLabel" $rm.hostLabel
+            "serverLabel" $rm.serverLabel
             "durationBuckets" $rm.durationBuckets
             "sizeBuckets" $rm.sizeBuckets
             "cardinalityLimit" ($rm.cardinalityLimit | default dict)

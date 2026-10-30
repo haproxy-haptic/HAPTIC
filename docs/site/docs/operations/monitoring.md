@@ -304,7 +304,8 @@ prefix. To reuse ingress-nginx dashboards and alerts, check the
 
 | Metric | Type | Measures | Endpoint |
 |--------|------|----------|----------|
-| `haptic_ingress_controller_requests` | counter | One per logged request | `9598` |
+| `haptic_ingress_controller_requests_total` | counter | One per logged request | `9598` |
+| `haptic_ingress_controller_requests` | counter | Compatibility alias of `requests_total`, with identical labels and values | `9598` |
 | `haptic_ingress_controller_request_duration_seconds` | histogram | Total active time — what the client experienced (`%Ta`) | `9598` |
 | `haptic_ingress_controller_response_duration_seconds` | histogram | The whole upstream call: connect, headers, and body transfer | `9598` |
 | `haptic_ingress_controller_connect_duration_seconds` | histogram | Establishing the backend connection (`%Tc`) | `9598` |
@@ -317,11 +318,46 @@ backend reachability or connection capacity; rising header time toward the
 application; and rising total time alone toward request or response transfer.
 Compare these signals with backend logs before assigning a cause.
 
-**The upstream timers are only recorded when the phase happened.** A request HAProxy answered itself — a deny, a redirect, a 503 with no live endpoint — increments `requests` and `request_duration_seconds` and contributes to neither `connect_duration_seconds` nor `header_duration_seconds`. Recording a zero there would report that the backend answered instantly on a request that never reached one. Look at `term` instead.
+**The upstream timers are only recorded when the phase happened.** A request HAProxy answered itself — a deny, a redirect, a 503 with no live endpoint — increments both request-counter names and `request_duration_seconds` and contributes to neither `connect_duration_seconds` nor `header_duration_seconds`. Recording a zero there would report that the backend answered instantly on a request that never reached one. Look at `term` instead.
+
+### Request counter compatibility
+
+Use `haptic_ingress_controller_requests_total` in new queries. The existing
+`haptic_ingress_controller_requests` name remains a compatibility alias; the
+`vector.requestMetrics.metrics.requests` setting controls both. Don't add their
+rates: they represent the same observations.
+
+For a fleet that includes releases exposing only the old name, select the new
+counter per label set before aggregating:
+
+```promql
+sum by (namespace, ingress) (
+  rate(haptic_ingress_controller_requests_total[5m])
+  or rate(haptic_ingress_controller_requests[5m])
+)
+```
+
+### Configuration reloads
+
+Adding or removing log metrics keeps existing active request counters and
+histogram buckets. Changing the exporter's bucket settings or restarting Vector
+resets its state. Idle series can expire after one minute; the next request
+starts new counters for that label set.
+
+### Linking metrics to traces
+
+Vector's Prometheus exporter doesn't attach trace IDs as OpenMetrics exemplars,
+including when the same access log produces trace spans. Don't add trace IDs to
+metric tags: each ID would create another time series. HAPTIC tracks native
+Vector support in [#529](https://github.com/haproxy-haptic/HAPTIC/issues/529).
+
+Collector span metrics can provide exemplars on separate trace-derived
+metrics. They don't replace these full-request metrics: HAPTIC honors trace
+sampling, so requests excluded by sampling don't contribute spans.
 
 ### Labels
 
-Every family carries the same set:
+Every family carries the same labels. `server` is disabled by default:
 
 | Label | Value |
 |-------|-------|
@@ -332,6 +368,7 @@ Every family carries the same set:
 | `service` | The Kubernetes Service behind the chosen backend |
 | `host` | Request host |
 | `term` | HAProxy's 4-character termination state |
+| `server` | Optional selected HAProxy server name; empty when no server was selected |
 | `controller_class`, `controller_namespace`, `controller_pod` | Which HAPTIC served it |
 
 `term` is the one label `ingress-nginx` has no equivalent of, and it's usually the fastest route from "5% of requests are failing" to a cause:
@@ -349,7 +386,7 @@ The full list is in HAProxy's [session state at disconnection](https://docs.hapr
 
 ```promql
 # Error rate per Ingress
-sum by (namespace, ingress) (rate(haptic_ingress_controller_requests{status=~"5.."}[5m]))
+sum by (namespace, ingress) (rate(haptic_ingress_controller_requests_total{status=~"5.."}[5m]))
 
 # p99 latency per route
 histogram_quantile(0.99, sum by (le, namespace, ingress, path) (
@@ -361,11 +398,40 @@ histogram_quantile(0.95, sum by (le) (rate(haptic_ingress_controller_header_dura
 
 # Backends timing out or refusing connections
 sum by (namespace, ingress, service, term) (
-  rate(haptic_ingress_controller_requests{term=~"sH..|SC..|sQ.."}[5m])) > 0
+  rate(haptic_ingress_controller_requests_total{term=~"sH..|SC..|sQ.."}[5m])) > 0
 
 # Bandwidth per Ingress
 sum by (namespace, ingress) (rate(haptic_ingress_controller_response_size_sum[5m]))
 ```
+
+### Finding errors on one upstream target
+
+Enable the `server` label to compare targets behind the same route:
+
+```yaml
+vector:
+  requestMetrics:
+    serverLabel: true
+```
+
+The value is HAProxy's selected server name (`%s`), which also appears in
+`haproxy_server_*{server=...}`. HAPTIC normally derives it from the endpoint's Pod
+name, but prefixes, rewritten characters, and endpoints without Pod references can
+change it. Treat it as a HAProxy server identifier, not a Kubernetes Pod name.
+Names are scoped to a backend; `server` alone isn't a unique key for joining
+native exporter series. Requests with no selected server, including HAProxy's
+`<NOSRV>` marker, use an empty value.
+
+```promql
+sum by (namespace, ingress, service, path, server) (
+  rate(haptic_ingress_controller_requests_total{status=~"5..",server!=""}[5m])
+)
+```
+
+The label applies to both request-counter names and all duration and size
+histograms. Each populated target adds series for every existing route and label
+combination, multiplied by histogram buckets. It uses the same cardinality limit
+as the other request labels.
 
 ### Controlling cardinality
 
