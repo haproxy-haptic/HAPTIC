@@ -23,7 +23,7 @@
     {
       "title": "HAPTIC Controller",
       "type": "link",
-      "url": "/d/haptic-controller/haptic-controller",
+      "url": "/d/haptic/haptic-controller",
       "targetBlank": false,
       "includeVars": true,
       "keepTime": true

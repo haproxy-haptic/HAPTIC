@@ -2811,7 +2811,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "HAPTIC Controller",
-  "uid": "haptic-controller",
+  "uid": "haptic",
   "version": 1,
   "weekStart": ""
 }

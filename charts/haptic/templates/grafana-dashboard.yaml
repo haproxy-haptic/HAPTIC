@@ -19,7 +19,7 @@ metadata:
     {{- end }}
 data:
   {{- if $gd.useBuiltIn }}
-  haptic-controller.json: |-
+  haptic.json: |-
 {{ .Files.Get "dashboards/haptic-controller.json" | indent 4 }}
   haptic-traffic.json: |-
 {{ .Files.Get "dashboards/haptic-traffic.json" | indent 4 }}

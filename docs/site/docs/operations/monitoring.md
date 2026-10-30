@@ -526,7 +526,7 @@ and import them in Grafana:
 
 ```bash
 kubectl get configmap haptic-grafana-dashboard -n haptic \
-  -o jsonpath='{.data.haptic-controller\.json}' > haptic-controller-dashboard.json
+  -o jsonpath='{.data.haptic\.json}' > haptic-controller-dashboard.json
 kubectl get configmap haptic-grafana-dashboard -n haptic \
   -o jsonpath='{.data.haptic-traffic\.json}' > haptic-traffic-dashboard.json
 ```

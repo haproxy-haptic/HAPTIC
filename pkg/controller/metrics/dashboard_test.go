@@ -30,7 +30,7 @@ func TestDashboardMetricsAreRegistered(t *testing.T) {
 		require.Len(t, match, 2)
 		registered[match[1]] = true
 	}
-	dashboard, err := os.ReadFile(filepath.Join("..", "..", "..", "charts", "haptic", "dashboards", "haptic.json"))
+	dashboard, err := os.ReadFile(filepath.Join("..", "..", "..", "charts", "haptic", "dashboards", "haptic-controller.json"))
 	require.NoError(t, err)
 	references := regexp.MustCompile(`\bhaptic_[a-z0-9_]+\b`).FindAllString(string(dashboard), -1)
 	require.NotEmpty(t, references)
