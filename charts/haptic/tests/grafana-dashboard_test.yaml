@@ -140,17 +140,23 @@ tests:
           path: data["haptic.json"]
           pattern: "haptic_reconciliation_queue_wait_seconds"
 
-  - it: should include validation test duration metrics in dashboard
+  - it: should include configuration validation outcomes in dashboard
     asserts:
       - matchRegex:
+          path: data["haptic.json"]
+          pattern: "haptic_config_validation_total"
+      - notMatchRegex:
           path: data["haptic.json"]
           pattern: "haptic_validation_test_duration_seconds"
 
-  - it: should include event dropping metrics in dashboard
+  - it: should include observability event drop counts in dashboard
     asserts:
       - matchRegex:
           path: data["haptic.json"]
-          pattern: "haptic_events_dropped_by_subscriber_total"
+          pattern: "haptic_events_dropped_observability_total"
+      - notMatchRegex:
+          path: data["haptic.json"]
+          pattern: "rate\\(haptic_events_dropped_observability_total"
 
   - it: should include critical event dropping metrics in dashboard
     asserts:

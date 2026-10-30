@@ -219,11 +219,14 @@ vector:
     controllerClass: k8s.io/ingress-nginx
 ```
 
-That reproduces `nginx_ingress_controller_requests` and the six histograms, with
+That reproduces `nginx_ingress_controller_requests_total` and the six histograms, with
 the label set `ingress-nginx` uses — `status`, `method`, `path`, `namespace`,
 `ingress`, `service`, `host`, `controller_class`, `controller_namespace`,
 `controller_pod`. See [Request metrics](operations/monitoring.md#request-metrics)
 for what each family measures.
+
+The original `nginx_ingress_controller_requests` remains a compatibility alias.
+Use the `_total` name in new queries; don't sum the two aliases.
 
 You gain one label: `term`, HAProxy's termination state, which distinguishes a
 backend that refused the connection (`SC--`) from one that timed out without

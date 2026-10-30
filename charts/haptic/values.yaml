@@ -2586,6 +2586,8 @@ vector:
     pathLabel: true
     # The equivalent of ingress-nginx's --metrics-per-host.
     hostLabel: true
+    # HAProxy's selected server name, matching the native exporter's server label.
+    serverLabel: false
 
     # Not ingress-nginx's, which are weak in both domains; the migration guide has
     # a snippet to restore them. Durations are a strict SUPERSET of its
@@ -2617,6 +2619,7 @@ vector:
     # The three upstream timers are recorded only when the phase happened, so a
     # request HAProxy answered itself lands in `requests` and nowhere else.
     metrics:
+      # Emits requests_total and its unsuffixed compatibility alias.
       requests: true
       request_duration_seconds: true
       response_duration_seconds: true
