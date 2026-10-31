@@ -692,8 +692,10 @@ controller:
       mapsDir: /etc/haproxy/maps
       sslCertsDir: /etc/haproxy/ssl
       generalStorageDir: /etc/haproxy/general
-      secretsDir: /etc/haproxy/secrets
       configFile: /etc/haproxy/haproxy.cfg
+      # secretsDir defaults to /etc/haproxy/secrets in the controller. It is left
+      # unset so the rendered config fits the CRDs of releases that predate it.
+      # secretsDir: /etc/haproxy/secrets
       # Optional sync knobs (uncomment to override):
       # configPublishInterval: 10s     # observability CRD republish throttle
       # reloadVerificationTimeout: 10s # agent --reload-timeout; unset = 1m, its max

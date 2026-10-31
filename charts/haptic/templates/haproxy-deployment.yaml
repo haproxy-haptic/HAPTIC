@@ -9,6 +9,7 @@
 {{- $spoaHubEnabled := include "haptic.spoaHub.enabled" . }}
 {{- $vectorEnabled := include "haptic.vector.enabled" . }}
 {{- $dataplaneConfig := .Values.controller.config.dataplane }}
+{{- $secretsDir := $dataplaneConfig.secretsDir | default "/etc/haproxy/secrets" }}
 {{- $podSpec := $haproxy.podSpec }}
 {{- $ports := $haproxy.ports }}
 {{- $proxyProtocol := include "haptic.proxyProtocol" . | fromYaml }}
@@ -30,7 +31,7 @@
   Scoped to haproxy.enabled: with the bundled fleet off, HAPTIC drives an
   external fleet whose layout is none of this chart's business.
 */}}
-{{- range $key, $path := dict "mapsDir" $dataplaneConfig.mapsDir "sslCertsDir" $dataplaneConfig.sslCertsDir "generalStorageDir" $dataplaneConfig.generalStorageDir "secretsDir" $dataplaneConfig.secretsDir "configFile" $dataplaneConfig.configFile }}
+{{- range $key, $path := dict "mapsDir" $dataplaneConfig.mapsDir "sslCertsDir" $dataplaneConfig.sslCertsDir "generalStorageDir" $dataplaneConfig.generalStorageDir "secretsDir" $secretsDir "configFile" $dataplaneConfig.configFile }}
   {{- if ne (dir $path) "/etc/haproxy" }}
     {{- fail (printf "controller.config.dataplane.%s is %q, but the bundled HAProxy pod mounts its config volume at /etc/haproxy and resolves every auxiliary path against it. Files written outside that tree are invisible to HAProxy and to the sidecars. Put %s directly under /etc/haproxy, or set haproxy.enabled=false to manage the fleet yourself." $key $path $key) }}
   {{- end }}
@@ -38,8 +39,8 @@
 {{- if ne $dataplaneConfig.generalStorageDir "/etc/haproxy/general" }}
   {{- fail (printf "controller.config.dataplane.generalStorageDir is %q, but the bundled HAProxy pod mounts its general-storage volume at the fixed path /etc/haproxy/general. Rendered files would land in the HAProxy config volume instead, where the spoa-hub and vector sidecars cannot read them. Leave it at /etc/haproxy/general, or set haproxy.enabled=false." $dataplaneConfig.generalStorageDir) }}
 {{- end }}
-{{- if ne $dataplaneConfig.secretsDir "/etc/haproxy/secrets" }}
-  {{- fail (printf "controller.config.dataplane.secretsDir is %q, but the bundled HAProxy pod mounts its secret-storage volume at the fixed path /etc/haproxy/secrets. Secret files would land in the HAProxy config volume instead, where the spoa-hub sidecar cannot read them. Leave it at /etc/haproxy/secrets, or set haproxy.enabled=false." $dataplaneConfig.secretsDir) }}
+{{- if ne $secretsDir "/etc/haproxy/secrets" }}
+  {{- fail (printf "controller.config.dataplane.secretsDir is %q, but the bundled HAProxy pod mounts its secret-storage volume at the fixed path /etc/haproxy/secrets. Secret files would land in the HAProxy config volume instead, where the spoa-hub sidecar cannot read them. Leave it at /etc/haproxy/secrets, or set haproxy.enabled=false." $secretsDir) }}
 {{- end }}
 {{- $selectorLabels := include "haptic.selectorLabels" . }}
 apiVersion: apps/v1

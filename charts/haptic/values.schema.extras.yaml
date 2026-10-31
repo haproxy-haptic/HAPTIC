@@ -108,6 +108,7 @@ controller:
     dataplane:
       port: null  # @schema anyOf: [{}]; description: Removed, haproxy.ports.dataplane is the single source.
       configPublishInterval: 10s
+      secretsDir: /etc/haproxy/secrets
       deploymentTimeout: 30s
       reloadVerificationTimeout: 10s
       syncTimeout: 2m

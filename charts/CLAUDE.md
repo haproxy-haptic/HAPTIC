@@ -35,6 +35,11 @@ iterates **every** published stable release, oldest first.
   operators actually upgrade. Put the migration somewhere render-independent (a
   pre-upgrade hook) instead.
 
+**A new CRD field stays out of the default render.** Argo CD's server-side diff
+checks the release against the cluster's old CRDs before any hook can upgrade
+them (#556); default it in the controller instead. The newest-baseline upgrade
+job dry-runs the rendered objects against the previous release's CRDs.
+
 **When a migration is genuinely temporary**, say so where it is defined: name
 the release that introduced it, the condition under which it becomes dead, and
 the test that would fail if it were removed early. "Delete after 1.0" with no
