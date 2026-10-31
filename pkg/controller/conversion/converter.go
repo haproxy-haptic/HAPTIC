@@ -15,6 +15,7 @@
 package conversion
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -97,7 +98,7 @@ func ConvertSpec(spec *v1alpha1.HAProxyTemplateConfigSpec) (*config.Config, erro
 		MapsDir:                   spec.Dataplane.MapsDir,
 		SSLCertsDir:               spec.Dataplane.SSLCertsDir,
 		GeneralStorageDir:         spec.Dataplane.GeneralStorageDir,
-		SecretsDir:                spec.Dataplane.SecretsDir,
+		SecretsDir:                cmp.Or(spec.Dataplane.SecretsDir, config.DefaultDataplaneSecretsDir),
 		ConfigFile:                spec.Dataplane.ConfigFile,
 		ConfigPublishInterval:     spec.Dataplane.ConfigPublishInterval,
 		ReloadVerificationTimeout: spec.Dataplane.ReloadVerificationTimeout,

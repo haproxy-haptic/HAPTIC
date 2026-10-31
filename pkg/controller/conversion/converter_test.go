@@ -1,6 +1,7 @@
 package conversion
 
 import (
+	"cmp"
 	"encoding/json"
 	"testing"
 
@@ -249,7 +250,9 @@ func TestConvertSpec(t *testing.T) {
 			assert.Equal(t, tt.want.PodSelector, got.PodSelector)
 			assert.Equal(t, tt.want.Controller, got.Controller)
 			assert.Equal(t, tt.want.Logging, got.Logging)
-			assert.Equal(t, tt.want.Dataplane, got.Dataplane)
+			wantDataplane := tt.want.Dataplane
+			wantDataplane.SecretsDir = cmp.Or(wantDataplane.SecretsDir, config.DefaultDataplaneSecretsDir)
+			assert.Equal(t, wantDataplane, got.Dataplane)
 			assert.Equal(t, tt.want.WatchedResources, got.WatchedResources)
 			assert.Equal(t, tt.want.TemplateSnippets, got.TemplateSnippets)
 			assert.Equal(t, tt.want.Maps, got.Maps)
@@ -1053,6 +1056,14 @@ func TestConvertSpec_WithDataplaneDirectories(t *testing.T) {
 	assert.Equal(t, "/etc/haproxy/certs", cfg.Dataplane.SSLCertsDir)
 	assert.Equal(t, "/etc/haproxy/storage", cfg.Dataplane.GeneralStorageDir)
 	assert.Equal(t, "/etc/haproxy/haproxy.cfg", cfg.Dataplane.ConfigFile)
+	// Charts before the secret file class write no secretsDir; a controller
+	// rolled forward under such a config must still start.
+	assert.Equal(t, config.DefaultDataplaneSecretsDir, cfg.Dataplane.SecretsDir)
+
+	spec.Dataplane.SecretsDir = "/srv/secrets"
+	cfg, err = ConvertSpec(&spec)
+	require.NoError(t, err)
+	assert.Equal(t, "/srv/secrets", cfg.Dataplane.SecretsDir)
 }
 
 // TestConvertSpec_WithWatchedResourceDebounceInterval pins that the per-
