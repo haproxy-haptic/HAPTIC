@@ -294,10 +294,16 @@ tests:
           pattern: 'GET /spoa-hub-child-health HTTP/1\.0'
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
-          pattern: "' child-health 8404"
+          pattern: "(?m)^ *' 8404$"
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
-          pattern: 'HTTP/\*" 424 "\*\) exit 1'
+          pattern: 'exit 1 if \$status =~ m\{\^HTTP/\\S\+ 424 \}'
+      - notMatchRegex:
+          path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
+          pattern: '<>"?/dev/tcp'
+      - matchRegex:
+          path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
+          pattern: 'if ! command -v perl >/dev/null 2>&1 \|\| ! command -v timeout >/dev/null 2>&1; then\s+echo "WARNING: \$\{_child_name\} watchdog is disabled because perl or timeout is unavailable'
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
           pattern: '_watch_child "\$_child_pid" &'
@@ -327,10 +333,10 @@ tests:
     asserts:
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
-          pattern: "' child-health 9999"
+          pattern: "(?m)^ *' 9999$"
       - notMatchRegex:
           path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
-          pattern: '/dev/tcp/127\.0\.0\.1/8404'
+          pattern: "(?m)^ *' 8404$"
 
   - it: should omit the sidecar metrics port when metricsAddr is empty
     set:

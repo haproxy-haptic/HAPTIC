@@ -70,6 +70,9 @@ tests:
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="vector")].args[0]
           pattern: 'HEAD /metrics HTTP/1\.0'
+      - notMatchRegex:
+          path: spec.template.spec.initContainers[?(@.name=="vector")].args[0]
+          pattern: '<>"?/dev/tcp'
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="vector")].args[0]
           pattern: '_watch_child "\$_child_pid" &'
