@@ -130,6 +130,15 @@ func TestHapticClientMTLS(t *testing.T) {
 				ExpectEchoHeader(t, "X-SSL-Client-CN", "test-client")
 			return ctx
 		}).
+		Assess("plain HTTP is redirected to HTTPS, except the ACME HTTP-01 path", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			resp := httpclient.New(t).GET(host, "/").ExpectRedirect(t, "https://"+host+"/")
+			if resp.Status != http.StatusPermanentRedirect {
+				t.Fatalf("expected 308 for plain HTTP to a route that requires a client certificate, got %d", resp.Status)
+			}
+			httpclient.New(t).GET(host, "/.well-known/acme-challenge/probe").ExpectOK(t)
+			return ctx
+		}).
 		Assess("a request for the host over another name's TLS connection is misdirected", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
 			// The other name's handshake verifies no client certificate, so serving

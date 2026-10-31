@@ -647,7 +647,7 @@ validationTests:
                 http: *httpRoot
     assertions:
       - type: haproxy_valid
-      - {type: contains, target: "map:mtls-routes.map", pattern: '(?m)^default/verified 1$'}
+      - {type: contains, target: "map:mtls-routes.map", pattern: '(?m)^default/verified required$'}
       - {type: contains, target: "map:mtls-route-sni.map", pattern: '(?m)^default/verified\|a\.example\.com 1$'}
       - {type: not_contains, target: "map:mtls-route-sni.map", pattern: 'alias'}
       - {type: contains, target: "map:mtls-route-sni-regex.map", pattern: '(?m)^\^default/verified\\\|\[\^\.\]\+\\\.wild\\\.example\\\.com\$ 1$'}
@@ -657,6 +657,52 @@ validationTests:
           - 'http-request set-var\(txn\.resource_key\)'
           - 'http-request set-var\(txn\.mtls_route_sni\) var\(txn\.resource_key\),concat\(\|,txn\.mtls_sni\) if \{ var\(txn\.mtls_sni\) -m found \}'
           - 'http-request return status 421 if \{ ssl_fc \} \{ var\(txn\.resource_key\),map\(\S+/mtls-routes\.map\) -m found \} !\{ var\(txn\.mtls_route_sni\),map\(\S+/mtls-route-sni\.map\) -m found \} !\{ var\(txn\.mtls_route_sni\),map_reg\(\S+/mtls-route-sni-regex\.map\) -m found \}'
+          - 'use_backend %\[var\(txn\.backend_name\)\]'
+
+  test-haptic-auth-tls-plain-http-redirected:
+    description: >-
+      Plain HTTP to a route that requires a client certificate never verified one,
+      so it's redirected to HTTPS. The ACME HTTP-01 path stays reachable, and an
+      optional route, which admits callers without a certificate anyway, is not
+      redirected.
+    fixtures:
+      secrets: [*clientCASecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: required
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: required.example.com
+                http: *httpRoot
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: optional
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-verify-client: "optional"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: optional.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:mtls-routes.map", pattern: '(?m)^default/required required$'}
+      - {type: contains, target: "map:mtls-routes.map", pattern: '(?m)^default/optional optional$'}
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - 'frontend http_frontend'
+          - 'http-request set-var\(txn\.resource_key\)'
+          - 'http-request redirect scheme https code 308 if !\{ ssl_fc \} \{ var\(txn\.resource_key\),map\(\S+/mtls-routes\.map\) -m str required \} !\{ path_beg /\.well-known/acme-challenge/ \}'
           - 'use_backend %\[var\(txn\.backend_name\)\]'
 
   test-haptic-auth-tls-match-subject:
