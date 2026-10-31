@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Restart the controllers when the SPOA hub plugin set changes, so their validator stops rejecting configurations that use a newly enabled plugin ([#546](https://github.com/haproxy-haptic/HAPTIC/issues/546)).
 
+#### Security
+
+- Plain HTTP to an Ingress that requires a client certificate is redirected to HTTPS instead of being served without verification; the ACME HTTP-01 path is exempt.
+
 ## [0.9.0] - 2026-10-30
 
 HAPTIC 0.9 pins release charts to signed image digests, splits the Grafana
