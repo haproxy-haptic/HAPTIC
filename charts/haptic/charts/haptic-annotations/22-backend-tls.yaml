@@ -352,10 +352,12 @@ templateSnippets:
   frontend-filters-899-haptic-route-unavailable:
     requires: [ingresses]
     template: |
-      {%- if incremental_value_count("haptic-backend-tls-routes", "any") > 0 -%}
+      {{- render "util-haptic-sso-auth-providers" -}}
+      {%- if incremental_value_count("haptic-backend-tls-routes", "any") > 0 || incremental_value_count("haptic-sso-auth", "routes") > 0 -%}
       {%- var unavailable, e1 = pathResolver.GetPath("haptic-route-unavailable.map", "map") -%}
       {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
       {{ "\n" }}# haptic/route-unavailable
       http-request set-var(txn.denied_by) str(backend_tls_unavailable) if { var(txn.resource_key),map({{ unavailable }}) -m str backend_tls_unavailable }
+      http-request set-var(txn.denied_by) str(sso_auth_unavailable) if { var(txn.resource_key),map({{ unavailable }}) -m str sso_auth_unavailable }
       http-request deny deny_status 503 if { var(txn.resource_key),map({{ unavailable }}) -m found }
       {%- end %}

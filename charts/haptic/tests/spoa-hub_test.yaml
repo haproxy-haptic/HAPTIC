@@ -703,7 +703,7 @@ tests:
           path: spec.templatingSettings.extraContext.spoaHub.haproxy.timeoutProcessing
           value: 6100ms
       - equal:
-          path: spec.templatingSettings.extraContext.spoaHub.haproxy.messageTimeouts["auth-request"]
+          path: spec.templatingSettings.extraContext.spoaHub.haproxy.messageTimeouts["check-sso-auth"]
           value: 6100ms
       - equal:
           path: spec.templatingSettings.extraContext.spoaHub.haproxy.messageTimeouts.mirror

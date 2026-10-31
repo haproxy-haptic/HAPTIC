@@ -1,0 +1,196 @@
+# HAPTIC-native OIDC sign-in through the SPOA hub sso-auth plugin.
+#   haproxy-haptic.org/sso-auth: <Secret in the Ingress namespace>
+#   haproxy-haptic.org/sso-auth-allowed-groups: <comma-separated groups>
+# Documentation: docs/site/docs/libraries/haptic-annotations.md#oidc-sign-in
+templateSnippets:
+  haptic-sso-auth-publications:
+    requires: [ingresses, secrets]
+    incremental:
+      source: ingresses
+      whenAnyPathExists:
+        - "metadata.annotations['haproxy-haptic.org/sso-auth']"
+        - "metadata.annotations['haproxy-haptic.org/sso-auth-allowed-groups']"
+      group: haptic-sso-auth
+      effects: [publishValue]
+    template: |-
+      {%- var ingress = resources.ingresses.GetSingle(
+        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
+      {%- if ingress != nil -%}
+        {%- var ns = ingress.Metadata.Namespace -%}
+        {%- var secretName = ingress.Metadata.Annotations["haproxy-haptic.org/sso-auth"] -%}
+        {%- var record = map[string]any{
+          "namespace": ns,
+          "name": ingress.Metadata.Name,
+          "secretName": secretName,
+          "groups": ingress.Metadata.Annotations["haproxy-haptic.org/sso-auth-allowed-groups"],
+          "resource": map[string]any{
+            "apiVersion": resources.ingresses.APIVersion(),
+            "kind": "Ingress",
+            "metadata": map[string]any{"namespace": ns, "name": ingress.Metadata.Name},
+          },
+        } -%}
+        {#- A '/' would name a Secret in another namespace; only the Ingress's
+            own namespace is readable for this. -#}
+        {%- if secretName != "" && !strings_contains(secretName, "/") -%}
+          {%- var secret = resources.secrets.GetSingle(ns, secretName) -%}
+          {%- if secret != nil -%}
+            {%- var data = map[string]any{} -%}
+            {%- for key, value := range secret.Data -%}
+              {%- data[key] = value | b64decode() | tostring() -%}
+            {%- end -%}
+            {%- record["secretData"] = data -%}
+            {%- record["secretVersion"] = secret.Metadata.ResourceVersion -%}
+          {%- end -%}
+        {%- end -%}
+        {{- shared.Publish("routes", ns + "/" + ingress.Metadata.Name, record) -}}
+      {%- end -%}
+
+  # Validates every route, publishes gf["ssoAuthProviders"] for the spoa-hub
+  # library and gf["ssoAuthRoutes"] for sso-auth.map. A broken route fails only
+  # its own admission; otherwise it records a Warning and answers 503.
+  util-haptic-sso-auth-providers:
+    requires: [ingresses, secrets]
+    template: |-
+      {%- var _, _ = shared.ComputeIfAbsent("hapticSsoAuthPublications", func() any {
+        return render "haptic-sso-auth-publications"
+      }) -%}
+      {%%
+        var _, _ = shared.ComputeIfAbsent("hapticSsoAuthScan", func() any {
+          var _, _ = shared.ComputeIfAbsent("globalFeatures", func() any { return map[string]any{} })
+          var gf = shared.Get("globalFeatures").(map[string]any)
+          var messages = toStringSlice(extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}))
+          var pluginEnabled = messages contains "check-sso-auth"
+          var issuers = to_str_map(extraContext | dig("ssoAuth", "allowedIssuers") | fallback(map[string]any{}))
+          var token = "^[!-~]+$"
+          var providers = map[string]any{}
+          var routes = []string{}
+          var unavailable = []string{}
+
+          for _, recordAny := range incremental_values("haptic-sso-auth", "routes") {
+            var r = recordAny.(map[string]any)
+            var ns = tostring(r["namespace"])
+            var name = tostring(r["name"])
+            var routeID = ns + "/" + name
+            var secretName = tostring(r["secretName"])
+            var subjectMatchesStore = tostring(admissionSubject | dig("store") | fallback("")) == "ingresses" || tostring(admissionSubject | dig("stores", "ingresses") | fallback(false)) == "true"
+            var underAdmission = renderMode == "admission" && subjectMatchesStore && tostring(admissionSubject | dig("namespace") | fallback("")) == ns && tostring(admissionSubject | dig("name") | fallback("")) == name
+            var broken = ""
+            var reject = func(message string) {
+              if underAdmission { fail(message) }
+              if broken == "" {
+                recordEvent(r["resource"], "SsoAuthUnavailable", message)
+                broken = message
+              }
+            }
+
+            var groups = strip(tostring(r["groups"]))
+            if groups == "" { groups = "-" }
+            if !pluginEnabled {
+              reject("Ingress " + routeID + " sets haproxy-haptic.org/sso-auth, but the SPOA hub sso-auth plugin is disabled, so the route answers 503. Set spoaHub.plugins.sso-auth.enabled: true.")
+            }
+            if secretName == "" {
+              reject("Ingress " + routeID + " sets haproxy-haptic.org/sso-auth-allowed-groups without haproxy-haptic.org/sso-auth, so the route answers 503. Set sso-auth to the name of a Secret in namespace " + ns + ".")
+            } else if !regex_search(secretName, "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$") {
+              reject("Ingress " + routeID + " names sso-auth Secret '" + secretName + "', which isn't a Secret name in its own namespace, so the route answers 503. Name a Secret in namespace " + ns + ".")
+            } else if r["secretData"] == nil {
+              reject("Ingress " + routeID + " names sso-auth Secret " + ns + "/" + secretName + ", which doesn't exist or isn't readable, so the route answers 503. Create the Secret, or let HAPTIC read Secrets in namespace " + ns + ".")
+            }
+            if !regex_search(groups, token) {
+              reject("Ingress " + routeID + " has spaces or control characters in haproxy-haptic.org/sso-auth-allowed-groups, so the route answers 503. Separate groups with commas only.")
+            }
+
+            var providerID = ns + "/" + secretName
+            if broken == "" {
+              var data = to_str_map(r["secretData"])
+              var discovery = strip(data["discovery-url"])
+              var clientID = strip(data["client-id"])
+              var callbackPath = strip(data["callback-path"])
+              if callbackPath == "" { callbackPath = "/oauth2/callback" }
+              var passToken = strip(data["pass-token"])
+              var secretRef = "Secret " + providerID
+              var issuerAllowed = false
+              for _, prefix := range issuers {
+                if hasPrefix(discovery, prefix) && (hasSuffix(prefix, "/") || len(discovery) == len(prefix) || discovery[len(prefix):len(prefix)+1] == "/") {
+                  issuerAllowed = true
+                }
+              }
+              if !hasPrefix(discovery, "https://") || !regex_search(discovery, token) {
+                reject(secretRef + " needs discovery-url, an https:// OpenID discovery URL, so Ingress " + routeID + " answers 503.")
+              } else if !issuerAllowed {
+                reject(secretRef + " uses issuer " + discovery + ", which isn't in controller.config.templatingSettings.extraContext.ssoAuth.allowedIssuers, so Ingress " + routeID + " answers 503. Ask the HAPTIC administrator to allow the issuer.")
+              }
+              if clientID == "" || !regex_search(clientID, token) {
+                reject(secretRef + " needs client-id without spaces, so Ingress " + routeID + " answers 503.")
+              }
+              if len(data["cookie-secret"]) < 16 {
+                reject(secretRef + " needs cookie-secret of at least 16 characters, so Ingress " + routeID + " answers 503. For example: openssl rand -base64 32")
+              }
+              if !hasPrefix(callbackPath, "/") || !regex_search(callbackPath, token) {
+                reject(secretRef + " has an invalid callback-path; use a path such as /oauth2/callback. Ingress " + routeID + " answers 503.")
+              }
+              if passToken != "" && passToken != "id_token" && passToken != "access_token" {
+                reject(secretRef + " sets pass-token '" + passToken + "'; use id_token or access_token. Ingress " + routeID + " answers 503.")
+              }
+              for _, key := range []string{"scopes", "extract-claims", "groups-claim"} {
+                if data[key] != "" && !regex_search(strip(data[key]), "^[!-~]+(,[ ]*[!-~]+)*$") {
+                  reject(secretRef + " has spaces or control characters in " + key + "; separate values with commas. Ingress " + routeID + " answers 503.")
+                }
+              }
+              if broken == "" {
+                var fields = map[string]any{
+                  "protocol": "oidc",
+                  "client_id": clientID,
+                  "discovery_url": discovery,
+                  "redirect_uri": callbackPath,
+                }
+                for key, field := range map[string]string{"scopes": "scopes", "extract-claims": "extract_claims", "groups-claim": "groups_claim", "pass-token": "pass_token"} {
+                  if strip(data[key]) != "" { fields[field] = strip(data[key]) }
+                }
+                var secrets = map[string]any{"cookie_secret": data["cookie-secret"]}
+                if data["client-secret"] != "" { secrets["client_secret"] = data["client-secret"] }
+                providers[providerID] = map[string]any{
+                  "id": providerID,
+                  "version": tostring(r["secretVersion"]),
+                  "fields": fields,
+                  "secrets": secrets,
+                }
+              }
+            }
+            if broken == "" {
+              routes = append(routes, routeID + " " + providerID + " " + groups)
+            } else {
+              routes = append(routes, routeID + " - -")
+              unavailable = append(unavailable, routeID + " sso_auth_unavailable")
+            }
+          }
+
+          var providerList = []any{}
+          for _, id := range keys(providers) {
+            providerList = append(providerList, providers[id])
+          }
+          gf["ssoAuthProviders"] = providerList
+          gf["ssoAuthRoutes"] = routes
+          gf["ssoAuthUnavailable"] = unavailable
+          return true
+        })
+      %%}
+
+  map-sso-auth-900-haptic:
+    requires: [ingresses, secrets]
+    template: |-
+      {{- render "util-haptic-sso-auth-providers" -}}
+      {%- var gf = shared.Get("globalFeatures").(map[string]any) -%}
+      {%- for _, line := range gf["ssoAuthRoutes"].([]string) -%}
+      {{ "\n" }}{{ line }}
+      {%- end -%}
+
+  # Unusable routes fail closed here as well, so they stay closed while the
+  # sso-auth plugin or the whole SPOA hub is disabled.
+  map-haptic-route-unavailable-830-haptic-sso-auth:
+    requires: [ingresses, secrets]
+    template: |-
+      {{- render "util-haptic-sso-auth-providers" -}}
+      {%- var gf = shared.Get("globalFeatures").(map[string]any) -%}
+      {%- for _, line := range gf["ssoAuthUnavailable"].([]string) -%}
+      {{ "\n" }}{{ line }}
+      {%- end -%}

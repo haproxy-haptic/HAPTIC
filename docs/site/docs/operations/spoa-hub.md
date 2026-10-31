@@ -354,6 +354,37 @@ Apply the combined values, then send a request through one of your routes.
 Check the application's received `X-Country` header. Addresses absent from the
 database, including private cluster addresses, don't produce a country code.
 
+## OIDC sign-in
+
+The `sso-auth` plugin signs users in with OpenID Connect for Ingresses that set
+[`haproxy-haptic.org/sso-auth`](../libraries/haptic-annotations.md#oidc-sign-in).
+Application teams describe their provider in a Secret in the Ingress's namespace;
+you decide which identity providers they may use.
+
+```yaml
+spoaHub:
+  plugins:
+    sso-auth:
+      enabled: true
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        ssoAuth:
+          allowedIssuers:
+            keycloak: https://keycloak.example.com/realms/main/
+```
+
+A provider Secret's `discovery-url` must start with one of the
+`allowedIssuers` prefixes; otherwise its routes answer `503`. The hub fetches
+the discovery document, signing keys and tokens from the HAProxy pods, so allow
+egress from those pods to the issuer if you restrict it with NetworkPolicy.
+
+HAPTIC reads each provider Secret from the Ingress's namespace. With
+`controller.rbac.releaseNamespaceSecretsOnly: true`, only Ingresses in the
+release namespace can use `sso-auth`. The client secret and cookie secret reach
+the hub as Secret-backed files, never in a readable custom resource.
+
 ## Verifying the published image
 
 The image is signed by digest with cosign keyless. The CycloneDX Software Bill

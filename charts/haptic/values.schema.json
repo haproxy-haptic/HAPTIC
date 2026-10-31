@@ -684,6 +684,18 @@
                       },
                       "additionalProperties": false
                     },
+                    "ssoAuth": {
+                      "type": "object",
+                      "properties": {
+                        "allowedIssuers": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "statusPatches": {
                       "type": "object",
                       "properties": {

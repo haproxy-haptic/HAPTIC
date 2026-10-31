@@ -120,6 +120,6 @@ maps:
       {{ on_own_lines(render_glob "map-haptic-bandwidth-routes-*") -}}
   haptic-route-unavailable.map:
     template: |
-      # <ns>/<name> → <denied_by reason> for a route whose backend TLS could not be configured.
+      # <ns>/<name> → <denied_by reason> for a route whose backend TLS or sso-auth provider is unusable.
       # Populated by map-haptic-route-unavailable-*; read by frontend-filters-899-haptic-route-unavailable.
       {{ on_own_lines(render_glob "map-haptic-route-unavailable-*") -}}

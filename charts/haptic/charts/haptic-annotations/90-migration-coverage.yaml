@@ -527,6 +527,12 @@ _migrationCoverage:
       haproxy-haptic.org/src-ip-header:
         status: supported
         note: "http-request set-src hdr(<name>), host-scoped; header name ValidateConfigValue-guarded; naming X-Forwarded-For keeps the client's X-Forwarded-For for the route"
+      haproxy-haptic.org/sso-auth:
+        status: supported
+        note: "OIDC sign-in via the SPOA hub sso-auth plugin; provider from a Secret in the Ingress namespace, issuer allowlisted in extraContext.ssoAuth.allowedIssuers."
+      haproxy-haptic.org/sso-auth-allowed-groups:
+        status: supported
+        note: "Comma-separated groups; a signed-in user in none of them gets 403."
       haproxy-haptic.org/ssl-passthrough:
         status: supported
         note: "Incremental per-Ingress SNI publication with winner-conditioned backends; ssl.yaml builds the SNI TCP frontend."

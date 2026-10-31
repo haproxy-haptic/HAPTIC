@@ -1,0 +1,189 @@
+_sso_auth_fixtures:
+  spoaHub: &ssoSpoaHub
+    enabled: true
+    haproxy:
+      socketPath: /run/spoa/hub.sock
+      modeSpop: true
+      messages: ["check-sso-auth"]
+      timeoutHello: 2s
+      timeoutIdle: 5m
+      timeoutProcessing: 6100ms
+      poolMaxConn: 100
+      poolPurgeDelay: 30s
+    hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
+    plugins:
+      - name: sso_auth
+        library: libhaproxy_spoa_hub_plugin_sso_auth.so
+        messages: ["check-sso-auth"]
+        timeoutMs: 6000
+        dependsOn: []
+        params: ""
+  ssoAuth: &ssoAllowIdp
+    allowedIssuers: {idp: "https://idp.example.com/realms/main/"}
+  services: &ssoServices
+    - apiVersion: v1
+      kind: Service
+      metadata: { namespace: app, name: web }
+      spec: { ports: [{ port: 80 }] }
+  secret: &ssoSecret
+    apiVersion: v1
+    kind: Secret
+    metadata: { namespace: app, name: app-oidc, resourceVersion: "42" }
+    type: Opaque
+    data:
+      discovery-url: aHR0cHM6Ly9pZHAuZXhhbXBsZS5jb20vcmVhbG1zL21haW4vLndlbGwta25vd24vb3BlbmlkLWNvbmZpZ3VyYXRpb24=
+      client-id: YXBw
+      client-secret: Y2xpZW50LXNlY3JldC12YWx1ZS14eXo=
+      cookie-secret: Y29va2llLXNlY3JldC0wMTIzNDU2Nzg5
+      pass-token: aWRfdG9rZW4=
+  ingress: &ssoIngress
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      namespace: app
+      name: web
+      annotations:
+        haproxy-haptic.org/sso-auth: app-oidc
+        haproxy-haptic.org/sso-auth-allowed-groups: /admins,/ops
+    spec:
+      ingressClassName: haptic
+      rules:
+        - host: app.example.com
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend: {service: { name: web, port: { number: 80 } }}
+
+validationTests:
+  test-haptic-sso-auth-provider-from-secret:
+    _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
+    description: >-
+      sso-auth turns the Ingress's Secret into a hub provider whose secrets are
+      Secret-backed files, never TOML values, and routes the Ingress through the
+      check-sso-auth SPOE message with its allowed groups.
+    extraContext: { spoaHub: *ssoSpoaHub, ssoAuth: *ssoAllowIdp }
+    fixtures:
+      services: *ssoServices
+      secrets: [*ssoSecret]
+      ingresses: [*ssoIngress]
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:sso-auth.map", pattern: "(?m)^app/web app/app-oidc /admins,/ops$"}
+      - {type: contains, target: "file:spoa-hub-config.toml", pattern: "\\[plugins\\.params\\.providers\\.\"app/app-oidc\"\\]\\n# version 42\\nclient_id = \"app\"\\ndiscovery_url = \"https://idp\\.example\\.com/realms/main/\\.well-known/openid-configuration\"\\npass_token = \"id_token\"\\nprotocol = \"oidc\"\\nredirect_uri = \"/oauth2/callback\"\\nclient_secret_file = \"\\S*/secrets/sso\\.app\\.app-oidc\\.client_secret\"\\ncookie_secret_file = \"\\S*/secrets/sso\\.app\\.app-oidc\\.cookie_secret\""}
+      - {type: not_contains, target: "file:spoa-hub-config.toml", pattern: "client-secret-value-xyz|cookie-secret-0123456789"}
+      - {type: contains, target: "secret:sso.app.app-oidc.client_secret", pattern: "^client-secret-value-xyz$"}
+      - {type: contains, target: "secret:sso.app.app-oidc.cookie_secret", pattern: "^cookie-secret-0123456789$"}
+      - {type: not_contains, target: haproxy.cfg, pattern: "client-secret-value-xyz|cookie-secret-0123456789"}
+      - {type: contains, target: "file:spoe.conf", pattern: "spoe-message check-sso-auth\\n\\s+args provider=var\\(txn\\.sso_provider\\) allowed_groups=var\\(txn\\.sso_groups\\) cookie=req\\.cook\\(sso_session\\) cookie_1=req\\.cook\\(sso_session_1\\) cookie_2=req\\.cook\\(sso_session_2\\)"}
+      - {type: contains, target: haproxy.cfg, pattern: "http-request send-spoe-group spoa-hub-check-sso-auth check-sso-auth-group if \\{ var\\(txn\\.sso_cfg\\) -m found \\}"}
+      - {type: contains, target: haproxy.cfg, pattern: "http-request return status 503 if \\{ var\\(txn\\.sso_cfg\\) -m found \\} !\\{ var\\(txn\\.hub\\.sso_auth\\.action\\) -m found \\}"}
+      - {type: contains, target: haproxy.cfg, pattern: "http-request del-header X-Auth-Request-Email if \\{ var\\(txn\\.sso_cfg\\) -m found \\}\\n(?s:.*?)http-request set-header X-Auth-Request-Email"}
+      - {type: contains, target: haproxy.cfg, pattern: "http-after-response add-header Set-Cookie %\\[var\\(txn\\.hub\\.sso_auth\\.set_cookie_header_2\\)\\]"}
+
+  test-haptic-sso-auth-issuer-not-allowed:
+    _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
+    description: >-
+      A provider Secret whose issuer isn't in ssoAuth.allowedIssuers gets no hub
+      provider; its route is listed as unusable (503) and gets a Warning Event.
+      A prefix only matches at a path boundary.
+    extraContext:
+      spoaHub: *ssoSpoaHub
+      ssoAuth: {allowedIssuers: {idp: "https://idp.example.com/realms/main"}}
+    fixtures:
+      services: *ssoServices
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: { namespace: app, name: app-oidc }
+          type: Opaque
+          data:
+            # https://idp.example.com/realms/mainframe/... must not match the prefix .../realms/main
+            discovery-url: aHR0cHM6Ly9pZHAuZXhhbXBsZS5jb20vcmVhbG1zL21haW5mcmFtZS8ud2VsbC1rbm93bi9vcGVuaWQtY29uZmlndXJhdGlvbg==
+            client-id: YXBw
+            cookie-secret: Y29va2llLXNlY3JldC0wMTIzNDU2Nzg5
+      ingresses: [*ssoIngress]
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:sso-auth.map", pattern: "(?m)^app/web - -$"}
+      - {type: not_contains, target: "file:spoa-hub-config.toml", pattern: "providers"}
+      - {type: contains, target: events, pattern: "Warning SsoAuthUnavailable networking\\.k8s\\.io/v1 Ingress app/web: Secret app/app-oidc uses issuer"}
+
+  test-haptic-sso-auth-missing-secret-rejected-at-admission:
+    _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
+    description: >-
+      Admission rejects an Ingress whose sso-auth Secret doesn't exist; an
+      Ingress that isn't under review only gets the 503 route.
+    extraContext:
+      spoaHub: *ssoSpoaHub
+      ssoAuth: *ssoAllowIdp
+      renderMode: admission
+      admissionSubject: { stores: { ingresses: true }, namespace: app, name: web }
+    fixtures:
+      services: *ssoServices
+      ingresses: [*ssoIngress]
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "Ingress app/web names sso-auth Secret app/app-oidc, which doesn't exist or isn't readable"
+
+  test-haptic-sso-auth-weak-secret-and-bad-groups:
+    _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
+    description: >-
+      A short cookie-secret, a cross-namespace Secret name and allowed groups
+      with spaces each leave the route unusable instead of open.
+    extraContext: { spoaHub: *ssoSpoaHub, ssoAuth: *ssoAllowIdp }
+    fixtures:
+      services: *ssoServices
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: { namespace: app, name: weak }
+          type: Opaque
+          data:
+            discovery-url: aHR0cHM6Ly9pZHAuZXhhbXBsZS5jb20vcmVhbG1zL21haW4vLndlbGwta25vd24vb3BlbmlkLWNvbmZpZ3VyYXRpb24=
+            client-id: YXBw
+            cookie-secret: c2hvcnQ=
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: app, name: weak, annotations: {haproxy-haptic.org/sso-auth: weak}}
+          spec: {ingressClassName: haptic, rules: [{host: weak.example.com, http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: web, port: {number: 80}}}}]}}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: app, name: other-ns, annotations: {haproxy-haptic.org/sso-auth: kube-system/oidc}}
+          spec: {ingressClassName: haptic, rules: [{host: other.example.com, http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: web, port: {number: 80}}}}]}}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: app, name: spaced, annotations: {haproxy-haptic.org/sso-auth: weak, haproxy-haptic.org/sso-auth-allowed-groups: "a, b"}}
+          spec: {ingressClassName: haptic, rules: [{host: spaced.example.com, http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: web, port: {number: 80}}}}]}}]}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:sso-auth.map", pattern: "(?m)^app/weak - -$"}
+      - {type: contains, target: "map:sso-auth.map", pattern: "(?m)^app/other-ns - -$"}
+      - {type: contains, target: "map:sso-auth.map", pattern: "(?m)^app/spaced - -$"}
+      - {type: contains, target: events, pattern: "needs cookie-secret of at least 16 characters"}
+      - {type: contains, target: events, pattern: "isn't a Secret name in its own namespace"}
+      - {type: contains, target: events, pattern: "Separate groups with commas only"}
+
+  test-haptic-sso-auth-plugin-disabled:
+    _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
+    description: >-
+      With the sso-auth plugin disabled the route still fails closed: it is
+      listed as unusable and gets a Warning Event naming the setting to change.
+    extraContext:
+      spoaHub:
+        enabled: true
+        haproxy: {socketPath: /run/spoa/hub.sock, modeSpop: true, messages: [], timeoutHello: 2s, timeoutIdle: 5m, timeoutProcessing: 500ms, poolMaxConn: 100, poolPurgeDelay: 30s}
+        hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
+        plugins: []
+      ssoAuth: *ssoAllowIdp
+    fixtures:
+      services: *ssoServices
+      secrets: [*ssoSecret]
+      ingresses: [*ssoIngress]
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: events, pattern: "the SPOA hub sso-auth plugin is disabled"}
+      - {type: contains, target: "map:haptic-route-unavailable.map", pattern: "(?m)^app/web sso_auth_unavailable$"}
+      - {type: contains, target: haproxy.cfg, pattern: "http-request deny deny_status 503 if \\{ var\\(txn\\.resource_key\\),map\\([^)]*haptic-route-unavailable\\.map\\) -m found \\}"}
