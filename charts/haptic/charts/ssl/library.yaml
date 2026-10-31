@@ -647,8 +647,8 @@ templateSnippets:
   # verified route over a connection opened for a name that isn't one of its hosts
   # (or none) skipped it; 421 makes the client reconnect with the right SNI. Keyed
   # on the matched route, not the Host header, so a host alias can't bypass it.
-  # Plain HTTP to a route that requires a certificate is redirected to HTTPS; the
-  # ACME HTTP-01 path stays reachable so certificates for the host can still renew.
+  # Plain HTTP to a route that requires a certificate is redirected to HTTPS, except an
+  # ACME HTTP-01 token fetch (GET/HEAD, one base64url segment, RFC 8555 8.3).
   frontend-filters-052-ssl-mtls-sni-host:
     template: |
       {%- import "util-register-map" for RegisterMap -%}
@@ -680,7 +680,8 @@ templateSnippets:
         var mismatch = verifiedRoute + " !{ var(txn.mtls_route_sni),map(" + maps[1] + ") -m found } !{ var(txn.mtls_route_sni),map_reg(" + maps[2] + ") -m found }"
       %%}
       # ssl/mtls-sni-host
-      http-request redirect scheme https code 308 if !{ ssl_fc } { var(txn.resource_key),map({{ maps[0] }}) -m str required } !{ path_beg /.well-known/acme-challenge/ }
+      http-request set-var(txn.mtls_acme_token) bool(1) if !{ ssl_fc } { var(txn.resource_key),map({{ maps[0] }}) -m str required } { method GET HEAD } { path_reg ^/\.well-known/acme-challenge/[A-Za-z0-9_-]+$ }
+      http-request redirect scheme https code 308 if !{ ssl_fc } { var(txn.resource_key),map({{ maps[0] }}) -m str required } !{ var(txn.mtls_acme_token) -m bool }
       http-request set-var(txn.mtls_sni) ssl_fc_sni,lower if {{ verifiedRoute }}
       http-request set-var(txn.mtls_route_sni) var(txn.resource_key),concat(|,txn.mtls_sni) if { var(txn.mtls_sni) -m found }
       http-request set-var(txn.denied_by) str(mtls_sni_host_mismatch) if {{ mismatch }}

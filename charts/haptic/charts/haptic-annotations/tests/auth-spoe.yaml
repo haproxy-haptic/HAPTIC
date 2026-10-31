@@ -662,9 +662,9 @@ validationTests:
   test-haptic-auth-tls-plain-http-redirected:
     description: >-
       Plain HTTP to a route that requires a client certificate never verified one,
-      so it's redirected to HTTPS. The ACME HTTP-01 path stays reachable, and an
-      optional route, which admits callers without a certificate anyway, is not
-      redirected.
+      so it's redirected to HTTPS. Only an ACME HTTP-01 token fetch (GET or HEAD of
+      one token segment) stays on HTTP, and an optional route, which admits callers
+      without a certificate anyway, is not redirected.
     fixtures:
       secrets: [*clientCASecret]
       ingresses:
@@ -702,7 +702,8 @@ validationTests:
         patterns:
           - 'frontend http_frontend'
           - 'http-request set-var\(txn\.resource_key\)'
-          - 'http-request redirect scheme https code 308 if !\{ ssl_fc \} \{ var\(txn\.resource_key\),map\(\S+/mtls-routes\.map\) -m str required \} !\{ path_beg /\.well-known/acme-challenge/ \}'
+          - 'http-request set-var\(txn\.mtls_acme_token\) bool\(1\) if !\{ ssl_fc \} \{ var\(txn\.resource_key\),map\(\S+/mtls-routes\.map\) -m str required \} \{ method GET HEAD \} \{ path_reg \^/\\\.well-known/acme-challenge/\[A-Za-z0-9_-\]\+\$ \}'
+          - 'http-request redirect scheme https code 308 if !\{ ssl_fc \} \{ var\(txn\.resource_key\),map\(\S+/mtls-routes\.map\) -m str required \} !\{ var\(txn\.mtls_acme_token\) -m bool \}'
           - 'use_backend %\[var\(txn\.backend_name\)\]'
 
   test-haptic-auth-tls-match-subject:

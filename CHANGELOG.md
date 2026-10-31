@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Security
 
-- Plain HTTP to an Ingress that requires a client certificate is redirected to HTTPS instead of being served without verification; the ACME HTTP-01 path is exempt.
+- Plain HTTP to an Ingress that requires a client certificate is redirected to HTTPS instead of being served without verification; only ACME HTTP-01 challenge requests stay on HTTP.
 
 ## [0.9.0] - 2026-10-30
 
