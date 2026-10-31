@@ -469,8 +469,9 @@ templateSnippets:
 
   # sso-auth sign-in for routes in sso-auth.map. Authentication fails closed:
   # a missing verdict or an unusable provider answers 503 (see "Runtime
-  # dependency failure" in charts/CLAUDE.md). Identity headers are always
-  # stripped on these routes so a client can't supply its own.
+  # dependency failure" in charts/CLAUDE.md). Identity headers, Authorization
+  # included, are always stripped: these routes need a browser session, so a
+  # client-supplied credential could only be a forgery.
   frontend-spoe-filters-110-sso-auth:
     template: |
       {%- var messages = toStringSlice(extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{})) %}
@@ -483,7 +484,7 @@ templateSnippets:
       http-request set-var(txn.denied_by) str(sso_auth_unavailable) if {{ sso }} { var(txn.sso_provider) -m str -- - }
       http-request return status 503 if {{ sso }} { var(txn.sso_provider) -m str -- - }
       http-request send-spoe-group spoa-hub-check-sso-auth check-sso-auth-group if {{ sso }}
-      http-request del-header Authorization if {{ sso }} { var({{ verdict }}.pass_token) -m bool }
+      http-request del-header Authorization if {{ sso }}
       http-request del-header X-Auth-Request-User if {{ sso }}
       http-request del-header X-Auth-Request-Email if {{ sso }}
       http-request del-header X-Auth-Request-Groups if {{ sso }}

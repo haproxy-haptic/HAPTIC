@@ -383,9 +383,9 @@ Optional Secret keys:
 | `callback-path` | Path of the redirect URI (default `/oauth2/callback`). |
 
 On these routes the backend receives `X-Auth-Request-User` (the `sub` claim),
-`X-Auth-Request-Email`, and `X-Auth-Request-Groups`; HAPTIC removes any copy the
-client sent. With `pass-token`, it also replaces the client's `Authorization`
-header.
+`X-Auth-Request-Email`, and `X-Auth-Request-Groups`. HAPTIC removes any copy of
+these headers and any `Authorization` header the client sent; with `pass-token`,
+`Authorization` carries the user's token instead.
 
 A route whose provider is unusable — missing Secret or key, issuer not allowed,
 plugin disabled — answers `503` and gets an `SsoAuthUnavailable` Warning Event;

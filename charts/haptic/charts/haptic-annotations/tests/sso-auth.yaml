@@ -79,6 +79,7 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: "http-request send-spoe-group spoa-hub-check-sso-auth check-sso-auth-group if \\{ var\\(txn\\.sso_cfg\\) -m found \\}"}
       - {type: contains, target: haproxy.cfg, pattern: "http-request return status 503 if \\{ var\\(txn\\.sso_cfg\\) -m found \\} !\\{ var\\(txn\\.hub\\.sso_auth\\.action\\) -m found \\}"}
       - {type: contains, target: haproxy.cfg, pattern: "http-request del-header X-Auth-Request-Email if \\{ var\\(txn\\.sso_cfg\\) -m found \\}\\n(?s:.*?)http-request set-header X-Auth-Request-Email"}
+      - {type: contains, target: haproxy.cfg, pattern: "http-request del-header Authorization if \\{ var\\(txn\\.sso_cfg\\) -m found \\}\\n(?s:.*?)http-request set-header Authorization \"Bearer %\\[var\\(txn\\.hub\\.sso_auth\\.token\\)\\]\""}
       - {type: contains, target: haproxy.cfg, pattern: "http-after-response add-header Set-Cookie %\\[var\\(txn\\.hub\\.sso_auth\\.set_cookie_header_2\\)\\]"}
 
   test-haptic-sso-auth-issuer-not-allowed:
