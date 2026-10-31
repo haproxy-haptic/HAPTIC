@@ -134,6 +134,9 @@ func (u *upgrade) upgradeTarget(ctx context.Context) (result error) {
 	if err := s.EnsureHelmDiff(ctx); err != nil {
 		return err
 	}
+	if err := u.requireStorableUnderBaselineCRDs(ctx); err != nil {
+		return err
+	}
 	if _, err := s.Kube(ctx, nil, "apply", "--server-side", "--force-conflicts", "-f", filepath.Join(u.chart, "crds")); err != nil {
 		return err
 	}

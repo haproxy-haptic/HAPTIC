@@ -239,6 +239,18 @@ The validation Job renders the chart embedded in that image and checks its
 version before validating the complete future configuration. The CRD hook runs
 first; CRD changes may therefore have applied even when later validation fails.
 
+Argo CD with server-side diff (`controller.diff.server.side: "true"`) compares
+the new release against the CRDs already in the cluster before any hook runs.
+Upgrading to the next release works directly. If you skip a release, apply the
+target version's CRDs first, or the Application stays `Unknown` with
+`field not declared in schema`:
+
+```bash
+read -r -p "Chart version to upgrade to: " HAPTIC_CHART_VERSION
+helm show crds oci://ghcr.io/haproxy-haptic/haptic/charts/haptic --version "$HAPTIC_CHART_VERSION" \
+  | kubectl apply --server-side --force-conflicts -f -
+```
+
 When validation rejects a sync, inspect its retained Job:
 
 ```bash
