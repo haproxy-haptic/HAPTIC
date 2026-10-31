@@ -341,7 +341,32 @@ templateSnippets:
           {%- var prefixInj = ConfigInjectionKind(prefix, "line") -%}
           {%- if prefixInj != "" -%}{{- WebhookRejectOrWarn(ingress, "InvalidOAuthPrefix", "Ingress " + ns + "/" + name + " annotation 'haproxy-ingress.github.io/oauth-uri-prefix' contains " + prefixInj + ", which would inject an entry into the auth-signin map; the OAuth route is not applied. Remove control characters from the value.") -}}{%- continue -%}{%- end -%}
           {%- if len(prefix) > 1 && hasSuffix(prefix, "/") -%}{%- prefix = prefix[:len(prefix)-1] -%}{%- end -%}
-      {{ "\n" }}{{ ns }}/{{ name }} {{ prefix }}/start?rd=%[path]
+      {{ "\n" }}{{ ns }}/{{ name }} {{ prefix }}/start?rd=$escaped_request_uri
+        {%- end -%}
+      {%- end -%}
+
+  # The oauth2-proxy path serves the sign-in, so it must not require it.
+  map-auth-exempt-backend-510-haproxy-ingress-oauth:
+    requires: [ingresses, services]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-ingress.github.io/oauth']"]
+    template: |-
+      {%- import "util-backend-name-ingress" for BackendNameIngress -%}
+      {%- for _, ingress := range []*resources.ingresses.T{resources.ingresses.GetSingle(
+        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name"))} -%}
+        {%- var oauth = ingress.Metadata.Annotations["haproxy-ingress.github.io/oauth"] -%}
+        {%- var authUrl = ingress.Metadata.Annotations["haproxy-ingress.github.io/auth-url"] -%}
+        {%- if (oauth == "oauth2_proxy" || oauth == "oauth2-proxy") && authUrl == "" -%}
+          {%- var prefix = ingress.Metadata.Annotations["haproxy-ingress.github.io/oauth-uri-prefix"] -%}
+          {%- if prefix == "" -%}{%- prefix = "/oauth2" -%}{%- end -%}
+          {%- if len(prefix) > 1 && hasSuffix(prefix, "/") -%}{%- prefix = prefix[:len(prefix)-1] -%}{%- end -%}
+          {%- for _, path := range ingress.Spec.Rules[*].Http.Paths -%}
+            {%- if path.Path == prefix && path.Backend.Service.Name != "" -%}
+      {{ "\n" }}{{ BackendNameIngress(ingress, path) }} 1
+              {%- break -%}
+            {%- end -%}
+          {%- end -%}
         {%- end -%}
       {%- end -%}
 

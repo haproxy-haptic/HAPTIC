@@ -296,7 +296,7 @@ Basic auth, client-certificate verification, external/forward auth, OAuth2-proxy
 | `haproxy-haptic.org/auth-realm` | Sets the basic-auth realm (default `Restricted`). |
 | `haproxy-haptic.org/auth-secret` | Names the Secret holding basic-auth credentials, as `name` or `namespace/name`; while the Secret is absent the route answers 503. Each credential must be a bcrypt, SHA-256/SHA-512 crypt, or yescrypt hash; see [accepted formats](../operations/security.md#basic-auth-password-hashes). |
 | `haproxy-haptic.org/auth-secret-type` | Selects the credentials Secret format: `auth-file` (htpasswd in the `auth` key) or `auth-map` (one key per user); default `auth-file`. |
-| `haproxy-haptic.org/auth-signin` | Sets the sign-in redirect URL for failed external authentication. |
+| `haproxy-haptic.org/auth-signin` | Sets the sign-in redirect URL for failed external authentication. A trailing `$escaped_request_uri` becomes the URL-encoded path and query of the request. |
 | `haproxy-haptic.org/auth-tls-cert-header` | Forwards the client certificate details (`X-SSL-Client-CN`, `X-SSL-Client-DN`, `X-SSL-Client-Cert`) to the upstream when a client certificate was presented. Applied from a per-route map. |
 | `haproxy-haptic.org/auth-tls-cn-header` | Sets the named request header (for example `X-Scope-OrgID`) to the verified client certificate's CN, and removes any value the client sent. Requires `auth-tls-secret`; with `auth-tls-verify-client: optional`, a client without a certificate reaches the backend without the header, so use `on` if the backend treats a missing header as a default tenant. |
 | `haproxy-haptic.org/auth-tls-error-page` | Redirects to the given URL when client-certificate (mTLS) verification fails. |
@@ -306,7 +306,7 @@ Basic auth, client-certificate verification, external/forward auth, OAuth2-proxy
 | `haproxy-haptic.org/auth-type` | Enables basic authentication; the only accepted value is `basic`. |
 | `haproxy-haptic.org/auth-url` | Sets the external authentication service URL; requires the SPOA hub's external-auth plugin. |
 | `haproxy-haptic.org/waf-policy` | Selects a case-sensitive policy name from an administrator-approved catalog or an enabled namespace-local catalog. See [WAF policy setup](../operations/waf-policies.md). |
-| `haproxy-haptic.org/oauth` | Enables authentication through `oauth2-proxy` (the only supported provider), building on external auth; skipped when `auth-url` is set. |
+| `haproxy-haptic.org/oauth` | Enables authentication through `oauth2-proxy` (the only supported provider), building on external auth; skipped when `auth-url` is set. The `oauth2-proxy` path itself isn't authenticated. |
 | `haproxy-haptic.org/oauth-headers` | Lists headers forwarded from the `oauth2-proxy` response on success (default `X-Auth-Request-Email`). |
 | `haproxy-haptic.org/oauth-uri-prefix` | Sets the `oauth2-proxy` callback path prefix (default `/oauth2`). |
 | `haproxy-haptic.org/satisfy` | The value `any` grants access when either the source-IP allowlist or basic authentication passes, instead of requiring both. An IPv6 allowlist requires a backend rule and can change reload behavior. |

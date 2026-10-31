@@ -95,6 +95,13 @@ maps:
       # Populated by ingress libraries' map-auth-signin-* contributions.
       {{ on_own_lines(render_glob "map-auth-signin-*") -}}
 
+  auth-exempt-backend.map:
+    template: |
+      # External-auth exemption: backend name → 1 for routes to the sign-in
+      # service itself, which would otherwise loop. Populated by
+      # map-auth-exempt-backend-*.
+      {{ on_own_lines(render_glob "map-auth-exempt-backend-*") -}}
+
   auth-forward-headers.map:
     template: |
       # External-auth per-ingress request-header allowlist forwarded to the auth service (comma

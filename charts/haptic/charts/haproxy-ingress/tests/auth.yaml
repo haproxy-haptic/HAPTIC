@@ -406,8 +406,14 @@ validationTests:
         pattern: "default/oauthapp http://oauth2-proxy.default.svc:4180/oauth2/auth"
       - type: contains
         target: map:auth-signin.map
-        pattern: "default/oauthapp /oauth2/start\\?rd=%\\[path\\]"
+        pattern: "default/oauthapp /oauth2/start\\?rd=\\$escaped_request_uri"
       - {type: contains, target: map:auth-method.map, pattern: "default/oauthapp HEAD"}
+      - type: contains
+        target: map:auth-exempt-backend.map
+        pattern: "(?m)^default_oauthapp_svc_oauth2-proxy_4180 1$"
+      - type: not_contains
+        target: map:auth-exempt-backend.map
+        pattern: "oauth-app-svc"
       - type: contains
         target: map:auth-extract-headers.map
         pattern: "default/oauthapp X-Auth-Request-Email"
