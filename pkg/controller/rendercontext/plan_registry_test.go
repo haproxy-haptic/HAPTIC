@@ -435,6 +435,20 @@ func TestPlanRegistryPlanPathsAreConfigReferences(t *testing.T) {
 	assert.Equal(t, "maps/host.map", resolved)
 }
 
+// A secret file deploys as a sealed general file that never reloads HAProxy.
+func TestPlanRegistryPlanSealsSecretFiles(t *testing.T) {
+	registry := NewPlanRegistry(&templating.PathResolver{BaseDir: "/etc/haproxy", SecretDir: "secrets"})
+	plan, err := registry.Plan("global\n", &dataplane.AuxiliaryFiles{
+		SecretFiles: []auxiliaryfiles.SecretFile{{Path: "secrets/x", Content: "hunter2", Seal: "seal"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, plan.Files, 2)
+	assert.Equal(t, renderplan.File{
+		Path: "secrets/x", Kind: renderplan.FileKindGeneral, Digest: renderplan.DigestString("hunter2"),
+		Size: 7, Seal: "seal", Content: "hunter2", ContentKnown: true,
+	}, plan.Files[1])
+}
+
 // A resolved path resolves to itself, for every kind: the registry resolves a
 // map's path once in MapMeta and again in Plan, and a certificate name may
 // arrive already sanitised from the file registry.

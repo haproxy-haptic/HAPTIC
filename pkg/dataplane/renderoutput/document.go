@@ -95,6 +95,7 @@ func validateOutputDocumentBindings(
 				family:      descriptor.Family,
 				path:        descriptor.Path,
 				content:     content,
+				seal:        descriptor.Seal,
 			})
 			return nil
 		},
@@ -450,6 +451,7 @@ type documentChecksumItem struct {
 	family      renderartifact.Family
 	path        string
 	content     *renderartifact.Content
+	seal        string
 }
 
 func computeDocumentSnapshotContentChecksum(
@@ -474,6 +476,12 @@ func computeDocumentSnapshotContentChecksum(
 	for _, item := range items {
 		if _, err := configHash.WriteString(item.identifier); err != nil {
 			return "", err
+		}
+		if item.family == renderartifact.Secret {
+			if _, err := configHash.WriteString(item.seal); err != nil {
+				return "", err
+			}
+			continue
 		}
 		if _, err := item.content.WriteTo(configHash); err != nil {
 			return "", err
@@ -549,7 +557,7 @@ func computeSnapshotContentChecksum(
 		}
 		items = append(items, documentChecksumItem{
 			familyOrder: order, identifier: identifier, family: descriptor.Family,
-			path: descriptor.Path, content: content,
+			path: descriptor.Path, content: content, seal: descriptor.Seal,
 		})
 		return nil
 	})
@@ -571,6 +579,8 @@ func documentChecksumIdentity(
 		return 2, descriptor.Path, nil
 	case renderartifact.CA:
 		return 3, descriptor.Path, nil
+	case renderartifact.Secret:
+		return 5, descriptor.Path, nil
 	case renderartifact.CRTList:
 		return 4, descriptor.Path, nil
 	default:

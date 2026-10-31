@@ -19,9 +19,40 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/compression"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/planblob"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/renderplan"
 )
+
+// A checkpoint lands in a readable HAProxyCfg, so a sealed file's digest is
+// restored from the file's own bytes rather than stored.
+func TestCheckpointOmitsSealedFileDigests(t *testing.T) {
+	config := "global\n"
+	secret := "hunter2"
+	plan := &renderplan.Plan{
+		SchemaVersion: renderplan.SchemaVersion,
+		Sections:      []renderplan.Section{{Kind: renderplan.SectionKindCore, Name: "core#0", Text: config, TextKnown: true, Length: len(config), TextDigest: renderplan.DigestString(config)}},
+		Files: []renderplan.File{
+			{Path: renderplan.ConfigFilePath, Kind: renderplan.FileKindConfig, ReloadOnChange: true, Digest: renderplan.DigestString(config), Size: int64(len(config)), Content: config, ContentKnown: true},
+			{Path: "secrets/x", Kind: renderplan.FileKindGeneral, Digest: renderplan.DigestString(secret), Size: int64(len(secret)), Seal: "seal", Content: secret, ContentKnown: true},
+		},
+	}
+	plan.ComputeID()
+	encoded, err := planblob.EncodeCheckpoint(plan)
+	require.NoError(t, err)
+	decompressed, err := compression.Decompress(encoded)
+	require.NoError(t, err)
+	require.NotContains(t, decompressed, renderplan.DigestString(secret))
+
+	files := map[string]string{renderplan.ConfigFilePath: config, "secrets/x": secret}
+	restored, err := planblob.DecodeCheckpoint(encoded, config, files)
+	require.NoError(t, err)
+	require.True(t, renderplan.ExactlyEqual(plan, restored))
+
+	files["secrets/x"] = "short"
+	_, err = planblob.DecodeCheckpoint(encoded, config, files)
+	require.ErrorContains(t, err, "differs from its plan")
+}
 
 func TestCheckpointPreservesStructuredBackendDeclarations(t *testing.T) {
 	plan := fleetPlan()

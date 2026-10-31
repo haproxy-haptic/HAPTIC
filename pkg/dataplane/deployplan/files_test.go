@@ -93,6 +93,30 @@ func TestDiffRemovedFiles(t *testing.T) {
 	}
 }
 
+// TestDiffSealedSecretFiles pins that a secret file is a plain non-reloading
+// write: its rotation costs no reload, and the agent still gets the content
+// digest it verifies, not the seal the plan's identity uses.
+func TestDiffSealedSecretFiles(t *testing.T) {
+	secret := func(content, seal string) renderplan.File {
+		return renderplan.File{
+			Path: "secrets/sso.client-secret", Kind: renderplan.FileKindGeneral,
+			Digest: renderplan.DigestString(content), Size: int64(len(content)), Seal: seal,
+			Content: content, ContentKnown: true,
+		}
+	}
+	before, after := secret("old", "seal-old"), secret("new", "seal-new")
+	prev, next := basePlan(withFile(&before)), basePlan(withFile(&after))
+
+	got := deployplan.Diff(next, on34(prev))
+
+	assert.Equal(t, deployplan.VerdictFileOnly, got.Verdict)
+	assert.Empty(t, got.Ops)
+	assert.Contains(t, deployplan.Files(next), api.File{
+		Path: "secrets/sso.client-secret", Kind: renderplan.FileKindGeneral,
+		Digest: renderplan.DigestString("new"), Proof: renderplan.DigestString("new"), Size: 3,
+	})
+}
+
 func TestFilesProjectsTheWholeSet(t *testing.T) {
 	plan := basePlan(
 		withFile(&renderplan.File{

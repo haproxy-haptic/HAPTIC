@@ -47,19 +47,22 @@ const (
 	CA
 	CRTList
 	GeneralCA
+	Secret
 )
 
 // Descriptor is the deployment-relevant identity and metadata of one artifact.
 type Descriptor struct {
 	Family Family
+	// ReloadOnChange is effective General metadata; every other family normalizes false.
+	ReloadOnChange bool
 	// Name is Filename for general families and the canonical path identity otherwise.
 	Name string
 	// Path is the compatibility output path and remains part of equality.
 	Path string
 	// RuntimePath is the path declared in the render plan. Empty defaults to Path.
 	RuntimePath string
-	// ReloadOnChange is effective General metadata; every other family normalizes false.
-	ReloadOnChange bool
+	// Seal is the Secret family's keyed content digest; every other family normalizes empty.
+	Seal string `json:",omitempty"`
 }
 
 type artifactKey struct {
@@ -90,10 +93,11 @@ func normalizeDescriptor(descriptor Descriptor) (*descriptorData, error) {
 	}
 	descriptor.Path = strings.Clone(descriptor.Path)
 	descriptor.RuntimePath = strings.Clone(descriptor.RuntimePath)
+	descriptor.Seal = strings.Clone(descriptor.Seal)
 	switch descriptor.Family {
 	case Map:
 		descriptor.Name = descriptor.Path
-	case Certificate, CA, CRTList:
+	case Certificate, CA, CRTList, Secret:
 		descriptor.Name = path.Base(descriptor.Path)
 	default:
 		descriptor.Name = strings.Clone(descriptor.Name)
@@ -112,13 +116,18 @@ func canonicalizeDescriptor(descriptor Descriptor) (Descriptor, artifactKey, err
 	if descriptor.Family != General {
 		descriptor.ReloadOnChange = false
 	}
+	if descriptor.Family != Secret {
+		descriptor.Seal = ""
+	} else if descriptor.Seal == "" {
+		return Descriptor{}, artifactKey{}, errInvalidArtifact
+	}
 	if descriptor.RuntimePath == "" {
 		descriptor.RuntimePath = descriptor.Path
 	}
 	switch descriptor.Family {
 	case Map:
 		descriptor.Name = descriptor.Path
-	case Certificate, CA, CRTList:
+	case Certificate, CA, CRTList, Secret:
 		descriptor.Name = path.Base(descriptor.Path)
 	}
 	return descriptor, artifactKey{
@@ -128,7 +137,7 @@ func canonicalizeDescriptor(descriptor Descriptor) (Descriptor, artifactKey, err
 }
 
 func (f Family) valid() bool {
-	return f >= Map && f <= GeneralCA
+	return f >= Map && f <= Secret
 }
 
 func (d *descriptorData) validate() error {

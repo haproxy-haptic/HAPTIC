@@ -97,7 +97,7 @@ type Options struct {
 
 - `TestResults` — suite-level: totals, duration, slice of `TestResult`.
 - `TestResult` — per-test: name, pass/fail, duration, skip reason, rendered content (populated for `--dump-rendered`), auxiliary files, assertion results.
-- `AssertionResult` — per-assertion: type, target (`haproxy.cfg`, `map:<name>`, `file:<name>`, `cert:<name>`, `crt-list:<name>`, `rendering_error`), pass/fail, human-readable error message, target size in bytes, and a 200-char preview of the target on failure.
+- `AssertionResult` — per-assertion: type, target (`haproxy.cfg`, `map:<name>`, `file:<name>`, `cert:<name>`, `crt-list:<name>`, `secret:<name>`, `rendering_error`), pass/fail, human-readable error message, target size in bytes, and a 200-char preview of the target on failure.
 
 See `pkg/controller/testrunner/types.go` for the full schema; `FormatResults` can render any of them as `summary`, `json`, or `yaml`.
 

@@ -35,6 +35,13 @@ tests:
       - failedTemplate:
           errorMessage: 'controller.config.dataplane.generalStorageDir is "/etc/haproxy/files", but the bundled HAProxy pod mounts its general-storage volume at the fixed path /etc/haproxy/general. Rendered files would land in the HAProxy config volume instead, where the spoa-hub and vector sidecars cannot read them. Leave it at /etc/haproxy/general, or set haproxy.enabled=false.'
 
+  - it: rejects a secrets dir the secret-storage volume is not mounted at
+    set:
+      controller.config.dataplane.secretsDir: /etc/haproxy/private
+    asserts:
+      - failedTemplate:
+          errorMessage: 'controller.config.dataplane.secretsDir is "/etc/haproxy/private", but the bundled HAProxy pod mounts its secret-storage volume at the fixed path /etc/haproxy/secrets. Secret files would land in the HAProxy config volume instead, where the spoa-hub sidecar cannot read them. Leave it at /etc/haproxy/secrets, or set haproxy.enabled=false.'
+
   - it: rejects a maps dir outside the base dir
     set:
       controller.config.dataplane.mapsDir: /opt/haproxy/maps

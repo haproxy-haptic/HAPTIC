@@ -227,6 +227,7 @@ The `contains`, `not_contains`, `match_count`, `equals`, and `match_order` asser
 | `file:<name>` | A rendered general file (error pages, etc.), matched by filename |
 | `cert:<name>` | A rendered SSL certificate, matched by basename |
 | `crt-list:<name>` | A rendered crt-list file (registered by a template via `fileRegistry.Register("crt-list", …)`), matched by basename |
+| `secret:<name>` | A rendered secret file (registered via `fileRegistry.Register("secret", …)`), matched by basename |
 | `k8s:<template-name>` | The rendered YAML of a `spec.k8sResources` template (potentially multi-doc with `---`), so you can assert on emitted Kubernetes resources |
 | `status:<ns>/<name>:<phase>` | The JSON status payload a `statusPatch()` call emitted for resource `<ns>/<name>` in the given pipeline phase (`rendered`, `deployed`, `renderFailed`, or `deployFailed`) — the way to test status-patch templates |
 | `events` | The Kubernetes Events the templates recorded via `recordEvent()`, one per line as `<Type> <Reason> <apiVersion> <Kind> <ns>/<name>: <message>` |

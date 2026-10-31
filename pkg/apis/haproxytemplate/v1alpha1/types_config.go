@@ -384,6 +384,13 @@ type DataplaneConfig struct {
 	// +optional
 	GeneralStorageDir string `json:"generalStorageDir,omitempty"`
 
+	// SecretsDir is the directory for secret files, which sidecars read and
+	// HAProxy never does. Their content is published as Secrets.
+	//
+	// Default: /etc/haproxy/secrets
+	// +optional
+	SecretsDir string `json:"secretsDir,omitempty"`
+
 	// ConfigFile is the path to the main HAProxy configuration file.
 	//
 	// Used for validation.

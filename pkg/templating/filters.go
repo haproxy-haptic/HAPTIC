@@ -16,6 +16,7 @@ package templating
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -86,6 +87,10 @@ type PathResolver struct {
 	// GeneralDir is the relative path to the HAProxy general files directory.
 	// Example: "files"
 	GeneralDir string
+
+	// SecretDir is the relative path to the directory of files HAProxy never
+	// reads, for sidecars. Example: "secrets"
+	SecretDir string
 }
 
 // GetBaseDir returns the BaseDir field for use in templates.
@@ -103,11 +108,12 @@ func (pr *PathResolver) GetBaseDir() string {
 //	{{ pathResolver.GetPath("504.http", "file") }}             → files/504.http (relative) or /etc/haproxy/general/504.http (absolute)
 //	{{ pathResolver.GetPath("cert.pem", "cert") }}             → ssl/cert.pem (relative) or /etc/haproxy/ssl/cert.pem (absolute)
 //	{{ pathResolver.GetPath("certificate-list.txt", "crt-list") }} → ssl/certificate-list.txt (relative)
+//	{{ pathResolver.GetPath("sso.client-secret", "secret") }} → secrets/sso.client-secret (relative)
 //	{{ pathResolver.GetPath("", "cert") }}                     → ssl (directory only)
 //
 // Parameters:
 //   - args[0]: filename (string) - The base filename (without directory path), or empty string for directory only
-//   - args[1]: fileType (string) - File type: "map", "file", "cert", or "crt-list"
+//   - args[1]: fileType (string) - File type: "map", "file", "cert", "crt-list", or "secret"
 //
 // Returns:
 //   - Path to the file (relative or absolute depending on PathResolver configuration)
@@ -144,8 +150,13 @@ func (pr *PathResolver) GetPath(args ...any) (any, error) {
 		basePath = pr.SSLDir
 	case "crt-list":
 		basePath = pr.CRTListDir
+	case "secret":
+		if pr.SecretDir == "" {
+			return nil, errors.New("GetPath: no secret file directory is configured; set dataplane.secretsDir")
+		}
+		basePath = pr.SecretDir
 	default:
-		return nil, fmt.Errorf("GetPath: invalid file type %q, must be \"map\", \"file\", \"cert\", or \"crt-list\"", fileTypeStr)
+		return nil, fmt.Errorf("GetPath: invalid file type %q, must be \"map\", \"file\", \"cert\", \"crt-list\", or \"secret\"", fileTypeStr)
 	}
 
 	// If filename is empty, return just the base directory

@@ -48,6 +48,7 @@ result, err := p.PublishConfig(ctx, &configpublisher.PublishRequest{
 | `HAProxyCRTListFile` | one per `AuxiliaryFiles.CRTListFiles[i]` | crt-list manifests for SSL frontends |
 | `Secret` (Opaque) | one per `AuxiliaryFiles.SSLCertificates[i]` | Certificate bundle and target path |
 | `Secret` (Opaque) | one per `AuxiliaryFiles.SSLCaFiles[i]` | CA or trust bundle referenced separately from certificates |
+| `Secret` (Opaque) | one per `AuxiliaryFiles.SecretFiles[i]` | Sidecar secret file; names and annotations carry its keyed seal, its content checksum stays in `data` |
 
 Every child of an ordinary publication carries `metadata.ownerReferences` pointing at the parent `HAProxyCfg`, so `kubectl delete haproxycfg <name>` cascades to maps / general files / crt-lists / Secrets.
 

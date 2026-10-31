@@ -19,7 +19,7 @@ func TestResolvePaths(t *testing.T) {
 	// CRT-list files are always stored under GeneralDir, because the native
 	// CRT-list API triggers a reload on create without a skip_reload
 	// parameter.
-	resolved := ResolvePaths(basePath)
+	resolved := ResolvePaths(&basePath)
 
 	require.NotNil(t, resolved)
 	assert.Equal(t, "/etc/haproxy/maps", resolved.MapsDir)

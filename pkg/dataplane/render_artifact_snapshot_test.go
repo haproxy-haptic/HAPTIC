@@ -158,7 +158,7 @@ func TestAuxiliaryFileSnapshotRuntimePathResolver(t *testing.T) {
 		switch descriptor.Family {
 		case renderartifact.Map, renderartifact.Certificate, renderartifact.CRTList:
 			assert.Equal(t, fmt.Sprintf("runtime/%d/%s", descriptor.Family, descriptor.Path), descriptor.RuntimePath)
-		case renderartifact.General, renderartifact.GeneralCA, renderartifact.CA:
+		case renderartifact.General, renderartifact.GeneralCA, renderartifact.CA, renderartifact.Secret:
 			assert.Equal(t, descriptor.Path, descriptor.RuntimePath)
 		default:
 			t.Fatalf("unexpected family %d", descriptor.Family)
@@ -209,6 +209,7 @@ func TestSnapshotCurrentFilesPreservesLegacyProjection(t *testing.T) {
 		},
 		SSLCertificates: []auxiliaryfiles.SSLCertificate{{Path: "/ssl/cert.pem", Content: "secret"}},
 		SSLCaFiles:      []auxiliaryfiles.SSLCaFile{{Path: "/ca/ca.pem", Content: "secret-ca"}},
+		SecretFiles:     []auxiliaryfiles.SecretFile{{Path: "secrets/client-secret", Content: "hunter2", Seal: "seal"}},
 	}
 	legacy := CloneAuxiliaryFiles(input)
 	legacy.Sort()
@@ -221,6 +222,7 @@ func TestSnapshotCurrentFilesPreservesLegacyProjection(t *testing.T) {
 	assert.NotContains(t, got, "cert.pem")
 	assert.NotContains(t, got, "ca.pem")
 	assert.NotContains(t, got, "trust.pem")
+	assert.NotContains(t, got, "client-secret")
 
 	got["shared"] = "poison"
 	again, err := SnapshotCurrentFiles(snapshot)
@@ -370,6 +372,10 @@ func auxiliaryFileSnapshotFixture() *AuxiliaryFiles {
 			{Path: "z/a.list", Content: "list-a"},
 			{Path: "a/z.list", Content: "list-z"},
 		},
+		SecretFiles: []auxiliaryfiles.SecretFile{
+			{Path: "secrets/z", Content: "secret-z", Seal: "seal-z"},
+			{Path: "secrets/a", Content: "secret-a", Seal: "seal-a"},
+		},
 	}
 }
 
@@ -393,6 +399,10 @@ func assertAuxiliarySnapshotFixture(t *testing.T, files *AuxiliaryFiles) {
 	assert.Equal(t, "a/z-ca.pem", files.SSLCaFiles[0].Path)
 	require.Len(t, files.CRTListFiles, 2)
 	assert.Equal(t, "a/z.list", files.CRTListFiles[0].Path)
+	assert.Equal(t, []auxiliaryfiles.SecretFile{
+		{Path: "secrets/a", Content: "secret-a", Seal: "seal-a"},
+		{Path: "secrets/z", Content: "secret-z", Seal: "seal-z"},
+	}, files.SecretFiles)
 }
 
 func buildForeignSnapshot(t *testing.T, files *AuxiliaryFiles) *renderartifact.Snapshot {
@@ -409,6 +419,7 @@ func reverseAuxiliaryFiles(files *AuxiliaryFiles) *AuxiliaryFiles {
 	slices.Reverse(reversed.SSLCertificates)
 	slices.Reverse(reversed.SSLCaFiles)
 	slices.Reverse(reversed.CRTListFiles)
+	slices.Reverse(reversed.SecretFiles)
 	return reversed
 }
 

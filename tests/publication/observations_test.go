@@ -68,26 +68,28 @@ func TestPublicationRequiresExactFleetAndCertificateCleanup(t *testing.T) {
 }
 
 func TestContentAddressedCertificatePublication(t *testing.T) {
-	for _, caFile := range []bool{false, true} {
+	for _, role := range []string{roleCertificate, roleCA, roleSecretFile} {
 		f := publicationFixture(t)
 		setID := "content-sha256:current"
 		f.config.Annotations[annotationPrefix+"auxiliary-set-id"] = setID
 		f.config.Status.AuxiliaryFiles.SetID = setID
 		metadata := &f.secrets[0].ObjectMeta
 		metadata.Name = "certificate-content-261e534be7bee0881c31c50d5e8ef6303d6326428393529f500ca817e0484f3c"
-		role := "ssl-certificate"
-		if caFile {
-			role = "ssl-ca"
+		if role == roleCA {
 			metadata.Name = "certificate-content-f6985c9509794eb715d72fdaf927bb62de0f3980f3850f4baab4817c352c252b"
 		}
 		metadata.Annotations = map[string]string{annotationPrefix + "auxiliary-path": "/certs/site.pem", annotationPrefix + "checksum": "sha256:certificate", annotationPrefix + "auxiliary-claim": "retained"}
 		metadata.Labels = map[string]string{annotationPrefix + "type": role}
 		refs := []api.ResourceReference{{Name: metadata.Name}}
-		if caFile {
-			f.config.Status.AuxiliaryFiles.SSLCertificates = nil
-			f.config.Status.AuxiliaryFiles.SSLCaFiles = refs
-		} else {
-			f.config.Status.AuxiliaryFiles.SSLCertificates = refs
+		auxiliaryFiles := f.config.Status.AuxiliaryFiles
+		auxiliaryFiles.SSLCertificates = nil
+		switch role {
+		case roleCA:
+			auxiliaryFiles.SSLCaFiles = refs
+		case roleSecretFile:
+			auxiliaryFiles.SecretFiles = refs
+		default:
+			auxiliaryFiles.SSLCertificates = refs
 		}
 		require.True(t, Matches(&f.config, f.agents, f.secrets, 2))
 		metadata.Name += "-publication"

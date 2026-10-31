@@ -28,6 +28,9 @@ type PathConfig struct {
 	// GeneralDir is the base path for HAProxy general files (e.g., /etc/haproxy/general).
 	GeneralDir string
 
+	// SecretDir is the base path for secret files (e.g., /etc/haproxy/secrets).
+	SecretDir string
+
 	// ConfigFile is the path to the HAProxy configuration file (e.g., /tmp/haproxy.cfg).
 	// Only used in validation contexts; can be empty for production paths.
 	ConfigFile string
@@ -53,6 +56,9 @@ type ResolvedPaths struct {
 	// GeneralDir is the resolved path for HAProxy general files.
 	GeneralDir string
 
+	// SecretDir is the resolved path for secret files.
+	SecretDir string
+
 	// ConfigFile is the path to the HAProxy configuration file.
 	ConfigFile string
 }
@@ -64,11 +70,12 @@ type ResolvedPaths struct {
 //   - CRT-list storage: Always uses general directory because the native CRT-list
 //     API triggers reload on create without supporting skip_reload parameter.
 //     General file storage returns 201 without triggering reload.
-func ResolvePaths(base PathConfig) *ResolvedPaths {
+func ResolvePaths(base *PathConfig) *ResolvedPaths {
 	return &ResolvedPaths{
 		MapsDir:    base.MapsDir,
 		SSLDir:     base.SSLDir,
 		GeneralDir: base.GeneralDir,
+		SecretDir:  base.SecretDir,
 		ConfigFile: base.ConfigFile,
 		// Always use GeneralDir for CRT-lists to avoid reload on create.
 		// Native CRT-list API triggers reload without skip_reload support.
@@ -86,6 +93,7 @@ func (r *ResolvedPaths) ToValidationPaths() *ValidationPaths {
 		SSLCertsDir:       r.SSLDir,
 		CRTListDir:        r.CRTListDir,
 		GeneralStorageDir: r.GeneralDir,
+		SecretDir:         r.SecretDir,
 		ConfigFile:        r.ConfigFile,
 	}
 }

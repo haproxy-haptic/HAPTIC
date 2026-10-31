@@ -120,7 +120,7 @@ Scriggo needs to know the *type* of each runtime variable at compile time even t
 |----------|------|---------|
 | `resources` | `*map[string]ResourceStore` | Watched Kubernetes resources (`.List`, `.Fetch`, `.GetSingle`); when a schema is loaded for an entry, the wrapper returns typed pointers (`[]*resources.<name>.T` / `*resources.<name>.T`) |
 | `controller` | `*map[string]ResourceStore` | Controller-managed stores; currently `controller["haproxy_pods"]` only |
-| `pathResolver` | `*PathResolver` | `pathResolver.GetPath(name, kind)` for map / SSL / file / crt-list paths |
+| `pathResolver` | `*PathResolver` | `pathResolver.GetPath(name, kind)` for map / SSL / file / crt-list / secret paths |
 | `fileRegistry` | `*FileRegistrar` | Templates can register dynamically generated auxiliary files via this |
 | `templateSnippets` | `*[]string` | Names of available snippets; useful with `render_glob` |
 | `shared` | `*SharedContext` | Root memoisation; incremental components use keyed unique output, publication, ranked publication, and exact selection |

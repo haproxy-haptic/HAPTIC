@@ -301,7 +301,8 @@ func sealRetainedOutput(config string, payload *retainedPayload, files map[retai
 	for _, descriptor := range payload.Artifacts {
 		key := retainedFileKey{family: descriptor.Family, path: descriptor.Path}
 		file, found := files[key]
-		if !found || (descriptor.Family == renderartifact.General || descriptor.Family == renderartifact.GeneralCA) && descriptor.Name != file.name {
+		if !found || (descriptor.Family == renderartifact.General || descriptor.Family == renderartifact.GeneralCA) && descriptor.Name != file.name ||
+			descriptor.Seal != file.seal {
 			return nil, nil, fmt.Errorf("retained artifact %q is missing or differs", descriptor.Path)
 		}
 		if _, duplicate := contents[descriptor.RuntimePath]; duplicate {
@@ -359,6 +360,7 @@ func (p *Publisher) readRetainedOutput(ctx context.Context, item *v1.HAProxyCfg,
 	if dataplane.ComputeContentChecksum(canonical.Config, &dataplane.AuxiliaryFiles{
 		MapFiles: canonical.AuxiliaryFiles.MapFiles, SSLCertificates: canonical.AuxiliaryFiles.SSLCertificates,
 		SSLCaFiles: canonical.AuxiliaryFiles.SSLCaFiles, GeneralFiles: canonical.AuxiliaryFiles.GeneralFiles, CRTListFiles: canonical.AuxiliaryFiles.CRTListFiles,
+		SecretFiles: canonical.AuxiliaryFiles.SecretFiles,
 	}) != item.Spec.Checksum {
 		return nil, nil, errors.New("retained configuration checksum differs from its content")
 	}

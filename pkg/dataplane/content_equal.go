@@ -31,7 +31,8 @@ func ContentEqual(leftConfig string, leftAux *AuxiliaryFiles, rightConfig string
 		slices.Equal(left.MapFiles, right.MapFiles) &&
 		slices.Equal(left.SSLCertificates, right.SSLCertificates) &&
 		slices.Equal(left.SSLCaFiles, right.SSLCaFiles) &&
-		slices.Equal(left.CRTListFiles, right.CRTListFiles)
+		slices.Equal(left.CRTListFiles, right.CRTListFiles) &&
+		slices.Equal(left.SecretFiles, right.SecretFiles)
 }
 
 // CloneAuxiliaryFiles returns an independently owned copy.
@@ -51,6 +52,7 @@ func CloneAuxiliaryFiles(files *AuxiliaryFiles) *AuxiliaryFiles {
 	clone.SSLCertificates = slices.Clone(files.SSLCertificates)
 	clone.SSLCaFiles = slices.Clone(files.SSLCaFiles)
 	clone.CRTListFiles = slices.Clone(files.CRTListFiles)
+	clone.SecretFiles = slices.Clone(files.SecretFiles)
 	return &clone
 }
 

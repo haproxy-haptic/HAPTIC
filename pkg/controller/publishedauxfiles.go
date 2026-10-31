@@ -52,7 +52,7 @@ type publishedAuxCRD struct {
 func publishedAuxCRDList() []publishedAuxCRD {
 	return []publishedAuxCRD{
 		{haproxyMapFileGVR, "HAProxyMapFile", []string{"mapFiles"}, "entries"},
-		{secretGVR, secretKind, []string{"sslCertificates", "sslCaFiles"}, ""},
+		{secretGVR, secretKind, []string{"sslCertificates", "sslCaFiles", "secretFiles"}, ""},
 		{haproxyGeneralFileGVR, "HAProxyGeneralFile", []string{"generalFiles"}, "content"},
 		{haproxyCRTListFileGVR, "HAProxyCRTListFile", []string{"crtListFiles"}, "entries"},
 	}

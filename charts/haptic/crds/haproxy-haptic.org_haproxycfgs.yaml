@@ -170,6 +170,30 @@ spec:
                       - name
                       type: object
                     type: array
+                  secretFiles:
+                    description: SecretFiles lists the Secret resources containing
+                      secret files.
+                    items:
+                      description: ResourceReference identifies a related Kubernetes
+                        resource.
+                      properties:
+                        kind:
+                          description: Kind is the resource type (e.g., HAProxyMapFile,
+                            Secret).
+                          minLength: 1
+                          type: string
+                        name:
+                          description: Name is the resource name.
+                          minLength: 1
+                          type: string
+                        namespace:
+                          description: Namespace is the resource namespace.
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type: array
                   setID:
                     description: SetID identifies the auxiliary publication committed
                       with these references.

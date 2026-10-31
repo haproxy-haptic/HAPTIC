@@ -41,11 +41,12 @@ type FileRegistry struct {
 	mu           sync.Mutex
 	registered   map[string]registeredFile
 	pathResolver *templating.PathResolver
+	sealKey      []byte
 }
 
 // registeredFile tracks a dynamically-registered file.
 type registeredFile struct {
-	Type         string // "cert", "map", "file", "crt-list"
+	Type         string // "cert", "map", "file", "crt-list", "ca-file", "secret"
 	Filename     string // Base filename
 	Content      string // File content
 	Path         string // Predicted full path
@@ -60,10 +61,12 @@ func reloadsOnPush(flag *bool) bool {
 // NewFileRegistry creates a new FileRegistry with the given path resolver.
 // The path resolver is used to compute full paths for registered files,
 // ensuring they match the paths used by pathResolver.GetPath() method.
-func NewFileRegistry(pathResolver *templating.PathResolver) *FileRegistry {
+// sealKey keys the seal of every "secret" file (auxiliaryfiles.SealContent).
+func NewFileRegistry(pathResolver *templating.PathResolver, sealKey []byte) *FileRegistry {
 	return &FileRegistry{
 		registered:   make(map[string]registeredFile),
 		pathResolver: pathResolver,
+		sealKey:      sealKey,
 	}
 }
 
@@ -72,7 +75,7 @@ func NewFileRegistry(pathResolver *templating.PathResolver) *FileRegistry {
 // or file_registry.Register("file", filename, content, reloadOnPush).
 //
 // Parameters:
-//   - fileType: "cert", "map", "file", "crt-list", or "ca-file"
+//   - fileType: "cert", "map", "file", "crt-list", "ca-file", or "secret"
 //   - filename: Base filename (e.g., "ca.pem", "domains.map", "certificate-list.txt")
 //   - content: File content as a string
 //   - reloadOnPush: optional, "file" only. Defaults to true. Pass false for a
@@ -114,10 +117,10 @@ func (r *FileRegistry) Register(args ...any) (string, error) {
 
 	// Validate file type
 	switch fileType {
-	case "cert", "map", "file", "crt-list", "ca-file":
+	case "cert", "map", "file", "crt-list", "ca-file", "secret":
 		// Valid types
 	default:
-		return "", fmt.Errorf("file_registry.Register: invalid file type %q, must be \"cert\", \"map\", \"file\", \"crt-list\", or \"ca-file\"", fileType)
+		return "", fmt.Errorf("file_registry.Register: invalid file type %q, must be \"cert\", \"map\", \"file\", \"crt-list\", \"ca-file\", or \"secret\"", fileType)
 	}
 
 	// Extract the optional reloadOnPush flag. Only "file" honours it: a cert,
@@ -231,6 +234,13 @@ func (r *FileRegistry) GetFiles() *dataplane.AuxiliaryFiles {
 				ReloadOnPush: reg.ReloadOnPush,
 			})
 
+		case "secret":
+			files.SecretFiles = append(files.SecretFiles, auxiliaryfiles.SecretFile{
+				Path:    reg.Path,
+				Content: reg.Content,
+				Seal:    auxiliaryfiles.SealContent(r.sealKey, reg.Content),
+			})
+
 		case "ca-file":
 			// Delivered as a general file (disk-durable, referenced as
 			// `ca-file <path>`), flagged so a content-only rotation applies via
@@ -260,6 +270,7 @@ func MergeAuxiliaryFiles(static, dynamic *dataplane.AuxiliaryFiles) (*dataplane.
 		result.SSLCertificates = append(result.SSLCertificates, files.SSLCertificates...)
 		result.SSLCaFiles = append(result.SSLCaFiles, files.SSLCaFiles...)
 		result.CRTListFiles = append(result.CRTListFiles, files.CRTListFiles...)
+		result.SecretFiles = append(result.SecretFiles, files.SecretFiles...)
 	}
 	return dataplane.CanonicalizeAuxiliaryFiles(result)
 }

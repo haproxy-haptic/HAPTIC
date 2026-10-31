@@ -52,8 +52,13 @@ published set is incomplete, rendering fails until it's available.
 
 `fileRegistry.Register(kind, filename, content)` registers a file during rendering
 and returns `(path, error)`. Handle the error before using the path. `kind` can be `"file"`, `"cert"`, `"map"`,
-`"crt-list"`, or `"ca-file"`. For example, the bundled libraries use it to
+`"crt-list"`, `"ca-file"`, or `"secret"`. For example, the bundled libraries use it to
 assemble CA bundles and client certificates from Secrets.
+
+Use `"secret"` for a credential a sidecar reads and HAProxy never does, such as
+an OAuth client secret. HAPTIC publishes it as a Kubernetes Secret, never in a
+`HAProxyCfg`, and writes it to `secrets/<filename>` without reloading HAProxy.
+The bundled pod mounts that directory in the agent and SPOA hub containers only.
 
 For `"file"`, an optional fourth argument, `reloadOnPush`, defaults to `true`.
 Pass `false` only for a file read by a sidecar rather than HAProxy; a content
@@ -255,7 +260,7 @@ rendered `HAProxyCfg`, so don't use it for secrets.
 
 `pathResolver` is available in every template. Its `GetPath(filename, type)` method returns the path that HAProxy should use to reference an auxiliary file (map, error file, certificate, crt-list). Use it instead of writing paths by hand so the controller and HAProxy agree on where files live.
 
-**Arguments**: `filename` (string), `type` (one of `"map"`, `"file"`, `"cert"`, `"crt-list"`)
+**Arguments**: `filename` (string), `type` (one of `"map"`, `"file"`, `"cert"`, `"crt-list"`, `"secret"`)
 
 ```go
 {# Map files — resolves to maps/host.map #}

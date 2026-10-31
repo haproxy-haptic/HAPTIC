@@ -692,7 +692,7 @@ func (s *Snapshot) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	var buffer bytes.Buffer
-	err = writePlanJSON(s.root, id, &buffer)
+	err = writePlanJSON(s.root, id, fileJSONFragment, &buffer)
 	if err == nil {
 		return buffer.Bytes(), nil
 	}

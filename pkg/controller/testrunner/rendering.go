@@ -67,12 +67,13 @@ func (r *Runner) createTestPaths(workerID, testNum int) (*dataplane.ValidationPa
 		MapsDir:    filepath.Join(testDir, path.Base(r.config.Dataplane.MapsDir)),
 		SSLDir:     filepath.Join(testDir, path.Base(r.config.Dataplane.SSLCertsDir)),
 		GeneralDir: filepath.Join(testDir, path.Base(r.config.Dataplane.GeneralStorageDir)),
+		SecretDir:  filepath.Join(testDir, path.Base(r.config.Dataplane.SecretsDir)),
 		ConfigFile: filepath.Join(testDir, names.MainTemplateName),
 	}
 
 	// Use centralized path resolution to get capability-aware paths
 	// This ensures CRTListDir is set correctly for HAProxy < 3.2
-	resolvedPaths := dataplane.ResolvePaths(basePaths)
+	resolvedPaths := dataplane.ResolvePaths(&basePaths)
 
 	// Browser/WASM: no writable filesystem. Nothing writes to these paths when
 	// the binary is replaced (render is in-memory; haproxy_valid uses the
@@ -207,7 +208,8 @@ func (r *Runner) renderWithStores(ctx context.Context, engine templating.Engine,
 
 	// Debug logging
 	staticCount := len(staticFiles.MapFiles) + len(staticFiles.GeneralFiles) + len(staticFiles.SSLCertificates) + len(staticFiles.CRTListFiles)
-	dynamicCount := len(dynamicFiles.MapFiles) + len(dynamicFiles.GeneralFiles) + len(dynamicFiles.SSLCertificates) + len(dynamicFiles.CRTListFiles)
+	dynamicCount := len(dynamicFiles.MapFiles) + len(dynamicFiles.GeneralFiles) + len(dynamicFiles.SSLCertificates) + len(dynamicFiles.CRTListFiles) +
+		len(dynamicFiles.SecretFiles)
 	if dynamicCount > 0 {
 		r.logger.Log(context.Background(), logging.LevelTrace, "Merged auxiliary files",
 			"static_count", staticCount,

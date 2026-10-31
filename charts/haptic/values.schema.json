@@ -270,6 +270,9 @@
                 "reloadVerificationTimeout": {
                   "type": "string"
                 },
+                "secretsDir": {
+                  "type": "string"
+                },
                 "sslCertsDir": {
                   "type": "string"
                 },

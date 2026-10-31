@@ -52,6 +52,9 @@ const (
 	// DefaultDataplaneGeneralStorageDir is the default directory for general files.
 	DefaultDataplaneGeneralStorageDir = "/etc/haproxy/general"
 
+	// DefaultDataplaneSecretsDir is the default directory for secret files.
+	DefaultDataplaneSecretsDir = "/etc/haproxy/secrets"
+
 	// DefaultDataplaneConfigFile is the default path to the main HAProxy config file.
 	DefaultDataplaneConfigFile = "/etc/haproxy/haproxy.cfg"
 
@@ -145,6 +148,9 @@ func SetDefaults(cfg *Config) {
 	}
 	if cfg.Dataplane.GeneralStorageDir == "" {
 		cfg.Dataplane.GeneralStorageDir = DefaultDataplaneGeneralStorageDir
+	}
+	if cfg.Dataplane.SecretsDir == "" {
+		cfg.Dataplane.SecretsDir = DefaultDataplaneSecretsDir
 	}
 	if cfg.Dataplane.ConfigFile == "" {
 		cfg.Dataplane.ConfigFile = DefaultDataplaneConfigFile

@@ -370,6 +370,7 @@ These settings control how HAPTIC applies configuration to each HAProxy pod.
 | `controller.config.dataplane.mapsDir` | string | `/etc/haproxy/maps` | HAProxy maps directory. With the bundled fleet (`haproxy.enabled=true`) it must sit directly under `/etc/haproxy`, which is where the pod mounts its config volume and resolves every auxiliary path |
 | `controller.config.dataplane.sslCertsDir` | string | `/etc/haproxy/ssl` | SSL certificates directory. Same `/etc/haproxy` constraint as `mapsDir` when the bundled fleet is enabled; the directory name itself is free |
 | `controller.config.dataplane.generalStorageDir` | string | `/etc/haproxy/general` | Directory for generated auxiliary files. Must remain `/etc/haproxy/general` with the bundled fleet so the sidecars can read them. |
+| `controller.config.dataplane.secretsDir` | string | `/etc/haproxy/secrets` | Directory for secret files that sidecars read. Must remain `/etc/haproxy/secrets` with the bundled fleet, where the pod mounts a memory-backed volume in the agent and SPOA hub containers only. |
 | `controller.config.dataplane.configFile` | string | `/etc/haproxy/haproxy.cfg` | HAProxy config file path. Same `/etc/haproxy` constraint as `mapsDir` when the bundled fleet is enabled |
 
 ## Watched resources

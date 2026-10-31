@@ -357,7 +357,7 @@ func TestRetainedCheckpointsShareUnchangedAuxiliaryFiles(t *testing.T) {
 		return len(maps.Items) + len(secrets.Items)
 	}
 	shared := children()
-	require.Equal(t, 3, shared, "one map, one certificate, and one CA Secret")
+	require.Equal(t, 4, shared, "one map, one certificate, one CA, and one secret-file Secret")
 
 	for _, maxConnections := range []int{1000, 2000, 3000} {
 		crd.ClearActions()

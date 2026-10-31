@@ -13,7 +13,7 @@ func validConfig() *Config {
 	return &Config{
 		PodSelector:      PodSelector{MatchLabels: map[string]string{"app": "haproxy"}},
 		Logging:          LoggingConfig{Level: "INFO"},
-		Dataplane:        DataplaneConfig{Port: 5555, MapsDir: "/etc/haproxy/maps", SSLCertsDir: "/etc/haproxy/certs", GeneralStorageDir: "/etc/haproxy/general", ConfigFile: "/etc/haproxy/haproxy.cfg"},
+		Dataplane:        DataplaneConfig{Port: 5555, MapsDir: "/etc/haproxy/maps", SSLCertsDir: "/etc/haproxy/certs", GeneralStorageDir: "/etc/haproxy/general", SecretsDir: "/etc/haproxy/secrets", ConfigFile: "/etc/haproxy/haproxy.cfg"},
 		WatchedResources: map[string]WatchedResource{"ingresses": {APIVersion: "networking.k8s.io/v1", Resources: "ingresses", IndexBy: []string{"metadata.namespace"}}},
 		HAProxyConfig:    HAProxyConfig{Template: "global"},
 	}
@@ -387,6 +387,7 @@ func versionFieldsBaseConfig(res *WatchedResource) *Config {
 			MapsDir:           "/etc/haproxy/maps",
 			SSLCertsDir:       "/etc/haproxy/certs",
 			GeneralStorageDir: "/etc/haproxy/general",
+			SecretsDir:        "/etc/haproxy/secrets",
 			ConfigFile:        "/etc/haproxy/haproxy.cfg",
 		},
 		WatchedResources: map[string]WatchedResource{"routes": *res},
@@ -1316,7 +1317,7 @@ func TestValidateStructure_SubsumesMergedCompleteness(t *testing.T) {
 	cfg.Logging = LoggingConfig{Level: "INFO"}
 	cfg.Dataplane = DataplaneConfig{
 		Port: 5555, MapsDir: "/etc/haproxy/maps", SSLCertsDir: "/etc/haproxy/certs",
-		GeneralStorageDir: "/etc/haproxy/general", ConfigFile: "/etc/haproxy/haproxy.cfg",
+		GeneralStorageDir: "/etc/haproxy/general", SecretsDir: "/etc/haproxy/secrets", ConfigFile: "/etc/haproxy/haproxy.cfg",
 	}
 	cfg.ValidationTests = map[string]ValidationTest{"silent": {}}
 

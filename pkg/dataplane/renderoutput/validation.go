@@ -262,7 +262,7 @@ func validateArtifactBinding(
 			fmt.Errorf("render artifact runtime path %q is duplicated", descriptor.RuntimePath)
 	}
 	kind, reload := artifactPlanMetadata(descriptor)
-	if file.Kind != kind || file.ReloadOnChange != reload {
+	if file.Kind != kind || file.ReloadOnChange != reload || file.Seal != descriptor.Seal {
 		return renderartifact.Descriptor{}, nil,
 			fmt.Errorf("render artifact %q metadata differs from its plan file", descriptor.RuntimePath)
 	}
@@ -344,6 +344,8 @@ func artifactPlanMetadata(descriptor renderartifact.Descriptor) (string, bool) {
 		return renderplan.FileKindMap, false
 	case renderartifact.General:
 		return renderplan.FileKindGeneral, descriptor.ReloadOnChange
+	case renderartifact.Secret:
+		return renderplan.FileKindGeneral, false
 	case renderartifact.Certificate:
 		return renderplan.FileKindCert, false
 	case renderartifact.CA, renderartifact.GeneralCA:

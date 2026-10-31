@@ -403,6 +403,13 @@ linters:
           - gosec
         text: "G101"
 
+      # A directory path whose constant name contains "Secrets".
+      - path: ^pkg/core/config/defaults\.go$
+        source: '^\s*DefaultDataplaneSecretsDir\s*='
+        linters:
+          - gosec
+        text: "G101"
+
       # G602: slice index out of range — false positive when index is validated
       # by the enclosing loop that found the element
       - path: pkg/k8s/configpublisher/name_helpers\.go

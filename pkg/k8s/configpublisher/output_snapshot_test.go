@@ -154,6 +154,8 @@ func TestPublishConfigOutputSnapshotPublishesEveryArtifactFamily(t *testing.T) {
 	assert.Len(t, runtimeConfig.Status.AuxiliaryFiles.SSLCaFiles, 1)
 	assert.Len(t, runtimeConfig.Status.AuxiliaryFiles.GeneralFiles, 2)
 	assert.Len(t, runtimeConfig.Status.AuxiliaryFiles.CRTListFiles, 1)
+	assert.Len(t, runtimeConfig.Status.AuxiliaryFiles.SecretFiles, 1)
+	assert.Equal(t, result.SecretFileNames[0], runtimeConfig.Status.AuxiliaryFiles.SecretFiles[0].Name)
 	assert.Equal(t, result.MapFileNames[0], runtimeConfig.Status.AuxiliaryFiles.MapFiles[0].Name)
 	assert.Equal(t, result.GeneralFileNames[0], runtimeConfig.Status.AuxiliaryFiles.GeneralFiles[0].Name)
 	assert.Equal(t, result.GeneralFileNames[1], runtimeConfig.Status.AuxiliaryFiles.GeneralFiles[1].Name)
@@ -196,7 +198,7 @@ func assertPublishedAuxiliaryObjects(
 
 	secrets, err := k8sClient.CoreV1().Secrets("default").List(ctx, metav1.ListOptions{})
 	require.NoError(tb, err)
-	require.Len(tb, secrets.Items, 2)
+	require.Len(tb, secrets.Items, 3)
 	secretByType := make(map[string]map[string][]byte, len(secrets.Items))
 	for i := range secrets.Items {
 		secretByType[secrets.Items[i].Labels["haproxy-haptic.org/type"]] = secrets.Items[i].Data
@@ -205,6 +207,8 @@ func assertPublishedAuxiliaryObjects(
 	assert.Equal(tb, []byte(files.SSLCaFiles[0].Content), secretByType["ssl-ca"]["ca"])
 	assert.Equal(tb, []byte(files.SSLCertificates[0].Path), secretByType["ssl-certificate"]["path"])
 	assert.Equal(tb, []byte(files.SSLCaFiles[0].Path), secretByType["ssl-ca"]["path"])
+	assert.Equal(tb, []byte(files.SecretFiles[0].Content), secretByType[secretFileType][secretFileDataKey])
+	assert.Equal(tb, []byte(files.SecretFiles[0].Path), secretByType[secretFileType]["path"])
 
 	crtLists, err := crdClient.HaproxyTemplateICV1alpha1().HAProxyCRTListFiles("default").
 		List(ctx, metav1.ListOptions{})
@@ -312,6 +316,7 @@ func newConfigPublisherOutputFixtureWithMaps(tb testing.TB, config string, extra
 		CRTListFiles: []auxiliaryfiles.CRTListFile{{
 			Path: "ssl/frontends.list", Content: "site.pem example.test\n",
 		}},
+		SecretFiles: []auxiliaryfiles.SecretFile{testSecretFile},
 	}
 	for i := range extraMaps {
 		files.MapFiles = append(files.MapFiles, auxiliaryfiles.MapFile{
@@ -342,6 +347,7 @@ func newConfigPublisherOutputFixtureWithMaps(tb testing.TB, config string, extra
 			exactPublisherPlanFile("ssl/ca/trust.pem", renderplan.FileKindCA, false, "ca\n"),
 			exactPublisherPlanFile("ssl/frontends.list", renderplan.FileKindCRTList, false, "site.pem example.test\n"),
 			exactPublisherPlanFile("files/dynamic-ca.pem", renderplan.FileKindCA, false, "dynamic ca\n"),
+			sealedPublisherPlanFile(testSecretFile),
 		},
 	}
 	for _, file := range files.MapFiles[1:] {
@@ -359,6 +365,20 @@ func newConfigPublisherOutputFixtureWithMaps(tb testing.TB, config string, extra
 	return configPublisherOutputFixture{
 		snapshot: snapshot, artifacts: artifacts, files: files, config: config, checksum: checksum,
 	}
+}
+
+// testSecretFileContent is low-entropy on purpose: it is what an unkeyed digest would leak.
+const testSecretFileContent = "hunter2"
+
+var testSecretFile = auxiliaryfiles.SecretFile{
+	Path: "secrets/sso.client-secret", Content: testSecretFileContent,
+	Seal: auxiliaryfiles.SealContent([]byte("installation key"), testSecretFileContent),
+}
+
+func sealedPublisherPlanFile(file auxiliaryfiles.SecretFile) renderplan.File {
+	sealed := exactPublisherPlanFile(file.Path, renderplan.FileKindGeneral, false, file.Content)
+	sealed.Seal = file.Seal
+	return sealed
 }
 
 func exactPublisherPlanFile(path, kind string, reload bool, content string) renderplan.File {

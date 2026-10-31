@@ -257,6 +257,13 @@ spec:
                       Format: Go duration string (e.g., "10s", "30s").
                       Default: 60s (the agent's ceiling)
                     type: string
+                  secretsDir:
+                    description: |-
+                      SecretsDir is the directory for secret files, which sidecars read and
+                      HAProxy never does. Their content is published as Secrets.
+
+                      Default: /etc/haproxy/secrets
+                    type: string
                   sslCertsDir:
                     description: |-
                       SSLCertsDir is the directory for SSL certificates.

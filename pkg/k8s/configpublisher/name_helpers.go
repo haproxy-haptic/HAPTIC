@@ -23,6 +23,7 @@ import (
 
 	haproxyv1alpha1 "github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
 	"github.com/haproxy-haptic/HAPTIC/pkg/compression"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/auxiliaryfiles"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -125,6 +126,10 @@ func (p *Publisher) generateGeneralFileName(fileName string) string {
 	return sanitizeResourceName("haproxy-file-", path.Base(fileName), "_", "-", ".", "-")
 }
 
+func (p *Publisher) generateSecretFileName(filePath string) string {
+	return sanitizeResourceName("haproxy-secret-", path.Base(filePath), "_", "-")
+}
+
 func (p *Publisher) generateCRTListFileName(listPath string) string {
 	return sanitizeResourceName("haproxy-crtlist-", path.Base(listPath), "_", "-")
 }
@@ -173,6 +178,17 @@ func disambiguatedResourceName(base, suffix, identity string) string {
 func calculateChecksum(content string) string {
 	hash := sha256.Sum256([]byte(content))
 	return fmt.Sprintf("sha256:%x", hash)
+}
+
+const sealChecksumPrefix = "hmac-sha256:"
+
+// identityChecksum is the checksum a child's readable names and annotations
+// carry: a secret file's seal, never a digest of its content.
+func identityChecksum(file auxiliaryfiles.FileItem) string {
+	if secret, ok := file.(auxiliaryfiles.SecretFile); ok {
+		return sealChecksumPrefix + secret.Seal
+	}
+	return calculateChecksum(file.GetContent())
 }
 
 // compressResult holds the result of a compression attempt.

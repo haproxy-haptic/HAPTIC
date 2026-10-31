@@ -680,16 +680,19 @@ controller:
       #
       # With the bundled fleet (haproxy.enabled=true) these are constrained by
       # the pod spec: it mounts its config volume at /etc/haproxy and resolves
-      # every auxiliary path against it, so all three must live directly under
+      # every auxiliary path against it, so all of them must live directly under
       # that. generalStorageDir must be exactly /etc/haproxy/general, because a
       # separate volume is mounted there for the spoa-hub and vector sidecars to
-      # read rendered files without reaching SSL private keys. The chart fails
-      # the render rather than deploy a pod whose sidecars see an empty dir.
+      # read rendered files without reaching SSL private keys. secretsDir must be
+      # exactly /etc/haproxy/secrets, a tmpfs only the agent and spoa-hub mount.
+      # The chart fails the render rather than deploy a pod whose sidecars see
+      # an empty dir.
       # Set haproxy.enabled=false to drive an external fleet with any layout.
       # See: https://www.haproxy.com/documentation/haproxy-data-plane-api/reference/configuration-file/#resources
       mapsDir: /etc/haproxy/maps
       sslCertsDir: /etc/haproxy/ssl
       generalStorageDir: /etc/haproxy/general
+      secretsDir: /etc/haproxy/secrets
       configFile: /etc/haproxy/haproxy.cfg
       # Optional sync knobs (uncomment to override):
       # configPublishInterval: 10s     # observability CRD republish throttle
