@@ -771,10 +771,12 @@ spec:
 
 ```text
 auth-url     http://oauth2-proxy.<namespace>.svc:4180/oauth2/auth
-auth-signin  /oauth2/start?rd=%[path]
+auth-signin  /oauth2/start?rd=$escaped_request_uri
 auth-method  HEAD
 forwarded success headers: X-Auth-Request-Email
 ```
+
+HAPTIC replaces `$escaped_request_uri` with the URL-encoded path and query of the request, and doesn't apply external authentication to the oauth2-proxy path itself.
 
 An explicit `auth-url` on the same Ingress takes precedence and disables the oauth desugaring entirely; an explicit `auth-signin`, `auth-method`, or `auth-headers-succeed` overrides only its derived value.
 

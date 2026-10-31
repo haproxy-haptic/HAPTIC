@@ -996,7 +996,8 @@ validationTests:
     description: >-
       oauth: oauth2-proxy derives the oauth2-proxy address from the Ingress's own
       /oauth2 path backend, setting auth-url (/oauth2/auth), auth-signin
-      (/oauth2/start), and auth-method HEAD.
+      (/oauth2/start with the encoded request URI as rd), and auth-method HEAD.
+      The /oauth2 backend is exempt from the check, which would otherwise loop.
     extraContext:
       spoaHub:
         enabled: true
@@ -1047,8 +1048,20 @@ validationTests:
         pattern: "default/oauthapp http://oauth2-proxy.default.svc:4180/oauth2/auth"
       - type: contains
         target: map:auth-signin.map
-        pattern: "default/oauthapp /oauth2/start\\?rd=%\\[path\\]"
+        pattern: "default/oauthapp /oauth2/start\\?rd=\\$escaped_request_uri"
       - {type: contains, target: map:auth-method.map, pattern: "default/oauthapp HEAD"}
+      - type: contains
+        target: map:auth-exempt-backend.map
+        pattern: "(?m)^default_oauthapp_svc_oauth2-proxy_4180 1$"
+      - type: not_contains
+        target: map:auth-exempt-backend.map
+        pattern: "oauth-app-svc"
+      - type: contains
+        target: haproxy.cfg
+        pattern: "redirect location %\\[var\\(txn.auth_signin_base\\)\\]%\\[pathq,url_enc\\] code 302"
+      - type: contains
+        target: haproxy.cfg
+        pattern: "unset-var\\(txn.auth_key\\) if \\{ var\\(txn.backend_name\\),map\\([^)]*/auth-exempt-backend.map\\) -m found \\}"
 
   # ============================================================================
   # WAF (Coraza via SPOA hub) — waf-policy / waf-mode

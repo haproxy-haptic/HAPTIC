@@ -66,11 +66,8 @@ templateSnippets:
   # Annotation:
   #   nginx.ingress.kubernetes.io/auth-signin: "https://login.example/oauth2/start?rd=$escaped_request_uri"
   #
-  # Note: HAProxy doesn't expand nginx variables ($escaped_request_uri etc.)
-  # at redirect time; the URL is used verbatim. Operators wanting the
-  # original-request preservation pattern need to add a query param via
-  # the SPOA hub plugin (or use a redirect-aware auth service like
-  # oauth2-proxy that handles it server-side).
+  # Only a trailing $escaped_request_uri is expanded (by the spoa-hub
+  # redirect); other nginx variables stay verbatim.
   map-auth-signin-500-nginx-ingress:
     requires: [ingresses]
     incremental:

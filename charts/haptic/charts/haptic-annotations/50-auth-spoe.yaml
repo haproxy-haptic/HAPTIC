@@ -1137,7 +1137,35 @@ templateSnippets:
             {%- continue -%}
           {%- end -%}
           {%- if len(prefix) > 1 && hasSuffix(prefix, "/") -%}{%- prefix = prefix[:len(prefix)-1] -%}{%- end -%}
-      {{ "\n" }}{{ ns }}/{{ name }} {{ prefix }}/start?rd=%[path]
+      {{ "\n" }}{{ ns }}/{{ name }} {{ prefix }}/start?rd=$escaped_request_uri
+        {%- end -%}
+      {%- end -%}
+
+  # The oauth2-proxy path serves the sign-in, so it must not require it.
+  map-auth-exempt-backend-825-haptic-oauth:
+    requires: [ingresses, services]
+    incremental:
+      source: ingresses
+      whenAnyPathExists:
+        - "metadata.annotations['haproxy-haptic.org/oauth']"
+        - "metadata.annotations['haproxy-haptic.org/auth-url']"
+        - "metadata.annotations['haproxy-haptic.org/oauth-uri-prefix']"
+    template: |-
+      {%- import "util-backend-name-ingress" for BackendNameIngress -%}
+      {%- for _, ingress := range []*resources.ingresses.T{resources.ingresses.GetSingle(
+        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name"))} -%}
+        {%- var oauth = ingress.Metadata.Annotations["haproxy-haptic.org/oauth"] -%}
+        {%- var authUrl = ingress.Metadata.Annotations["haproxy-haptic.org/auth-url"] -%}
+        {%- if (oauth == "oauth2_proxy" || oauth == "oauth2-proxy") && authUrl == "" -%}
+          {%- var prefix = ingress.Metadata.Annotations["haproxy-haptic.org/oauth-uri-prefix"] -%}
+          {%- if prefix == "" -%}{%- prefix = "/oauth2" -%}{%- end -%}
+          {%- if len(prefix) > 1 && hasSuffix(prefix, "/") -%}{%- prefix = prefix[:len(prefix)-1] -%}{%- end -%}
+          {%- for _, path := range ingress.Spec.Rules[*].Http.Paths -%}
+            {%- if path.Path == prefix && path.Backend.Service.Name != "" -%}
+      {{ "\n" }}{{ BackendNameIngress(ingress, path) }} 1
+              {%- break -%}
+            {%- end -%}
+          {%- end -%}
         {%- end -%}
       {%- end -%}
 

@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Fixed
 
 - Restart the controllers when the SPOA hub plugin set changes, so their validator stops rejecting configurations that use a newly enabled plugin ([#546](https://github.com/haproxy-haptic/HAPTIC/issues/546)).
+- The `oauth` annotations of the HAPTIC and haproxy-ingress libraries send the request's path and query as `rd` to oauth2-proxy's sign-in instead of the literal `%[path]`; a trailing `$escaped_request_uri` in any `auth-signin` URL is expanded the same way ([#550](https://github.com/haproxy-haptic/HAPTIC/issues/550)).
+- The `oauth` annotations no longer apply external authentication to the Ingress's own oauth2-proxy path, which redirected browsers in a loop ([#551](https://github.com/haproxy-haptic/HAPTIC/issues/551)).
 
 ## [0.9.0] - 2026-10-30
 

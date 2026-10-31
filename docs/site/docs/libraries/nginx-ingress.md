@@ -775,9 +775,10 @@ annotations:
   nginx.ingress.kubernetes.io/auth-signin: "https://login.example.com/oauth2/start"
 ```
 
-Redirect URLs are used verbatim: variables such as `$escaped_request_uri`
-aren't expanded. Have the authentication service preserve the original request
-URL if your login flow needs it.
+A trailing `$escaped_request_uri` becomes the URL-encoded path and query of the
+request, so `https://login.example.com/oauth2/start?rd=$escaped_request_uri`
+returns the user to the page they asked for. Other variables, and
+`$escaped_request_uri` anywhere but the end, are used verbatim.
 
 ### `nginx.ingress.kubernetes.io/auth-method`
 

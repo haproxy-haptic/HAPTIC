@@ -415,6 +415,9 @@ templateSnippets:
           route reloads once, as does removing the last. #}
       {%- if strip(render_glob "map-auth-url-*") != "" %}
       http-request set-var(txn.auth_key) var(txn.resource_key)
+      {#- A route to the sign-in service itself (oauth2-proxy's /oauth2 path)
+          must not require the sign-in it serves. #}
+      http-request unset-var(txn.auth_key) if { var(txn.backend_name),map({{ pathResolver.GetPath("auth-exempt-backend.map", "map") }}) -m found }
       {#- frontend-spoe-auth-request-* may preset auth_* variables for its routes. #}
       {{- on_own_lines(render_glob "frontend-spoe-auth-request-*") }}{{ "\n" }}
       http-request set-var(txn.auth_url) var(txn.auth_key),map({{ pathResolver.GetPath("auth-url.map", "map") }}) unless { var(txn.auth_url) -m found }
@@ -440,7 +443,11 @@ templateSnippets:
       {# Browser-friendly sign-in redirect on auth failure: if the
           ingress has `auth-signin`, redirect to it (302) instead of
           denying. The deny rule below still fires when auth-signin
-          isn't configured, preserving the API-friendly default. #}
+          isn't configured, preserving the API-friendly default.
+          A trailing $escaped_request_uri becomes the URL-encoded path and
+          query: HAProxy doesn't expand sample fetches stored in a variable. #}
+      http-request set-var(txn.auth_signin_base) var(txn.auth_signin),regsub(\$escaped_request_uri$,) if { var(txn.auth_signin) -m end $escaped_request_uri }
+      http-request redirect location %[var(txn.auth_signin_base)]%[pathq,url_enc] code 302 if { var(txn.auth_url) -m found } !{ var(txn.hub.external_auth.allowed) -m bool } { var(txn.auth_signin_base) -m found }
       http-request redirect location %[var(txn.auth_signin)] code 302 if { var(txn.auth_url) -m found } !{ var(txn.hub.external_auth.allowed) -m bool } { var(txn.auth_signin) -m found }
       http-request set-var(txn.denied_by) str(external_auth) if { var(txn.auth_url) -m found } !{ var(txn.hub.external_auth.allowed) -m bool }
       http-request deny deny_status 401 if { var(txn.auth_url) -m found } !{ var(txn.hub.external_auth.allowed) -m bool }

@@ -310,7 +310,7 @@ _migrationCoverage:
         note: External auth via the SPOA hub external-auth plugin (auto-enabled with this library); 2xx allows, otherwise 401 or the auth-signin redirect.
       nginx.ingress.kubernetes.io/auth-signin:
         status: different
-        note: nginx variables (`$escaped_request_uri`, …) aren't expanded — the URL is used verbatim.
+        note: a trailing `$escaped_request_uri` becomes the URL-encoded request URI; other nginx variables are used verbatim.
         doc: annotation-support
       nginx.ingress.kubernetes.io/auth-method:
         status: different
