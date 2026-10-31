@@ -11,463 +11,463 @@
     "provenance": {
       "artifacts": {
         "docs": {
-          "digest": "sha256:e0a4288b79bc4db4eca2cf9caea25e52eadd541d07a9c88c350539bb1eb21974",
-          "id": 13044202979,
-          "job_id": 124548351770
+          "digest": "sha256:bd6bd7ac0235c9f5cf8b5728d21d759ec558f125940804760f4bfb600399625f",
+          "id": 13048877985,
+          "job_id": 124585458250
         },
         "wasm": {
-          "digest": "sha256:e07dc860af5b43666d996b5ded4cebe8f929e3278cf9d1582f64b1b4cb5e5634",
-          "id": 13044327009,
-          "job_id": 124545901330
+          "digest": "sha256:3413c7ff27b86ce8ee1603238ee93cd96b2250cd40efaedbf3fd10192a2a67ec",
+          "id": 13048299050,
+          "job_id": 124582800240
         }
       },
       "docs": {
-        "commit": "f3ad9b35c45e22276c74ab4574b8fabef4133244",
+        "commit": "9ba48989389328fcd2ffb91916112b258a047e02",
         "job": "suite_docs",
-        "pipeline": "41203255040",
+        "pipeline": "41215764186",
         "version": "dev"
       },
       "playground": {
-        "commit": "f3ad9b35c45e22276c74ab4574b8fabef4133244",
+        "commit": "9ba48989389328fcd2ffb91916112b258a047e02",
         "job": "suite_wasm",
-        "pipeline": "41203255040",
+        "pipeline": "41215764186",
         "version": "dev"
       },
       "source": {
-        "api_sha": "f3ad9b35c45e22276c74ab4574b8fabef4133244",
-        "artifact_digest": "sha256:5000394127962cf6c4a49b4bdde31169198c7978c1a2c38e94b116b5545cc0dc",
-        "artifact_id": 13044456916,
+        "api_sha": "9ba48989389328fcd2ffb91916112b258a047e02",
+        "artifact_digest": "sha256:b8299e499a78d5ba2a87171c8da44925f7d98b59f9bc2740863a9f3e18328f4c",
+        "artifact_id": 13048218193,
         "branch": "main",
         "event": "push",
         "job_prefix": "full / ",
         "jobs": [
           {
-            "id": 124545683893,
+            "id": 124582571180,
             "name": "full / acceptance"
           },
           {
-            "id": 124546496300,
+            "id": 124583529310,
             "name": "full / agent-3.0"
           },
           {
-            "id": 124546480149,
+            "id": 124583379824,
             "name": "full / agent-3.4"
           },
           {
-            "id": 124545903155,
+            "id": 124583039566,
             "name": "full / chart"
           },
           {
-            "id": 124545769534,
+            "id": 124582636748,
             "name": "full / chart-minimum"
           },
           {
-            "id": 124546690911,
+            "id": 124583722023,
             "name": "full / ci-image-3.0"
           },
           {
-            "id": 124546943906,
+            "id": 124584092308,
             "name": "full / ci-image-3.2"
           },
           {
-            "id": 124546626320,
+            "id": 124583604569,
             "name": "full / ci-image-3.3"
           },
           {
-            "id": 124548300457,
+            "id": 124585517091,
             "name": "full / ci-image-3.4"
           },
           {
-            "id": 124544429080,
+            "id": 124581282830,
             "name": "full / coverage-combined"
           },
           {
-            "id": 124543156969,
+            "id": 124579885225,
             "name": "full / coverage-renderer"
           },
           {
-            "id": 124543156812,
+            "id": 124579885329,
             "name": "full / coverage-rest"
           },
           {
-            "id": 124545793998,
+            "id": 124582713449,
             "name": "full / defaults"
           },
           {
-            "id": 124548351770,
+            "id": 124585458250,
             "name": "full / docs"
           },
           {
-            "id": 124547213484,
+            "id": 124584217016,
             "name": "full / docs-image"
           },
           {
-            "id": 124546033198,
+            "id": 124582871101,
             "name": "full / e2e-api-gateway"
           },
           {
-            "id": 124546000229,
+            "id": 124582832855,
             "name": "full / e2e-cache"
           },
           {
-            "id": 124543156381,
+            "id": 124579885227,
             "name": "full / e2e-hp3.0-1"
           },
           {
-            "id": 124543156426,
+            "id": 124579885151,
             "name": "full / e2e-hp3.0-2"
           },
           {
-            "id": 124543156235,
+            "id": 124579885129,
             "name": "full / e2e-hp3.0-3"
           },
           {
-            "id": 124543156539,
+            "id": 124579885135,
             "name": "full / e2e-hp3.0-4"
           },
           {
-            "id": 124543156510,
+            "id": 124579885233,
             "name": "full / e2e-hp3.2-1"
           },
           {
-            "id": 124543156473,
+            "id": 124579884690,
             "name": "full / e2e-hp3.2-2"
           },
           {
-            "id": 124543156438,
+            "id": 124579885163,
             "name": "full / e2e-hp3.2-3"
           },
           {
-            "id": 124543156343,
+            "id": 124579885110,
             "name": "full / e2e-hp3.2-4"
           },
           {
-            "id": 124543156445,
+            "id": 124579885131,
             "name": "full / e2e-hp3.3-1"
           },
           {
-            "id": 124543156344,
+            "id": 124579885234,
             "name": "full / e2e-hp3.3-2"
           },
           {
-            "id": 124543156828,
+            "id": 124579885388,
             "name": "full / e2e-hp3.3-3"
           },
           {
-            "id": 124543156479,
+            "id": 124579885275,
             "name": "full / e2e-hp3.3-4"
           },
           {
-            "id": 124543156872,
+            "id": 124579885200,
             "name": "full / e2e-hp3.4-1"
           },
           {
-            "id": 124543157083,
+            "id": 124579885212,
             "name": "full / e2e-hp3.4-2"
           },
           {
-            "id": 124543156993,
+            "id": 124579885175,
             "name": "full / e2e-hp3.4-3"
           },
           {
-            "id": 124543156862,
+            "id": 124579885120,
             "name": "full / e2e-hp3.4-4"
           },
           {
-            "id": 124543156560,
+            "id": 124579885192,
             "name": "full / e2e-minimum-kubernetes-1"
           },
           {
-            "id": 124543156564,
+            "id": 124579885727,
             "name": "full / e2e-minimum-kubernetes-2"
           },
           {
-            "id": 124543156942,
+            "id": 124579885219,
             "name": "full / e2e-minimum-kubernetes-3"
           },
           {
-            "id": 124543904167,
+            "id": 124580646743,
             "name": "full / e2e-minimum-kubernetes-4"
           },
           {
-            "id": 124545949696,
+            "id": 124582874541,
             "name": "full / e2e-rate-limit"
           },
           {
-            "id": 124545766143,
+            "id": 124582562285,
             "name": "full / gateway-1"
           },
           {
-            "id": 124545855523,
+            "id": 124582867066,
             "name": "full / gateway-2"
           },
           {
-            "id": 124545834990,
+            "id": 124582905481,
             "name": "full / gateway-3"
           },
           {
-            "id": 124545922357,
+            "id": 124582787885,
             "name": "full / gateway-4"
           },
           {
             "conclusion": "success",
-            "id": 124545686434,
+            "id": 124582595923,
             "name": "full / gateway-canary"
           },
           {
-            "id": 124543156807,
+            "id": 124579885432,
             "name": "full / gateway-churn"
           },
           {
-            "id": 124546016659,
+            "id": 124583135322,
             "name": "full / gateway-compatibility-v1.1.0"
           },
           {
-            "id": 124545685586,
+            "id": 124582746328,
             "name": "full / gateway-compatibility-v1.4.0"
           },
           {
-            "id": 124545654212,
+            "id": 124582561379,
             "name": "full / gateway-compatibility-v1.5.1"
           },
           {
-            "id": 124544383213,
+            "id": 124581116903,
             "name": "full / gitops-argo-cert-manager"
           },
           {
-            "id": 124543157024,
+            "id": 124579885100,
             "name": "full / gitops-argo-external"
           },
           {
-            "id": 124543156323,
+            "id": 124579885183,
             "name": "full / gitops-flux-cert-manager"
           },
           {
-            "id": 124543156714,
+            "id": 124579885023,
             "name": "full / gitops-flux-external"
           },
           {
-            "id": 124543156391,
+            "id": 124579885427,
             "name": "full / helm-3.0"
           },
           {
-            "id": 124543156525,
+            "id": 124579885328,
             "name": "full / helm-3.2"
           },
           {
-            "id": 124543156417,
+            "id": 124579885249,
             "name": "full / helm-3.3"
           },
           {
-            "id": 124543156339,
+            "id": 124579885114,
             "name": "full / helm-3.4"
           },
           {
-            "id": 124543155938,
+            "id": 124579884593,
             "name": "full / ingress-1"
           },
           {
-            "id": 124543156953,
+            "id": 124579885379,
             "name": "full / ingress-2"
           },
           {
-            "id": 124545637449,
+            "id": 124582545059,
             "name": "full / ingress-3"
           },
           {
-            "id": 124545487600,
+            "id": 124582205748,
             "name": "full / ingress-4"
           },
           {
-            "id": 124545981568,
+            "id": 124582807294,
             "name": "full / install-without-gateway-current"
           },
           {
-            "id": 124545890598,
+            "id": 124582818337,
             "name": "full / install-without-gateway-minimum"
           },
           {
-            "id": 124543156975,
+            "id": 124579885342,
             "name": "full / integration-3.0"
           },
           {
-            "id": 124543157077,
+            "id": 124579885289,
             "name": "full / integration-3.2"
           },
           {
-            "id": 124543156996,
+            "id": 124579885374,
             "name": "full / integration-3.3"
           },
           {
-            "id": 124543156989,
+            "id": 124579885502,
             "name": "full / integration-3.4"
           },
           {
-            "id": 124545942748,
+            "id": 124582870698,
             "name": "full / lint"
           },
           {
-            "id": 124543156933,
+            "id": 124579885107,
             "name": "full / scale"
           },
           {
-            "id": 124543156385,
+            "id": 124579885245,
             "name": "full / snapshot"
           },
           {
-            "id": 124547821893,
+            "id": 124584900595,
             "name": "full / spoa"
           },
           {
-            "id": 124543792199,
+            "id": 124580661138,
             "name": "full / test-support"
           },
           {
-            "id": 124543155908,
+            "id": 124579884635,
             "name": "full / unit-command-1"
           },
           {
-            "id": 124544591279,
+            "id": 124581697679,
             "name": "full / unit-command-2"
           },
           {
-            "id": 124545984909,
+            "id": 124583001963,
             "name": "full / unit-command-3"
           },
           {
-            "id": 124545916254,
+            "id": 124582746555,
             "name": "full / unit-renderer-1"
           },
           {
-            "id": 124545954157,
+            "id": 124583194721,
             "name": "full / unit-renderer-2"
           },
           {
-            "id": 124547230785,
+            "id": 124582845029,
             "name": "full / unit-renderer-3"
           },
           {
-            "id": 124543155954,
+            "id": 124579884657,
             "name": "full / unit-rest"
           },
           {
-            "id": 124545972633,
+            "id": 124582902156,
             "name": "full / upgrade-0.1.0-current"
           },
           {
-            "id": 124545703676,
+            "id": 124582711652,
             "name": "full / upgrade-0.1.0-minimum"
           },
           {
-            "id": 124543155903,
+            "id": 124579885295,
             "name": "full / upgrade-0.2.0-alpha.3-current"
           },
           {
-            "id": 124545555922,
+            "id": 124582414949,
             "name": "full / upgrade-0.2.0-alpha.3-minimum"
           },
           {
-            "id": 124543156978,
+            "id": 124579885365,
             "name": "full / upgrade-0.2.0-current"
           },
           {
-            "id": 124543155982,
+            "id": 124579884644,
             "name": "full / upgrade-0.2.0-minimum"
           },
           {
-            "id": 124543155978,
+            "id": 124579884613,
             "name": "full / upgrade-0.2.1-current"
           },
           {
-            "id": 124543155912,
+            "id": 124579884700,
             "name": "full / upgrade-0.2.1-minimum"
           },
           {
-            "id": 124543156428,
+            "id": 124579885068,
             "name": "full / upgrade-0.2.2-current"
           },
           {
-            "id": 124543156012,
+            "id": 124579884694,
             "name": "full / upgrade-0.2.2-minimum"
           },
           {
-            "id": 124543156351,
+            "id": 124579885006,
             "name": "full / upgrade-0.3.0-current"
           },
           {
-            "id": 124543156987,
+            "id": 124579885422,
             "name": "full / upgrade-0.3.0-minimum"
           },
           {
-            "id": 124543157129,
+            "id": 124579885345,
             "name": "full / upgrade-0.4.0-current"
           },
           {
-            "id": 124543157062,
+            "id": 124579885325,
             "name": "full / upgrade-0.4.0-minimum"
           },
           {
-            "id": 124543156965,
+            "id": 124579885327,
             "name": "full / upgrade-0.4.1-current"
           },
           {
-            "id": 124543156988,
+            "id": 124579885340,
             "name": "full / upgrade-0.4.1-minimum"
           },
           {
-            "id": 124543156777,
+            "id": 124579885400,
             "name": "full / upgrade-0.5.0-current"
           },
           {
-            "id": 124544043889,
+            "id": 124580994422,
             "name": "full / upgrade-0.5.0-minimum"
           },
           {
-            "id": 124544675589,
+            "id": 124581537765,
             "name": "full / upgrade-0.6.0-current"
           },
           {
-            "id": 124544353700,
+            "id": 124581282826,
             "name": "full / upgrade-0.6.0-minimum"
           },
           {
-            "id": 124543157065,
+            "id": 124579885301,
             "name": "full / upgrade-0.7.0-current"
           },
           {
-            "id": 124543156399,
+            "id": 124579884587,
             "name": "full / upgrade-0.7.0-minimum"
           },
           {
-            "id": 124543157116,
+            "id": 124579885117,
             "name": "full / upgrade-0.8.0-current"
           },
           {
-            "id": 124544286617,
+            "id": 124581198906,
             "name": "full / upgrade-0.8.0-minimum"
           },
           {
-            "id": 124543156890,
+            "id": 124579885448,
             "name": "full / upgrade-0.8.1-current"
           },
           {
-            "id": 124543156915,
+            "id": 124579885394,
             "name": "full / upgrade-0.8.1-minimum"
           },
           {
-            "id": 124543156836,
+            "id": 124579885387,
             "name": "full / upgrade-0.9.0-current"
           },
           {
-            "id": 124543157073,
+            "id": 124579885367,
             "name": "full / upgrade-0.9.0-minimum"
           },
           {
-            "id": 124546478927,
+            "id": 124583596820,
             "name": "full / vector"
           },
           {
-            "id": 124545901330,
+            "id": 124582800240,
             "name": "full / wasm"
           }
         ],
@@ -475,18 +475,18 @@
         "profile": "full",
         "repository": "haproxy-haptic/HAPTIC",
         "run_attempt": 1,
-        "run_id": 41203255040,
-        "sha": "f3ad9b35c45e22276c74ab4574b8fabef4133244",
+        "run_id": 41215764186,
+        "sha": "9ba48989389328fcd2ffb91916112b258a047e02",
         "source_repository": "haproxy-haptic/HAPTIC",
-        "source_sha": "f3ad9b35c45e22276c74ab4574b8fabef4133244",
-        "tree": "c2aae2e8cc78b3db7bd3dea71d6e8b972a43de1e",
+        "source_sha": "9ba48989389328fcd2ffb91916112b258a047e02",
+        "tree": "a80fe4f05baba579e4723d18108e249565f2a8f9",
         "version": 2
       },
       "version": "dev"
     },
-    "sha256": "f5cc677db69bce48e160198d209bf1b423228a266360f2ac6e8c32051ebfe31c",
-    "size": 63630006,
-    "url": "https://github.com/haproxy-haptic/HAPTIC/releases/download/website-content/website-dev-f5cc677db69bce48e160198d209bf1b423228a266360f2ac6e8c32051ebfe31c.tar.gz"
+    "sha256": "3c5cf12e9f5bd7535e03e7433610c0cd6765d48935af30a7307d8c5aa6115545",
+    "size": 63639762,
+    "url": "https://github.com/haproxy-haptic/HAPTIC/releases/download/website-content/website-dev-3c5cf12e9f5bd7535e03e7433610c0cd6765d48935af30a7307d8c5aa6115545.tar.gz"
   },
   "releases": {
     "0.6.0": {
