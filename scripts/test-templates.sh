@@ -1014,6 +1014,32 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     rm -f "$TRUSTED_PROXIES_CONFIG"
 fi
 
+# WAF default-policy profile: the policy applies to every test's fixture
+# Ingresses in the deployment render, so each test's spoaHub context must keep
+# the coraza plugin it brings (#554).
+if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
+    WAF_DEFAULT_CONFIG=$(mktemp /tmp/haptic-waf-default-config-XXXXXX.yaml)
+    trap 'rm -f "$TEMP_CONFIG" "$RATE_LIMIT_CONFIG" "$PROXY_PROTOCOL_CONFIG" "$WAF_DEFAULT_CONFIG"' EXIT
+    echo -e "${YELLOW}Rendering WAF default-policy profile...${NC}" >&2
+    if ! helm template "$CHART_DIR" \
+        --namespace default \
+        $HAPROXY_VERSION_ARG \
+        --set controller.config.templatingSettings.extraContext.waf.dispatch.mode=default-on \
+        --set controller.config.templatingSettings.extraContext.waf.policies.defaultPolicy=baseline \
+        --set controller.config.templatingSettings.extraContext.waf.policies.inline.baseline.requestBody.mode=none \
+        | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
+        > "$WAF_DEFAULT_CONFIG"; then
+        echo -e "${RED}Error: Failed to render WAF default-policy Helm profile${NC}" >&2
+        exit 1
+    fi
+    echo -e "${YELLOW}WAF default-policy profile: full validation pass...${NC}" >&2
+    if ! "$CONTROLLER_BIN" validate --file "$WAF_DEFAULT_CONFIG" "${SCHEMA_DIR_ARGS[@]}" "$@"; then
+        echo -e "${RED}WAF default-policy profile: tests that pass without a default policy must also pass with one — the load gate crash-loops the controller otherwise${NC}" >&2
+        FULL_RC=1
+    fi
+    rm -f "$WAF_DEFAULT_CONFIG"
+fi
+
 # Tracing opt-in profile. Runs the WHOLE test set with tracing on, for the same
 # reason as the PROXY-protocol profile above, plus one specific to tracing: the
 # fields and the route lookup are removed at HELM time when the opt-in is off

@@ -1,10 +1,12 @@
 _sso_auth_fixtures:
+  # Lists replace the deployment's, so coraza stays in: a WAF default policy
+  # applies to these fixtures in the deployment render (#554).
   spoaHub: &ssoSpoaHub
     enabled: true
     haproxy:
       socketPath: /run/spoa/hub.sock
       modeSpop: true
-      messages: ["check-sso-auth"]
+      messages: ["check-request", "check-sso-auth"]
       timeoutHello: 2s
       timeoutIdle: 5m
       timeoutProcessing: 6100ms
@@ -12,6 +14,18 @@ _sso_auth_fixtures:
       poolPurgeDelay: 30s
     hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
     plugins:
+      - &ssoCoraza
+        name: coraza
+        library: libcoraza_plugin.so
+        messages: [check-request]
+        timeoutMs: 15
+        params: ""
+        dependsOn: []
+        directives: |
+          Include @coraza.conf-recommended
+          Include @crs-setup.conf.example
+          Include @owasp_crs/*.conf
+          SecRuleEngine On
       - name: sso_auth
         library: libhaproxy_spoa_hub_plugin_sso_auth.so
         messages: ["check-sso-auth"]
@@ -175,9 +189,9 @@ validationTests:
     extraContext:
       spoaHub:
         enabled: true
-        haproxy: {socketPath: /run/spoa/hub.sock, modeSpop: true, messages: [], timeoutHello: 2s, timeoutIdle: 5m, timeoutProcessing: 500ms, poolMaxConn: 100, poolPurgeDelay: 30s}
+        haproxy: {socketPath: /run/spoa/hub.sock, modeSpop: true, messages: [check-request], timeoutHello: 2s, timeoutIdle: 5m, timeoutProcessing: 500ms, poolMaxConn: 100, poolPurgeDelay: 30s}
         hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
-        plugins: []
+        plugins: [*ssoCoraza]
       ssoAuth: *ssoAllowIdp
     fixtures:
       services: *ssoServices
