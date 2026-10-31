@@ -25,8 +25,8 @@ trap _shutdown TERM INT
 _watch_child() {
   _watched_pid=$1
   trap 'exit 0' TERM INT
-  if [ ! -x /usr/bin/bash ] || ! command -v timeout >/dev/null 2>&1; then
-    echo "WARNING: ${_child_name} watchdog is disabled because bash or timeout is unavailable in the sidecar image"
+  if ! command -v perl >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then
+    echo "WARNING: ${_child_name} watchdog is disabled because perl or timeout is unavailable in the sidecar image"
     return
   fi
   _health_failures=0

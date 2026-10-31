@@ -197,9 +197,6 @@ spec:
                 if ! grep -q '^[[:space:]]*type:[[:space:]]*prometheus_exporter' /etc/haproxy/general/vector.yaml; then
                   return 2
                 fi
-                if ! command -v perl >/dev/null 2>&1; then
-                  return 2
-                fi
                 # Not bash /dev/tcp: its redirections dup the socket onto stdin and
                 # stdout, which runtime detectors flag as a reverse shell (#555).
                 if timeout "$_watch_timeout_seconds" perl -MIO::Socket::INET -e '

@@ -303,6 +303,9 @@ tests:
           pattern: '<>"?/dev/tcp'
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
+          pattern: 'if ! command -v perl >/dev/null 2>&1 \|\| ! command -v timeout >/dev/null 2>&1; then\s+echo "WARNING: \$\{_child_name\} watchdog is disabled because perl or timeout is unavailable'
+      - matchRegex:
+          path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
           pattern: '_watch_child "\$_child_pid" &'
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].args[0]
