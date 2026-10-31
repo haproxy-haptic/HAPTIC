@@ -34,12 +34,42 @@ digest_of() {
         jq -er 'select(test("^sha256:[0-9a-f]{64}$"))'
 }
 
+# A rerun after a partial publication reuses the release instead of rebuilding images under signed tags.
+release_lookup() {
+    curl -sS --retry 7 -o .publication/existing-release.json -w '%{http_code}' \
+        -H "Authorization: Bearer ${GITHUB_TOKEN:?}" \
+        "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/v${version}"
+}
+
+download_release_asset() {
+    local url
+    url="$(jq -r --arg name "$1" '.assets[] | select(.name == $name) | .url' .publication/existing-release.json)"
+    [[ -n "$url" ]] || {
+        printf 'GitHub release v%s lacks %s; delete the release and rerun publication\n' "$version" "$1" >&2
+        exit 1
+    }
+    curl -fsSL --retry 7 --retry-all-errors -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+        -H 'Accept: application/octet-stream' -o "dist/$1" "$url"
+}
+
+download_existing_release() {
+    local asset
+    mkdir -p dist
+    download_release_asset checksums.txt
+    download_release_asset checksums.txt.sigstore.json
+    for asset in $(awk '{ print $2 }' dist/checksums.txt); do
+        download_release_asset "$asset"
+    done
+    (cd dist && sha256sum --check --strict --quiet checksums.txt)
+}
+
 sign_and_attest() {
     local reference="$1" name="$2" format="$3" predicate_type="$4"
-    cosign sign --yes "$reference"
+    # A retry signs afresh; cosign's own retry of an accepted upload gets Rekor 409 (run 41131686812).
+    bash scripts/retry.sh cosign sign --yes "$reference"
     cosign verify "${verification[@]}" "$reference" > ".publication/${name}-signature.json"
     syft scan --platform linux/amd64 "$reference" -o "${format}=.publication/${name}-sbom.json"
-    cosign attest --yes --type "$predicate_type" --predicate ".publication/${name}-sbom.json" "$reference"
+    bash scripts/retry.sh cosign attest --yes --type "$predicate_type" --predicate ".publication/${name}-sbom.json" "$reference"
     cosign verify-attestation "${verification[@]}" --type "$predicate_type" "$reference" \
         > ".publication/${name}-attestation.json"
 }
@@ -66,7 +96,12 @@ case "$phase" in
         awk -v ver="$version" '/^## \[/ { if (found) exit; if (index($0, "[" ver "]")) found=1 } found { print }' \
             CHANGELOG.md > .publication/release-notes.md
         [[ -s .publication/release-notes.md ]]
-        goreleaser release --config .pilot/goreleaser.github.yml --clean --release-notes .publication/release-notes.md
+        case "$(release_lookup)" in
+            404) goreleaser release --config .pilot/goreleaser.github.yml --clean \
+                     --release-notes .publication/release-notes.md ;;
+            200) download_existing_release ;;
+            *) printf 'GitHub release lookup for v%s failed\n' "$version" >&2; exit 1 ;;
+        esac
         # shellcheck source=../versions.env
         source versions.env
         for variant in $HAPROXY_VERSIONS varnish; do
