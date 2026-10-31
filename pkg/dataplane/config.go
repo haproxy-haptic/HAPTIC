@@ -61,10 +61,13 @@ type AuxiliaryFiles struct {
 
 	// CRTListFiles contains crt-list files for SSL certificate lists with per-certificate options
 	CRTListFiles []auxiliaryfiles.CRTListFile
+
+	// SecretFiles contains sidecar files that are published as Kubernetes Secrets
+	SecretFiles []auxiliaryfiles.SecretFile
 }
 
 // CurrentFiles projects CRD-backed auxiliary output into the currentFiles map.
-// Secret-backed certificate and CA content is deliberately excluded.
+// Secret-backed certificate, CA and secret-file content is deliberately excluded.
 func (af *AuxiliaryFiles) CurrentFiles() map[string]string {
 	if af == nil {
 		return nil
@@ -102,6 +105,9 @@ func (a *AuxiliaryFiles) Sort() {
 		return cmp.Compare(x.Path, y.Path)
 	})
 	slices.SortFunc(a.CRTListFiles, func(x, y auxiliaryfiles.CRTListFile) int {
+		return cmp.Compare(x.Path, y.Path)
+	})
+	slices.SortFunc(a.SecretFiles, func(x, y auxiliaryfiles.SecretFile) int {
 		return cmp.Compare(x.Path, y.Path)
 	})
 }

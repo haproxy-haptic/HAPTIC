@@ -31,6 +31,7 @@ func TestFileRegistry_Register(t *testing.T) {
 		SSLDir:     "/etc/haproxy/certs",
 		CRTListDir: "/etc/haproxy/crt-list",
 		GeneralDir: "/etc/haproxy/files",
+		SecretDir:  "secrets",
 	}
 
 	tests := []struct {
@@ -71,6 +72,13 @@ func TestFileRegistry_Register(t *testing.T) {
 			wantPath: "/etc/haproxy/crt-list/certificates.txt",
 		},
 		{
+			name:     "register secret file",
+			fileType: "secret",
+			filename: "sso.client-secret",
+			content:  "s3cret",
+			wantPath: "secrets/sso.client-secret",
+		},
+		{
 			name:        "invalid file type",
 			fileType:    "invalid",
 			filename:    "test.txt",
@@ -87,7 +95,7 @@ func TestFileRegistry_Register(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			registry := NewFileRegistry(pathResolver)
+			registry := NewFileRegistry(pathResolver, nil)
 
 			var path string
 			var err error
@@ -121,17 +129,18 @@ func TestFileRegistry_Register_RejectsTraversal(t *testing.T) {
 		SSLDir:     "/etc/haproxy/certs",
 		CRTListDir: "/etc/haproxy/crt-list",
 		GeneralDir: "/etc/haproxy/files",
+		SecretDir:  "secrets",
 	}
 
-	for _, fileType := range []string{"map", "file", "ca-file", "cert", "crt-list"} {
+	for _, fileType := range []string{"map", "file", "ca-file", "cert", "crt-list", "secret"} {
 		t.Run(fileType, func(t *testing.T) {
 			for _, filename := range []string{"../../etc/passwd", "sub/../../../etc/passwd", "/etc/passwd", `c:\evil`, `\\host\share`} {
-				registry := NewFileRegistry(pathResolver)
+				registry := NewFileRegistry(pathResolver, nil)
 				_, err := registry.Register(fileType, filename, "content")
 				require.Error(t, err, "traversal %q must be rejected for type %q", filename, fileType)
 			}
 
-			registry := NewFileRegistry(pathResolver)
+			registry := NewFileRegistry(pathResolver, nil)
 			_, err := registry.Register(fileType, "clean-name.dat", "content")
 			require.NoError(t, err)
 		})
@@ -142,7 +151,7 @@ func TestFileRegistry_Register_Idempotent(t *testing.T) {
 	pathResolver := &templating.PathResolver{
 		MapsDir: "/etc/haproxy/maps",
 	}
-	registry := NewFileRegistry(pathResolver)
+	registry := NewFileRegistry(pathResolver, nil)
 
 	// First registration
 	path1, err := registry.Register("map", "test.map", "content1")
@@ -158,7 +167,7 @@ func TestFileRegistry_Register_Conflict(t *testing.T) {
 	pathResolver := &templating.PathResolver{
 		MapsDir: "/etc/haproxy/maps",
 	}
-	registry := NewFileRegistry(pathResolver)
+	registry := NewFileRegistry(pathResolver, nil)
 
 	// First registration
 	_, err := registry.Register("map", "test.map", "content1")
@@ -178,7 +187,7 @@ func TestFileRegistry_Register_ReloadOnPush(t *testing.T) {
 		return NewFileRegistry(&templating.PathResolver{
 			GeneralDir: "/etc/haproxy/general",
 			MapsDir:    "/etc/haproxy/maps",
-		})
+		}, nil)
 	}
 
 	t.Run("omitted defaults to reloading", func(t *testing.T) {
@@ -242,7 +251,7 @@ func TestFileRegistry_GetFiles(t *testing.T) {
 		CRTListDir: "/etc/haproxy/crt-list",
 		GeneralDir: "/etc/haproxy/files",
 	}
-	registry := NewFileRegistry(pathResolver)
+	registry := NewFileRegistry(pathResolver, nil)
 
 	// Register various file types
 	_, _ = registry.Register("map", "hosts.map", "host content")
@@ -266,6 +275,57 @@ func TestFileRegistry_GetFiles(t *testing.T) {
 
 	require.Len(t, files.CRTListFiles, 1)
 	assert.Equal(t, "crt-list content", files.CRTListFiles[0].Content)
+}
+
+func TestFileRegistry_SecretFiles(t *testing.T) {
+	newRegistry := func(key string) *FileRegistry {
+		return NewFileRegistry(&templating.PathResolver{SecretDir: "secrets", GeneralDir: "general"}, []byte(key))
+	}
+
+	t.Run("maps to a sealed secret file, never a general file", func(t *testing.T) {
+		r := newRegistry("key")
+		_, err := r.Register("secret", "sso.client-secret", "s3cret")
+		require.NoError(t, err)
+		files := r.GetFiles()
+		assert.Empty(t, files.GeneralFiles)
+		assert.Empty(t, files.CurrentFiles())
+		require.Len(t, files.SecretFiles, 1)
+		assert.Equal(t, auxiliaryfiles.SecretFile{
+			Path: "secrets/sso.client-secret", Content: "s3cret", Seal: auxiliaryfiles.SealContent([]byte("key"), "s3cret"),
+		}, files.SecretFiles[0])
+	})
+
+	t.Run("the seal depends on the key", func(t *testing.T) {
+		seal := func(key string) string {
+			r := newRegistry(key)
+			_, err := r.Register("secret", "x", "s3cret")
+			require.NoError(t, err)
+			return r.GetFiles().SecretFiles[0].Seal
+		}
+		assert.Equal(t, seal("a"), seal("a"))
+		assert.NotEqual(t, seal("a"), seal("b"))
+	})
+
+	t.Run("conflicting content is rejected", func(t *testing.T) {
+		r := newRegistry("key")
+		_, err := r.Register("secret", "x", "one")
+		require.NoError(t, err)
+		_, err = r.Register("secret", "x", "two")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "content conflict")
+	})
+
+	t.Run("reloadOnPush is rejected", func(t *testing.T) {
+		_, err := newRegistry("key").Register("secret", "x", "one", false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `applies to type "file" only`)
+	})
+
+	t.Run("an unconfigured directory is rejected", func(t *testing.T) {
+		_, err := NewFileRegistry(&templating.PathResolver{}, nil).Register("secret", "x", "one")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no secret file directory")
+	})
 }
 
 func TestMergeAuxiliaryFiles(t *testing.T) {

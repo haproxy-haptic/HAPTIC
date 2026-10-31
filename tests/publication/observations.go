@@ -46,17 +46,32 @@ func fleetMatches(config *api.HAProxyCfg, agents map[string]agentapi.State) bool
 	return true
 }
 
+// The roles a published file Secret declares in its type label.
+const (
+	roleCertificate = "ssl-certificate"
+	roleCA          = "ssl-ca"
+	roleSecretFile  = "secret-file"
+)
+
+type secretRoleGroup struct {
+	refs []api.ResourceReference
+	role string
+}
+
+func secretRoleGroups(refs *api.AuxiliaryFileReferences) []secretRoleGroup {
+	return []secretRoleGroup{{refs.SSLCertificates, roleCertificate}, {refs.SSLCaFiles, roleCA}, {refs.SecretFiles, roleSecretFile}}
+}
+
 func certificatesMatch(config *api.HAProxyCfg, secrets []corev1.Secret, setID string) bool {
 	refs := config.Status.AuxiliaryFiles
-	expected := make(map[string]bool, len(refs.SSLCertificates)+len(refs.SSLCaFiles))
-	for _, ref := range refs.SSLCertificates {
-		expected[ref.Name] = false
-	}
-	for _, ref := range refs.SSLCaFiles {
-		if _, duplicate := expected[ref.Name]; duplicate {
-			return false
+	expected := make(map[string]string, len(refs.SSLCertificates)+len(refs.SSLCaFiles)+len(refs.SecretFiles))
+	for _, group := range secretRoleGroups(refs) {
+		for _, ref := range group.refs {
+			if _, duplicate := expected[ref.Name]; duplicate {
+				return false
+			}
+			expected[ref.Name] = group.role
 		}
-		expected[ref.Name] = true
 	}
 	seen := 0
 	for i := range secrets {
@@ -70,8 +85,8 @@ func certificatesMatch(config *api.HAProxyCfg, secrets []corev1.Secret, setID st
 		if !owned {
 			continue
 		}
-		caFile, found := expected[secret.Name]
-		if !found || !CertificateIdentityMatches(&secret.ObjectMeta, setID, caFile) {
+		role, found := expected[secret.Name]
+		if !found || !FileSecretIdentityMatches(&secret.ObjectMeta, setID, role) {
 			return false
 		}
 		seen++
@@ -79,7 +94,7 @@ func certificatesMatch(config *api.HAProxyCfg, secrets []corev1.Secret, setID st
 	return seen == len(expected)
 }
 
-func CertificateIdentityMatches(metadata *metav1.ObjectMeta, setID string, caFile bool) bool {
+func FileSecretIdentityMatches(metadata *metav1.ObjectMeta, setID, role string) bool {
 	if metadata.DeletionTimestamp != nil {
 		return false
 	}
@@ -88,14 +103,10 @@ func CertificateIdentityMatches(metadata *metav1.ObjectMeta, setID string, caFil
 	}
 	path := metadata.Annotations[annotationPrefix+"auxiliary-path"]
 	checksum := metadata.Annotations[annotationPrefix+"checksum"]
-	role := "ssl-certificate"
-	if caFile {
-		role = "ssl-ca"
-	}
 	if path == "" || checksum == "" || metadata.Labels[annotationPrefix+"type"] != role {
 		return false
 	}
-	identity := fmt.Sprintf("Secret\x00%s\x00%s\x00%t", path, checksum, caFile)
+	identity := fmt.Sprintf("Secret\x00%s\x00%s\x00%t", path, checksum, role == roleCA)
 	suffix := fmt.Sprintf("-content-%x", sha256.Sum256([]byte(identity)))
 	return strings.HasSuffix(metadata.Name, suffix) || strings.Contains(metadata.Name, suffix+"-")
 }

@@ -38,7 +38,9 @@ func EncodeCheckpoint(plan *renderplan.Plan) (string, error) {
 	if !renderplan.ExactlyEqual(plan, plan) {
 		return "", errors.New("checkpoint plan has no exact content")
 	}
-	value := checkpoint{Plan: plan, Backends: make(map[string]backendContent, len(plan.Backends))}
+	readable := *plan
+	readable.Files = renderplan.ClearSealedDigests(plan.Files)
+	value := checkpoint{Plan: &readable, Backends: make(map[string]backendContent, len(plan.Backends))}
 	for name := range plan.Backends {
 		backend := plan.Backends[name]
 		value.Backends[name] = backendContent{Body: backend.Body, Comments: backend.Comments}
@@ -72,6 +74,9 @@ func DecodeCheckpoint(encoded, config string, files map[string]string) (*renderp
 	for i := range plan.Files {
 		file := &plan.Files[i]
 		content, present := files[file.Path]
+		if file.Seal != "" && file.Digest == "" {
+			file.Digest = renderplan.DigestString(content)
+		}
 		if !present || file.Size != int64(len(content)) || file.Digest != renderplan.DigestString(content) {
 			return nil, fmt.Errorf("checkpoint file %q differs from its plan", file.Path)
 		}

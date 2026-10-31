@@ -146,9 +146,10 @@ func buildValidationPaths(ctx context.Context, cfg *config.Config) (
 		MapsDir:    filepath.Join(tempDir, path.Base(cfg.Dataplane.MapsDir)),
 		SSLDir:     filepath.Join(tempDir, path.Base(cfg.Dataplane.SSLCertsDir)),
 		GeneralDir: filepath.Join(tempDir, path.Base(cfg.Dataplane.GeneralStorageDir)),
+		SecretDir:  filepath.Join(tempDir, path.Base(cfg.Dataplane.SecretsDir)),
 		ConfigFile: filepath.Join(tempDir, names.MainTemplateName),
 	}
-	resolvedPaths := dataplane.ResolvePaths(basePaths)
+	resolvedPaths := dataplane.ResolvePaths(&basePaths)
 
 	dirsToCreate := []string{resolvedPaths.MapsDir, resolvedPaths.SSLDir, resolvedPaths.GeneralDir}
 	if resolvedPaths.CRTListDir != resolvedPaths.SSLDir && resolvedPaths.CRTListDir != resolvedPaths.GeneralDir {

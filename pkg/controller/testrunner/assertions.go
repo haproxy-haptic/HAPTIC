@@ -252,6 +252,9 @@ func compareAuxiliaryFiles(first, second *dataplane.AuxiliaryFiles) string {
 	if diff := compareFileList("crt-list files", extractFileMap(first.CRTListFiles), extractFileMap(second.CRTListFiles)); diff != "" {
 		return diff
 	}
+	if diff := compareFileList("secret files", extractFileMap(first.SecretFiles), extractFileMap(second.SecretFiles)); diff != "" {
+		return diff
+	}
 
 	return ""
 }

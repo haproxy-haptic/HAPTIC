@@ -28,7 +28,7 @@ import (
 // fallback: an absence assertion against a map that stopped being registered
 // would otherwise be re-evaluated against haproxy.cfg, which never contained
 // the string either, and pass green with the property it guards gone.
-var targetPrefixes = []string{"map:", "file:", "cert:", "crt-list:", "k8s:", "status:", "backend:"}
+var targetPrefixes = []string{"map:", "file:", "cert:", "crt-list:", "secret:", "k8s:", "status:", "backend:"}
 
 // errTargetNotFound reports a prefixed target the render did not produce.
 type errTargetNotFound struct{ target string }
@@ -51,7 +51,7 @@ func (e *errBackendProfileMissing) Error() string {
 // resolveTarget resolves the target content based on the target specification.
 //
 // Target format: "haproxy.cfg", "map:<name>", "file:<name>", "cert:<name>",
-// "crt-list:<name>", "k8s:<template-name>", "status:<ns>/<name>:<phase>",
+// "crt-list:<name>", "secret:<name>", "k8s:<template-name>", "status:<ns>/<name>:<phase>",
 // "backend:<name>", "events", or "rendering_error".
 func (r *Runner) resolveTarget(target, haproxyConfig string, auxiliaryFiles *dataplane.AuxiliaryFiles, k8sResources, statusPatches map[string]string, renderedEvents, renderError string) (string, error) {
 	if target == "rendering_error" {
@@ -225,6 +225,14 @@ func (r *Runner) resolveAuxiliaryFile(target string, auxiliaryFiles *dataplane.A
 
 	if after, ok := strings.CutPrefix(target, "crt-list:"); ok {
 		return r.findCRTListFile(after, auxiliaryFiles)
+	}
+
+	if after, ok := strings.CutPrefix(target, "secret:"); ok {
+		for _, file := range auxiliaryFiles.SecretFiles {
+			if path.Base(file.Path) == after {
+				return file.Content, true
+			}
+		}
 	}
 
 	return "", false

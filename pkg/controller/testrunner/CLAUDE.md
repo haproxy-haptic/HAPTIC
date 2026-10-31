@@ -149,6 +149,7 @@ change the inputs to the determinism assertion.
 - `file:<name>` - General file content; matches by filename
 - `cert:<name>` - SSL certificate content
 - `crt-list:<name>` - CRT-list file content (matched against the rendered file's basename or full path; works on any HAProxy version because crt-list files always render into the auxiliary files irrespective of how they're synced — see `pkg/dataplane/auxiliaryfiles/crtlist.go`)
+- `secret:<name>` - Secret file content; matches by basename
 - `rendering_error` - The simplified template error string when rendering fails; resource-input failures always fail the test except expected namespace-scope rejections in opted-in tests
 
 Unknown targets fall back to the main HAProxy config silently.

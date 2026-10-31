@@ -644,6 +644,9 @@ func TestRunner_ResolveTarget(t *testing.T) {
 		CRTListFiles: []auxiliaryfiles.CRTListFile{
 			{Path: "/ssl/list.txt", Content: "LIST"},
 		},
+		SecretFiles: []auxiliaryfiles.SecretFile{
+			{Path: "secrets/client-secret", Content: "SECRET", Seal: "seal"},
+		},
 	}
 	k8sResources := map[string]string{
 		"haproxy-service": "kind: Service\nmetadata:\n  name: haptic-haproxy\n",
@@ -691,6 +694,11 @@ func TestRunner_ResolveTarget(t *testing.T) {
 			want:   "LIST",
 		},
 		{
+			name:   "secret target",
+			target: "secret:client-secret",
+			want:   "SECRET",
+		},
+		{
 			name:   "k8s target",
 			target: "k8s:haproxy-service",
 			want:   "kind: Service\nmetadata:\n  name: haptic-haproxy\n",
@@ -727,6 +735,7 @@ func TestRunner_ResolveTarget_MissingArtefactIsAnError(t *testing.T) {
 		"file:does-not-exist.http",
 		"cert:does-not-exist.pem",
 		"crt-list:does-not-exist.txt",
+		"secret:does-not-exist",
 		"k8s:does-not-exist",
 		"status:default/nope:rendered",
 		"backend:does-not-exist",

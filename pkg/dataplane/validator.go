@@ -33,6 +33,7 @@ type ValidationPaths struct {
 	SSLCertsDir       string
 	CRTListDir        string // Directory for CRT-list files (may differ from SSLCertsDir on HAProxy < 3.2)
 	GeneralStorageDir string
+	SecretDir         string // never written: haproxy -c does not read secret files
 	ConfigFile        string
 }
 

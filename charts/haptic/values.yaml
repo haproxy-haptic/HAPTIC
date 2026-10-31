@@ -680,16 +680,19 @@ controller:
       #
       # With the bundled fleet (haproxy.enabled=true) these are constrained by
       # the pod spec: it mounts its config volume at /etc/haproxy and resolves
-      # every auxiliary path against it, so all three must live directly under
+      # every auxiliary path against it, so all of them must live directly under
       # that. generalStorageDir must be exactly /etc/haproxy/general, because a
       # separate volume is mounted there for the spoa-hub and vector sidecars to
-      # read rendered files without reaching SSL private keys. The chart fails
-      # the render rather than deploy a pod whose sidecars see an empty dir.
+      # read rendered files without reaching SSL private keys. secretsDir must be
+      # exactly /etc/haproxy/secrets, a tmpfs only the agent and spoa-hub mount.
+      # The chart fails the render rather than deploy a pod whose sidecars see
+      # an empty dir.
       # Set haproxy.enabled=false to drive an external fleet with any layout.
       # See: https://www.haproxy.com/documentation/haproxy-data-plane-api/reference/configuration-file/#resources
       mapsDir: /etc/haproxy/maps
       sslCertsDir: /etc/haproxy/ssl
       generalStorageDir: /etc/haproxy/general
+      secretsDir: /etc/haproxy/secrets
       configFile: /etc/haproxy/haproxy.cfg
       # Optional sync knobs (uncomment to override):
       # configPublishInterval: 10s     # observability CRD republish throttle
@@ -1196,6 +1199,16 @@ controller:
             # render time. Set false where a malformed body reaching the backend
             # is worse than refusing the caller.
             defaultFailOpen: true
+
+        # OIDC sign-in (haproxy-haptic.org/sso-auth). Each Ingress names a
+        # provider Secret in its own namespace; the SPOA hub fetches that
+        # provider's discovery document, keys and tokens from the HAProxy pods.
+        ssoAuth:
+          # Issuer URL prefixes a provider Secret's discovery-url may start
+          # with, keyed by a name of your choice. Empty: every sso-auth route
+          # answers 503. Example:
+          #   keycloak: https://keycloak.example.com/realms/main/
+          allowedIssuers: {}  # @schema skipProperties; additionalProperties: {type: string}
 
         # WAF routing and policy behavior. This remains engine-neutral; Coraza
         # implementation/runtime settings belong under spoaHub.plugins.coraza.
@@ -2485,14 +2498,18 @@ spoaHub:
         max_keys = 50000
         idle_ttl_ms = 120000
         max_prefetch_queue = 8192
+    # OIDC sign-in for Ingresses with haproxy-haptic.org/sso-auth. Each provider
+    # comes from a Secret in the Ingress's namespace; its issuer must be listed
+    # in extraContext.ssoAuth.allowedIssuers. timeoutMs covers the token
+    # exchange with the identity provider.
     sso-auth:
       enabled: '{{ false }}'  # @schema type: [boolean, string]
       timeoutMs: 6000  # @schema type: [integer, string]
-      messages: ["auth-request"]
+      messages: ["check-sso-auth"]
       dependsOn: []  # @schema item: string
-      params: |
-        max_providers = 10
-        max_session_age_seconds = 3600
+      # Plugin settings (cookie_lifetime_secs, cookie_samesite, fail_open, ...);
+      # see the haproxy-spoa-hub-plugin-sso-auth config schema.
+      params: ""
 
   # Container-level securityContext for the spoa-hub container. runAsUser=99
   # matches the pod's existing fsGroup (99) so the unix socket the hub
@@ -2731,7 +2748,7 @@ vector:
       enabled: true
       field: denied_by
       kind: enum  # @schema enum: [enum, numeric]
-      values: ["api_key", "api_key_unavailable", "backend_tls_unavailable", "basic_auth", "basic_auth_unavailable", "body_too_large", "cache_origin_internal_backend", "consumer_groups", "consumer_groups_unavailable", "content_type", "external_auth", "external_auth_unavailable", "gw_sni_host_mismatch", "hmac", "hmac_body_incomplete", "hmac_no_content_length", "hmac_unavailable", "jwt_algorithm", "jwt_audience", "jwt_expired", "jwt_issuer", "jwt_key_unavailable", "jwt_not_yet_valid", "jwt_required_claim", "jwt_signature", "jwt_unavailable", "method_not_allowed", "mtls_sni_host_mismatch", "mtls_unavailable", "policy_consumer_missing", "rate_limit_connections", "rate_limit_local", "rate_limit_shared", "rate_limit_shared_invalid", "rate_limit_shared_unavailable", "required_header", "route_policy_unavailable", "schema_body_incomplete", "schema_body_too_large", "schema_duplicate_content_length", "schema_invalid", "schema_no_content_length", "schema_unavailable", "schema_unsupported_media_type", "waf", "waf_body_chunked", "waf_body_content_type", "waf_body_duplicate_content_length", "waf_body_incomplete", "waf_body_too_large", "waf_policy_unavailable", "waf_status_400", "waf_status_413", "waf_unavailable"]
+      values: ["api_key", "api_key_unavailable", "backend_tls_unavailable", "basic_auth", "basic_auth_unavailable", "body_too_large", "cache_origin_internal_backend", "consumer_groups", "consumer_groups_unavailable", "content_type", "external_auth", "external_auth_unavailable", "gw_sni_host_mismatch", "hmac", "hmac_body_incomplete", "hmac_no_content_length", "hmac_unavailable", "jwt_algorithm", "jwt_audience", "jwt_expired", "jwt_issuer", "jwt_key_unavailable", "jwt_not_yet_valid", "jwt_required_claim", "jwt_signature", "jwt_unavailable", "method_not_allowed", "mtls_sni_host_mismatch", "mtls_unavailable", "policy_consumer_missing", "rate_limit_connections", "rate_limit_local", "rate_limit_shared", "rate_limit_shared_invalid", "rate_limit_shared_unavailable", "required_header", "route_policy_unavailable", "schema_body_incomplete", "schema_body_too_large", "schema_duplicate_content_length", "schema_invalid", "schema_no_content_length", "schema_unavailable", "schema_unsupported_media_type", "sso_auth", "sso_auth_unavailable", "waf", "waf_body_chunked", "waf_body_content_type", "waf_body_duplicate_content_length", "waf_body_incomplete", "waf_body_too_large", "waf_policy_unavailable", "waf_status_400", "waf_status_413", "waf_unavailable"]
       metric: denied_total
       tag: reason
 

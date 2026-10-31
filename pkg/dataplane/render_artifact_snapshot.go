@@ -67,6 +67,13 @@ func BuildAuxiliaryFileSnapshotWithRuntimePaths(
 	); err != nil {
 		return nil, err
 	}
+	for _, file := range files.SecretFiles {
+		if err := addAuxiliaryArtifact(builder, renderartifact.Descriptor{
+			Family: renderartifact.Secret, Path: file.Path, RuntimePath: file.Path, Seal: file.Seal,
+		}, file.Content); err != nil {
+			return nil, err
+		}
+	}
 	return builder.Build()
 }
 
@@ -207,6 +214,10 @@ func appendMaterializedArtifact(files *AuxiliaryFiles, artifact *renderartifact.
 		files.CRTListFiles = append(files.CRTListFiles, auxiliaryfiles.CRTListFile{
 			Path: strings.Clone(descriptor.Path), Content: content,
 		})
+	case renderartifact.Secret:
+		files.SecretFiles = append(files.SecretFiles, auxiliaryfiles.SecretFile{
+			Path: strings.Clone(descriptor.Path), Content: content, Seal: descriptor.Seal,
+		})
 	default:
 		return fmt.Errorf("materializing auxiliary file: invalid family %d", descriptor.Family)
 	}
@@ -238,6 +249,7 @@ type snapshotChecksumItem struct {
 	family      renderartifact.Family
 	path        string
 	content     *renderartifact.Content
+	seal        string
 }
 
 type snapshotChecksumIdentity struct {
@@ -274,6 +286,7 @@ func ComputeSnapshotContentChecksum(
 			family:      descriptor.Family,
 			path:        descriptor.Path,
 			content:     content,
+			seal:        descriptor.Seal,
 		})
 		return nil
 	}); err != nil {
@@ -283,6 +296,10 @@ func ComputeSnapshotContentChecksum(
 	h := newContentChecksum(haproxyConfig)
 	for _, item := range items {
 		_, _ = h.Write([]byte(item.identifier))
+		if item.family == renderartifact.Secret {
+			_, _ = h.Write([]byte(item.seal))
+			continue
+		}
 		if _, err := item.content.WriteTo(h); err != nil {
 			return "", err
 		}
@@ -302,6 +319,8 @@ func legacyChecksumIdentity(descriptor renderartifact.Descriptor) (snapshotCheck
 		return snapshotChecksumIdentity{familyOrder: 3, identifier: descriptor.Path}, nil
 	case renderartifact.CRTList:
 		return snapshotChecksumIdentity{familyOrder: 4, identifier: descriptor.Path}, nil
+	case renderartifact.Secret:
+		return snapshotChecksumIdentity{familyOrder: 5, identifier: descriptor.Path}, nil
 	default:
 		return snapshotChecksumIdentity{},
 			fmt.Errorf("checksumming auxiliary file: invalid family %d", descriptor.Family)
@@ -376,7 +395,7 @@ func snapshotCurrentFileFor(artifact *renderartifact.Artifact) (snapshotCurrentF
 	case renderartifact.CRTList:
 		order = 2
 		sortKey = descriptor.Path
-	case renderartifact.Certificate, renderartifact.CA, renderartifact.GeneralCA:
+	case renderartifact.Certificate, renderartifact.CA, renderartifact.GeneralCA, renderartifact.Secret:
 		return snapshotCurrentFile{}, false, nil
 	default:
 		return snapshotCurrentFile{}, false,

@@ -173,6 +173,9 @@ type File struct {
 	ReloadOnChange bool   `json:"reloadOnChange"`
 	Digest         string `json:"digest"`
 	Size           int64  `json:"size"`
+	// Seal replaces Digest in the identity and in checkpoints, which readers
+	// without Secret access can see: see auxiliaryfiles.SealContent.
+	Seal string `json:"seal,omitempty"`
 
 	Content      string `json:"-"`
 	ContentKnown bool   `json:"-"`
@@ -299,11 +302,12 @@ type ServerAddr struct {
 }
 
 // Canonical returns the deterministic JSON encoding of the plan with the ID
-// cleared, so the ID can be a digest over it. encoding/json sorts map keys and
-// keeps struct fields in declaration order.
+// and every sealed file's digest cleared, so the ID can be a digest over it.
+// encoding/json sorts map keys and keeps struct fields in declaration order.
 func (p *Plan) Canonical() []byte {
 	clone := *p
 	clone.ID = ""
+	clone.Files = ClearSealedDigests(p.Files)
 	encoded, err := json.Marshal(&clone)
 	if err != nil {
 		// Only a new field that is not JSON-safe can get here, and digesting a
@@ -311,6 +315,23 @@ func (p *Plan) Canonical() []byte {
 		panic(fmt.Sprintf("renderplan: encoding the plan failed: %v", err))
 	}
 	return encoded
+}
+
+// ClearSealedDigests returns files with every sealed file's digest cleared,
+// sharing the slice when no file is sealed.
+func ClearSealedDigests(files []File) []File {
+	cleared := files
+	copied := false
+	for i := range files {
+		if files[i].Seal == "" {
+			continue
+		}
+		if !copied {
+			cleared, copied = slices.Clone(files), true
+		}
+		cleared[i].Digest = ""
+	}
+	return cleared
 }
 
 // ComputeID sets the plan ID to the digest of its canonical encoding.

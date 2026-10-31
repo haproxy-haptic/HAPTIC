@@ -10,7 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `fileRegistry.Register("secret", …)` delivers a file to sidecars under `secrets/` without a reload. Its content is published only as a Kubernetes Secret, and readable resources carry a keyed digest instead of a content digest.
+- `spec.dataplane.secretsDir` sets the secret file directory (default `/etc/haproxy/secrets`).
+- The `secret:<name>` validation test target asserts on a rendered secret file.
+
 ### Helm chart
+
+#### Added
+
+- A `secret-storage` tmpfs volume at `/etc/haproxy/secrets`, mounted in the agent and SPOA hub containers but not in the HAProxy container.
+- `haproxy-haptic.org/sso-auth` signs users in with OpenID Connect through the SPOA hub's sso-auth plugin, using a provider Secret in the Ingress's namespace; `sso-auth-allowed-groups` admits only members of the listed groups, and `pass-token` forwards the ID or access token as `Authorization: Bearer` and refreshes it ([#548](https://github.com/haproxy-haptic/HAPTIC/issues/548)).
+- `controller.config.templatingSettings.extraContext.ssoAuth.allowedIssuers` lists the identity providers sso-auth provider Secrets may use.
+
+#### Changed
+
+- The sso-auth plugin's SPOE message is `check-sso-auth`, and its default params are empty; the previous defaults made the plugin fail to load.
 
 #### Fixed
 

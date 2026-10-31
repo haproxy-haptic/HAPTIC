@@ -229,7 +229,7 @@ func (p *Publisher) pruneAuxiliaryFiles(ctx context.Context, runtimeConfig *hapr
 		desired           []string
 	}{
 		{kindMapFile, mapFileDescription, result.MapFileNames},
-		{kindSecret, "SSL file Secret", slices.Concat(result.SecretNames, result.SSLCaFileNames)},
+		{kindSecret, "file Secret", slices.Concat(result.SecretNames, result.SSLCaFileNames, result.SecretFileNames)},
 		{kindGeneralFile, generalFileDescription, result.GeneralFileNames},
 		{kindCRTListFile, crtListFileDescription, result.CRTListFileNames},
 	}

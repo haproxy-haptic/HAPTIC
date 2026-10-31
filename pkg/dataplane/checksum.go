@@ -26,6 +26,7 @@ func ComputeContentChecksum(haproxyConfig string, auxFiles *AuxiliaryFiles) stri
 		hashFileItems(h, auxFiles.SSLCertificates)
 		hashFileItems(h, auxFiles.SSLCaFiles)
 		hashFileItems(h, auxFiles.CRTListFiles)
+		hashFileItems(h, auxFiles.SecretFiles)
 	}
 
 	return finishContentChecksum(h)
@@ -42,12 +43,12 @@ func finishContentChecksum(h hash.Hash) string {
 	return hex.EncodeToString(checksum[:8])
 }
 
-// hashFileItems writes each item's identifier and content to h in slice order.
+// hashFileItems writes each item's identifier and identity content to h in slice order.
 // Slices must be pre-sorted by the caller (typically via AuxiliaryFiles.Sort)
 // to keep results deterministic.
 func hashFileItems[T auxiliaryfiles.FileItem](h hash.Hash, items []T) {
 	for _, item := range items {
 		h.Write([]byte(item.GetIdentifier()))
-		h.Write([]byte(item.GetContent()))
+		h.Write([]byte(auxiliaryfiles.IdentityContent(item)))
 	}
 }

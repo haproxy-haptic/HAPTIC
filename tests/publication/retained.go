@@ -75,16 +75,17 @@ func retainedCertificatesMatch(config *api.HAProxyCfg, secrets []corev1.Secret, 
 		}
 	}
 	trimmed := config.DeepCopy()
-	trimmed.Status.AuxiliaryFiles.SSLCertificates = unsharedReferences(refs.SSLCertificates, shared, setID, false)
-	trimmed.Status.AuxiliaryFiles.SSLCaFiles = unsharedReferences(refs.SSLCaFiles, shared, setID, true)
+	trimmed.Status.AuxiliaryFiles.SSLCertificates = unsharedReferences(refs.SSLCertificates, shared, setID, roleCertificate)
+	trimmed.Status.AuxiliaryFiles.SSLCaFiles = unsharedReferences(refs.SSLCaFiles, shared, setID, roleCA)
+	trimmed.Status.AuxiliaryFiles.SecretFiles = unsharedReferences(refs.SecretFiles, shared, setID, roleSecretFile)
 	return certificatesMatch(trimmed, owned, setID)
 }
 
 // unsharedReferences returns the references no valid shared Secret satisfies.
-func unsharedReferences(refs []api.ResourceReference, shared map[string]*corev1.Secret, setID string, caFile bool) []api.ResourceReference {
+func unsharedReferences(refs []api.ResourceReference, shared map[string]*corev1.Secret, setID, role string) []api.ResourceReference {
 	var remaining []api.ResourceReference
 	for _, ref := range refs {
-		if secret := shared[ref.Name]; secret == nil || !CertificateIdentityMatches(&secret.ObjectMeta, setID, caFile) {
+		if secret := shared[ref.Name]; secret == nil || !FileSecretIdentityMatches(&secret.ObjectMeta, setID, role) {
 			remaining = append(remaining, ref)
 		}
 	}
@@ -140,9 +141,10 @@ func retainedCertificateNames(config *api.HAProxyCfg, configs map[types.UID]*api
 		if retained == nil || retained.Status.AuxiliaryFiles == nil {
 			continue
 		}
-		refs := retained.Status.AuxiliaryFiles
-		for _, certificate := range append(slices.Clone(refs.SSLCertificates), refs.SSLCaFiles...) {
-			names[certificate.Name] = true
+		for _, group := range secretRoleGroups(retained.Status.AuxiliaryFiles) {
+			for _, ref := range group.refs {
+				names[ref.Name] = true
+			}
 		}
 	}
 	return names

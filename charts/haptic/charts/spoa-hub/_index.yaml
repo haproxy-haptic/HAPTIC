@@ -102,6 +102,14 @@ maps:
       # map-auth-exempt-backend-*.
       {{ on_own_lines(render_glob "map-auth-exempt-backend-*") -}}
 
+  sso-auth.map:
+    template: |
+      # sso-auth route policy: txn.resource_key → "<provider> <allowed groups>",
+      # groups comma-separated or "-" for any signed-in user. Provider "-"
+      # means the route's provider is unusable and fails closed with 503.
+      # Populated by map-sso-auth-*.
+      {{ on_own_lines(render_glob "map-sso-auth-*") -}}
+
   auth-forward-headers.map:
     template: |
       # External-auth per-ingress request-header allowlist forwarded to the auth service (comma

@@ -467,6 +467,43 @@ templateSnippets:
       {%- end %}
       {%- end %}
 
+  # sso-auth sign-in for routes in sso-auth.map. Authentication fails closed:
+  # a missing verdict or an unusable provider answers 503 (see "Runtime
+  # dependency failure" in charts/CLAUDE.md). Identity headers, Authorization
+  # included, are always stripped: these routes need a browser session, so a
+  # client-supplied credential could only be a forgery.
+  frontend-spoe-filters-110-sso-auth:
+    template: |
+      {%- var messages = toStringSlice(extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{})) %}
+      {%- if messages contains "check-sso-auth" && strip(render_glob "map-sso-auth-*") != "" %}
+      {%- var sso = "{ var(txn.sso_cfg) -m found }" %}
+      {%- var verdict = "txn.hub.sso_auth" %}
+      http-request set-var(txn.sso_cfg) var(txn.resource_key),map({{ pathResolver.GetPath("sso-auth.map", "map") }})
+      http-request set-var(txn.sso_provider) var(txn.sso_cfg),field(1,' ') if {{ sso }}
+      http-request set-var(txn.sso_groups) var(txn.sso_cfg),field(2,' ') if {{ sso }} !{ var(txn.sso_cfg),field(2,' ') -m str -- - }
+      http-request set-var(txn.denied_by) str(sso_auth_unavailable) if {{ sso }} { var(txn.sso_provider) -m str -- - }
+      http-request return status 503 if {{ sso }} { var(txn.sso_provider) -m str -- - }
+      http-request send-spoe-group spoa-hub-check-sso-auth check-sso-auth-group if {{ sso }}
+      http-request del-header Authorization if {{ sso }}
+      http-request del-header X-Auth-Request-User if {{ sso }}
+      http-request del-header X-Auth-Request-Email if {{ sso }}
+      http-request del-header X-Auth-Request-Groups if {{ sso }}
+      http-request set-var(txn.denied_by) str(sso_auth) if {{ sso }} !{ var({{ verdict }}.allowed) -m bool }
+      http-request return status 503 if {{ sso }} !{ var({{ verdict }}.action) -m found }
+      http-request redirect location %[var({{ verdict }}.redirect_url)] code 302 if {{ sso }} { var({{ verdict }}.action) -m str redirect }
+      http-request deny deny_status 403 if {{ sso }} { var({{ verdict }}.action) -m str forbidden }
+      http-request deny deny_status 503 if {{ sso }} !{ var({{ verdict }}.allowed) -m bool } { var({{ verdict }}.status_code) -m int 503 }
+      http-request deny deny_status 401 if {{ sso }} !{ var({{ verdict }}.allowed) -m bool }
+      http-request set-header Authorization "Bearer %[var({{ verdict }}.token)]" if {{ sso }} { var({{ verdict }}.token) -m found }
+      http-request set-header X-Auth-Request-User %[var({{ verdict }}.sub)] if {{ sso }} { var({{ verdict }}.sub) -m found }
+      http-request set-header X-Auth-Request-Email %[var({{ verdict }}.email)] if {{ sso }} { var({{ verdict }}.email) -m found }
+      http-request set-header X-Auth-Request-Groups %[var({{ verdict }}.groups)] if {{ sso }} { var({{ verdict }}.groups) -m found }
+      {#- after-response so HAProxy's own redirects carry the cookies too. #}
+      {%- for _, cookieVar := range []string{"set_auth_state_header", "set_cookie_header", "set_cookie_header_1", "set_cookie_header_2"} %}
+      http-after-response add-header Set-Cookie %[var({{ verdict }}.{{ cookieVar }})] if { var({{ verdict }}.{{ cookieVar }}) -m found }
+      {%- end %}
+      {%- end %}
+
   # API-gateway request validation. Resolves the per-route schema rule from
   # request-schema.map (populated by haptic-annotations), rejects oversized
   # bodies before the SPOE call, waits for a body only on matching validation

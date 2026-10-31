@@ -63,13 +63,18 @@ func (w *canonicalWriter) writeString(value string) {
 // reusing each entry's memoised fragment. The field order is encoding/json's
 // declaration order for Plan; the field inventory test pins it.
 func writeCanonicalPlan(root *planRoot, target io.Writer) error {
-	return writePlanJSON(root, "", target)
+	return writePlanJSON(root, "", canonicalFileFragment, target)
 }
 
 // writePlanJSON streams the plan's encoding/json form carrying id, out of the
 // same memoised fragments the canonical form is digested from; the canonical
-// form is the id-less one.
-func writePlanJSON(root *planRoot, id string, target io.Writer) error {
+// form is the id-less one, with the sealed files' digests cleared.
+func writePlanJSON(
+	root *planRoot,
+	id string,
+	fileFragment func(*snapshotEntry[File]) ([]byte, error),
+	target io.Writer,
+) error {
 	writer := &canonicalWriter{target: target}
 	var digits [24]byte
 	writer.writeString(`{"schemaVersion":`)
@@ -100,7 +105,7 @@ func writePlanJSON(root *planRoot, id string, target io.Writer) error {
 		return err
 	}
 	writer.writeString(`,"files":`)
-	if err := writeCanonicalSequence(writer, root.files, canonicalFileFragment); err != nil {
+	if err := writeCanonicalSequence(writer, root.files, fileFragment); err != nil {
 		return err
 	}
 	writer.writeString("}")
@@ -241,9 +246,22 @@ func canonicalFileFragment(entry *snapshotEntry[File]) ([]byte, error) {
 			entry.canonical.err = err
 			return
 		}
+		if file.Seal != "" {
+			file.Digest = ""
+		}
 		entry.canonical.bytes, entry.canonical.err = json.Marshal(file)
 	})
 	return entry.canonical.bytes, entry.canonical.err
+}
+
+// fileJSONFragment is canonicalFileFragment keeping a sealed file's digest,
+// which the agent verifies its bytes against.
+func fileJSONFragment(entry *snapshotEntry[File]) ([]byte, error) {
+	file, err := canonicalSnapshotFileEntry(entry)
+	if err != nil || file.Seal == "" {
+		return canonicalFileFragment(entry)
+	}
+	return json.Marshal(file)
 }
 
 func canonicalMember[T any](name string, value T) ([]byte, error) {

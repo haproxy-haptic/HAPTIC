@@ -270,6 +270,9 @@
                 "reloadVerificationTimeout": {
                   "type": "string"
                 },
+                "secretsDir": {
+                  "type": "string"
+                },
                 "sslCertsDir": {
                   "type": "string"
                 },
@@ -677,6 +680,18 @@
                             "default",
                             "last"
                           ]
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "ssoAuth": {
+                      "type": "object",
+                      "properties": {
+                        "allowedIssuers": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
                         }
                       },
                       "additionalProperties": false

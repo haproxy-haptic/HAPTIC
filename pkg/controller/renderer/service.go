@@ -307,6 +307,7 @@ type RenderService struct {
 	engine                      templating.Engine
 	config                      *config.Config
 	pathResolver                *templating.PathResolver
+	secretFileSealKey           []byte
 	logger                      *slog.Logger
 	admissionSlots              chan struct{}
 	admissionSlotWaitObserver   func(time.Duration)
@@ -430,6 +431,10 @@ type RenderServiceConfig struct {
 	// available and templates fall back to the untyped
 	// resources["<name>"] path.
 	TypedResourceTypes map[string]reflect.Type
+
+	// SecretFileSealKey keys the seals of rendered secret files. Every replica
+	// must use the same key, or each one renders a different plan ID.
+	SecretFileSealKey []byte
 }
 
 // NewRenderService creates a new RenderService.
@@ -462,12 +467,18 @@ func NewRenderService(cfg *RenderServiceConfig) *RenderService {
 	// See: pkg/dataplane/auxiliaryfiles/crtlist.go
 	crtListDir := generalDir
 
+	var secretDir string
+	if cfg.Config.Dataplane.SecretsDir != "" {
+		secretDir = path.Base(cfg.Config.Dataplane.SecretsDir)
+	}
+
 	pathResolver := &templating.PathResolver{
 		BaseDir:    baseDir,
 		MapsDir:    path.Base(cfg.Config.Dataplane.MapsDir),
 		SSLDir:     sslDir,
 		CRTListDir: crtListDir,
 		GeneralDir: generalDir,
+		SecretDir:  secretDir,
 	}
 	mainDocumentCache, _ := rendercontext.NewRenderDocumentCache(cfg.Engine)
 	planTokenAuthority := rendercontext.NewPlanTokenAuthority()
@@ -486,6 +497,7 @@ func NewRenderService(cfg *RenderServiceConfig) *RenderService {
 		engine:                      cfg.Engine,
 		config:                      cfg.Config,
 		pathResolver:                pathResolver,
+		secretFileSealKey:           cfg.SecretFileSealKey,
 		logger:                      cfg.Logger,
 		admissionSlots:              make(chan struct{}, admissionRenderSlots(runtime.GOMAXPROCS(0))),
 		admissionSlotWaitObserver:   cfg.AdmissionSlotWaitObserver,
@@ -1976,6 +1988,7 @@ func (s *RenderService) buildRenderingContextFromAttemptInputs(
 		rendercontext.WithPlanTokenAuthority(s.planTokenAuthority),
 		rendercontext.WithPlanMemo(s.planMemo),
 		rendercontext.WithNamespaceScopes(s.namespaceScopes),
+		rendercontext.WithSecretFileSealKey(s.secretFileSealKey),
 	}
 	opts = append(opts, attemptInputs.options()...)
 

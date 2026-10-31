@@ -316,7 +316,7 @@ func setupReconciliation(
 	outputValidator pipeline.RenderedOutputValidator,
 	logger *slog.Logger,
 ) (*reconciliationWiring, error) {
-	wiring, err := createReconciliationComponents(setup, cfg, crd, k8sClient, resourceWatcher, currentFiles, storeProvider, outputValidator, logger)
+	wiring, err := createReconciliationComponents(setup, cfg, crd, creds.SecretFileSealKey(), k8sClient, resourceWatcher, currentFiles, storeProvider, outputValidator, logger)
 	if err != nil {
 		return nil, err
 	}

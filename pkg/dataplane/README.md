@@ -71,6 +71,7 @@ degrade to. The decision layer never refuses.
 What stays off the reload path:
 
 - Map entries; certificate, CA and crt-list content
+- Secret files, which are plain writes for sidecars
 - A server's address, port, weight or admin state
 - A server added to or removed from a backend (3.0+; 3.1+ joins without a reload)
 - A backend added or removed, on HAProxy 3.4, when the render declares it dynamic

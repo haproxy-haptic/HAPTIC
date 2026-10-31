@@ -48,6 +48,7 @@ func cloneAuxiliaryFiles(files *dataplane.AuxiliaryFiles) *dataplane.AuxiliaryFi
 		}
 	}
 	clone.CRTListFiles = slices.Clone(files.CRTListFiles)
+	clone.SecretFiles = slices.Clone(files.SecretFiles)
 	return &clone
 }
 

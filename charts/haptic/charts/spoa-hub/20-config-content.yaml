@@ -45,9 +45,11 @@ templateSnippets:
           render time if its annotations are present without the plugin. #}
       {{- render_glob "util-*-coraza-scan" -}}
       {{- render_glob "util-*-api-gateway-schemas" -}}
+      {{- render_glob "util-*-sso-auth-providers" -}}
       {%- var _, _ = shared.ComputeIfAbsent("globalFeatures", func() any { return map[string]any{} }) -%}
       {%- var gf = shared.Get("globalFeatures").(map[string]any) -%}
       {%- var modsecApps = gf | dig("sphCorazaApps") | fallback([]any{}) | toSlice() -%}
+      {%- var ssoProviders = gf | dig("ssoAuthProviders") | fallback([]any{}) | toSlice() -%}
       {%- var apiGatewaySchemas = gf | dig("apiGatewaySchemas") | fallback([]any{}) | toSlice() -%}
 
       {# plugin_dir is the bundled image's fixed layout and default_timeout_ms
@@ -219,6 +221,29 @@ templateSnippets:
       """
           {%- end %}
         {%- end %}
+        {%- if pName == "sso_auth" %}
+          {#- Each entry: id, version (changes with its secrets, so the hub
+              reloads and re-reads them), fields (TOML values) and secrets
+              (field → content). Secret content travels as Secret-backed
+              files, never in this TOML. -#}
+          {%- for _, entry := range ssoProviders %}
+            {%- var p = entry.(map[string]any) %}
+            {%- var id = p["id"].(string) %}
+            {%- var fields = p["fields"].(map[string]any) %}
+            {%- var secrets = to_str_map(p["secrets"]) %}
+
+      [plugins.params.providers.{{ toJSON(id) }}]
+      # version {{ tostring(p["version"]) }}
+            {%- for _, k := range keys(fields) %}
+      {{ k }} = {{ toJSON(fields[k]) }}
+            {%- end %}
+            {%- for _, k := range keys(secrets) %}
+              {%- var secretPath, registerErr = fileRegistry.Register("secret", "sso." + replace(id, "/", ".") + "." + k, secrets[k]) %}
+              {%- if registerErr != nil %}{%- fail(tostring(registerErr)) %}{%- end %}
+      {{ k }}_file = {{ toJSON(pathResolver.GetBaseDir() + "/" + secretPath) }}
+            {%- end %}
+          {%- end %}
+        {%- end %}
         {%- if pName == "api_gateway" && len(apiGatewaySchemas) > 0 %}
           {#- API-gateway request validation schemas. The haptic-annotations
               library resolves per-Ingress ConfigMap/Secret references at render
@@ -280,6 +305,8 @@ templateSnippets:
       {{ render "spoe-message-validate-request-body" }}
       {%- else if msg == "mirror" -%}
       {{ render "spoe-message-mirror-body" }}
+      {%- else if msg == "check-sso-auth" -%}
+      {{ render "spoe-message-check-sso-auth-body" }}
       {%- else -%}
       spoe-message {{ msg }}
           args ip=src req_id=unique-id
@@ -355,6 +382,14 @@ templateSnippets:
       {%- end -%}
       spoe-message check-auth
           args auth_url=var(txn.auth_url) path=path method=var(txn.auth_method) forward_headers=var(txn.auth_forward_headers) extract_headers=var(txn.auth_extract_headers) hdr_authorization=req.hdr(Authorization) hdr_cookie=req.hdr(Cookie) hdr_x_forwarded_for=req.hdr(X-Forwarded-For) hdr_x_forwarded_proto=req.hdr(X-Forwarded-Proto) hdr_x_forwarded_host=req.hdr(X-Forwarded-Host) hdr_x_forwarded_uri=req.hdr(X-Forwarded-Uri) req_id=unique-id{{ extraArgs }}
+
+  # sso-auth plugin contract: specs/001-sso-auth-plugin/contracts/spoe-interface.md
+  # in haproxy-spoa-hub-plugin-sso-auth. Session cookies arrive in up to three
+  # chunks; the provider comes from the plugin params, so no provider_config.
+  spoe-message-check-sso-auth-body:
+    template: |-
+      spoe-message check-sso-auth
+          args provider=var(txn.sso_provider) allowed_groups=var(txn.sso_groups) cookie=req.cook(sso_session) cookie_1=req.cook(sso_session_1) cookie_2=req.cook(sso_session_2) auth_state_cookie=req.cook(sso_auth_state) request_path=pathq request_host=req.hdr(host) callback_code=url_param(code) callback_state=url_param(state) req_id=unique-id
 
   # Every message carries `req_id=unique-id` — the same value HAProxy's
   # `unique-id-format` puts in the JSON access log's `req_id` field

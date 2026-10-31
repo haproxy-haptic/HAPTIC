@@ -221,7 +221,7 @@ func TestPlanCanonicalFieldInventory(t *testing.T) {
 		"Entry":        {"key", "value"},
 		"CRTList":      {"path", "entries,omitempty"},
 		"CRTListEntry": {"cert", "options,omitempty", "sniFilters,omitempty"},
-		"File":         {"path", "kind", "reloadOnChange", "digest", "size", "-", "-"},
+		"File":         {"path", "kind", "reloadOnChange", "digest", "size", "seal,omitempty", "-", "-"},
 	}
 	types := []reflect.Type{
 		reflect.TypeOf(Plan{}), reflect.TypeOf(Section{}), reflect.TypeOf(Backend{}),
@@ -288,8 +288,38 @@ func canonicalPlanCases() []canonicalPlanCase {
 		canonicalPlanCase{name: "all optional fields unset", plan: canonicalSparsePlan()},
 		canonicalPlanCase{name: "hostile bytes", plan: canonicalHostilePlan()},
 		canonicalPlanCase{name: "byte ordered keys", plan: canonicalKeyOrderPlan()},
+		canonicalPlanCase{name: "sealed file", plan: canonicalSealedPlan("hunter2")},
 	)
 	return cases
+}
+
+func canonicalSealedPlan(content string) *Plan {
+	plan := snapshotPlanFixture(1)
+	plan.Files = append(plan.Files, File{
+		Path: "secrets/x", Kind: FileKindGeneral, Digest: DigestString(content), Size: int64(len(content)),
+		Seal: "seal", Content: content, ContentKnown: true,
+	})
+	return plan
+}
+
+// TestSealedFileDigestStaysOutOfTheIdentity pins that the plan ID, which
+// readers without Secret access see, never depends on a sealed file's digest,
+// while the JSON the agent receives still carries it.
+func TestSealedFileDigestStaysOutOfTheIdentity(t *testing.T) {
+	plan := canonicalSealedPlan("hunter2")
+	digest := DigestString("hunter2")
+	assert.NotContains(t, string(plan.Canonical()), digest)
+	other := canonicalSealedPlan("hunter3")
+	assert.Equal(t, Digest(plan.Canonical()), Digest(other.Canonical()), "one seal and size, one identity")
+	other.Files[len(other.Files)-1].Seal = "other seal"
+	assert.NotEqual(t, Digest(plan.Canonical()), Digest(other.Canonical()))
+
+	plan.ComputeID()
+	snapshot := mustPlanSnapshot(t, NewAuthority(), plan, nil)
+	encoded, err := snapshot.MarshalJSON()
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), digest)
+	assert.Equal(t, digest, plan.Files[len(plan.Files)-1].Digest, "Canonical leaves the plan untouched")
 }
 
 // canonicalSparsePlan leaves every omitempty leaf field at its zero value and

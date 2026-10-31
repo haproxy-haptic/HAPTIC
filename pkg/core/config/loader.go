@@ -2,6 +2,8 @@
 package config
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 )
 
@@ -30,4 +32,12 @@ func LoadCredentials(secretData map[string][]byte) (*Credentials, error) {
 		DataplaneUsername: string(dataplaneUsername),
 		DataplanePassword: string(dataplanePassword),
 	}, nil
+}
+
+// SecretFileSealKey derives the key of secret-file seals from the dataplane
+// password: the one per-installation secret every replica already shares.
+func (c *Credentials) SecretFileSealKey() []byte {
+	mac := hmac.New(sha256.New, []byte(c.DataplanePassword))
+	_, _ = mac.Write([]byte("haptic secret file seal"))
+	return mac.Sum(nil)
 }

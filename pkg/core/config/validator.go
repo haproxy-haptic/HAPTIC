@@ -678,6 +678,9 @@ func validateDataplaneConfig(dc *DataplaneConfig) error {
 	if dc.GeneralStorageDir == "" {
 		return fmt.Errorf("general_storage_dir cannot be empty (expected default %q)", DefaultDataplaneGeneralStorageDir)
 	}
+	if dc.SecretsDir == "" {
+		return fmt.Errorf("secrets_dir cannot be empty (expected default %q)", DefaultDataplaneSecretsDir)
+	}
 	if dc.ConfigFile == "" {
 		return fmt.Errorf("config_file cannot be empty (expected default %q)", DefaultDataplaneConfigFile)
 	}

@@ -45,7 +45,7 @@ func auxiliaryFileIdentity(kind string, file auxiliaryfiles.FileItem) string {
 	case auxiliaryfiles.SSLCaFile:
 		caFile = true
 	}
-	return AuxiliaryContentSuffix(kind, filePath, calculateChecksum(file.GetContent()), caFile)
+	return AuxiliaryContentSuffix(kind, filePath, identityChecksum(file), caFile)
 }
 
 func auxiliaryClaimAnnotations(owner *haproxyv1alpha1.HAProxyCfg, claim string) map[string]string {
@@ -62,7 +62,7 @@ func retainReferencedClaim(existing metav1.Object, annotations map[string]string
 	}
 	refs := owner.Status.AuxiliaryFiles
 	for _, group := range [][]haproxyv1alpha1.ResourceReference{
-		refs.MapFiles, refs.SSLCertificates, refs.SSLCaFiles, refs.GeneralFiles, refs.CRTListFiles,
+		refs.MapFiles, refs.SSLCertificates, refs.SSLCaFiles, refs.GeneralFiles, refs.CRTListFiles, refs.SecretFiles,
 	} {
 		for _, ref := range group {
 			if ref.Kind == kind && ref.Name == existing.GetName() &&

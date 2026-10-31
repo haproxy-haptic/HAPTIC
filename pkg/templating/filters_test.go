@@ -83,6 +83,7 @@ func TestPathResolver_GetPath(t *testing.T) {
 		SSLDir:     "/etc/haproxy/ssl",
 		CRTListDir: "/etc/haproxy/general", // CRT-list files stored in general directory to avoid reload
 		GeneralDir: "/etc/haproxy/general",
+		SecretDir:  "/etc/haproxy/secrets",
 	}
 
 	tests := []struct {
@@ -115,6 +116,12 @@ func TestPathResolver_GetPath(t *testing.T) {
 			filename: "certificate-list.txt",
 			args:     []any{"crt-list"},
 			want:     "/etc/haproxy/general/certificate-list.txt",
+		},
+		{
+			name:     "secret file with dots - NOT sanitized",
+			filename: "sso.client-secret",
+			args:     []any{"secret"},
+			want:     "/etc/haproxy/secrets/sso.client-secret",
 		},
 		// Sanitization tests for SSL certificates
 		{
@@ -212,6 +219,11 @@ func TestPathResolver_GetPath(t *testing.T) {
 	}
 }
 
+func TestPathResolver_GetPath_SecretNeedsADirectory(t *testing.T) {
+	_, err := (&PathResolver{GeneralDir: "general"}).GetPath("x", "secret")
+	require.ErrorContains(t, err, "no secret file directory")
+}
+
 // TestPathResolver_GetPath_RejectsTraversal proves the containment guard fires
 // for every file type: a resource-derived filename that escapes its directory
 // (or is an absolute/Windows path) must be rejected, while a clean name passes.
@@ -221,9 +233,10 @@ func TestPathResolver_GetPath_RejectsTraversal(t *testing.T) {
 		SSLDir:     "ssl",
 		CRTListDir: "ssl",
 		GeneralDir: "files",
+		SecretDir:  "secrets",
 	}
 
-	for _, fileType := range []string{"map", "file", "cert", "crt-list"} {
+	for _, fileType := range []string{"map", "file", "cert", "crt-list", "secret"} {
 		t.Run(fileType, func(t *testing.T) {
 			traversals := []struct {
 				name     string

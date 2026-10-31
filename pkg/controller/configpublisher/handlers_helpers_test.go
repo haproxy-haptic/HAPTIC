@@ -164,7 +164,7 @@ func TestComponent_GetCompressionThreshold(t *testing.T) {
 }
 
 // TestComponent_ConvertAuxiliaryFiles_StructShape asserts via reflect
-// that configpublisher.AuxiliaryFiles has exactly the five fields the
+// that configpublisher.AuxiliaryFiles has exactly the six fields the
 // converter knows about. The original Gitar review pointed out that a
 // keyed struct literal only catches field removals/renames, not
 // additions — Go happily compiles a keyed literal even when the
@@ -176,9 +176,9 @@ func TestComponent_GetCompressionThreshold(t *testing.T) {
 // to be updated alongside convertAuxiliaryFiles.
 func TestComponent_ConvertAuxiliaryFiles_StructShape(t *testing.T) {
 	typ := reflect.TypeOf(configpublisher.AuxiliaryFiles{})
-	require.Equal(t, 5, typ.NumField(),
-		"configpublisher.AuxiliaryFiles must have exactly 5 fields "+
-			"(MapFiles, SSLCertificates, SSLCaFiles, GeneralFiles, CRTListFiles); "+
+	require.Equal(t, 6, typ.NumField(),
+		"configpublisher.AuxiliaryFiles must have exactly 6 fields "+
+			"(MapFiles, SSLCertificates, SSLCaFiles, GeneralFiles, CRTListFiles, SecretFiles); "+
 			"if you added or removed a field, also update convertAuxiliaryFiles in handlers.go "+
 			"to wire the new field through (or drop it from) the type-bridge — otherwise "+
 			"newly-added aux files would be silently dropped from published K8s resources")
@@ -188,7 +188,7 @@ func TestComponent_ConvertAuxiliaryFiles_StructShape(t *testing.T) {
 	// would silently route data to the wrong destination field).
 	wantFields := map[string]bool{
 		"MapFiles": true, "SSLCertificates": true, "SSLCaFiles": true,
-		"GeneralFiles": true, "CRTListFiles": true,
+		"GeneralFiles": true, "CRTListFiles": true, "SecretFiles": true,
 	}
 	gotFields := make(map[string]bool, typ.NumField())
 	for i := 0; i < typ.NumField(); i++ {

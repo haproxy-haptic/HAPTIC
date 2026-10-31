@@ -153,6 +153,7 @@ func createReconciliationComponents(
 	setup *componentSetup,
 	cfg *coreconfig.Config,
 	crd *v1alpha1.HAProxyTemplateConfig,
+	secretFileSealKey []byte,
 	k8sClient *client.Client,
 	resourceWatcher *resourcewatcher.ResourceWatcherComponent,
 	currentFiles *currentFilesAuthority,
@@ -206,6 +207,7 @@ func createReconciliationComponents(
 		HAProxyPodStore:           haproxyPodStore,
 		HTTPStoreComponent:        httpStoreComponent,
 		TypedResourceTypes:        wiring.TypedResourceTypes,
+		SecretFileSealKey:         secretFileSealKey,
 		AdmissionSlotWaitObserver: setup.MetricsComponent.Metrics().RecordAdmissionRenderSlotWait,
 		// Its reconcile callers, the Coordinator and the Warmer, render under
 		// the leadership term and the iteration lifecycle respectively.

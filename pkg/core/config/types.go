@@ -341,6 +341,11 @@ type DataplaneConfig struct {
 	// Default: /etc/haproxy/general
 	GeneralStorageDir string `yaml:"general_storage_dir"`
 
+	// SecretsDir is the directory for secret files, which sidecars read and
+	// HAProxy never does.
+	// Default: /etc/haproxy/secrets
+	SecretsDir string `yaml:"secrets_dir"`
+
 	// ConfigFile is the path to the main HAProxy configuration file.
 	// Used for validation.
 	// Default: /etc/haproxy/haproxy.cfg

@@ -809,6 +809,7 @@ Connection and update settings for the agent in each HAProxy pod.
 | `mapsDir` | string | No | `/etc/haproxy/maps` |
 | `sslCertsDir` | string | No | `/etc/haproxy/certs` (the Helm chart sets `/etc/haproxy/ssl`) |
 | `generalStorageDir` | string | No | `/etc/haproxy/general` |
+| `secretsDir` | string | No | `/etc/haproxy/secrets` |
 | `configFile` | string | No | `/etc/haproxy/haproxy.cfg` |
 
 ```yaml

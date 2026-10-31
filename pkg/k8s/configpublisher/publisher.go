@@ -135,6 +135,7 @@ func clonePublishResult(r *PublishResult) PublishResult {
 	out.SSLCaFileNames = slices.Clone(r.SSLCaFileNames)
 	out.GeneralFileNames = slices.Clone(r.GeneralFileNames)
 	out.CRTListFileNames = slices.Clone(r.CRTListFileNames)
+	out.SecretFileNames = slices.Clone(r.SecretFileNames)
 	return out
 }
 
@@ -296,6 +297,7 @@ func (p *Publisher) PublishConfig(ctx context.Context, req *PublishRequest) (*Pu
 		SSLCaFileNames:         []string{},
 		GeneralFileNames:       []string{},
 		CRTListFileNames:       []string{},
+		SecretFileNames:        []string{},
 	}
 
 	// One LIST per kind serves both each child's first read and the prune.
@@ -342,6 +344,7 @@ func (p *Publisher) PublishConfig(ctx context.Context, req *PublishRequest) (*Pu
 		"ca_secrets", len(result.SSLCaFileNames),
 		"general_files", len(result.GeneralFileNames),
 		"crt_list_files", len(result.CRTListFileNames),
+		"secret_files", len(result.SecretFileNames),
 	)
 
 	return result, nil
@@ -382,6 +385,7 @@ func canonicalizePublishRequest(req *PublishRequest) (*PublishRequest, error) {
 	hashAuxiliaryContents(h, canonical.AuxiliaryFiles.SSLCaFiles)
 	hashAuxiliaryContents(h, canonical.AuxiliaryFiles.GeneralFiles)
 	hashAuxiliaryContents(h, canonical.AuxiliaryFiles.CRTListFiles)
+	hashAuxiliaryContents(h, canonical.AuxiliaryFiles.SecretFiles)
 	canonical.auxiliarySetID = fmt.Sprintf("%s%x", contentSetPrefix, h.Sum(nil))
 	return &canonical, nil
 }
@@ -460,6 +464,7 @@ func canonicalLegacyPayload(
 			SSLCaFiles:      req.AuxiliaryFiles.SSLCaFiles,
 			GeneralFiles:    req.AuxiliaryFiles.GeneralFiles,
 			CRTListFiles:    req.AuxiliaryFiles.CRTListFiles,
+			SecretFiles:     req.AuxiliaryFiles.SecretFiles,
 		}
 	}
 	files, err = dataplane.CanonicalizeAuxiliaryFiles(inputFiles)
@@ -476,12 +481,13 @@ func publisherAuxiliaryFiles(files *dataplane.AuxiliaryFiles) *AuxiliaryFiles {
 		SSLCaFiles:      files.SSLCaFiles,
 		GeneralFiles:    files.GeneralFiles,
 		CRTListFiles:    files.CRTListFiles,
+		SecretFiles:     files.SecretFiles,
 	}
 }
 
 func hashAuxiliaryContents[T auxiliaryfiles.FileItem](h hash.Hash, files []T) {
 	for _, file := range files {
-		_, _ = h.Write([]byte(calculateChecksum(file.GetContent())))
+		_, _ = h.Write([]byte(identityChecksum(file)))
 	}
 }
 
@@ -559,12 +565,21 @@ func (p *Publisher) publishAuxiliaryFiles(
 		}); err != nil {
 		return err
 	}
-	result.CRTListFileNames, err = publishAuxiliaryKind(ctx, runtimeConfig, kindCRTListFile, suffix, scope, files.CRTListFiles,
+	if result.CRTListFileNames, err = publishAuxiliaryKind(ctx, runtimeConfig, kindCRTListFile, suffix, scope, files.CRTListFiles,
 		func(file auxiliaryfiles.CRTListFile) (string, string) {
 			return p.generateCRTListFileName(file.Path), file.Path
 		},
 		func(ctx context.Context, file auxiliaryfiles.CRTListFile, name string) (string, error) {
 			return p.createOrUpdateCRTListFile(ctx, req, runtimeConfig, file, name)
+		}); err != nil {
+		return err
+	}
+	result.SecretFileNames, err = publishAuxiliaryKind(ctx, runtimeConfig, kindSecret, suffix, scope, files.SecretFiles,
+		func(file auxiliaryfiles.SecretFile) (string, string) {
+			return p.generateSecretFileName(file.Path), file.Path
+		},
+		func(ctx context.Context, file auxiliaryfiles.SecretFile, name string) (string, error) {
+			return p.createOrUpdateSecretFileSecret(ctx, req, runtimeConfig, file, name)
 		})
 	return err
 }

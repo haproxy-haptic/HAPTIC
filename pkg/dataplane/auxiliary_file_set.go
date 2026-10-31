@@ -78,6 +78,16 @@ func CanonicalizeAuxiliaryFiles(files *AuxiliaryFiles) (*AuxiliaryFiles, error) 
 		return nil, err
 	}
 
+	result.SecretFiles, err = canonicalizeFileItems(
+		"Secret file", files.SecretFiles,
+		func(file auxiliaryfiles.SecretFile) string { return path.Base(file.Path) },
+		func(a, b auxiliaryfiles.SecretFile) bool { return a == b },
+		func(file auxiliaryfiles.SecretFile) auxiliaryfiles.SecretFile { return file },
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := rejectSharedGeneralStorageName(result.GeneralFiles, result.CRTListFiles); err != nil {
 		return nil, err
 	}

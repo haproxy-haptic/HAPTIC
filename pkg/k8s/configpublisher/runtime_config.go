@@ -290,6 +290,7 @@ func buildAuxiliaryFileReferences(namespace string, result *PublishResult, setID
 		SSLCaFiles:      refs(result.SSLCaFileNames, "Secret"),
 		GeneralFiles:    refs(result.GeneralFileNames, kindGeneralFile),
 		CRTListFiles:    refs(result.CRTListFileNames, kindCRTListFile),
+		SecretFiles:     refs(result.SecretFileNames, kindSecret),
 	}
 }
 
@@ -317,5 +318,6 @@ func auxiliaryRefsEqual(a, b *haproxyv1alpha1.AuxiliaryFileReferences) bool {
 		slices.Equal(a.SSLCertificates, b.SSLCertificates) &&
 		slices.Equal(a.SSLCaFiles, b.SSLCaFiles) &&
 		slices.Equal(a.GeneralFiles, b.GeneralFiles) &&
-		slices.Equal(a.CRTListFiles, b.CRTListFiles)
+		slices.Equal(a.CRTListFiles, b.CRTListFiles) &&
+		slices.Equal(a.SecretFiles, b.SecretFiles)
 }

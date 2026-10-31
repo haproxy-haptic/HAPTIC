@@ -150,7 +150,7 @@ tests:
             emptyDir: {}
       - lengthEqual:
           path: spec.template.spec.initContainers[?(@.name=="agent")].volumeMounts
-          count: 3
+          count: 4
       - contains:
           path: spec.template.spec.initContainers[?(@.name=="agent")].volumeMounts
           content:

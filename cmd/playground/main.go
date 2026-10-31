@@ -934,6 +934,7 @@ func renderPaths() *dataplane.ValidationPaths {
 		SSLCertsDir:       "/render/ssl",
 		CRTListDir:        "/render/ssl",
 		GeneralStorageDir: "/render/general",
+		SecretDir:         "/render/secrets",
 		ConfigFile:        "/render/haproxy.cfg",
 	}
 }

@@ -97,7 +97,7 @@ func (p *Publisher) retainedFileReferences(ctx context.Context, req *PublishRequ
 		if !ok {
 			return nil, false, nil
 		}
-		for _, group := range [][]v1.ResourceReference{refs.MapFiles, refs.GeneralFiles, refs.CRTListFiles, refs.SSLCertificates, refs.SSLCaFiles} {
+		for _, group := range [][]v1.ResourceReference{refs.MapFiles, refs.GeneralFiles, refs.CRTListFiles, refs.SSLCertificates, refs.SSLCaFiles, refs.SecretFiles} {
 			for _, ref := range group {
 				referenced[ref.Kind+"/"+ref.Name] = true
 			}
@@ -112,13 +112,17 @@ type retainedFileKey struct {
 }
 
 type retainedFile struct {
-	meta       metav1.Object
-	key        retainedFileKey
-	name       string
-	content    string
-	checksum   string
-	compressed bool
-	empty      bool
+	meta    metav1.Object
+	key     retainedFileKey
+	name    string
+	content string
+	// checksum is the identity checksum names carry; contentChecksum, when
+	// set, is the content's own one, which a secret file keeps out of sight.
+	checksum        string
+	contentChecksum string
+	seal            string
+	compressed      bool
+	empty           bool
 }
 
 type retainedFileGroup struct {
@@ -138,6 +142,7 @@ func (p *Publisher) readRetainedFiles(ctx context.Context, owner *v1.HAProxyCfg,
 		{kindCRTListFile, renderartifact.CRTList, refs.CRTListFiles},
 		{kindSecret, renderartifact.Certificate, refs.SSLCertificates},
 		{kindSecret, renderartifact.CA, refs.SSLCaFiles},
+		{kindSecret, renderartifact.Secret, refs.SecretFiles},
 	}
 	listing, err := p.listSharedRetainedFiles(ctx, owner, groups, listing)
 	if err != nil {
@@ -233,6 +238,12 @@ func (p *Publisher) readRetainedFile(ctx context.Context, ref v1.ResourceReferen
 			return retainedFile{}, err
 		}
 		return retainedSecretFile(item, family)
+	case renderartifact.Secret:
+		item, err := listedOrGet(ctx, listing, kindSecret, ref.Name, p.k8sClient.CoreV1().Secrets(ref.Namespace).Get)
+		if err != nil {
+			return retainedFile{}, err
+		}
+		return retainedSecretFileSecret(item)
 	default:
 		return retainedFile{}, errors.New("unsupported retained auxiliary family")
 	}
@@ -245,12 +256,42 @@ func retainedSecretFile(item *corev1.Secret, family renderartifact.Family) (reta
 	}
 	filePath := item.Annotations[AuxiliaryPathAnnotationKey]
 	content, present := item.Data[key]
-	compressed := item.Annotations["haproxy-haptic.org/compressed"]
+	compressed, declared := compressedAnnotation(item)
 	if item.Type != corev1.SecretTypeOpaque || item.Labels["haproxy-haptic.org/type"] != role ||
-		!present || filePath == "" || string(item.Data["path"]) != filePath || len(item.Data) != 2 || (compressed != "true" && compressed != "false") {
+		!present || filePath == "" || string(item.Data["path"]) != filePath || len(item.Data) != 2 || !declared {
 		return retainedFile{}, errors.New("retained certificate metadata differs from its payload")
 	}
-	return retainedFile{meta: item, key: retainedFileKey{family, filePath}, content: string(content), checksum: item.Annotations[AuxiliaryChecksumAnnotationKey], compressed: compressed == "true", empty: len(content) == 0}, nil
+	return retainedFile{meta: item, key: retainedFileKey{family, filePath}, content: string(content), checksum: item.Annotations[AuxiliaryChecksumAnnotationKey], compressed: compressed, empty: len(content) == 0}, nil
+}
+
+func retainedSecretFileSecret(item *corev1.Secret) (retainedFile, error) {
+	filePath := item.Annotations[AuxiliaryPathAnnotationKey]
+	checksum := item.Annotations[AuxiliaryChecksumAnnotationKey]
+	content, present := item.Data[secretFileDataKey]
+	compressed, declared := compressedAnnotation(item)
+	seal, sealed := strings.CutPrefix(checksum, sealChecksumPrefix)
+	if item.Type != corev1.SecretTypeOpaque || item.Labels["haproxy-haptic.org/type"] != secretFileType ||
+		!present || !sealed || seal == "" || filePath == "" || string(item.Data["path"]) != filePath || len(item.Data) != 3 || !declared {
+		return retainedFile{}, errors.New("retained secret file metadata differs from its payload")
+	}
+	return retainedFile{
+		meta: item, key: retainedFileKey{renderartifact.Secret, filePath}, content: string(content),
+		checksum: checksum, contentChecksum: string(item.Data[secretFileChecksumDataKey]), seal: seal,
+		compressed: compressed, empty: len(content) == 0,
+	}, nil
+}
+
+// compressedAnnotation reads the compression flag; declared is false for any
+// value the publisher never writes.
+func compressedAnnotation(item metav1.Object) (compressed, declared bool) {
+	switch item.GetAnnotations()["haproxy-haptic.org/compressed"] {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 func verifyRetainedFile(file *retainedFile, owner *v1.HAProxyCfg, kind string) error {
@@ -266,7 +307,11 @@ func verifyRetainedFile(file *retainedFile, owner *v1.HAProxyCfg, kind string) e
 	if err != nil {
 		return err
 	}
-	if file.key.path == "" || file.checksum != calculateChecksum(content) {
+	contentChecksum := file.contentChecksum
+	if contentChecksum == "" {
+		contentChecksum = file.checksum
+	}
+	if file.key.path == "" || contentChecksum != calculateChecksum(content) {
 		return errors.New("retained auxiliary checksum differs from its content")
 	}
 	ca := file.key.family == renderartifact.CA || file.key.family == renderartifact.GeneralCA

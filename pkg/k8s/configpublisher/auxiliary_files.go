@@ -298,20 +298,46 @@ func (p *Publisher) createOrUpdateSSLFileSecret(
 	owner *haproxyv1alpha1.HAProxyCfg,
 	name, filePath, content, dataKey, fileType string,
 ) (string, error) {
-	checksum := calculateChecksum(content)
-
 	result := p.compressIfNeeded(content, req.CompressionThreshold, "Secret/"+name)
+	return p.createOrUpdateFileSecret(ctx, req, owner, name, filePath, fileType, calculateChecksum(content), result.compressed,
+		map[string][]byte{dataKey: []byte(result.content), "path": []byte(filePath)})
+}
 
+// Secret-file Secrets keep the content checksum in data: as an annotation it
+// would be readable without Secret access.
+const (
+	secretFileType            = "secret-file"
+	secretFileDataKey         = "file"
+	secretFileChecksumDataKey = "checksum"
+)
+
+func (p *Publisher) createOrUpdateSecretFileSecret(ctx context.Context, req *PublishRequest, owner *haproxyv1alpha1.HAProxyCfg, file auxiliaryfiles.SecretFile, name string) (string, error) {
+	if file.Seal == "" {
+		return "", fmt.Errorf("secret file %s has no seal; refusing to publish it", file.Path)
+	}
+	result := p.compressIfNeeded(file.Content, req.CompressionThreshold, "Secret/"+name)
+	return p.createOrUpdateFileSecret(ctx, req, owner, name, file.Path, secretFileType, identityChecksum(file), result.compressed,
+		map[string][]byte{
+			secretFileDataKey:         []byte(result.content),
+			"path":                    []byte(file.Path),
+			secretFileChecksumDataKey: []byte(calculateChecksum(file.Content)),
+		})
+}
+
+func (p *Publisher) createOrUpdateFileSecret(
+	ctx context.Context,
+	req *PublishRequest,
+	owner *haproxyv1alpha1.HAProxyCfg,
+	name, filePath, fileType, checksum string,
+	compressed bool,
+	data map[string][]byte,
+) (string, error) {
 	ownership := childOwnership(req, owner)
 	labels, annotations, ownerReferences := ownership.labels, ownership.annotations, ownership.ownerReferences
 	labels["haproxy-haptic.org/type"] = fileType
-	annotations["haproxy-haptic.org/compressed"] = strconv.FormatBool(result.compressed)
+	annotations["haproxy-haptic.org/compressed"] = strconv.FormatBool(compressed)
 	annotations[AuxiliaryChecksumAnnotationKey] = checksum
 	annotations[AuxiliaryPathAnnotationKey] = filePath
-	data := map[string][]byte{
-		dataKey: []byte(result.content),
-		"path":  []byte(filePath),
-	}
 	client := p.k8sClient.CoreV1().Secrets(req.TemplateConfigNamespace)
 
 	read := listedFirst(req.listedChildren, kindSecret, name, client.Get)

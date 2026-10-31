@@ -74,6 +74,11 @@ func (r *PlanRegistry) planFiles(config string, aux *dataplane.AuxiliaryFiles) (
 		reload := file.ReloadOnPush == nil || *file.ReloadOnPush
 		files = append(files, planFile(file.Path, renderplan.FileKindGeneral, reload, file.Content))
 	}
+	for _, file := range aux.SecretFiles {
+		sealed := planFile(file.Path, renderplan.FileKindGeneral, false, file.Content)
+		sealed.Seal = file.Seal
+		files = append(files, sealed)
+	}
 	return files, mapContents, nil
 }
 

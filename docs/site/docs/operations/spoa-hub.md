@@ -60,7 +60,7 @@ The image is published at `ghcr.io/haproxy-haptic/haptic/spoa-hub:<HAPTIC versio
 | `maxmind`         | `v0.4.0`          |
 | `mirror`          | `v0.6.0`           |
 | `rate-limit`      | `v0.4.2`       |
-| `sso-auth`        | `v0.3.0`         |
+| `sso-auth`        | `v0.4.1`         |
 
 Plugin `.so` files target glibc `2.36` (Debian bookworm).
 
@@ -353,6 +353,58 @@ controller:
 Apply the combined values, then send a request through one of your routes.
 Check the application's received `X-Country` header. Addresses absent from the
 database, including private cluster addresses, don't produce a country code.
+
+## OIDC sign-in
+
+The `sso-auth` plugin signs users in with OpenID Connect for Ingresses that set
+[`haproxy-haptic.org/sso-auth`](../libraries/haptic-annotations.md#oidc-sign-in).
+Application teams describe their provider in a Secret in the Ingress's namespace;
+you decide which identity providers they may use.
+
+```yaml
+spoaHub:
+  plugins:
+    sso-auth:
+      enabled: true
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        ssoAuth:
+          allowedIssuers:
+            keycloak: https://keycloak.example.com/realms/main/
+```
+
+A provider Secret's `discovery-url` must start with one of the
+`allowedIssuers` prefixes; otherwise its routes answer `503`.
+
+The hub fetches the discovery document, signing keys and tokens from the HAProxy
+pods. Their default NetworkPolicy allows egress only to DNS and pods in the
+cluster, so an identity provider inside the cluster works as is. For one outside
+the cluster, allow HTTPS to its address:
+
+```yaml
+haproxy:
+  networkPolicy:
+    extraEgress:
+      - to:
+          - ipBlock:
+              cidr: 203.0.113.10/32   # your identity provider
+        ports:
+          - port: 443
+            protocol: TCP
+```
+
+With `pass-token`, the hub refreshes a token shortly before it expires. Requests
+that arrive together can refresh it in parallel, so turn off refresh-token reuse
+detection at the identity provider, or sessions may end early.
+
+HAPTIC reads each provider Secret from the Ingress's namespace. With
+`controller.rbac.releaseNamespaceSecretsOnly: true`, only Ingresses in the
+release namespace can use `sso-auth`. The client secret and cookie secret reach
+the hub as Secret-backed files, never in a readable custom resource. Their
+change markers in custom resources are keyed with the dataplane password, so if
+you set `credentials.existingSecret`, give it a long random password.
 
 ## Verifying the published image
 

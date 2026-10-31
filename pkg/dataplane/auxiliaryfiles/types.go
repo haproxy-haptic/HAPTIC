@@ -1,8 +1,14 @@
 // Package auxiliaryfiles holds the file types a render produces next to
 // haproxy.cfg: general files (error pages, ACL files), SSL certificates, map
-// files, crt-lists and CA files. The renderer builds them, the plan describes
-// them and the agent writes them.
+// files, crt-lists, CA files and secret files. The renderer builds them, the
+// plan describes them and the agent writes them.
 package auxiliaryfiles
+
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+)
 
 // FileItem is one auxiliary file, whatever its kind.
 type FileItem interface {
@@ -152,4 +158,48 @@ func (s SSLCaFile) GetIdentifier() string {
 // GetContent implements the FileItem interface.
 func (s SSLCaFile) GetContent() string {
 	return s.Content
+}
+
+// SecretFile is a file for a sidecar that HAProxy never reads. It is published
+// as a Kubernetes Secret and written by the agent without a reload.
+type SecretFile struct {
+	// Path is the plan path, e.g. "secrets/sso.client-secret".
+	Path string
+
+	Content string `json:"-"`
+
+	// Seal is SealContent of Content. Every identity a reader without Secret
+	// access can see hashes the seal, never the content.
+	Seal string
+}
+
+// GetIdentifier implements the FileItem interface.
+func (s SecretFile) GetIdentifier() string {
+	return s.Path
+}
+
+// GetContent implements the FileItem interface.
+func (s SecretFile) GetContent() string {
+	return s.Content
+}
+
+// SealContent is a keyed digest of content: an unkeyed one would let anyone who
+// reads it test guesses of a low-entropy secret offline. Without a key there
+// is no seal: an HMAC under an empty key is such an unkeyed digest.
+func SealContent(key []byte, content string) string {
+	if len(key) == 0 {
+		return ""
+	}
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(content))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// IdentityContent is what content identities hash for file: its seal for a
+// SecretFile, its content otherwise.
+func IdentityContent(file FileItem) string {
+	if secret, ok := file.(SecretFile); ok {
+		return secret.Seal
+	}
+	return file.GetContent()
 }

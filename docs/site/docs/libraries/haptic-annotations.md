@@ -285,7 +285,7 @@ HTTP→HTTPS and host redirects (reload-free maps), HSTS, SSL passthrough, a def
 
 ### Authentication, mTLS, and WAF
 
-Basic auth, client-certificate verification, external/forward auth, OAuth2-proxy, and the Coraza WAF via the SPOA hub.
+Basic auth, client-certificate verification, external/forward auth, OAuth2-proxy, OpenID Connect (OIDC) sign-in, and the Coraza WAF via the SPOA hub.
 
 | Annotation | Behavior |
 |------------|----------|
@@ -310,6 +310,8 @@ Basic auth, client-certificate verification, external/forward auth, OAuth2-proxy
 | `haproxy-haptic.org/oauth-headers` | Lists headers forwarded from the `oauth2-proxy` response on success (default `X-Auth-Request-Email`). |
 | `haproxy-haptic.org/oauth-uri-prefix` | Sets the `oauth2-proxy` callback path prefix (default `/oauth2`). |
 | `haproxy-haptic.org/satisfy` | The value `any` grants access when either the source-IP allowlist or basic authentication passes, instead of requiring both. An IPv6 allowlist requires a backend rule and can change reload behavior. |
+| `haproxy-haptic.org/sso-auth` | Signs users in with OIDC through the SPOA hub's sso-auth plugin, using the provider in the named Secret of the Ingress's namespace. See [OIDC sign-in](#oidc-sign-in). |
+| `haproxy-haptic.org/sso-auth-allowed-groups` | Admits only signed-in users in one of these comma-separated groups; others get `403`. Requires `sso-auth`. |
 | `haproxy-haptic.org/waf-mode` | Sets `deny` or `detect`, overriding the selected policy's enforcement only when `waf.ingressPermissions.allowEnforcementOverride` permits it. Requires a selected `waf-policy`. |
 
 #### Reusable WAF policies
@@ -332,6 +334,66 @@ set a cluster baseline, or grant application teams control over their own polici
 For gRPC, select a policy with `requestBody.mode: none` so inspection doesn't
 buffer a streaming request. See [WAF and gRPC streaming](../operations/waf-policies.md#waf-and-grpc-streaming)
 and [self-service namespaced policies](../operations/waf-policies.md#self-service-namespaced-policies).
+
+#### OIDC sign-in
+
+HAPTIC can sign users in with an OpenID Connect (OIDC) identity provider such as
+Keycloak, without running oauth2-proxy. Your platform administrator enables the
+sso-auth plugin and allows your issuer; you describe the provider in a Secret in
+the Ingress's namespace.
+
+1. Register a confidential client at your identity provider with the redirect
+   URI `https://<your host>/oauth2/callback`.
+2. Create the Secret:
+
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: app-oidc
+      namespace: app
+    stringData:
+      discovery-url: https://keycloak.example.com/realms/main/.well-known/openid-configuration
+      client-id: app
+      client-secret: <client secret>
+      cookie-secret: <random, at least 16 characters, for example from openssl rand -base64 32>
+    ```
+
+3. Reference it from the Ingress:
+
+    ```yaml
+    metadata:
+      annotations:
+        haproxy-haptic.org/sso-auth: app-oidc
+        haproxy-haptic.org/sso-auth-allowed-groups: /app-admins
+    ```
+
+The Ingress must route the callback path (`/oauth2/callback` unless you set
+`callback-path`); a `/` Prefix path does. After sign-in the user returns to the
+page they asked for.
+
+Optional Secret keys:
+
+| Key | Effect |
+|-----|--------|
+| `scopes` | Comma-separated scopes (default `openid`). Add `email`, `profile`, or the scope that carries groups. |
+| `extract-claims` | Comma-separated ID token claims to keep in the session. |
+| `groups-claim` | Claim holding the user's groups (default `groups`). Keycloak's group mapper emits full paths such as `/app-admins`. |
+| `pass-token` | `id_token` or `access_token`: sends it to the backend as `Authorization: Bearer <token>` and refreshes it before it expires. |
+| `callback-path` | Path of the redirect URI (default `/oauth2/callback`). |
+
+On these routes the backend receives `X-Auth-Request-User` (the `sub` claim),
+`X-Auth-Request-Email`, and `X-Auth-Request-Groups`. HAPTIC removes any copy of
+these headers and any `Authorization` header the client sent; with `pass-token`,
+`Authorization` carries the user's token instead.
+
+A route whose provider is unusable — missing Secret or key, issuer not allowed,
+plugin disabled — answers `503` and gets an `SsoAuthUnavailable` Warning Event;
+admission rejects a new or changed Ingress with that problem. If the SPOA hub
+can't answer, the route also answers `503`.
+
+Sessions use host-only cookies, so each host signs in once. Two Ingresses on
+the same host share a session only when they name the same Secret.
 
 ### API gateway
 

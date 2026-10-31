@@ -83,6 +83,7 @@ type Builder struct {
 	planTokenAuthority    *PlanTokenAuthority
 	planMemo              *PlanMemo
 	scopeFor              func(string) *NamespaceScope
+	secretFileSealKey     []byte
 }
 
 // admissionSubjectOrEmpty returns the subject map for the template context.
@@ -307,6 +308,13 @@ func WithTypedResources(types map[string]reflect.Type) Option {
 	}
 }
 
+// WithSecretFileSealKey keys the seals of the render's secret files.
+func WithSecretFileSealKey(key []byte) Option {
+	return func(b *Builder) {
+		b.secretFileSealKey = key
+	}
+}
+
 // WithPlanTokenAuthority retains authenticated plan placeholders across renders.
 func WithPlanTokenAuthority(authority *PlanTokenAuthority) Option {
 	return func(b *Builder) {
@@ -439,7 +447,7 @@ func (b *Builder) Build() *BuildResult {
 	snippetNames := SortSnippetNames(b.config.TemplateSnippets)
 
 	// Create file registry for dynamic auxiliary file registration
-	fileRegistry := NewFileRegistry(b.pathResolver)
+	fileRegistry := NewFileRegistry(b.pathResolver, b.secretFileSealKey)
 
 	// Create plan registry so templates can declare the structure of the
 	// config they emit; RenderMain assembles the config from its tokens.

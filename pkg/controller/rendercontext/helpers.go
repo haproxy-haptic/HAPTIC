@@ -55,5 +55,6 @@ func PathResolverFromValidationPaths(vp *dataplane.ValidationPaths) *templating.
 		SSLDir:     vp.SSLCertsDir,
 		CRTListDir: vp.CRTListDir,
 		GeneralDir: vp.GeneralStorageDir,
+		SecretDir:  vp.SecretDir,
 	}
 }
