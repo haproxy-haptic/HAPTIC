@@ -215,6 +215,12 @@ The conformance job runs after publication. A failed job marks the release
 pipeline failed but doesn't retract published artifacts; inspect its report and
 fix the failure before claiming conformance for that release.
 
+If the controller job fails after it created the GitHub release, rerun the failed
+jobs. The rerun reuses that release and its images, then finishes signing. If the
+release lacks an asset its signed checksums list, the job stops; delete the release
+with `gh release delete "v$release_version" --repo "$haptic_repo"` (the tag stays)
+and rerun the failed jobs.
+
 ### Add the release to the upgrade test
 
 Once the chart is published, add upgrade jobs for the new stable version on both

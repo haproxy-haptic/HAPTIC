@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -82,6 +83,46 @@ class ReleaseWorkflowTests(unittest.TestCase):
             f"ghcr.io/owner/haptic@{digest('ghcr.io/owner/haptic:1.2.3-haproxy3.4')} 3.4 spdx-json spdxjson",
             f"ghcr.io/owner/haptic/varnish@{digest('ghcr.io/owner/haptic/varnish:1.2.3')} varnish spdx-json spdxjson",
         ])
+
+    def test_controller_rerun_reuses_only_a_complete_existing_release(self):
+        functions = self.script[self.script.index("release_lookup() {"):self.script.index("sign_and_attest() {")]
+        start = self.script.index('        case "$(release_lookup)" in')
+        dispatch = self.script[start:self.script.index("        esac\n", start) + len("        esac\n")]
+        stub = '''
+            set -euo pipefail
+            cd "$(mktemp -d)" && mkdir .publication
+            GITHUB_TOKEN=t GITHUB_REPOSITORY=owner/repo version=1.2.3
+            goreleaser() { echo built; }
+            curl() {
+                local out
+                while (($#)); do [[ $1 == -o ]] && out=$2; shift; done
+                case $out in
+                    .publication/existing-release.json) printf '{"assets":[%s]}' "$ASSETS" > "$out"; printf %s "$STATUS" ;;
+                    dist/checksums.txt) printf %s "$CHECKSUMS" > "$out" ;;
+                    "dist/$TAMPERED") printf tampered > "$out" ;;
+                    *) printf %s "${out#dist/}" > "$out" ;;
+                esac
+            }
+        '''
+        archives = ("haptic.tar.gz", "haptic.zip")
+        checksums = "".join(f"{hashlib.sha256(name.encode()).hexdigest()}  {name}\n" for name in archives)
+        asset = lambda name: '{"name":"%s","url":"u/%s"}' % (name, name)
+        signed = [asset("checksums.txt"), asset("checksums.txt.sigstore.json"), asset("haptic.tar.gz")]
+        for name, status, assets, tampered, code, stdout, stderr in (
+            ("absent", "404", [], "", 0, "built\nsigning\n", ""),
+            ("complete", "200", signed + [asset("haptic.zip")], "", 0, "signing\n", ""),
+            ("incomplete", "200", signed, "", 1, "", "lacks haptic.zip"),
+            ("tampered", "200", signed + [asset("haptic.zip")], "haptic.zip", 1, "haptic.zip: FAILED\n", "checksum did NOT match"),
+            ("lookup error", "502", [], "", 1, "", "lookup for v1.2.3 failed"),
+        ):
+            with self.subTest(name):
+                result = subprocess.run(
+                    ["bash", "-c", stub + functions + dispatch + "echo signing\n"],
+                    env={"PATH": "/usr/bin:/bin", "STATUS": status, "ASSETS": ",".join(assets),
+                         "CHECKSUMS": checksums, "TAMPERED": tampered},
+                    capture_output=True, text=True, check=False)
+                self.assertEqual((result.returncode, result.stdout), (code, stdout), result.stderr)
+                self.assertIn(stderr, result.stderr)
 
     def test_maintenance_branches_tag_releases_and_latest_waits_for_the_ordering_check(self):
         condition = workflow("release-tag.yml")["jobs"]["tag"]["if"]
