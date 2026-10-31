@@ -376,14 +376,35 @@ controller:
 ```
 
 A provider Secret's `discovery-url` must start with one of the
-`allowedIssuers` prefixes; otherwise its routes answer `503`. The hub fetches
-the discovery document, signing keys and tokens from the HAProxy pods, so allow
-egress from those pods to the issuer if you restrict it with NetworkPolicy.
+`allowedIssuers` prefixes; otherwise its routes answer `503`.
+
+The hub fetches the discovery document, signing keys and tokens from the HAProxy
+pods. Their default NetworkPolicy allows egress only to DNS and pods in the
+cluster, so an identity provider inside the cluster works as is. For one outside
+the cluster, allow HTTPS to its address:
+
+```yaml
+haproxy:
+  networkPolicy:
+    extraEgress:
+      - to:
+          - ipBlock:
+              cidr: 203.0.113.10/32   # your identity provider
+        ports:
+          - port: 443
+            protocol: TCP
+```
+
+With `pass-token`, the hub refreshes a token shortly before it expires. Requests
+that arrive together can refresh it in parallel, so turn off refresh-token reuse
+detection at the identity provider, or sessions may end early.
 
 HAPTIC reads each provider Secret from the Ingress's namespace. With
 `controller.rbac.releaseNamespaceSecretsOnly: true`, only Ingresses in the
 release namespace can use `sso-auth`. The client secret and cookie secret reach
-the hub as Secret-backed files, never in a readable custom resource.
+the hub as Secret-backed files, never in a readable custom resource. Their
+change markers in custom resources are keyed with the dataplane password, so if
+you set `credentials.existingSecret`, give it a long random password.
 
 ## Verifying the published image
 
