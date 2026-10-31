@@ -312,6 +312,9 @@ const (
 )
 
 func (p *Publisher) createOrUpdateSecretFileSecret(ctx context.Context, req *PublishRequest, owner *haproxyv1alpha1.HAProxyCfg, file auxiliaryfiles.SecretFile, name string) (string, error) {
+	if file.Seal == "" {
+		return "", fmt.Errorf("secret file %s has no seal; refusing to publish it", file.Path)
+	}
 	result := p.compressIfNeeded(file.Content, req.CompressionThreshold, "Secret/"+name)
 	return p.createOrUpdateFileSecret(ctx, req, owner, name, file.Path, secretFileType, identityChecksum(file), result.compressed,
 		map[string][]byte{

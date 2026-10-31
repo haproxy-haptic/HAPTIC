@@ -122,7 +122,7 @@ func TestSecretFilesArePrunedOnlyOnceDropped(t *testing.T) {
 		_, err := publisher.PublishConfig(ctx, &req)
 		require.NoError(t, err)
 	}
-	other := auxiliaryfiles.SecretFile{Path: "secrets/other", Content: "x", Seal: auxiliaryfiles.SealContent(nil, "x")}
+	other := auxiliaryfiles.SecretFile{Path: "secrets/other", Content: "x", Seal: auxiliaryfiles.SealContent([]byte("installation key"), "x")}
 
 	publish(testSecretFile, other)
 	require.Len(t, secretFileSecrets(ctx, t, kube), 2)
@@ -154,4 +154,17 @@ func TestRetainedRefusesTamperedSecretFile(t *testing.T) {
 	}
 	_, err = publisher.LoadRetained(ctx, req.TemplateConfigNamespace, req.TemplateConfigName, req.TemplateConfigUID)
 	require.ErrorContains(t, err, "auxiliary checksum differs")
+}
+
+func TestUnsealedSecretFileIsNotPublished(t *testing.T) {
+	require.Empty(t, auxiliaryfiles.SealContent(nil, testSecretFileContent))
+	ctx, kube, _, publisher := newTestPublisher(t)
+	req := basePublishRequest()
+	req.Force = true
+	unsealed := testSecretFile
+	unsealed.Seal = ""
+	req.AuxiliaryFiles = &AuxiliaryFiles{SecretFiles: []auxiliaryfiles.SecretFile{unsealed}}
+	_, err := publisher.PublishConfig(ctx, &req)
+	require.ErrorContains(t, err, "has no seal")
+	assert.Empty(t, secretFileSecrets(ctx, t, kube))
 }

@@ -184,8 +184,12 @@ func (s SecretFile) GetContent() string {
 }
 
 // SealContent is a keyed digest of content: an unkeyed one would let anyone who
-// reads it test guesses of a low-entropy secret offline.
+// reads it test guesses of a low-entropy secret offline. Without a key there
+// is no seal: an HMAC under an empty key is such an unkeyed digest.
 func SealContent(key []byte, content string) string {
+	if len(key) == 0 {
+		return ""
+	}
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(content))
 	return hex.EncodeToString(mac.Sum(nil))
