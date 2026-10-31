@@ -197,12 +197,17 @@ spec:
                 if ! grep -q '^[[:space:]]*type:[[:space:]]*prometheus_exporter' /etc/haproxy/general/vector.yaml; then
                   return 2
                 fi
-                if timeout "$_watch_timeout_seconds" /usr/bin/bash -c '
-                  exec 3<>"/dev/tcp/127.0.0.1/$1" || exit 1
-                  printf "HEAD /metrics HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3
-                  IFS= read -r _status <&3 || exit 1
-                  case "$_status" in HTTP/*) exit 0;; *) exit 1;; esac
-                ' child-health {{ $vector.metricsPort | int }}; then
+                if ! command -v perl >/dev/null 2>&1; then
+                  return 2
+                fi
+                # Not bash /dev/tcp: its redirections dup the socket onto stdin and
+                # stdout, which runtime detectors flag as a reverse shell (#555).
+                if timeout "$_watch_timeout_seconds" perl -MIO::Socket::INET -e '
+                  my $s = IO::Socket::INET->new(PeerAddr => "127.0.0.1", PeerPort => $ARGV[0]) or exit 1;
+                  print $s "HEAD /metrics HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+                  my $status = <$s>;
+                  exit(defined $status && $status =~ m{^HTTP/} ? 0 : 1);
+                ' {{ $vector.metricsPort | int }}; then
                   return 0
                 fi
                 return 1
@@ -314,16 +319,17 @@ spec:
               _child_name='SPOA hub'
               _child_impact='SPOA processing is unavailable'
               _child_health() {
-                timeout "$_watch_timeout_seconds" /usr/bin/bash -c '
-                    exec 3<>"/dev/tcp/127.0.0.1/$1" || exit 2
-                    printf "GET /spoa-hub-child-health HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3
-                    IFS= read -r _status <&3 || exit 1
-                    case "$_status" in
-                      HTTP/*" 204 "*) exit 0;;
-                      HTTP/*" 424 "*) exit 1;;
-                      *) exit 2;;
-                    esac
-                  ' child-health {{ $ports.stats }}
+                # Not bash /dev/tcp: its redirections dup the socket onto stdin and
+                # stdout, which runtime detectors flag as a reverse shell (#555).
+                timeout "$_watch_timeout_seconds" perl -MIO::Socket::INET -e '
+                    my $s = IO::Socket::INET->new(PeerAddr => "127.0.0.1", PeerPort => $ARGV[0]) or exit 2;
+                    print $s "GET /spoa-hub-child-health HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+                    my $status = <$s>;
+                    defined $status or exit 1;
+                    exit 0 if $status =~ m{^HTTP/\S+ 204 };
+                    exit 1 if $status =~ m{^HTTP/\S+ 424 };
+                    exit 2;
+                  ' {{ $ports.stats }}
                 _probe_status=$?
                 case "$_probe_status" in
                   0) return 0;;
