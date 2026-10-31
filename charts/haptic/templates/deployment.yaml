@@ -39,6 +39,10 @@ spec:
     metadata:
       annotations:
         checksum/secret: {{ include "haptic.dataplane.credentialsChecksum" . }}
+        {{- if $validatorsEnabled }}
+        {{- /* The validators sidecar reads its plugin set only at start. */}}
+        checksum/spoa-hub-config: {{ include "haptic.spoaHub.bootstrapConfigContent" . | sha256sum }}
+        {{- end }}
         {{- with $podSpec.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

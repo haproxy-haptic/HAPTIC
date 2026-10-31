@@ -40,6 +40,17 @@ tests:
     asserts:
       - notExists:
           path: spec.template.spec.initContainers
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/spoa-hub-config"]
+
+  - it: rolls the controllers when the validator's plugin set changes
+    template: deployment.yaml
+    set:
+      controller.validators.enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/spoa-hub-config"]
+          pattern: ^[0-9a-f]{64}$
 
   - it: gives a self-signed default certificate a non-empty subject
     template: default-ssl-certificate-certmanager.yaml
