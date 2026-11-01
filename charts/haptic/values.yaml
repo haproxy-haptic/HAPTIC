@@ -2577,7 +2577,7 @@ vector:
     # `vector image tag` customManager in renovate.json — keep the comment
     # directly above the `tag:` line or the manager stops matching it.
     # renovate: datasource=docker depName=timberio/vector
-    tag: "0.60.0-debian"
+    tag: "0.61.0-debian"
 
   # Port the /metrics endpoint listens on: vector's own series, the hub's
   # re-exported ones and the log-derived and request metrics. 9598 is vector's

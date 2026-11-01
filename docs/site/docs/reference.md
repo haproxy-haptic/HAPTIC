@@ -865,7 +865,7 @@ A [Vector](https://vector.dev) container on every HAProxy pod. It receives the a
 | `vector.enabled` | bool | `true` | Run the Vector sidecar on each HAProxy pod. When enabled, the access log goes to `vector.socketPath` instead of stdout and surfaces under `kubectl logs <pod> -c vector`. Set to `false` to log straight to the HAProxy container's stdout and scrape the hub directly; HAProxy's exporter is scraped directly either way |
 | `vector.image.repository` | string | `timberio/vector` | Vector image repository |
 | `vector.image.pullPolicy` | string | `IfNotPresent` | Image pull policy |
-| `vector.image.tag` | string | `0.60.0-debian` | Pinned Vector version. An empty tag is rejected |
+| `vector.image.tag` | string | `0.61.0-debian` | Pinned Vector version. An empty tag is rejected |
 | `vector.metricsPort` | int | `9598` | Port serving Vector's `/metrics`: its own series, the log-derived and request metrics, and the hub's re-exported ones. Rejected at render time if it collides with an `haproxy.ports.*` entry or the hub's metrics port |
 | `vector.sizeMetricsPort` | int | `9599` | Exporter port for request and response size histograms, with byte buckets separate from duration buckets. Present only when either size family is enabled; must not collide with another metrics or HAProxy port |
 | `vector.socketPath` | string | `/run/vector/haproxy.sock` | Unix datagram socket HAProxy writes access-log records to. Must be an absolute path with no whitespace — HAProxy's `log <path>` form requires one |
