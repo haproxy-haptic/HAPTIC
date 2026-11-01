@@ -336,6 +336,7 @@ For HAProxy behind a layer-4 load balancer. See [PROXY protocol](haproxy-deploym
 | `defaultSSLCertificate.cert` | string | `""` | PEM certificate (when create=true) |
 | `defaultSSLCertificate.key` | string | `""` | PEM private key (when create=true) |
 | `controller.config.templatingSettings.extraContext.tls.sessionTickets.enabled` | bool | `false` | Share ticket keys across HAProxy pods so clients can resume sessions after reconnecting to another pod. HAPTIC rotates the three-key file on the first render of each day (Coordinated Universal Time) and reloads HAProxy. See [TLS session resumption](ssl-certificates.md#tls-session-resumption) |
+| `controller.config.templatingSettings.extraContext.tls.requireSniHostMatch` | bool | `false` | Answer `421 Misdirected Request` to every HTTPS request whose `Host` differs from its TLS SNI. Leave it off when a proxy or content delivery network in front of HAProxy sends a different SNI than the `Host`. `haproxy-haptic.org/require-sni-host-match` enables it for one Ingress |
 
 <a id="controller-config"></a>
 
