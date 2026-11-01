@@ -24,11 +24,6 @@ _fx:
 
 validationTests:
 
-  _global:
-    extraContext:
-      customResponses:
-        defaultErrorPages: ""
-
   test-haptic-error-pages:
     description: >-
       error-pages replaces HAProxy's own 502 and 503 pages for the Ingress's

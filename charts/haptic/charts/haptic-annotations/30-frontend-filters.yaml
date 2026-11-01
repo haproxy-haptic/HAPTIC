@@ -69,7 +69,6 @@ templateSnippets:
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}
       {%- import "util-register-map" for RegisterMap -%}
-      {#- defaults-settings-450-haptic-default-error-pages registers the default 403 page. -#}
       {%%
         var responses = ""
         if incremental_value_count("haptic-error-pages", "route403") > 0 {
@@ -96,13 +95,6 @@ templateSnippets:
             return out
           })
           responses = tostring(rulesVal)
-        }
-        for _, pagesAny := range incremental_values("haptic-default-error-pages", "pages") {
-          var page, has403 = pagesAny.(map[string]any)["403"].(map[string]any)
-          if has403 {
-            var path, _ = pathResolver.GetPath(tostring(page["file"]), "file")
-            responses = responses + "\nhttp-request deny deny_status 403 content-type \"" + tostring(page["contentType"]) + "\" " + tostring(page["type"]) + " " + path + " if { var(txn.ac_denied) -m bool }"
-          }
         }
       %%}
       {{- AccessControlLane("haptic", responses) -}}
