@@ -71,7 +71,7 @@ templateSnippets:
   frontend-filters-097-haproxytech-access-control:
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}
-      {{- AccessControlLane("haproxytech") -}}
+      {{- AccessControlLane("haproxytech", "") -}}
 
   ingress-access-control-0200-haproxytech:
     requires: [ingresses]
@@ -2057,7 +2057,7 @@ validationTests:
       - type: haproxy_valid
       - {type: contains, target: "map:ing-ac-routes.map", pattern: '(?m)^default/ac-allow haproxytech:allow$'}
       - {type: contains, target: "map:ing-ac-allow.map", pattern: '(?m)^10\.0\.0\.0/8\|default/ac-allow 1$'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny if \{ var\(txn\.ac\) -m str "haproxytech:allow" "haproxytech:both" \} !\{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-allow\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.ac_denied\) bool\(1\) if \{ var\(txn\.ac\) -m str "haproxytech:allow" "haproxytech:both" \} !\{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-allow\.map\) -m found \}'}
 
   test-haproxytech-access-control-deny-list:
     description: >-
@@ -2084,7 +2084,7 @@ validationTests:
       - type: haproxy_valid
       - {type: contains, target: "map:ing-ac-routes.map", pattern: '(?m)^default/ac-deny haproxytech:deny$'}
       - {type: contains, target: "map:ing-ac-deny.map", pattern: '(?m)^192\.168\.0\.0/16\|default/ac-deny 1$'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny if \{ var\(txn\.ac\) -m str "haproxytech:deny" "haproxytech:both" \} \{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-deny\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.ac_denied\) bool\(1\) if \{ var\(txn\.ac\) -m str "haproxytech:deny" "haproxytech:both" \} \{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-deny\.map\) -m found \}'}
 
   test-haproxytech-access-control-deprecated-alias:
     description: >-

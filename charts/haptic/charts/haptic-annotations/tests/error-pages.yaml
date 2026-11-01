@@ -1,0 +1,350 @@
+_fx:
+  httpRoot: &httpRoot
+    paths:
+      - path: /
+        pathType: Prefix
+        backend: {service: {name: echo, port: {number: 80}}}
+  errorPagesIngress: &errorPagesIngress
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      namespace: default
+      name: ep-ingress
+      annotations:
+        haproxy-haptic.org/error-pages: error-pages
+    spec:
+      ingressClassName: haptic
+      rules:
+        - host: ep.example.com
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend: {service: {name: echo, port: {number: 80}}}
+
+validationTests:
+
+  test-haptic-error-pages:
+    description: >-
+      error-pages replaces HAProxy's own 502 and 503 pages for the Ingress's
+      backends through http-error lines in the backend's profile (#577).
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: error-pages}
+          data:
+            503.body: "<p>Down for maintenance.</p>"
+            502.type: lf-file
+            502.content-type: text/plain
+            502.body: "Bad gateway for %[req.hdr(host),lower,url_enc] (request %ID)."
+      ingresses:
+        - *errorPagesIngress
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "file:error-page.default.error-pages.503.http", pattern: '^<p>Down for maintenance\.</p>$'}
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^defaults haptic-be-\S+ from haptic-base\n(?:\s+.*\n)*?\s+http-error status 502 content-type "text/plain" lf-file \S*error-page\.default\.error-pages\.502\.http\n\s+http-error status 503 content-type "text/html; charset=utf-8" file \S*error-page\.default\.error-pages\.503\.http$'
+
+  test-haptic-error-pages-rejects-unknown-key:
+    description: >-
+      Only 500, 502, 503 and 504 pages are accepted: other statuses either come
+      from the backend or aren't generated after routing.
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: ingresses, namespace: default, name: ep-ingress}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: error-pages}
+          data:
+            404.body: "missing"
+      ingresses:
+        - *errorPagesIngress
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "whose key '404.body' isn't"}
+
+  test-haptic-error-pages-rejects-other-placeholders:
+    description: >-
+      An lf-file 503 page is held to the operator's expression allow-list.
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: ingresses, namespace: default, name: ep-ingress}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: error-pages}
+          data:
+            503.type: lf-file
+            503.body: "%[env(HAPTIC_SECRET)]"
+      ingresses:
+        - *errorPagesIngress
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "whose lf-file 503.body uses an expression the operator hasn't allowed"}
+
+  test-haptic-error-pages-missing-configmap-keeps-defaults:
+    description: >-
+      Outside admission a missing ConfigMap records an Event and the backend
+      keeps the default pages.
+    fixtures:
+      ingresses:
+        - *errorPagesIngress
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: haproxy.cfg, pattern: 'http-error status 50[0-4] content-type'}
+
+  test-haptic-error-pages-403-file:
+    description: >-
+      The error-pages 403 page answers a refused source with the ConfigMap's body
+      as a static file and its content type, ahead of the plain deny
+      that every other refused route still gets (#571).
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            403.content-type: text/html
+            403.body: "<p>Access is not enabled for your address.</p>"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/error-pages: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-error-page-403.map", pattern: '(?m)^default/ac-ingress default/denied-page$'}
+      - {type: contains, target: "file:error-page.default.denied-page.403.http", pattern: '^<p>Access is not enabled for your address\.</p>$'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'http-error status 403'}
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^\s*http-request deny deny_status 403 content-type "text/html" file \S*error-page\.default\.denied-page\.403\.http if \{ var\(txn\.ac_denied\) -m bool \} \{ var\(txn\.resource_key\),map\(\S*haptic-error-page-403\.map\) -m str default/denied-page \}\n\s*http-request deny if \{ var\(txn\.ac_denied\) -m bool \}$'
+
+  test-haptic-error-pages-403-lf-file:
+    description: >-
+      type lf-file renders the body as a log-format template, accepting the
+      allowed placeholders, and defaults the content type.
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            403.type: lf-file
+            403.body: "Not enabled for %[src] on %[req.hdr(host),lower,url_enc] (request %ID, 100%%)."
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/denylist-source-range: "203.0.113.5"
+              haproxy-haptic.org/error-pages: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 403 content-type "text/html; charset=utf-8" lf-file \S*error-page\.default\.denied-page\.403\.http if \{ var\(txn\.ac_denied\) -m bool \}'}
+      # The client chooses a wildcard route's Host label, so it is encoded before it reaches the page.
+      - {type: contains, target: "file:error-page.default.denied-page.403.http", pattern: 'on %\[req\.hdr\(host\),lower,url_enc\] \(request %ID, 100%%\)'}
+
+  test-haptic-error-pages-403-rejects-other-placeholders:
+    description: >-
+      An lf-file body may only use the allowed placeholders: anything else could
+      expose environment or other routes' data in a response.
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: ingresses, namespace: default, name: ac-ingress}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            403.type: lf-file
+            403.body: "%[env(HAPTIC_SECRET)]"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/error-pages: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "lf-file 403.body uses an expression the operator hasn't allowed"}
+
+  test-haptic-error-pages-403-rejects-nested-placeholders:
+    description: >-
+      Allowed tokens nested inside a forbidden sequence are rejected too; a
+      token-by-token strip would collapse them into allowed ones.
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: ingresses, namespace: default, name: ac-ingress}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            403.type: lf-file
+            403.body: "%I%[src]D %[req.hdr(ho%[src]st)]"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/error-pages: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "lf-file 403.body uses an expression the operator hasn't allowed"}
+
+  test-haptic-error-pages-403-operator-expressions:
+    description: >-
+      The operator's customResponses.expressions decide what an lf-file body may
+      use: an added expression is accepted (#571).
+    extraContext:
+      customResponses:
+        expressions:
+          user: {enabled: true, expression: "%[req.hdr(x-remote-user),url_enc]"}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            403.type: lf-file
+            403.body: "Hello %[req.hdr(x-remote-user),url_enc], %[src] isn't allowed."
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/error-pages: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "file:error-page.default.denied-page.403.http", pattern: '^Hello %\[req\.hdr\(x-remote-user\),url_enc\]'}
+
+  test-haptic-error-pages-403-operator-disables-expression:
+    description: An expression the operator disabled is rejected at admission.
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: ingresses, namespace: default, name: ac-ingress}
+      customResponses:
+        expressions:
+          clientAddress: {enabled: false, expression: "%[src]"}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            403.type: lf-file
+            403.body: "%[src] isn't allowed."
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/error-pages: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "expression the operator hasn't allowed"}
+
+  test-haptic-error-pages-403-expression-needs-enabled:
+    description: A customResponses.expressions entry without enabled fails the render, so a typo can't leave it inert.
+    extraContext:
+      customResponses:
+        expressions:
+          user: {expression: "%[req.hdr(x-remote-user),url_enc]"}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data: {403.type: lf-file, 403.body: "denied"}
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/error-pages: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'customResponses\.expressions\.user needs enabled: true or false'}
+
+  test-haptic-error-pages-403-missing-configmap-keeps-deny:
+    description: >-
+      A missing ConfigMap on a live render records a Warning and the route keeps
+      the plain 403: the source is still refused.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/error-pages: absent
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: events, pattern: "names ConfigMap default/absent, which doesn't exist"}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s*http-request deny if \{ var\(txn\.ac_denied\) -m bool \}$'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'deny_status 403 content-type'}

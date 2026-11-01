@@ -1326,7 +1326,7 @@ templateSnippets:
           and HAProxy refuses `filter` in a defaults. -#}
       {%- var ProfileDirective = func(line string) bool {
         for _, prefix := range []string{"timeout ", "fullconn ", "retries ", "retry-on ",
-            "compression ", "cookie ", "dynamic-cookie-key ", "option httpchk", "http-check "} {
+            "compression ", "cookie ", "dynamic-cookie-key ", "option httpchk", "http-check ", "http-error "} {
           if hasPrefix(line, prefix) {
             return true
           }

@@ -28,7 +28,7 @@ templateSnippets:
     requires: [ingresses]
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}
-      {{- AccessControlLane("ni") -}}
+      {{- AccessControlLane("ni", "") -}}
 
   # ssl-redirect and hsts live in features-105/-155: they register hosts into gf maps
   # that ssl.yaml/base.yaml emit one shared map-driven rule from — don't move them back

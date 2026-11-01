@@ -68,7 +68,36 @@ templateSnippets:
     requires: [ingresses]
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}
-      {{- AccessControlLane("haptic") -}}
+      {%- import "util-register-map" for RegisterMap -%}
+      {%%
+        var responses = ""
+        if incremental_value_count("haptic-error-pages", "route403") > 0 {
+          var rulesVal, _ = shared.ComputeIfAbsent("hapticErrorPages403", func() any {
+            var byID = map[string]map[string]any{}
+            var rows = []any{}
+            for _, v := range incremental_values("haptic-error-pages", "route403") {
+              var r = v.(map[string]any)
+              byID[tostring(r["id"])] = r
+              rows = append(rows, tostring(r["route"]) + " " + tostring(r["id"]))
+            }
+            var lines = []string{}
+            for _, row := range sort_strings(rows) {
+              lines = append(lines, tostring(row))
+            }
+            var mapPath = RegisterMap("haptic-error-page-403.map", lines, map[string]any{"ordered": false})
+            var out = ""
+            for _, id := range keys(byID) {
+              var r = byID[id]
+              var path, _ = fileRegistry.Register("file", tostring(r["file"]), tostring(r["body"]))
+              out = out + "\nhttp-request deny deny_status 403 content-type \"" + tostring(r["contentType"]) + "\" " + tostring(r["type"]) + " " + tostring(path) +
+                " if { var(txn.ac_denied) -m bool } { var(txn.resource_key),map(" + mapPath + ") -m str " + id + " }"
+            }
+            return out
+          })
+          responses = tostring(rulesVal)
+        }
+      %%}
+      {{- AccessControlLane("haptic", responses) -}}
 
   # Reload-free: request-set-header and response-set-header (newline-separated
   # "<name> <value>" records) become entries in ing-reqhdr.map / ing-reshdr.map

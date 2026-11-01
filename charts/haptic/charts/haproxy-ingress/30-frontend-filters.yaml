@@ -65,7 +65,7 @@ templateSnippets:
     requires: [ingresses]
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}
-      {{- AccessControlLane("hi") -}}
+      {{- AccessControlLane("hi", "") -}}
 
   # SSL redirect relocated to features-105-haproxy-ingress-ssl-redirect: it now
   # registers hosts into the shared gf["sslRedirectHosts"] map (ssl.yaml emits the
