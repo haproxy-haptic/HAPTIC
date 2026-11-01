@@ -615,6 +615,27 @@ func (r *Runner) RenderWithoutFixtures(ctx context.Context) (RenderOutput, error
 		httpStore, nil, nil, r.config.TemplatingSettings.ExtraContext)
 }
 
+// ValidateResources renders the configuration against resources an operator
+// supplies, keyed by watched-resource name, with the deployment's extraContext
+// and no validationTest layer (no _global), then runs `haproxy -c` on the
+// result. A render error is returned; a rejected config is a failed assertion.
+func (r *Runner) ValidateResources(ctx context.Context, resources map[string][]any) (RenderOutput, AssertionResult, error) {
+	storeMap, err := r.CreateStoresFromFixtures(resources)
+	if err != nil {
+		return RenderOutput{}, AssertionResult{}, err
+	}
+	httpStore := NewFixtureHTTPStoreWrapper(CreateHTTPStoreFromFixtures(nil, r.logger), r.logger)
+	rendered, err := r.renderWithStores(ctx, r.engineTemplate, storeMap, r.validationPaths,
+		httpStore, nil, nil, r.config.TemplatingSettings.ExtraContext)
+	if err != nil {
+		return rendered, AssertionResult{}, err
+	}
+	valid := r.assertHAProxyValid(ctx, rendered.HAProxyConfig, rendered.AuxiliaryFiles,
+		&config.ValidationAssertion{Description: "HAProxy accepts the configuration rendered from these resources"},
+		r.validationPaths)
+	return rendered, valid, nil
+}
+
 // currentServers resolves what a test declares about the previous deployment
 // into the shape templates read as `currentConfig`. Returns nil when the test
 // declares nothing.

@@ -45,6 +45,7 @@ Keep `preRolloutValidation.enabled: true` so deployment also checks the final va
 | Structural validation and the bundled `validationTests`, including `haproxy -c` | A configuration the controller would refuse to load |
 | `vector validate` on the rendered sidecar config | A malformed document **or** a broken transform that would keep the supervised Vector child unavailable |
 | `varnishd -C` on the rendered Varnish Configuration Language (VCL) | A VCL that doesn't compile, which leaves the cache pod in `CrashLoopBackOff` |
+| With `--resources` or `--resources-from-cluster`: a render against your resources, then `haproxy -c` | A configuration that only breaks with your real Ingresses, Services, or ConfigMaps — see [Check against your resources](#check-against-your-resources) |
 
 ### Command-line flags
 
@@ -57,6 +58,8 @@ Keep `preRolloutValidation.enabled: true` so deployment also checks the final va
 | `--kubeconfig` | `$KUBECONFIG`, then in-cluster | Which cluster to read API schemas from — see [Schemas](#schemas) |
 | `--schema-dir` | `$HAPTIC_SCHEMA_DIR` | Read schemas from a directory instead of the cluster, for running fully offline |
 | `--api-versions` | — | Extra API versions your cluster serves. The Gateway API `GatewayClass` version is always declared, so the Gateway library renders the same way it does in the cluster |
+| `--resources` | — | Manifest file or directory of the resources the controller watches once deployed. Repeatable. See [Check against your resources](#check-against-your-resources) |
+| `--resources-from-cluster` | off | List the watched resources from the cluster (read-only) and render against them |
 | `--expect-chart-version` | `$HAPTIC_EXPECT_CHART_VERSION` | Fail unless the chart being rendered carries exactly this version. Set it to the version you plan to install |
 
 Set `HAPTIC_CONTAINER_RUNTIME` to choose a runtime (default: `docker`, then
@@ -68,6 +71,28 @@ Set image overrides in your Helm values so validation and deployment use the
 same images. If you set `HAPTIC_VECTOR_IMAGE` or `HAPTIC_VARNISH_IMAGE`, it must
 equal the corresponding rendered image. A mismatch or an unresolved image
 fails the check.
+
+### Check against your resources
+
+The `validationTests` render only their own fixtures. To also render the
+configuration against the resources the controller is going to watch, and run
+`haproxy -c` on the result, pass them in:
+
+```bash
+# Manifests on disk, offline (with --schema-dir, or a cluster for the schemas):
+haptic preflight --values ./haptic-values.yaml --chart ./chart --resources ./rendered/
+
+# The resources in the target cluster, listed read-only:
+haptic preflight --values ./haptic-values.yaml --chart ./chart --resources-from-cluster
+```
+
+Preflight keeps only what the controller would watch: each watched resource's
+namespaces, label selector, and field selector (for example the Ingress class)
+apply. The render uses your values' `extraContext`, as the controller does.
+
+- `--resources` reads every `.yaml` and `.yml` file under each path, including `kind: List` documents. Include everything the configuration reads, such as the default TLS certificate Secret and ConfigMaps your annotations name; a missing one fails the render the way it would in the cluster.
+- `--resources-from-cluster` needs `list` access to every watched resource, Secrets included, like the controller's own ServiceAccount.
+- HTTP resources a template fetches aren't available, so a configuration that fetches one fails this check.
 
 ### Schemas
 
@@ -111,10 +136,10 @@ runtime available to include the sidecar checks.
 
 ## What it doesn't cover
 
-The check renders against your values, not against your cluster's live
-Ingresses, Gateways, and Services. It proves the configuration is loadable and
-that the generated sidecar and cache configurations are valid; it doesn't
-predict what a future routing resource renders to.
+Without `--resources` or `--resources-from-cluster`, the check renders
+against your values and the bundled test fixtures, not against your Ingresses,
+Gateways, and Services. Neither option predicts what a future routing resource
+renders to.
 
 For that, keep the admission webhook enabled — it validates each watched
 resource as it's applied, and rejects one that would break the rendered

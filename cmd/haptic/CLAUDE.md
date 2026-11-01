@@ -99,6 +99,11 @@ without a runtime they warn and skip, but an explicitly configured runtime that
 is missing is an error. `varnishd` resolves backend hostnames at compile time,
 so each `.host` in the VCL is pointed at loopback via `--add-host`.
 
+`--resources` / `--resources-from-cluster` (`preflight_resources.go`) render the
+config once more against operator resources through `Runner.ValidateResources`:
+the deployment's `extraContext` with no `_global`, which a validationTest can't
+express, filtered by each watch's namespaces and selectors.
+
 Negative-controlled against every failure class that motivated it, each
 discriminating (the same input passes when the defect is absent): a bogus
 `global` directive, a vector section indented past its siblings, a VCL symbol

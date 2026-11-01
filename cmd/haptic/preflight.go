@@ -161,6 +161,9 @@ func runPreflight(cmd *cobra.Command, _ []string) error {
 	if err := checkRenderedSidecarConfigs(ctx, manifests, results); err != nil {
 		return err
 	}
+	if err := checkPreflightResources(ctx, tmp.Name(), schemas, logger); err != nil {
+		return err
+	}
 
 	fmt.Fprintln(os.Stderr, "✓ configuration is valid for these values")
 	if preflightPrepareUpgrade {
