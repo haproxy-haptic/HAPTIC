@@ -1469,9 +1469,144 @@ templateSnippets:
         {%- for _, f := range fragments -%}{{- tostring(f) -}}{%- end -%}
         {%- if incremental_value_count("ingress-access-control", family) > 0 || len(fragments) > 0 %}
       {{- responses }}
+          {%- for _, pagesAny := range incremental_values("default-error-pages", "pages") -%}
+            {%- var page, has403 = pagesAny.(map[string]any)["403"].(map[string]any) -%}
+            {%- if has403 -%}
+              {%- var path, _ = pathResolver.GetPath(tostring(page["file"]), "file") %}
+      http-request deny deny_status 403 content-type "{{ page["contentType"] }}" {{ page["type"] }} {{ path }} if { var(txn.ac_denied) -m bool }
+            {%- end -%}
+          {%- end %}
       http-request deny if { var(txn.ac_denied) -m bool }
         {%- end -%}
       {%- end macro -%}
+
+  # ErrorPages returns an error-pages ConfigMap's pages by status code, or the
+  # reason it can't be used.
+  util-error-pages:
+    template: |-
+      {%- var ErrorPages = func(ns string, name string, configured any) (map[string]map[string]any, string) {
+        var pages = map[string]map[string]any{}
+        if !regex_search(name, "^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$") {
+          return pages, "names ConfigMap '" + name + "', which isn't a ConfigMap name in its own namespace"
+        }
+        var cm = resources.configmaps.GetSingle(ns, name)
+        if cm == nil {
+          return pages, "names ConfigMap " + ns + "/" + name + ", which doesn't exist"
+        }
+        var ref = "names ConfigMap " + ns + "/" + name + ", "
+        var codes = map[string]bool{}
+        for _, dataKey := range keys(cm.Data) {
+          if !regex_search(dataKey, "^(403|500|502|503|504)\\.(body|type|content-type)$") {
+            return pages, ref + "whose key '" + dataKey + "' isn't <code>.body, <code>.type or <code>.content-type for 403, 500, 502, 503 or 504"
+          }
+          codes[split(dataKey, ".")[0]] = true
+        }
+        if configured == nil {
+          configured = map[string]any{
+            "clientAddress": map[string]any{"enabled": true, "expression": "%[src]"},
+            "host": map[string]any{"enabled": true, "expression": "%[req.hdr(host),lower,url_enc]"},
+            "requestId": map[string]any{"enabled": true, "expression": "%ID"},
+          }
+        }
+        var allowed = []string{}
+        var alternatives = "%%"
+        var bareVariables = []string{}
+        for _, entryName := range keys(configured) {
+          var entry = configured.(map[string]any)[entryName]
+          var enabled = entry | dig("enabled")
+          var expression = entry | dig_string("", "expression")
+          if enabled != true && enabled != false {
+            fail("extraContext.customResponses.expressions." + entryName + " needs enabled: true or false.")
+          }
+          if !regex_search(expression, "^%[^\\x00-\\x1f\\x7f]+$") {
+            fail("extraContext.customResponses.expressions." + entryName + ".expression must be a log-format expression starting with % and without control characters, got '" + expression + "'.")
+          }
+          if enabled == true {
+            allowed = append(allowed, expression)
+            alternatives = alternatives + "|" + sanitize_regex(expression)
+            if regex_search(expression, "^%[A-Za-z]+$") {
+              bareVariables = append(bareVariables, sanitize_regex(expression))
+            }
+          }
+        }
+        for _, code := range keys(codes) {
+          var body = cm.Data[code + ".body"]
+          var kind = cm.Data[code + ".type"]
+          var contentType = cm.Data[code + ".content-type"]
+          if kind == "" { kind = "file" }
+          if contentType == "" { contentType = "text/html; charset=utf-8" }
+          if body == "" {
+            return pages, ref + "which has no " + code + ".body key"
+          }
+          if len(body) > 8192 {
+            return pages, ref + "whose " + code + ".body is over 8192 bytes"
+          }
+          if kind != "file" && kind != "lf-file" {
+            return pages, ref + "whose " + code + ".type '" + kind + "' isn't file or lf-file"
+          }
+          if !regex_search(contentType, "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+( *; *[A-Za-z0-9_-]+=[A-Za-z0-9_.-]+)*$") {
+            return pages, ref + "whose " + code + ".content-type '" + contentType + "' isn't a media type"
+          }
+          if kind == "lf-file" && !regex_search(body, "^(?:[^%]|" + alternatives + ")*$") {
+            return pages, ref + "whose lf-file " + code + ".body uses an expression the operator hasn't allowed; use only " + join(allowed, ", ") + " or %%"
+          }
+          if kind == "lf-file" && len(bareVariables) > 0 && regex_search(body, "(?:" + join(bareVariables, "|") + ")[A-Za-z0-9_]") {
+            return pages, ref + "whose lf-file " + code + ".body runs a letter or digit into a % variable such as %ID; add a space or punctuation after it"
+          }
+          pages[code] = map[string]any{
+            "file": "error-page." + ns + "." + name + "." + code + ".http",
+            "body": body, "type": kind, "contentType": contentType,
+          }
+        }
+        return pages, ""
+      } -%}
+
+  # Publishes the pages of the ConfigMap customResponses.defaultErrorPages names.
+  features-097-default-error-pages:
+    requires: [configmaps]
+    incremental:
+      bindingsTemplate: '{{- toJSON(map[string]any{"configmaps": map[string]any{"ref": dig_string(extraContext, "", "customResponses", "defaultErrorPages"), "expressions": dig(extraContext, "customResponses", "expressions")}}) -}}'
+      group: default-error-pages
+      effects: [publishValue]
+    template: |-
+      {%- import "util-error-pages" for ErrorPages -%}
+      {%- var ns = dig_string(item, "", "metadata", "namespace") -%}
+      {%- var name = dig_string(item, "", "metadata", "name") -%}
+      {%- if tostring(props["ref"]) == ns + "/" + name -%}
+        {%- var pages, problem = ErrorPages(ns, name, props["expressions"]) -%}
+        {%- if problem != "" -%}
+          {{- fail("controller.config.templatingSettings.extraContext.customResponses.defaultErrorPages " + problem + ".") -}}
+        {%- end -%}
+        {%- var published = map[string]any{} -%}
+        {%- for _, code := range keys(pages) -%}{%- published[code] = pages[code] -%}{%- end -%}
+        {{- shared.Publish("pages", ns + "/" + name, published) -}}
+      {%- end -%}
+
+  defaults-settings-450-default-error-pages:
+    template: |-
+      {%%
+        var ref = extraContext | dig_string("", "customResponses", "defaultErrorPages")
+        var lines = []string{}
+        if ref != "" {
+          if !regex_search(ref, "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?/[^/]+$") {
+            fail("controller.config.templatingSettings.extraContext.customResponses.defaultErrorPages must be <namespace>/<name>, got '" + ref + "'.")
+          }
+          if incremental_value_count("default-error-pages", "pages") == 0 {
+            fail("controller.config.templatingSettings.extraContext.customResponses.defaultErrorPages names ConfigMap " + ref + ", which doesn't exist.")
+          }
+          for _, pagesAny := range incremental_values("default-error-pages", "pages") {
+            var pages = pagesAny.(map[string]any)
+            for _, code := range keys(pages) {
+              var page = pages[code].(map[string]any)
+              var path, _ = fileRegistry.Register("file", tostring(page["file"]), tostring(page["body"]))
+              if code != "403" {
+                lines = append(lines, "http-error status " + code + " content-type \"" + tostring(page["contentType"]) + "\" " + tostring(page["type"]) + " " + tostring(path))
+              }
+            }
+          }
+        }
+      %%}
+      {{- join(lines, "\n") -}}
 
   util-emit-annotation-access-control:
     template: |
@@ -1852,6 +1987,10 @@ templateSnippets:
 # gating logic is exercised regardless of which vendor libraries are merged; they
 # use plugin-free features so none depends on a SPOA plugin.
 validationTests:
+  _global:
+    extraContext:
+      customResponses:
+        defaultErrorPages: ""
   test-annotation-family-conflict-cors-rejected:
     _helm_skip_test: '{{ if not .Values.controller.templateLibraries.ingressAnnotationsCompat.enabled }}true{{ end }}'
     description: >-

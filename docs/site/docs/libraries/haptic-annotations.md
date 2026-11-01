@@ -296,6 +296,7 @@ spec:
     Every enabled expression is available to every Ingress author. Don't enable `env()` or `map()`, which read the HAProxy environment and other routes' maps, variables, or a request header without an escaping converter such as `url_enc`: the page doesn't HTML-escape what it reflects, so a raw header lets a client inject markup or script, and `Cookie` or `Authorization` would put the caller's secrets into the response.
 - Each body can be up to 8192 bytes.
 - If the ConfigMap is missing or invalid, the Ingress is rejected when you apply it. An Ingress that already exists gets a Warning Event and keeps the default pages; refused sources are still refused.
+- To give every Ingress the same pages, set `controller.config.templatingSettings.extraContext.customResponses.defaultErrorPages` to `<namespace>/<name>` of a ConfigMap in this format, typically in the controller's namespace. An Ingress's own `error-pages` ConfigMap overrides it for the codes it sets. A missing or invalid default ConfigMap fails the render, so the controller keeps serving the last valid configuration.
 - Changing the ConfigMap reloads HAProxy, which reads the pages when it loads its configuration. The `500` to `504` pages join the backend's profile, which backends with the same settings share, so later routes naming the same ConfigMap don't reload.
 
 ### Canary and traffic mirroring

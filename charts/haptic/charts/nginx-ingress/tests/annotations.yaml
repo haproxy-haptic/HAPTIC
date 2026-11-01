@@ -183,6 +183,40 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: 'concat\(\|,txn\.ni_cors_origin\),map_reg\(\S*/ing-cors-regex\.map\) -m found'}
       - {type: contains, target: haproxy.cfg, pattern: 'http-after-response set-header Access-Control-Allow-Origin ''%\[var\(txn\.ni_cors_origin\)\]'''}
 
+  test-nginx-ingress-access-control-default-error-page:
+    description: >-
+      customResponses.defaultErrorPages answers a source the whitelist refuses
+      with the operator's 403 page, as for haproxy-haptic.org Ingresses (#583).
+    extraContext:
+      customResponses:
+        defaultErrorPages: haptic/org-pages
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: haptic, name: org-pages}
+          data:
+            403.body: "Request access at https://access.example.com."
+            403.content-type: text/plain
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: allow-ingress
+            annotations:
+              nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: allow.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^\s*# ni/access-control\n(?:\s*http-request .*\n)*?\s*http-request deny deny_status 403 content-type "text/plain" file \S*error-page\.haptic\.org-pages\.403\.http if \{ var\(txn\.ac_denied\) -m bool \}\n\s*http-request deny if \{ var\(txn\.ac_denied\) -m bool \}$'
+
   test-nginx-ingress-access-control:
     description: Nginx Ingress whitelist-source-range creates ACL and deny rule
     fixtures:
