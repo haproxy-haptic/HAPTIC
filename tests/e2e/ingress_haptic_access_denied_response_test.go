@@ -49,7 +49,7 @@ func TestHapticAccessDeniedResponse(t *testing.T) {
 					"type":         "lf-file",
 					"status":       "403",
 					"content-type": "text/plain",
-					"body":         "access to %[req.hdr(host)] is not enabled for your address",
+					"body":         "access to %[req.hdr(host),lower,url_enc] is not enabled for your address",
 				},
 			}
 			if err := client.Resources(namespace).Create(ctx, cm); err != nil {

@@ -258,7 +258,7 @@ data:
   status: "403"            # optional; any 4xx or 5xx code
   content-type: text/html  # optional; default text/html; charset=utf-8
   body: |
-    <p>%[req.hdr(host)] isn't enabled for your address %[src].
+    <p>%[req.hdr(host),lower,url_enc] isn't enabled for your address %[src].
     Request access at https://access.example.com.</p>
 ---
 apiVersion: networking.k8s.io/v1
@@ -282,7 +282,17 @@ spec:
 ```
 
 - `type: file` sends the body unchanged. It costs nothing per request, so use it for static pages.
-- `type: lf-file` fills in placeholders on each request: `%[src]` (the client address), `%[req.hdr(host)]` (the requested host), `%ID` (the request ID) and `%%` (a literal `%`). Any other `%` sequence is rejected, because it could expose data that doesn't belong in the page.
+- `type: lf-file` fills in log-format expressions on each request. By default the body may use `%[src]` (the client address), `%[req.hdr(host),lower,url_enc]` (the requested host, URL-encoded so a wildcard host can't inject markup), `%ID` (the request ID) and `%%` (a literal `%`), written exactly like that. Any other `%` sequence is rejected.
+- The operator decides which expressions are allowed, in `controller.config.templatingSettings.extraContext.accessControl.deniedResponseExpressions`:
+
+    ```yaml
+    accessControl:
+      deniedResponseExpressions:
+        user: {enabled: true, expression: "%[req.hdr(x-remote-user),url_enc]"}
+        requestId: {enabled: false, expression: "%ID"}
+    ```
+
+    Every enabled expression is available to every Ingress author. Don't enable `env()` or `map()`, which read the HAProxy environment and other routes' maps, variables, or a request header without an escaping converter such as `url_enc`: the page doesn't HTML-escape what it reflects, so a raw header lets a client inject markup or script, and `Cookie` or `Authorization` would put the caller's secrets into the response.
 - The body can be up to 8192 bytes.
 - If the ConfigMap is missing or invalid, the Ingress is rejected when you apply it. An Ingress that already exists gets a Warning Event, and refused sources get the default `403`, so the source is still refused.
 - Changing the ConfigMap reloads HAProxy, which reads the page when it loads its configuration.

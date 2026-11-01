@@ -70,7 +70,7 @@ templateSnippets:
   features-096-haptic-access-denied-response:
     requires: [ingresses, configmaps]
     incremental:
-      source: ingresses
+      bindingsTemplate: '{{- toJSON(map[string]any{"ingresses": map[string]any{"expressions": dig(extraContext, "accessControl", "deniedResponseExpressions")}}) -}}'
       whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/access-denied-response']"]
       group: haptic-access-denied-response
       effects: [publishValue, recordEvent]
@@ -85,6 +85,28 @@ templateSnippets:
         var name = ingress.Metadata.Annotations["haproxy-haptic.org/access-denied-response"]
         var problem = ""
         var response = map[string]any{}
+        var configured = props["expressions"] | fallback(map[string]any{
+          "clientAddress": map[string]any{"enabled": true, "expression": "%[src]"},
+          "host": map[string]any{"enabled": true, "expression": "%[req.hdr(host),lower,url_enc]"},
+          "requestId": map[string]any{"enabled": true, "expression": "%ID"},
+        })
+        var allowedExpressions = []string{}
+        var expressionAlternatives = "%%"
+        for _, entryName := range keys(configured) {
+          var entry = configured.(map[string]any)[entryName]
+          var enabled = entry | dig("enabled")
+          var expression = entry | dig_string("", "expression")
+          if enabled != true && enabled != false {
+            fail("extraContext.accessControl.deniedResponseExpressions." + entryName + " needs enabled: true or false.")
+          }
+          if !regex_search(expression, "^%[^\\x00-\\x1f\\x7f]+$") {
+            fail("extraContext.accessControl.deniedResponseExpressions." + entryName + ".expression must be a log-format expression starting with % and without control characters, got '" + expression + "'.")
+          }
+          if enabled == true {
+            allowedExpressions = append(allowedExpressions, expression)
+            expressionAlternatives = expressionAlternatives + "|" + sanitize_regex(expression)
+          }
+        }
         if !regex_search(name, "^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$") {
           problem = "names ConfigMap '" + name + "', which isn't a ConfigMap name in its own namespace"
         } else {
@@ -100,10 +122,6 @@ templateSnippets:
             if kind == "" { kind = "file" }
             if status == "" { status = "403" }
             if contentType == "" { contentType = "text/html; charset=utf-8" }
-            var unknownPlaceholders = body
-            for _, allowed := range []string{"%%", "%[src]", "%[req.hdr(host)]", "%ID"} {
-              unknownPlaceholders = replace(unknownPlaceholders, allowed, "")
-            }
             if body == "" {
               problem = ref + "which has no body key"
             } else if len(body) > 8192 {
@@ -114,8 +132,8 @@ templateSnippets:
               problem = ref + "whose status '" + status + "' isn't a 4xx or 5xx code"
             } else if !regex_search(contentType, "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+( *; *[A-Za-z0-9_-]+=[A-Za-z0-9_.-]+)*$") {
               problem = ref + "whose content-type '" + contentType + "' isn't a media type"
-            } else if kind == "lf-file" && strings_contains(unknownPlaceholders, "%") {
-              problem = ref + "whose lf-file body uses a placeholder other than %[src], %[req.hdr(host)], %ID or %%"
+            } else if kind == "lf-file" && !regex_search(body, "^(?:[^%]|" + expressionAlternatives + ")*$") {
+              problem = ref + "whose lf-file body uses an expression the operator hasn't allowed; use only " + join(allowedExpressions, ", ") + " or %%"
             } else {
               response = map[string]any{"route": key, "id": ns + "/" + name, "body": body, "type": kind, "status": status, "contentType": contentType}
             }

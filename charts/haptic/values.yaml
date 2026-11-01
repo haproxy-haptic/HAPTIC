@@ -1207,6 +1207,16 @@ controller:
             # is worse than refusing the caller.
             defaultFailOpen: true
 
+        accessControl:
+          # Log-format expressions an Ingress author may use in an lf-file
+          # haproxy-haptic.org/access-denied-response page, besides %%. Every
+          # enabled entry is open to every Ingress author: never enable env(),
+          # map(), variables or an unescaped request header.
+          deniedResponseExpressions:  # @schema additionalProperties: {type: object, required: [enabled, expression], additionalProperties: false, properties: {enabled: {type: boolean}, expression: {type: string}}}
+            clientAddress: {enabled: true, expression: "%[src]"}
+            host: {enabled: true, expression: "%[req.hdr(host),lower,url_enc]"}
+            requestId: {enabled: true, expression: "%ID"}
+
         # OIDC sign-in (haproxy-haptic.org/sso-auth). Each Ingress names a
         # provider Secret in its own namespace; the SPOA hub fetches that
         # provider's discovery document, keys and tokens from the HAProxy pods.

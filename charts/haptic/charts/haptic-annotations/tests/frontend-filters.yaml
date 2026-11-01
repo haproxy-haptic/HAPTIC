@@ -269,7 +269,7 @@ validationTests:
           metadata: {namespace: default, name: denied-page}
           data:
             type: lf-file
-            body: "Not enabled for %[src] on %[req.hdr(host)] (request %ID, 100%%)."
+            body: "Not enabled for %[src] on %[req.hdr(host),lower,url_enc] (request %ID, 100%%)."
       ingresses:
         - apiVersion: networking.k8s.io/v1
           kind: Ingress
@@ -287,6 +287,8 @@ validationTests:
     assertions:
       - type: haproxy_valid
       - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 403 content-type "text/html; charset=utf-8" lf-file \S*access-denied\.default\.denied-page\.http if \{ var\(txn\.ac_denied\) -m bool \}'}
+      # The client chooses a wildcard route's Host label, so it is encoded before it reaches the page.
+      - {type: contains, target: "file:access-denied.default.denied-page.http", pattern: 'on %\[req\.hdr\(host\),lower,url_enc\] \(request %ID, 100%%\)'}
 
   test-haptic-access-denied-response-rejects-other-placeholders:
     description: >-
@@ -318,7 +320,135 @@ validationTests:
               - host: ac.example.com
                 http: *httpRoot
     assertions:
-      - {type: contains, target: rendering_error, pattern: 'lf-file body uses a placeholder other than'}
+      - {type: contains, target: rendering_error, pattern: "lf-file body uses an expression the operator hasn't allowed"}
+
+  test-haptic-access-denied-response-rejects-nested-placeholders:
+    description: >-
+      Allowed tokens nested inside a forbidden sequence are rejected too; a
+      token-by-token strip would collapse them into allowed ones.
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: ingresses, namespace: default, name: ac-ingress}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            type: lf-file
+            body: "%I%[src]D %[req.hdr(ho%[src]st)]"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/access-denied-response: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "lf-file body uses an expression the operator hasn't allowed"}
+
+  test-haptic-access-denied-response-operator-expressions:
+    description: >-
+      The operator's deniedResponseExpressions decide what an lf-file body may
+      use: an added expression is accepted (#571).
+    extraContext:
+      accessControl:
+        deniedResponseExpressions:
+          user: {enabled: true, expression: "%[req.hdr(x-remote-user),url_enc]"}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            type: lf-file
+            body: "Hello %[req.hdr(x-remote-user),url_enc], %[src] isn't allowed."
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/access-denied-response: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "file:access-denied.default.denied-page.http", pattern: '^Hello %\[req\.hdr\(x-remote-user\),url_enc\]'}
+
+  test-haptic-access-denied-response-operator-disables-expression:
+    description: An expression the operator disabled is rejected at admission.
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: ingresses, namespace: default, name: ac-ingress}
+      accessControl:
+        deniedResponseExpressions:
+          clientAddress: {enabled: false, expression: "%[src]"}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            type: lf-file
+            body: "%[src] isn't allowed."
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/access-denied-response: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "expression the operator hasn't allowed"}
+
+  test-haptic-access-denied-response-expression-needs-enabled:
+    description: A deniedResponseExpressions entry without enabled fails the render, so a typo can't leave it inert.
+    extraContext:
+      accessControl:
+        deniedResponseExpressions:
+          user: {expression: "%[req.hdr(x-remote-user),url_enc]"}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data: {type: lf-file, body: "denied"}
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/access-denied-response: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'deniedResponseExpressions\.user needs enabled: true or false'}
 
   test-haptic-access-denied-response-missing-configmap-keeps-deny:
     description: >-
