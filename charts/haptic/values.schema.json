@@ -742,6 +742,9 @@
                         "minVersion": {
                           "type": "string"
                         },
+                        "requireSniHostMatch": {
+                          "type": "boolean"
+                        },
                         "sessionTickets": {
                           "type": "object",
                           "properties": {

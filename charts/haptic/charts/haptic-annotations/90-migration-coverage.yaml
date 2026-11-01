@@ -476,6 +476,9 @@ _migrationCoverage:
       haproxy-haptic.org/require-headers:
         status: supported
         note: "Comma-separated required request headers → one host-scoped `http-request deny deny_status 400` per missing header."
+      haproxy-haptic.org/require-sni-host-match:
+        status: supported
+        note: "\"true\" → `http-request return status 421` when the Host differs from the TLS SNI, per-route via haptic-sni-host-routes.map."
       haproxy-haptic.org/response-set-header:
         status: supported
         note: "newline-separated '<name> <value>' lines -> http-after-response set-header, host-scoped; guarded"

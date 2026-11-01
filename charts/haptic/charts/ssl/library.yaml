@@ -649,6 +649,26 @@ templateSnippets:
   # on the matched route, not the Host header, so a host alias can't bypass it.
   # Plain HTTP to a route that requires a certificate is redirected to HTTPS, except an
   # ACME HTTP-01 token fetch (GET/HEAD, one base64url segment, RFC 8555 8.3).
+  # A request whose Host differs from the TLS SNI is answered 421 (RFC 9110
+  # 15.5.20); a client that coalesced the connection retries on a new one.
+  # `scope` narrows it, e.g. to the routes in a map; empty applies to all.
+  util-sni-host-mismatch:
+    template: |-
+      {%- macro SniHostMismatch(label string, scope string) %}
+      {%- var mismatch = "{ ssl_fc } { ssl_fc_has_sni 1 } { var(txn.sni_host) -m found } " + scope + " !{ ssl_fc_sni,lower,strcmp(txn.sni_host) eq 0 }" %}
+      # {{ label }}
+      http-request set-var(txn.sni_host) req.fhdr(Host),lower,field(1,:) if { ssl_fc } { ssl_fc_has_sni 1 }
+      http-request set-var(txn.denied_by) str(sni_host_mismatch) if {{ mismatch }}
+      http-request return status 421 if {{ mismatch }}
+      {%- end %}
+
+  frontend-filters-053-ssl-sni-host-match:
+    template: |
+      {%- import "util-sni-host-mismatch" for SniHostMismatch -%}
+      {%- if (extraContext | dig("tls", "requireSniHostMatch")) == true -%}
+      {{- SniHostMismatch("ssl/sni-host-match", "") }}
+      {%- end %}
+
   frontend-filters-052-ssl-mtls-sni-host:
     template: |
       {%- import "util-register-map" for RegisterMap -%}

@@ -437,6 +437,7 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/fixed-response-content-type` | Content-Type for the `fixed-response` body (default `text/plain`). |
 | `haproxy-haptic.org/require-content-type` | Requires an allowed `Content-Type` (comma-separated) on body methods (POST/PUT/PATCH); a disallowed type is rejected with `415` (prefix-matched, so charset suffixes still match). Applied from a per-route map. |
 | `haproxy-haptic.org/require-headers` | Requires the listed request headers (comma-separated); a request missing any is rejected with `400`. Applied from a per-route map; the first route to require a new header name reloads once. |
+| `haproxy-haptic.org/require-sni-host-match` | `"true"` answers `421 Misdirected Request` when a request's `Host` differs from the TLS SNI it arrived on. A browser that reused one HTTP/2 connection for several hosts retries on a new connection. Applied from a per-route map. |
 
 #### Authentication and reloads
 
