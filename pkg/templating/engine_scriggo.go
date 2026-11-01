@@ -985,6 +985,7 @@ func runIncrementalComponentBatch(ctx context.Context, template *scriggo.Templat
 		gate = admitAllWorkers{}
 	}
 	batch := &chunkedBatch{template: template, runs: runs, chunkCount: chunkCount, firstIndex: len(runs)}
+	batch.lowestFailure.Store(int64(len(runs)))
 	var workers sync.WaitGroup
 	for range workerCount - 1 {
 		workers.Go(func() { batch.runGated(gate) })
@@ -1002,7 +1003,8 @@ type chunkedBatch struct {
 	runs       []scriggo.BatchRun
 	chunkCount int
 	nextChunk  atomic.Int64
-	failed     atomic.Bool
+	// lowestFailure mirrors firstIndex for lock-free reads.
+	lowestFailure atomic.Int64
 
 	mu         sync.Mutex
 	firstIndex int
@@ -1022,10 +1024,11 @@ func (b *chunkedBatch) runGated(gate WorkerGate) {
 // runNext runs the next chunk and reports whether another may follow.
 func (b *chunkedBatch) runNext() bool {
 	chunk := int(b.nextChunk.Add(1) - 1)
-	if chunk >= b.chunkCount || b.failed.Load() {
+	start := chunk * incrementalBatchRunsPerWorker
+	// A chunk below a failure still runs: it may hold a lower failing index.
+	if chunk >= b.chunkCount || int64(start) >= b.lowestFailure.Load() {
 		return false
 	}
-	start := chunk * incrementalBatchRunsPerWorker
 	err := b.template.RunBatch(b.runs[start:min(start+incrementalBatchRunsPerWorker, len(b.runs))])
 	if err != nil {
 		b.fail(start, err)
@@ -1035,7 +1038,6 @@ func (b *chunkedBatch) runNext() bool {
 }
 
 func (b *chunkedBatch) fail(start int, err error) {
-	b.failed.Store(true)
 	index := start
 	var batchErr *scriggo.BatchRunError
 	if errors.As(err, &batchErr) {
@@ -1046,6 +1048,7 @@ func (b *chunkedBatch) fail(start int, err error) {
 	defer b.mu.Unlock()
 	if index < b.firstIndex {
 		b.firstIndex, b.firstErr = index, err
+		b.lowestFailure.Store(int64(index))
 	}
 }
 
