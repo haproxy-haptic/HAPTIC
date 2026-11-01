@@ -55,3 +55,21 @@ func TestHapticRequireSniHostMatch(t *testing.T) {
 		},
 	})
 }
+
+// TestHapticSniHostMatchOffByDefault pins that a host without the annotation
+// keeps serving a request whose SNI differs, as a re-encrypting proxy sends.
+func TestHapticSniHostMatchOffByDefault(t *testing.T) {
+	t.Parallel()
+	RunSimpleIngressTest(t, &SimpleIngressTest{
+		Description:   "Ingress: Host/SNI mismatch is served without require-sni-host-match",
+		Host:          "ingress-haptic-sni-host-off.localdev.me",
+		TLSSecretName: "haptic-sni-host-off-tls",
+		Assess: []SimpleIngressAssertion{{
+			Name: "the host reached over another SNI is served",
+			Check: func(t *testing.T, host string) {
+				t.Helper()
+				httpclient.New(t).HTTPS("other-"+host, "/").WithHostHeader(host).ExpectOK(t)
+			},
+		}},
+	})
+}
