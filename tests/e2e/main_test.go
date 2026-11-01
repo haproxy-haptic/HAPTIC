@@ -40,6 +40,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/e2e-framework/pkg/env"
@@ -1267,9 +1268,14 @@ func waitForControllerIdentityPods(
 	expected controllerIdentity,
 	desiredReplicas int32,
 ) ([]string, error) {
-	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	budget, err := controllerStartupBudget(ctx, clientset)
+	if err != nil {
+		return nil, err
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	var lastMismatch error
+	var baseline map[types.UID]int32
 	for {
 		podList, err := clientset.CoreV1().Pods(ControllerNamespace).List(waitCtx, metav1.ListOptions{
 			LabelSelector: LabelSelectorController,
@@ -1277,6 +1283,11 @@ func waitForControllerIdentityPods(
 		if err != nil {
 			lastMismatch = fmt.Errorf("list controller pods: %w", err)
 		} else {
+			if baseline == nil {
+				baseline = controllerRestartCounts(podList.Items)
+			} else if err := requireNoControllerRestart(podList.Items, baseline); err != nil {
+				return nil, err
+			}
 			var pods []string
 			pods, lastMismatch = verifyControllerIdentityPods(podList.Items, expected, desiredReplicas)
 			if lastMismatch == nil {
@@ -1290,6 +1301,62 @@ func waitForControllerIdentityPods(
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
+}
+
+// controllerStartupBudget is how long the chart lets a controller start: its
+// startup probe window, which covers the load gate, plus one probe period of
+// scheduling slack. A slower start is the product failing, not the test.
+func controllerStartupBudget(ctx context.Context, clientset kubernetes.Interface) (time.Duration, error) {
+	deployment, err := clientset.AppsV1().Deployments(ControllerNamespace).Get(ctx, ControllerDeploymentName, metav1.GetOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("read controller Deployment: %w", err)
+	}
+	for index := range deployment.Spec.Template.Spec.Containers {
+		container := &deployment.Spec.Template.Spec.Containers[index]
+		if container.Name != "controller" {
+			continue
+		}
+		probe := container.StartupProbe
+		if probe == nil {
+			return 0, errors.New("controller container has no startup probe to bound its startup")
+		}
+		seconds := probe.InitialDelaySeconds + (probe.FailureThreshold+1)*probe.PeriodSeconds
+		return time.Duration(seconds) * time.Second, nil
+	}
+	return 0, errors.New("controller Deployment has no controller container")
+}
+
+func controllerRestartCounts(items []corev1.Pod) map[types.UID]int32 {
+	counts := map[types.UID]int32{}
+	for index := range items {
+		statuses := items[index].Status.ContainerStatuses
+		for statusIndex := range statuses {
+			if statuses[statusIndex].Name == "controller" {
+				counts[items[index].UID] = statuses[statusIndex].RestartCount
+			}
+		}
+	}
+	return counts
+}
+
+// requireNoControllerRestart fails as soon as a controller container restarts
+// during the wait: its startup probe gave up, so waiting longer cannot succeed.
+func requireNoControllerRestart(items []corev1.Pod, baseline map[types.UID]int32) error {
+	for uid, count := range controllerRestartCounts(items) {
+		if count > baseline[uid] {
+			return fmt.Errorf("controller pod %s restarted while waiting for it (restart count %d)", controllerPodName(items, uid), count)
+		}
+	}
+	return nil
+}
+
+func controllerPodName(items []corev1.Pod, uid types.UID) string {
+	for index := range items {
+		if items[index].UID == uid {
+			return items[index].Name
+		}
+	}
+	return string(uid)
 }
 
 func verifyControllerIdentityPods(items []corev1.Pod, expected controllerIdentity, desiredReplicas int32) ([]string, error) {
