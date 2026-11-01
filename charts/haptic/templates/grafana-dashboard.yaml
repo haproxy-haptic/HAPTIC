@@ -19,10 +19,12 @@ metadata:
     {{- end }}
 data:
   {{- if $gd.useBuiltIn }}
+  {{- /* In the helm-helpers subchart, whose files the release Secret doesn't store. */}}
+  {{- $helpers := index .Subcharts "helm-helpers" }}
   haptic.json: |-
-{{ .Files.Get "dashboards/haptic-controller.json" | indent 4 }}
+{{ $helpers.Files.Get "files/dashboards/haptic-controller.json" | indent 4 }}
   haptic-traffic.json: |-
-{{ .Files.Get "dashboards/haptic-traffic.json" | indent 4 }}
+{{ $helpers.Files.Get "files/dashboards/haptic-traffic.json" | indent 4 }}
   {{- else }}
   haptic.json: |
 {{ $gd.customDashboard | toJson | indent 4 }}
