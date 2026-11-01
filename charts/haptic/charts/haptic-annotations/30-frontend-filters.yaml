@@ -70,7 +70,7 @@ templateSnippets:
   features-096-haptic-access-denied-response:
     requires: [ingresses, configmaps]
     incremental:
-      bindingsTemplate: '{{- toJSON(map[string]any{"ingresses": map[string]any{"expressions": dig(extraContext, "accessControl", "deniedResponseExpressions")}}) -}}'
+      bindingsTemplate: '{{- toJSON(map[string]any{"ingresses": map[string]any{"expressions": dig(extraContext, "customResponses", "expressions")}}) -}}'
       whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/access-denied-response']"]
       group: haptic-access-denied-response
       effects: [publishValue, recordEvent]
@@ -97,10 +97,10 @@ templateSnippets:
           var enabled = entry | dig("enabled")
           var expression = entry | dig_string("", "expression")
           if enabled != true && enabled != false {
-            fail("extraContext.accessControl.deniedResponseExpressions." + entryName + " needs enabled: true or false.")
+            fail("extraContext.customResponses.expressions." + entryName + " needs enabled: true or false.")
           }
           if !regex_search(expression, "^%[^\\x00-\\x1f\\x7f]+$") {
-            fail("extraContext.accessControl.deniedResponseExpressions." + entryName + ".expression must be a log-format expression starting with % and without control characters, got '" + expression + "'.")
+            fail("extraContext.customResponses.expressions." + entryName + ".expression must be a log-format expression starting with % and without control characters, got '" + expression + "'.")
           }
           if enabled == true {
             allowedExpressions = append(allowedExpressions, expression)

@@ -283,11 +283,11 @@ spec:
 
 - `type: file` sends the body unchanged. It costs nothing per request, so use it for static pages.
 - `type: lf-file` fills in log-format expressions on each request. By default the body may use `%[src]` (the client address), `%[req.hdr(host),lower,url_enc]` (the requested host, URL-encoded so a wildcard host can't inject markup), `%ID` (the request ID) and `%%` (a literal `%`), written exactly like that. Any other `%` sequence is rejected.
-- The operator decides which expressions are allowed, in `controller.config.templatingSettings.extraContext.accessControl.deniedResponseExpressions`:
+- The operator decides which expressions are allowed, in `controller.config.templatingSettings.extraContext.customResponses.expressions`:
 
     ```yaml
-    accessControl:
-      deniedResponseExpressions:
+    customResponses:
+      expressions:
         user: {enabled: true, expression: "%[req.hdr(x-remote-user),url_enc]"}
         requestId: {enabled: false, expression: "%ID"}
     ```

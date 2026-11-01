@@ -356,11 +356,11 @@ validationTests:
 
   test-haptic-access-denied-response-operator-expressions:
     description: >-
-      The operator's deniedResponseExpressions decide what an lf-file body may
+      The operator's customResponses.expressions decide what an lf-file body may
       use: an added expression is accepted (#571).
     extraContext:
-      accessControl:
-        deniedResponseExpressions:
+      customResponses:
+        expressions:
           user: {enabled: true, expression: "%[req.hdr(x-remote-user),url_enc]"}
     fixtures:
       configmaps:
@@ -393,8 +393,8 @@ validationTests:
     extraContext:
       renderMode: admission
       admissionSubject: {store: ingresses, namespace: default, name: ac-ingress}
-      accessControl:
-        deniedResponseExpressions:
+      customResponses:
+        expressions:
           clientAddress: {enabled: false, expression: "%[src]"}
     fixtures:
       configmaps:
@@ -422,10 +422,10 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: "expression the operator hasn't allowed"}
 
   test-haptic-access-denied-response-expression-needs-enabled:
-    description: A deniedResponseExpressions entry without enabled fails the render, so a typo can't leave it inert.
+    description: A customResponses.expressions entry without enabled fails the render, so a typo can't leave it inert.
     extraContext:
-      accessControl:
-        deniedResponseExpressions:
+      customResponses:
+        expressions:
           user: {expression: "%[req.hdr(x-remote-user),url_enc]"}
     fixtures:
       configmaps:
@@ -448,7 +448,7 @@ validationTests:
               - host: ac.example.com
                 http: *httpRoot
     assertions:
-      - {type: contains, target: rendering_error, pattern: 'deniedResponseExpressions\.user needs enabled: true or false'}
+      - {type: contains, target: rendering_error, pattern: 'customResponses\.expressions\.user needs enabled: true or false'}
 
   test-haptic-access-denied-response-missing-configmap-keeps-deny:
     description: >-
