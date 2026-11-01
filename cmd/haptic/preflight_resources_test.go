@@ -25,9 +25,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	discoveryfake "k8s.io/client-go/discovery/fake"
+	kubefake "k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 	"sigs.k8s.io/yaml"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/conversion"
@@ -127,4 +132,27 @@ func TestBundledChartPreflightResources(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "refused app.example.com")
 	})
+}
+
+func TestKindOfFromDiscovery(t *testing.T) {
+	clientset := kubefake.NewClientset()
+	discovery := clientset.Discovery().(*discoveryfake.FakeDiscovery)
+	discovery.Resources = []*metav1.APIResourceList{{
+		GroupVersion: "networking.k8s.io/v1",
+		APIResources: []metav1.APIResource{{Name: "ingresses", Kind: "Ingress"}},
+	}}
+	schemas := schemaSource{live: &liveCluster{clientset: clientset}}
+
+	kind, err := kindOf(schemas, "networking.k8s.io/v1", "ingresses")
+	require.NoError(t, err)
+	assert.Equal(t, "Ingress", kind)
+
+	_, err = kindOf(schemas, "example.org/v1", "widgets")
+	require.ErrorContains(t, err, "no schema names the kind of example.org/v1 widgets")
+
+	discovery.PrependReactor("get", "resource", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("forbidden")
+	})
+	_, err = kindOf(schemas, "networking.k8s.io/v1", "ingresses")
+	require.ErrorContains(t, err, "discovering the kind of networking.k8s.io/v1 ingresses: forbidden")
 }

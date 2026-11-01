@@ -27,6 +27,7 @@ import (
 	"sort"
 	"strings"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
@@ -182,7 +183,10 @@ func kindOf(schemas schemaSource, apiVersion, plural string) (string, error) {
 	}
 	if schemas.live != nil {
 		list, err := schemas.live.discovery().ServerResourcesForGroupVersion(apiVersion)
-		if err == nil {
+		if err != nil && !apierrors.IsNotFound(err) {
+			return "", fmt.Errorf("discovering the kind of %s %s: %w", apiVersion, plural, err)
+		}
+		if list != nil {
 			for i := range list.APIResources {
 				if list.APIResources[i].Name == plural {
 					return list.APIResources[i].Kind, nil
