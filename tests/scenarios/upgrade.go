@@ -58,6 +58,7 @@ func (s *Session) ChartUpgrade(ctx context.Context, baseline, certManager string
 		{"rejected upgrade", u.rejectBrokenRelease},
 		{"released rollback", u.rollbackBaseline},
 		{"repair broken live configuration", u.repairBrokenDeployment},
+		{"complete partly applied release", u.completePartlyAppliedRelease},
 	} {
 		s.Infof("Upgrade %s: %s", baseline, phase.name)
 		if err := u.observeTraffic(ctx, phase.name, phase.run); err != nil {

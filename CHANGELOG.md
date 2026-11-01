@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `spec.dataplane.secretsDir` sets the secret file directory (default `/etc/haproxy/secrets`).
 - The `secret:<name>` validation test target asserts on a rendered secret file.
 
+### Fixed
+
+- After a release was only partly applied, the pre-rollout hook failed every later sync or upgrade with "finish the current apply before upgrading". It now validates the incoming release and applies it, which completes the partial one ([#559](https://github.com/haproxy-haptic/HAPTIC/issues/559)).
+
 ### Helm chart
 
 #### Added
