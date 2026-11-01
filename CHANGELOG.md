@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fileRegistry.Register("secret", …)` delivers a file to sidecars under `secrets/` without a reload. Its content is published only as a Kubernetes Secret, and readable resources carry a keyed digest instead of a content digest.
 - `spec.dataplane.secretsDir` sets the secret file directory (default `/etc/haproxy/secrets`).
 - The `secret:<name>` validation test target asserts on a rendered secret file.
+- `haptic preflight --resources <path>` and `--resources-from-cluster` also render the configuration against the resources the controller will watch and run `haproxy -c` on the result ([#586](https://github.com/haproxy-haptic/HAPTIC/issues/586)).
 
 ### Fixed
 
