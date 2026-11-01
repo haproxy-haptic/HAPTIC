@@ -84,6 +84,8 @@ fi
 python3 .github/scripts/capture-startup.py > .pilot/startup-capture.log 2>&1 &
 startup_pid=$!
 started=$(date +%s)
+# Debug-level agent logs name every runtime command a failed test's pod ran (#590).
+export HAPTIC_E2E_AGENT_DEBUG="${HAPTIC_E2E_AGENT_DEBUG:-1}"
 set +e
 KEEP_CLUSTER=true SKIP_DOCKER_BUILD=1 make "$test_target" 2>&1 | tee .pilot/test.log
 result=${PIPESTATUS[0]}
