@@ -37,6 +37,16 @@ func (u *upgrade) requireStorableUnderBaselineCRDs(ctx context.Context) error {
 		s.Infof("Upgrade %s: CRD fit is checked from the newest release, %s", u.baseline, newest)
 		return nil
 	}
+	if err := u.applyTargetCustomResources(ctx, "--dry-run=server", "--field-manager=baseline-crd-check"); err != nil {
+		return fmt.Errorf("the target chart's custom resources do not fit the %s CRDs, so a server-side diff fails before any hook runs: %w", u.baseline, err)
+	}
+	return nil
+}
+
+// applyTargetCustomResources server-side applies the target release's HAPTIC
+// custom resources of every kind the cluster serves, as Argo CD's sync does.
+func (u *upgrade) applyTargetCustomResources(ctx context.Context, flags ...string) error {
+	s := u.session
 	rendered, err := s.Helm(ctx, append([]string{"template"}, u.targetArgs(u.chart)[1:]...)...)
 	if err != nil {
 		return err
@@ -49,10 +59,9 @@ func (u *upgrade) requireStorableUnderBaselineCRDs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.Kube(ctx, bytes.NewReader(list), "apply", "--server-side", "--force-conflicts", "--dry-run=server", "--field-manager=baseline-crd-check", "-f", "-"); err != nil {
-		return fmt.Errorf("the target chart's custom resources do not fit the %s CRDs, so a server-side diff fails before any hook runs: %w", u.baseline, err)
-	}
-	return nil
+	args := append([]string{"apply", "--server-side", "--force-conflicts"}, flags...)
+	_, err = s.Kube(ctx, bytes.NewReader(list), append(args, "-f", "-")...)
+	return err
 }
 
 func (u *upgrade) newestRelease(ctx context.Context) (string, error) {

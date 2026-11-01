@@ -188,7 +188,7 @@ func (u *upgrade) repairBrokenDeployment(ctx context.Context) error {
 
 // completePartlyAppliedRelease leaves one library at a revision its config does
 // not name, as a sync that failed between objects does; the next hooked upgrade
-// must complete the release (#559).
+// must pass its hooks and its apply complete the release (#559).
 func (u *upgrade) completePartlyAppliedRelease(ctx context.Context) error {
 	s := u.session
 	libraries, err := readJSON[unstructured.UnstructuredList](ctx, s, "get", "haproxytemplatelibraries")
@@ -210,6 +210,11 @@ func (u *upgrade) completePartlyAppliedRelease(ctx context.Context) error {
 		return err
 	}
 	if _, err := s.Helm(ctx, append(u.targetArgs(u.chart), "--timeout", "20m")...); err != nil {
+		return err
+	}
+	// Helm 3 patches only what changed between release manifests, so the stray
+	// revision survives the upgrade; complete it the way an Argo CD sync applies.
+	if err := u.applyTargetCustomResources(ctx, "--field-manager=helm"); err != nil {
 		return err
 	}
 	library, err := readJSON[unstructured.Unstructured](ctx, s, "get", "haproxytemplatelibrary", name)
