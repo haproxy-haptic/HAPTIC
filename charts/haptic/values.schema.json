@@ -3855,7 +3855,15 @@
               "type": "string"
             },
             "serverLabel": {
-              "type": "boolean"
+              "type": [
+                "boolean",
+                "string"
+              ],
+              "enum": [
+                false,
+                true,
+                "counters"
+              ]
             },
             "sizeBuckets": {
               "type": "array",

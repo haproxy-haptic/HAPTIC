@@ -12,7 +12,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for server_label in false true; do
+for server_label in false true counters; do
     profile="$work/server-$server_label"
     mkdir -p "$profile"
     helm template haptic "$root/charts/haptic" --namespace haptic \

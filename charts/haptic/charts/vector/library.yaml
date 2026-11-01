@@ -460,7 +460,12 @@ templateSnippets:
       {%- if (rm | dig("pathLabel")) == true %}{% tagLines = append(tagLines, "path: \"{{rm_path}}\"") %}{% end -%}
       {%- if (rm | dig("hostLabel")) == true %}{% tagLines = append(tagLines, "host: \"{{rm_host}}\"") %}{% end -%}
       {%- if (rm | dig("terminationStateLabel")) == true %}{% tagLines = append(tagLines, "term: \"{{rm_term}}\"") %}{% end -%}
-      {%- if (rm | dig("serverLabel")) == true %}{% tagLines = append(tagLines, "server: \"{{rm_server}}\"") %}{% end -%}
+      {#- `counters` keeps `server` off the histograms, where it multiplies every
+          backend pod by each bucket (#564). -#}
+      {%- var serverMode = tostring(rm | dig("serverLabel") | fallback(false)) -%}
+      {%- if serverMode != "false" && serverMode != "true" && serverMode != "counters" -%}
+        {%- fail("extraContext.vector.requestMetrics.serverLabel must be true, false or \"counters\", got '" + serverMode + "'.") -%}
+      {%- end -%}
       {%- tagLines = append(tagLines, "controller_class: \"" + ctrlClass + "\"") -%}
       {%- tagLines = append(tagLines, "controller_namespace: \"" + ctrlNs + "\"") -%}
       {#- Absolute output indentation: these are emitted straight after `tags:`. -#}
@@ -503,7 +508,7 @@ templateSnippets:
             .rm_svc = string(o.service) ?? ""
             .rm_method = string(o.method) ?? ""
             .rm_pod = string(o.instance_pod) ?? ""
-      {%- if (rm | dig("serverLabel")) == true %}
+      {%- if serverMode != "false" %}
             .rm_server = string(o.server) ?? ""
             if .rm_server == "<NOSRV>" { .rm_server = "" }
       {%- end %}
@@ -544,6 +549,10 @@ templateSnippets:
             var out = ""
             for _, n := range names {
               if mOn(n) {
+                var tags = tagBlock
+                if serverMode == "true" || (serverMode == "counters" && defs[n][0] == "counter") {
+                  tags = tags + "\n          server: \"{{rm_server}}\""
+                }
                 var metricNames = []string{n}
                 if n == "requests" { metricNames = []string{"requests_total", "requests"} }
                 for _, metricName := range metricNames {
@@ -551,7 +560,7 @@ templateSnippets:
                       "\n        field: " + defs[n][1] +
                       "\n        name: " + metricName +
                       "\n        namespace: " + prefix +
-                      "\n        tags:" + tagBlock
+                      "\n        tags:" + tags
                 }
               }
             }
@@ -1259,6 +1268,62 @@ validationTests:
       - type: contains
         target: rendering_error
         pattern: 'logMetrics\.bad is kind "enum" and must list its accepted `values`'
+
+  test-vector-request-metrics-server-label-counters:
+    _helm_skip_test: *requestMetricsOff
+    description: >-
+      serverLabel counters puts `server` on the request counter and keeps it off
+      every histogram.
+    fixtures: {}
+    extraContext:
+      vector:
+        metricsPort: 9598
+        sizeMetricsPort: 9599
+        logMetrics: {__replace__: true}
+        requestMetrics:
+          enabled: true
+          prefix: haptic_ingress_controller
+          serverLabel: counters
+          durationBuckets: [0.001, 1]
+          sizeBuckets: [100, 1000]
+          cardinalityLimit: {enabled: false}
+          metrics:
+            __replace__: true
+            requests: true
+            request_duration_seconds: true
+            response_duration_seconds: true
+            connect_duration_seconds: true
+            header_duration_seconds: true
+            request_size: true
+            response_size: true
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: file:vector.yaml, pattern: '\.rm_server = string\(o\.server\)'}
+      - {type: match_count, target: file:vector.yaml, pattern: '(?m)^          server: "\{\{rm_server\}\}"$', expected: "2"}
+      - type: contains
+        target: file:vector.yaml
+        pattern: '(?m)^        name: requests_total\n(?:(?:        |          )[^\n]*\n)*?          server: '
+      - type: not_contains
+        target: file:vector.yaml
+        pattern: '(?m)^        name: [a-z_]+_(?:seconds|size)\n(?:(?:        |          )[^\n]*\n)*?          server: '
+
+  test-vector-request-metrics-server-label-invalid:
+    _helm_skip_test: *requestMetricsOff
+    description: A serverLabel mode other than true, false or counters fails the render.
+    fixtures: {}
+    extraContext:
+      vector:
+        metricsPort: 9598
+        sizeMetricsPort: 9599
+        logMetrics: {__replace__: true}
+        requestMetrics:
+          enabled: true
+          serverLabel: histograms
+          metrics: {__replace__: true, requests: true}
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: 'serverLabel must be true, false or "counters", got .histograms.'
 
   test-vector-request-metrics-families:
     _helm_skip_test: *requestMetricsOff
