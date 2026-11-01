@@ -8,7 +8,19 @@ import sys
 import yaml
 
 work = pathlib.Path(sys.argv[1])
-server_label_enabled = sys.argv[2] == "true"
+server_label = sys.argv[2]
+server_label_enabled = server_label != "false"
+
+
+def server_tag(value):
+    """VRL asserting the server tag for this mode; counters keeps it off histograms."""
+    present = f'assert_eq!(.tags.server, "{value}")'
+    absent = 'assert!(!exists(.tags.server))'
+    if server_label == "counters":
+        return f'if .name == "requests" || .name == "requests_total" {{ {present} }} else {{ {absent} }}'
+    return present if server_label_enabled else absent
+
+
 documents = list(yaml.safe_load_all((work / "chart.yaml").read_text()))
 if len(sys.argv) > 3 and sys.argv[3] == "--prepare":
     configs = [document for document in documents
@@ -16,7 +28,7 @@ if len(sys.argv) > 3 and sys.argv[3] == "--prepare":
     if len(configs) != 1:
         sys.exit("the chart must render exactly one HAProxyTemplateConfig")
     vector = configs[0]["spec"]["templatingSettings"]["extraContext"]["vector"]
-    if vector["requestMetrics"].get("serverLabel") is not server_label_enabled:
+    if vector["requestMetrics"].get("serverLabel") != {"false": False, "true": True}.get(server_label, server_label):
         sys.exit("the chart did not project vector.requestMetrics.serverLabel")
     selected_tests = []
     for document in documents:
@@ -132,7 +144,7 @@ for transform, values in [
         'assert_eq!(.tags.status, "200")', 'assert_eq!(.tags.namespace, "team")',
         'assert_eq!(.tags.ingress, "route")', 'assert_eq!(.tags.service, "echo")',
         'assert_eq!(.tags.method, "GET")', 'assert_eq!(.tags.controller_pod, "haproxy-1")',
-        'assert_eq!(.tags.server, "echo-abc123")' if server_label_enabled else 'assert!(!exists(.tags.server))',
+        server_tag("echo-abc123"),
         f'expected = {json.dumps(values)}',
         'value = get!(expected, [string!(.name)])',
         'if .name == "requests" || .name == "requests_total" { assert_eq!(.counter.value, value) } else {',
@@ -153,9 +165,7 @@ for name, server in [("no selected server", "<NOSRV>"), ("empty server", ""),
                             else 'assert!(!exists(.rm_server))')]
     for transform in ["request_metrics_core", "request_metrics_sizes",
                       "request_metrics_connect", "request_metrics_response"]:
-        server_checks.append(output("observe_" + transform,
-                                    'assert_eq!(.tags.server, "")' if server_label_enabled
-                                    else 'assert!(!exists(.tags.server))'))
+        server_checks.append(output("observe_" + transform, server_tag("")))
     cases.append(case(name, json.dumps(record), server_checks))
 
 for name, text in [

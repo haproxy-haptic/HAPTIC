@@ -418,6 +418,13 @@ The value is HAProxy's selected server name (`%s`), which also appears in
 `haproxy_server_*{server=...}`. HAPTIC normally derives it from the endpoint's Pod
 name, but prefixes, rewritten characters, and endpoints without Pod references can
 change it. Treat it as a HAProxy server identifier, not a Kubernetes Pod name.
+
+With `true`, every duration and size histogram gets one series per bucket for
+each target, and targets get new names on every rollout. Set
+`serverLabel: counters` to put `server` on `requests_total` only. Per-target
+error rates and status codes keep working; for per-target latency use HAProxy's
+`haproxy_server_response_time_average_seconds`. The traffic dashboard's latency
+panels then show data only while the backend-target filter is `All`.
 Names are scoped to a backend; `server` alone isn't a unique key for joining
 native exporter series. Requests with no selected server, including HAProxy's
 `<NOSRV>` marker, use an empty value.

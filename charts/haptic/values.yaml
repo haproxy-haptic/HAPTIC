@@ -2606,7 +2606,9 @@ vector:
     # The equivalent of ingress-nginx's --metrics-per-host.
     hostLabel: true
     # HAProxy's selected server name, matching the native exporter's server label.
-    serverLabel: false
+    # `counters` puts it on requests_total only: on the histograms it multiplies
+    # every backend pod by each bucket, and pods get new names on each rollout.
+    serverLabel: false  # @schema type: [boolean, string]; enum: [false, true, counters]
 
     # Not ingress-nginx's, which are weak in both domains; the migration guide has
     # a snippet to restore them. Durations are a strict SUPERSET of its
