@@ -320,7 +320,7 @@ validationTests:
       - type: haproxy_valid
       - {type: contains, target: "map:ing-ac-routes.map", pattern: '(?m)^default/allow-ingress hi:allow$'}
       - {type: contains, target: "map:ing-ac-allow.map", pattern: '(?m)^10\.0\.0\.0/8\|default/allow-ingress 1$'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny if \{ var\(txn\.ac\) -m str "hi:allow" "hi:both" \} !\{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-allow\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.ac_denied\) bool\(1\) if \{ var\(txn\.ac\) -m str "hi:allow" "hi:both" \} !\{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-allow\.map\) -m found \}'}
 
   test-haproxy-ingress-whitelist-source-range-alias:
     description: deprecated whitelist-source-range alias creates an allow ACL when allowlist-source-range is absent

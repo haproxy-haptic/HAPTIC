@@ -601,6 +601,7 @@ templateSnippets:
         "cacheVarnishEnabled": extraContext | dig("cache", "varnish", "enabled") | fallback(false),
         "rateLimitSharedFailClosed": extraContext | dig("rateLimit", "shared", "failClosed") | fallback(false),
         "spoaMessages": extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}),
+        "customResponseExpressions": extraContext | dig("customResponses", "expressions"),
       }}) -}}
 
   util-replay-ingress-backend-effects:

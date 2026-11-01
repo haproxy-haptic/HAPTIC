@@ -1,0 +1,122 @@
+templateSnippets:
+  # ErrorPages returns the haproxy-haptic.org/error-pages ConfigMap's pages by
+  # status code, or the reason it can't be used.
+  util-haptic-error-pages:
+    template: |-
+      {%- var ErrorPages = func(ns string, name string, configured any) (map[string]map[string]any, string) {
+        var pages = map[string]map[string]any{}
+        if !regex_search(name, "^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$") {
+          return pages, "names ConfigMap '" + name + "', which isn't a ConfigMap name in its own namespace"
+        }
+        var cm = resources.configmaps.GetSingle(ns, name)
+        if cm == nil {
+          return pages, "names ConfigMap " + ns + "/" + name + ", which doesn't exist"
+        }
+        var ref = "names ConfigMap " + ns + "/" + name + ", "
+        var codes = map[string]bool{}
+        for _, dataKey := range keys(cm.Data) {
+          if !regex_search(dataKey, "^(403|500|502|503|504)\\.(body|type|content-type)$") {
+            return pages, ref + "whose key '" + dataKey + "' isn't <code>.body, <code>.type or <code>.content-type for 403, 500, 502, 503 or 504"
+          }
+          codes[split(dataKey, ".")[0]] = true
+        }
+        if configured == nil {
+          configured = map[string]any{
+            "clientAddress": map[string]any{"enabled": true, "expression": "%[src]"},
+            "host": map[string]any{"enabled": true, "expression": "%[req.hdr(host),lower,url_enc]"},
+            "requestId": map[string]any{"enabled": true, "expression": "%ID"},
+          }
+        }
+        var allowed = []string{}
+        var alternatives = "%%"
+        var bareVariables = []string{}
+        for _, entryName := range keys(configured) {
+          var entry = configured.(map[string]any)[entryName]
+          var enabled = entry | dig("enabled")
+          var expression = entry | dig_string("", "expression")
+          if enabled != true && enabled != false {
+            fail("extraContext.customResponses.expressions." + entryName + " needs enabled: true or false.")
+          }
+          if !regex_search(expression, "^%[^\\x00-\\x1f\\x7f]+$") {
+            fail("extraContext.customResponses.expressions." + entryName + ".expression must be a log-format expression starting with % and without control characters, got '" + expression + "'.")
+          }
+          if enabled == true {
+            allowed = append(allowed, expression)
+            alternatives = alternatives + "|" + sanitize_regex(expression)
+            if regex_search(expression, "^%[A-Za-z]+$") {
+              bareVariables = append(bareVariables, sanitize_regex(expression))
+            }
+          }
+        }
+        for _, code := range keys(codes) {
+          var body = cm.Data[code + ".body"]
+          var kind = cm.Data[code + ".type"]
+          var contentType = cm.Data[code + ".content-type"]
+          if kind == "" { kind = "file" }
+          if contentType == "" { contentType = "text/html; charset=utf-8" }
+          if body == "" {
+            return pages, ref + "which has no " + code + ".body key"
+          }
+          if len(body) > 8192 {
+            return pages, ref + "whose " + code + ".body is over 8192 bytes"
+          }
+          if kind != "file" && kind != "lf-file" {
+            return pages, ref + "whose " + code + ".type '" + kind + "' isn't file or lf-file"
+          }
+          if !regex_search(contentType, "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+( *; *[A-Za-z0-9_-]+=[A-Za-z0-9_.-]+)*$") {
+            return pages, ref + "whose " + code + ".content-type '" + contentType + "' isn't a media type"
+          }
+          if kind == "lf-file" && !regex_search(body, "^(?:[^%]|" + alternatives + ")*$") {
+            return pages, ref + "whose lf-file " + code + ".body uses an expression the operator hasn't allowed; use only " + join(allowed, ", ") + " or %%"
+          }
+          if kind == "lf-file" && len(bareVariables) > 0 && regex_search(body, "(?:" + join(bareVariables, "|") + ")[A-Za-z0-9_]") {
+            return pages, ref + "whose lf-file " + code + ".body runs a letter or digit into a % variable such as %ID; add a space or punctuation after it"
+          }
+          pages[code] = map[string]any{
+            "file": "error-page." + ns + "." + name + "." + code + ".http",
+            "body": body, "type": kind, "contentType": contentType,
+          }
+        }
+        return pages, ""
+      } -%}
+
+  # Reports a bad ConfigMap once per Ingress and publishes its 403 page for
+  # frontend-filters-096-haptic-access-control.
+  features-096-haptic-error-pages:
+    requires: [ingresses, configmaps]
+    incremental:
+      bindingsTemplate: '{{- toJSON(map[string]any{"ingresses": map[string]any{"expressions": dig(extraContext, "customResponses", "expressions")}}) -}}'
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/error-pages']"]
+      group: haptic-error-pages
+      effects: [publishValue, recordEvent]
+    template: |-
+      {%- import "util-haptic-error-pages" for ErrorPages -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- var ingress = resources.ingresses.GetSingle(
+        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
+      {%- if ingress != nil -%}
+        {%- var ns = ingress.Metadata.Namespace -%}
+        {%- var key = ns + "/" + ingress.Metadata.Name -%}
+        {%- var name = ingress.Metadata.Annotations["haproxy-haptic.org/error-pages"] -%}
+        {%- var pages, problem = ErrorPages(ns, name, props["expressions"]) -%}
+        {%- if problem != "" -%}
+          {{- WebhookRejectOrWarn(ingress, "ErrorPagesInvalid", "Ingress " + key + " annotation 'haproxy-haptic.org/error-pages' " + problem + ". Its errors keep the default pages. Fix the ConfigMap or the annotation.") -}}
+        {%- else if pages["403"] != nil -%}
+          {{- shared.Publish("route403", key, merge(pages["403"], map[string]any{"route": key, "id": ns + "/" + name})) -}}
+        {%- end -%}
+      {%- end -%}
+
+  backend-directives-835-haptic-error-pages:
+    template: |-
+      {%- import "util-haptic-error-pages" for ErrorPages -%}
+      {%- if ingress != nil && ingress.Metadata.Annotations["haproxy-haptic.org/error-pages"] != "" -%}
+        {%- var pages, problem = ErrorPages(ingress.Metadata.Namespace, ingress.Metadata.Annotations["haproxy-haptic.org/error-pages"], props["customResponseExpressions"]) -%}
+        {%- if problem == "" -%}
+          {%- for _, code := range keys(pages) -%}
+            {%- if code == "403" -%}{%- continue -%}{%- end -%}
+            {%- var page = pages[code] -%}
+            {%- var path, _ = RegisterBackendFile("file", tostring(page["file"]), tostring(page["body"])) %}
+      http-error status {{ code }} content-type "{{ page["contentType"] }}" {{ page["type"] }} {{ path }}
+          {%- end -%}
+        {%- end -%}
+      {%- end -%}

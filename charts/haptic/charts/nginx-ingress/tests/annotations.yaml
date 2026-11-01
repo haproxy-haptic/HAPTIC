@@ -204,7 +204,7 @@ validationTests:
       - {type: contains, target: "map:ing-ac-routes.map", pattern: '(?m)^default/allow-ingress ni:allow$'}
       - {type: contains, target: "map:ing-ac-allow.map", pattern: '(?m)^10\.0\.0\.0/8\|default/allow-ingress 1$'}
       - {type: contains, target: "map:ing-ac-allow.map", pattern: '(?m)^192\.168\.0\.0/16\|default/allow-ingress 1$'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny if \{ var\(txn\.ac\) -m str "ni:allow" "ni:both" \} !\{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-allow\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.ac_denied\) bool\(1\) if \{ var\(txn\.ac\) -m str "ni:allow" "ni:both" \} !\{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-allow\.map\) -m found \}'}
 
   test-nginx-ingress-hsts:
     description: Nginx Ingress HSTS annotations generate correct header

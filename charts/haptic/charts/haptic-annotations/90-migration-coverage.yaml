@@ -50,6 +50,9 @@ _migrationCoverage:
       haproxy-haptic.org/api-key-secret:
         status: supported
         note: "Secret (data key `keys`, newline apikey[:consumer]) → reload-free apikeys map; deny 401 on unknown key; sets the shared txn.haptic_consumer identity; fails closed with 503 while the Secret is absent."
+      haproxy-haptic.org/error-pages:
+        status: supported
+        note: "ConfigMap pages: 403 → `http-request deny deny_status 403 … file|lf-file` for a refused source; 500/502/503/504 → `http-error` in the backend profile."
       haproxy-haptic.org/root-redirect:
         status: supported
         note: "Redirects requests for the host root path (`/`) to the given sub-path."

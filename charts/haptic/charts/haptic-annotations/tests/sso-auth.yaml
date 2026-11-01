@@ -127,10 +127,10 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)http-request deny if \{ var\(txn\.ac\) -m str "haptic:allow" "haptic:both" \}[^\n]*\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request send-spoe-group spoa-hub-check-sso-auth '
+        pattern: '(?m)http-request deny if \{ var\(txn\.ac_denied\) -m bool \}[^\n]*\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request send-spoe-group spoa-hub-check-sso-auth '
       - type: not_contains
         target: haproxy.cfg
-        pattern: '(?m)http-request send-spoe-group [^\n]*\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request deny if \{ var\(txn\.ac\) -m str "haptic:allow"'
+        pattern: '(?m)http-request send-spoe-group [^\n]*\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request deny if \{ var\(txn\.ac_denied\) -m bool \}'
 
   test-haptic-sso-auth-issuer-not-allowed:
     _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
