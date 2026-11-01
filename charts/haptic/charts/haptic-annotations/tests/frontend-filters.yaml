@@ -216,9 +216,134 @@ validationTests:
       - {type: contains, target: "map:ing-ac-allow.map", pattern: '(?m)^192\.168\.1\.0/24\|default/ac-ingress 1$'}
       - {type: contains, target: "map:ing-ac-deny.map", pattern: '(?m)^203\.0\.113\.5/32\|default/ac-ingress 1$'}
       - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.ac_block\) src,map_ip\(\S*/ing-ac-partitions\.map\) if \{ var\(txn\.ac\) -m beg "haptic:" \}'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny if \{ var\(txn\.ac\) -m str "haptic:allow" "haptic:both" \} !\{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-allow\.map\) -m found \}'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny if \{ var\(txn\.ac\) -m str "haptic:deny" "haptic:both" \} \{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-deny\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.ac_denied\) bool\(1\) if \{ var\(txn\.ac\) -m str "haptic:allow" "haptic:both" \} !\{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-allow\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.ac_denied\) bool\(1\) if \{ var\(txn\.ac\) -m str "haptic:deny" "haptic:both" \} \{ var\(txn\.ac_block\),concat\(\|,txn\.resource_key\),map\(\S*/ing-ac-deny\.map\) -m found \}'}
       - {type: not_contains, target: haproxy.cfg, pattern: 'acl haptic_(allow|deny)list_'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s*http-request deny if \{ var\(txn\.ac_denied\) -m bool \}$'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'access-denied'}
+
+  test-haptic-access-denied-response-file:
+    description: >-
+      access-denied-response answers a refused source with the ConfigMap's body
+      as a static file, its status and content type, ahead of the plain deny
+      that every other refused route still gets (#571).
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            status: "403"
+            content-type: text/html
+            body: "<p>Access is not enabled for your address.</p>"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/access-denied-response: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-access-denied.map", pattern: '(?m)^default/ac-ingress default/denied-page$'}
+      - {type: contains, target: "file:access-denied.default.denied-page.http", pattern: '^<p>Access is not enabled for your address\.</p>$'}
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^\s*http-request deny deny_status 403 content-type "text/html" file \S*access-denied\.default\.denied-page\.http if \{ var\(txn\.ac_denied\) -m bool \} \{ var\(txn\.resource_key\),map\(\S*haptic-access-denied\.map\) -m str default/denied-page \}\n\s*http-request deny if \{ var\(txn\.ac_denied\) -m bool \}$'
+
+  test-haptic-access-denied-response-lf-file:
+    description: >-
+      type lf-file renders the body as a log-format template, accepting the
+      allowed placeholders, and defaults status and content type.
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            type: lf-file
+            body: "Not enabled for %[src] on %[req.hdr(host)] (request %ID, 100%%)."
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/denylist-source-range: "203.0.113.5"
+              haproxy-haptic.org/access-denied-response: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 403 content-type "text/html; charset=utf-8" lf-file \S*access-denied\.default\.denied-page\.http if \{ var\(txn\.ac_denied\) -m bool \}'}
+
+  test-haptic-access-denied-response-rejects-other-placeholders:
+    description: >-
+      An lf-file body may only use the allowed placeholders: anything else could
+      expose environment or other routes' data in a response.
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: ingresses, namespace: default, name: ac-ingress}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: denied-page}
+          data:
+            type: lf-file
+            body: "%[env(HAPTIC_SECRET)]"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/access-denied-response: denied-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'lf-file body uses a placeholder other than'}
+
+  test-haptic-access-denied-response-missing-configmap-keeps-deny:
+    description: >-
+      A missing ConfigMap on a live render records a Warning and the route keeps
+      the plain 403: the source is still refused.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: ac-ingress
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+              haproxy-haptic.org/access-denied-response: absent
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: ac.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: events, pattern: "names ConfigMap default/absent, which doesn't exist"}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s*http-request deny if \{ var\(txn\.ac_denied\) -m bool \}$'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'deny_status 403 content-type'}
 
   test-haptic-access-control-ipv6-keeps-legacy-rule:
     description: a list with an IPv6 entry cannot be partitioned, so that route keeps the per-route ACL and deny while an IPv4 route on the same frontend rides the lane
@@ -251,7 +376,7 @@ validationTests:
     assertions:
       - type: haproxy_valid
       - {type: contains, target: haproxy.cfg, pattern: 'acl haptic_allowlist_default_v6-ingress src 2001:db8::/32 10\.0\.0\.0/8'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny if \{ var\(txn\.resource_key\) -m str default/v6-ingress \} !haptic_allowlist_default_v6-ingress'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.ac_denied\) bool\(1\) if \{ var\(txn\.resource_key\) -m str default/v6-ingress \} !haptic_allowlist_default_v6-ingress'}
       - {type: contains, target: "map:ing-ac-routes.map", pattern: '(?m)^default/v4-ingress haptic:allow$'}
       - {type: not_contains, target: "map:ing-ac-routes.map", pattern: 'v6-ingress'}
 

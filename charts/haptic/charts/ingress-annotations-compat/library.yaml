@@ -1387,7 +1387,10 @@ templateSnippets:
   util-access-control-lane:
     template: |-
       {%- import "util-register-map" for RegisterMap -%}
-      {%- macro AccessControlLane(family string) -%}
+      {#- `responses` are deny rules a family answers a refused route with; the
+          plain deny after them catches every other route. -#}
+      {%- macro AccessControlLane(family string, responses string) -%}
+        {%- var fragments = incremental_values("ingress-access-control", "fragments:" + family) -%}
         {%- if incremental_value_count("ingress-access-control", family) > 0 -%}
           {%%
             var mapsVal, _ = shared.ComputeIfAbsent("ingressAccessControlMaps", func() any {
@@ -1460,10 +1463,14 @@ templateSnippets:
       # {{ family }}/access-control
       http-request set-var(txn.ac) var(txn.resource_key),map({{ maps["routes"] }})
       http-request set-var(txn.ac_block) src,map_ip({{ maps["partitions"] }}) if { var(txn.ac) -m beg "{{ family }}:" }
-      http-request deny if { var(txn.ac) -m str "{{ family }}:allow" "{{ family }}:both" } !{ var(txn.ac_block),concat(|,txn.resource_key),map({{ maps["allow"] }}) -m found }
-      http-request deny if { var(txn.ac) -m str "{{ family }}:deny" "{{ family }}:both" } { var(txn.ac_block),concat(|,txn.resource_key),map({{ maps["deny"] }}) -m found }
+      http-request set-var(txn.ac_denied) bool(1) if { var(txn.ac) -m str "{{ family }}:allow" "{{ family }}:both" } !{ var(txn.ac_block),concat(|,txn.resource_key),map({{ maps["allow"] }}) -m found }
+      http-request set-var(txn.ac_denied) bool(1) if { var(txn.ac) -m str "{{ family }}:deny" "{{ family }}:both" } { var(txn.ac_block),concat(|,txn.resource_key),map({{ maps["deny"] }}) -m found }
         {%- end -%}
-        {%- for _, f := range incremental_values("ingress-access-control", "fragments:" + family) -%}{{- tostring(f) -}}{%- end -%}
+        {%- for _, f := range fragments -%}{{- tostring(f) -}}{%- end -%}
+        {%- if incremental_value_count("ingress-access-control", family) > 0 || len(fragments) > 0 %}
+      {{- responses }}
+      http-request deny if { var(txn.ac_denied) -m bool }
+        {%- end -%}
       {%- end macro -%}
 
   util-emit-annotation-access-control:
@@ -1485,14 +1492,14 @@ templateSnippets:
       # {{ replace(allowCommentFmt, "{KEY}", key) }}
       acl {{ aclName }} src {{ ValidateCidrList(allowlist, allowAnnotation, key) }}
 
-      http-request deny if {{ cond }} !{{ aclName }}
+      http-request set-var(txn.ac_denied) bool(1) if {{ cond }} !{{ aclName }}
         {%- end %}
         {%- if denylist != "" %}
           {%- var aclName = aclPrefix + "_denylist_" + ns + "_" + name %}
       # {{ replace(denyCommentFmt, "{KEY}", key) }}
       acl {{ aclName }} src {{ ValidateCidrList(denylist, denyAnnotation, key) }}
 
-      http-request deny if {{ cond }} {{ aclName }}
+      http-request set-var(txn.ac_denied) bool(1) if {{ cond }} {{ aclName }}
         {%- end %}
       {%- end macro %}
 

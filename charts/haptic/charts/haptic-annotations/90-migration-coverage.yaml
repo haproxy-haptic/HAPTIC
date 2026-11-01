@@ -14,6 +14,9 @@ _migrationCoverage:
       ingressClasses: ["haptic"]
       annotationPrefixes: ["haproxy-haptic.org/"]
     annotations:
+      haproxy-haptic.org/access-denied-response:
+        status: supported
+        note: "ConfigMap in the Ingress namespace (body, type file|lf-file, status, content-type) → `http-request deny deny_status <s> content-type <t> file|lf-file <path>` for a source the allow/deny-list refuses; lf-file placeholders limited to %[src], %[req.hdr(host)], %ID, %%."
       haproxy-haptic.org/affinity:
         status: supported
         note: "value 'cookie' enables the session-affinity cookie directive"

@@ -222,6 +222,7 @@ Request/response header manipulation, capture, CORS, source-IP allow/deny, and u
 
 | Annotation | Behavior |
 |------------|----------|
+| `haproxy-haptic.org/access-denied-response` | Names a ConfigMap in the Ingress's namespace whose page answers a source that `allowlist-source-range` or `denylist-source-range` refuses. See [Custom page for refused sources](#custom-page-for-refused-sources). |
 | `haproxy-haptic.org/allowlist-source-range` | Allows only the listed CIDRs and denies all other source IPs for the host. |
 | `haproxy-haptic.org/cors-allow-credentials` | Sets `Access-Control-Allow-Credentials: true` when enabled. |
 | `haproxy-haptic.org/cors-allow-headers` | Sets the `Access-Control-Allow-Headers` response header. |
@@ -241,6 +242,50 @@ Request/response header manipulation, capture, CORS, source-IP allow/deny, and u
 | `haproxy-haptic.org/request-set-header` | Sets request headers sent to the upstream, one `<name> <value>` per line. Changing a value avoids a reload; the first use of a new header name requires one. |
 | `haproxy-haptic.org/response-set-header` | Sets response headers, one `<name> <value>` per line. Changing a value avoids a reload; the first use of a new header name requires one. |
 | `haproxy-haptic.org/src-ip-header` | Derives the client source IP from the named request header via `http-request set-src`, from a per-route map; the first route to name a new header reloads once. Naming `X-Forwarded-For` also keeps the client's `X-Forwarded-For` for the route, as `forwardfor: add` does, unless the route sets `forwardfor`. `X-Real-IP`, `X-Client-IP`, and `Client-IP` must come from a listed trusted proxy or an operator snippet; this annotation doesn't exempt them from header filtering. |
+
+#### Custom page for refused sources
+
+By default a refused source gets HAProxy's `403` page. To tell users why and how to request access, point `access-denied-response` at a ConfigMap in the Ingress's namespace:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: access-denied
+  namespace: team-a
+data:
+  type: lf-file            # or file (the default)
+  status: "403"            # optional; any 4xx or 5xx code
+  content-type: text/html  # optional; default text/html; charset=utf-8
+  body: |
+    <p>%[req.hdr(host)] isn't enabled for your address %[src].
+    Request access at https://access.example.com.</p>
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: internal-app
+  namespace: team-a
+  annotations:
+    haproxy-haptic.org/allowlist-source-range: "10.20.0.0/16"
+    haproxy-haptic.org/access-denied-response: access-denied
+spec:
+  ingressClassName: haptic
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: app, port: {number: 80}}
+```
+
+- `type: file` sends the body unchanged. It costs nothing per request, so use it for static pages.
+- `type: lf-file` fills in placeholders on each request: `%[src]` (the client address), `%[req.hdr(host)]` (the requested host), `%ID` (the request ID) and `%%` (a literal `%`). Any other `%` sequence is rejected, because it could expose data that doesn't belong in the page.
+- The body can be up to 8192 bytes.
+- If the ConfigMap is missing or invalid, the Ingress is rejected when you apply it. An Ingress that already exists gets a Warning Event, and refused sources get the default `403`, so the source is still refused.
+- Changing the ConfigMap reloads HAProxy, which reads the page when it loads its configuration.
 
 ### Canary and traffic mirroring
 

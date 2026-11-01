@@ -64,11 +64,105 @@ templateSnippets:
         {%- if fragment != "" -%}{{- shared.Publish("fragments:haptic", ingress.Metadata.Namespace + "/" + ingress.Metadata.Name, fragment) -}}{%- end -%}
       {%- end -%}
 
+  # access-denied-response: <ConfigMap in the Ingress namespace> answers a
+  # source the allow/deny-list refuses. Keys: body (required), type file |
+  # lf-file (default file), status (default 403), content-type.
+  features-096-haptic-access-denied-response:
+    requires: [ingresses, configmaps]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/access-denied-response']"]
+      group: haptic-access-denied-response
+      effects: [publishValue, recordEvent]
+    template: |-
+      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- var ingress = resources.ingresses.GetSingle(
+        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
+      {%- if ingress != nil -%}
+      {%%
+        var ns = ingress.Metadata.Namespace
+        var key = ns + "/" + ingress.Metadata.Name
+        var name = ingress.Metadata.Annotations["haproxy-haptic.org/access-denied-response"]
+        var problem = ""
+        var response = map[string]any{}
+        if !regex_search(name, "^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$") {
+          problem = "names ConfigMap '" + name + "', which isn't a ConfigMap name in its own namespace"
+        } else {
+          var cm = resources.configmaps.GetSingle(ns, name)
+          if cm == nil {
+            problem = "names ConfigMap " + ns + "/" + name + ", which doesn't exist"
+          } else {
+            var ref = "names ConfigMap " + ns + "/" + name + ", "
+            var body = cm.Data["body"]
+            var kind = cm.Data["type"]
+            var status = cm.Data["status"]
+            var contentType = cm.Data["content-type"]
+            if kind == "" { kind = "file" }
+            if status == "" { status = "403" }
+            if contentType == "" { contentType = "text/html; charset=utf-8" }
+            var unknownPlaceholders = body
+            for _, allowed := range []string{"%%", "%[src]", "%[req.hdr(host)]", "%ID"} {
+              unknownPlaceholders = replace(unknownPlaceholders, allowed, "")
+            }
+            if body == "" {
+              problem = ref + "which has no body key"
+            } else if len(body) > 8192 {
+              problem = ref + "whose body is over 8192 bytes"
+            } else if kind != "file" && kind != "lf-file" {
+              problem = ref + "whose type '" + kind + "' isn't file or lf-file"
+            } else if !regex_search(status, "^[45][0-9][0-9]$") {
+              problem = ref + "whose status '" + status + "' isn't a 4xx or 5xx code"
+            } else if !regex_search(contentType, "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+( *; *[A-Za-z0-9_-]+=[A-Za-z0-9_.-]+)*$") {
+              problem = ref + "whose content-type '" + contentType + "' isn't a media type"
+            } else if kind == "lf-file" && strings_contains(unknownPlaceholders, "%") {
+              problem = ref + "whose lf-file body uses a placeholder other than %[src], %[req.hdr(host)], %ID or %%"
+            } else {
+              response = map[string]any{"route": key, "id": ns + "/" + name, "body": body, "type": kind, "status": status, "contentType": contentType}
+            }
+          }
+        }
+      %%}
+        {%- if problem != "" -%}
+          {{- WebhookRejectOrWarn(ingress, "AccessDeniedResponseInvalid", "Ingress " + key + " annotation 'haproxy-haptic.org/access-denied-response' " + problem + ". Refused sources get the default 403. Fix the ConfigMap or the annotation.") -}}
+        {%- else -%}
+          {{- shared.Publish("route", key, response) -}}
+        {%- end -%}
+      {%- end -%}
+
   frontend-filters-096-haptic-access-control:
     requires: [ingresses]
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}
-      {{- AccessControlLane("haptic") -}}
+      {%- import "util-register-map" for RegisterMap -%}
+      {%%
+        var responses = ""
+        if incremental_value_count("haptic-access-denied-response", "route") > 0 {
+          var rulesVal, _ = shared.ComputeIfAbsent("hapticAccessDeniedResponses", func() any {
+            var byID = map[string]map[string]any{}
+            var rows = []any{}
+            for _, v := range incremental_values("haptic-access-denied-response", "route") {
+              var r = v.(map[string]any)
+              byID[tostring(r["id"])] = r
+              rows = append(rows, tostring(r["route"]) + " " + tostring(r["id"]))
+            }
+            var lines = []string{}
+            for _, row := range sort_strings(rows) {
+              lines = append(lines, tostring(row))
+            }
+            var mapPath = RegisterMap("haptic-access-denied.map", lines, map[string]any{"ordered": false})
+            var out = ""
+            for _, id := range keys(byID) {
+              var r = byID[id]
+              var path, _ = fileRegistry.Register("file", "access-denied." + replace(id, "/", ".") + ".http", tostring(r["body"]))
+              out = out + "\nhttp-request deny deny_status " + tostring(r["status"]) + " content-type \"" + tostring(r["contentType"]) + "\" " + tostring(r["type"]) + " " + tostring(path) +
+                " if { var(txn.ac_denied) -m bool } { var(txn.resource_key),map(" + mapPath + ") -m str " + id + " }"
+            }
+            return out
+          })
+          responses = tostring(rulesVal)
+        }
+      %%}
+      {{- AccessControlLane("haptic", responses) -}}
 
   # Reload-free: request-set-header and response-set-header (newline-separated
   # "<name> <value>" records) become entries in ing-reqhdr.map / ing-reshdr.map
