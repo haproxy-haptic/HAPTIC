@@ -250,6 +250,8 @@ Each value of `rules` is an object:
 | `satisfiedBy` | string | `tls` — satisfied by `spec.tls` on the resource **or** the chart-wide default HTTPS |
 | `namespaces` | list | Apply the rule only to resources in these namespaces. Omitted or empty: every namespace |
 | `exemptNamespaces` | list | Skip the rule for resources in these namespaces. Other rules still apply there |
+| `selector` | map | Apply the rule only to resources whose labels match: `matchLabels` and `matchExpressions` with `In`, `NotIn`, `Exists`, or `DoesNotExist`, as in a Kubernetes label selector. See [Scope a rule by label](operations/governance.md#scope-a-rule-by-label) |
+| `defaultFrom` | map | `path` (a concrete JSONPath with at most one `[*]`) and `values` (a map from each value found there to the default). Values missing from the map use `default`; values that map to different defaults are a violation and get `default`. See [Pick a default by host](operations/governance.md#pick-a-default-by-host) |
 | `enforcement` | string | `reject` (default) or `audit` |
 | `message` | string | Custom violation message (optional) |
 
