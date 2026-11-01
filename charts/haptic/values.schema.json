@@ -533,6 +533,9 @@
                     "customResponses": {
                       "type": "object",
                       "properties": {
+                        "defaultErrorPages": {
+                          "type": "string"
+                        },
                         "expressions": {
                           "type": "object",
                           "properties": {

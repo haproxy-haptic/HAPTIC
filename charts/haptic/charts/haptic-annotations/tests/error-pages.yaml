@@ -24,6 +24,11 @@ _fx:
 
 validationTests:
 
+  _global:
+    extraContext:
+      customResponses:
+        defaultErrorPages: ""
+
   test-haptic-error-pages:
     description: >-
       error-pages replaces HAProxy's own 502 and 503 pages for the Ingress's
@@ -368,3 +373,61 @@ validationTests:
         - *errorPagesIngress
     assertions:
       - {type: contains, target: rendering_error, pattern: "runs a letter or digit into a % variable"}
+
+  test-haptic-error-pages-operator-default:
+    description: >-
+      customResponses.defaultErrorPages gives every Ingress the operator's 403
+      and 503 pages; an Ingress's own ConfigMap overrides its 503 (#583).
+    extraContext:
+      customResponses:
+        defaultErrorPages: haptic/org-pages
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: haptic, name: org-pages}
+          data:
+            403.body: "Request access at https://access.example.com."
+            403.content-type: text/plain
+            503.body: "Down for maintenance."
+            503.content-type: text/plain
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: error-pages}
+          data:
+            503.body: "Team page."
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: plain
+            annotations:
+              haproxy-haptic.org/allowlist-source-range: "10.0.0.0/8"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: plain.example.com
+                http: *httpRoot
+        - *errorPagesIngress
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "file:error-page.haptic.org-pages.403.http", pattern: '^Request access at https://access\.example\.com\.$'}
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?ms)^defaults haptic-base$.*?^\s+http-error status 503 content-type "text/plain" file \S*error-page\.haptic\.org-pages\.503\.http$.*?^defaults '
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s+http-error status 503 content-type "text/html; charset=utf-8" file \S*error-page\.default\.error-pages\.503\.http$'}
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^\s*http-request deny deny_status 403 content-type "text/plain" file \S*error-page\.haptic\.org-pages\.403\.http if \{ var\(txn\.ac_denied\) -m bool \}\n\s*http-request deny if \{ var\(txn\.ac_denied\) -m bool \}$'
+
+  test-haptic-error-pages-operator-default-missing-fails:
+    description: A defaultErrorPages ConfigMap that doesn't exist fails the render.
+    extraContext:
+      customResponses:
+        defaultErrorPages: haptic/absent
+    fixtures:
+      ingresses:
+        - *errorPagesIngress
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'customResponses\.defaultErrorPages names ConfigMap haptic/absent, which doesn.t exist'}

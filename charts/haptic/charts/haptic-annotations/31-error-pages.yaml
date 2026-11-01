@@ -80,6 +80,53 @@ templateSnippets:
         return pages, ""
       } -%}
 
+  # Publishes the pages of the ConfigMap customResponses.defaultErrorPages names.
+  features-097-haptic-default-error-pages:
+    requires: [configmaps]
+    incremental:
+      bindingsTemplate: '{{- toJSON(map[string]any{"configmaps": map[string]any{"ref": dig_string(extraContext, "", "customResponses", "defaultErrorPages"), "expressions": dig(extraContext, "customResponses", "expressions")}}) -}}'
+      group: haptic-default-error-pages
+      effects: [publishValue]
+    template: |-
+      {%- import "util-haptic-error-pages" for ErrorPages -%}
+      {%- var ns = dig_string(item, "", "metadata", "namespace") -%}
+      {%- var name = dig_string(item, "", "metadata", "name") -%}
+      {%- if tostring(props["ref"]) == ns + "/" + name -%}
+        {%- var pages, problem = ErrorPages(ns, name, props["expressions"]) -%}
+        {%- if problem != "" -%}
+          {{- fail("controller.config.templatingSettings.extraContext.customResponses.defaultErrorPages " + problem + ".") -}}
+        {%- end -%}
+        {%- var published = map[string]any{} -%}
+        {%- for _, code := range keys(pages) -%}{%- published[code] = pages[code] -%}{%- end -%}
+        {{- shared.Publish("pages", ns + "/" + name, published) -}}
+      {%- end -%}
+
+  defaults-settings-450-haptic-default-error-pages:
+    template: |-
+      {%%
+        var ref = extraContext | dig_string("", "customResponses", "defaultErrorPages")
+        var lines = []string{}
+        if ref != "" {
+          if !regex_search(ref, "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?/[^/]+$") {
+            fail("controller.config.templatingSettings.extraContext.customResponses.defaultErrorPages must be <namespace>/<name>, got '" + ref + "'.")
+          }
+          if incremental_value_count("haptic-default-error-pages", "pages") == 0 {
+            fail("controller.config.templatingSettings.extraContext.customResponses.defaultErrorPages names ConfigMap " + ref + ", which doesn't exist.")
+          }
+          for _, pagesAny := range incremental_values("haptic-default-error-pages", "pages") {
+            var pages = pagesAny.(map[string]any)
+            for _, code := range keys(pages) {
+              var page = pages[code].(map[string]any)
+              var path, _ = fileRegistry.Register("file", tostring(page["file"]), tostring(page["body"]))
+              if code != "403" {
+                lines = append(lines, "http-error status " + code + " content-type \"" + tostring(page["contentType"]) + "\" " + tostring(page["type"]) + " " + tostring(path))
+              }
+            }
+          }
+        }
+      %%}
+      {{- join(lines, "\n") -}}
+
   # Reports a bad ConfigMap once per Ingress and publishes its 403 page for
   # frontend-filters-096-haptic-access-control.
   features-096-haptic-error-pages:
