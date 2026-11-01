@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `haproxy-haptic.org/sso-auth` signs users in with OpenID Connect through the SPOA hub's sso-auth plugin, using a provider Secret in the Ingress's namespace; `sso-auth-allowed-groups` admits only members of the listed groups, and `pass-token` forwards the ID or access token as `Authorization: Bearer` and refreshes it ([#548](https://github.com/haproxy-haptic/HAPTIC/issues/548)).
 - `controller.config.templatingSettings.extraContext.ssoAuth.allowedIssuers` lists the identity providers sso-auth provider Secrets may use.
 - `haproxy-haptic.org/access-denied-response` names a ConfigMap whose page answers a source that the source allow- or deny-list refuses, sent as a static `file` or as an `lf-file` with `%[src]`, `%[req.hdr(host)]` and `%ID` filled in ([#571](https://github.com/haproxy-haptic/HAPTIC/issues/571)).
+- `controller.config.templatingSettings.extraContext.tls.requireSniHostMatch` and the `haproxy-haptic.org/require-sni-host-match` annotation answer `421` when an HTTPS request's Host differs from its TLS SNI ([#567](https://github.com/haproxy-haptic/HAPTIC/issues/567)).
 - `vector.requestMetrics.serverLabel: counters` adds the `server` label to `requests_total` only, keeping it off the histograms ([#564](https://github.com/haproxy-haptic/HAPTIC/issues/564)).
 
 #### Changed

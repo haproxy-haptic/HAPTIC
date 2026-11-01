@@ -688,6 +688,26 @@ templateSnippets:
       http-request return status 421 if {{ mismatch }}
       {%- end %}
 
+  # A request whose Host differs from the TLS SNI is answered 421 (RFC 9110
+  # 15.5.20); a client that coalesced the connection retries on a new one.
+  # `scope` narrows it, e.g. to the routes in a map; empty applies to all.
+  util-sni-host-mismatch:
+    template: |-
+      {%- macro SniHostMismatch(label string, scope string) %}
+      {%- var mismatch = "{ ssl_fc } { ssl_fc_has_sni 1 } { var(txn.sni_host) -m found } " + scope + " !{ ssl_fc_sni,lower,strcmp(txn.sni_host) eq 0 }" %}
+      # {{ label }}
+      http-request set-var(txn.sni_host) req.fhdr(Host),lower,field(1,:) if { ssl_fc } { ssl_fc_has_sni 1 }
+      http-request set-var(txn.denied_by) str(sni_host_mismatch) if {{ mismatch }}
+      http-request return status 421 if {{ mismatch }}
+      {%- end %}
+
+  frontend-filters-053-ssl-sni-host-match:
+    template: |
+      {%- import "util-sni-host-mismatch" for SniHostMismatch -%}
+      {%- if (extraContext | dig("tls", "requireSniHostMatch")) == true -%}
+      {{- SniHostMismatch("ssl/sni-host-match", "") }}
+      {%- end %}
+
   # HTTPS twin of base.yaml's http-bind-extra-010-proxy-protocol. Skipped when
   # passthrough moves the HTTPS port to ssl-tcp — terminating here would take
   # passthrough hosts out of SNI routing.

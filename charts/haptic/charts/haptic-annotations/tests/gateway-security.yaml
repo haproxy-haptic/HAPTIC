@@ -119,3 +119,95 @@ validationTests:
       - {type: contains, target: "map:haptic-methods.map", pattern: '(?m)^default/methods-hostless\|GET 1$'}
       # Never gate enforcement on an exact host match again.
       - {type: not_contains, target: haproxy.cfg, pattern: 'deny_status 405 if \{ var\(txn\.host\)'}
+
+  test-haptic-require-sni-host-match:
+    description: >-
+      require-sni-host-match "true" answers 421 on that route when the Host
+      differs from the TLS SNI; a route without it is not in the map (#567).
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: strict
+            annotations:
+              haproxy-haptic.org/require-sni-host-match: "true"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - {host: strict.example.com, http: *httpRoot}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: lenient
+            annotations:
+              haproxy-haptic.org/require-sni-host-match: "false"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - {host: lenient.example.com, http: *httpRoot}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-sni-host-routes.map", pattern: '(?m)^default/strict 1$'}
+      - {type: not_contains, target: "map:haptic-sni-host-routes.map", pattern: 'lenient'}
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'http-request return status 421 if \{ ssl_fc \} \{ ssl_fc_has_sni 1 \} \{ var\(txn\.sni_host\) -m found \} \{ var\(txn\.resource_key\),map\(\S*haptic-sni-host-routes\.map\) -m found \} !\{ ssl_fc_sni,lower,strcmp\(txn\.sni_host\) eq 0 \}'
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.denied_by\) str\(sni_host_mismatch\) if \{ ssl_fc \}'}
+      - {type: not_contains, target: haproxy.cfg, pattern: '# ssl/sni-host-match'}
+
+  test-haptic-require-sni-host-match-invalid:
+    description: A require-sni-host-match value other than "true" or "false" fails the render.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: strict
+            annotations:
+              haproxy-haptic.org/require-sni-host-match: "yes"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - {host: strict.example.com, http: *httpRoot}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'require-sni-host-match to .yes.\. Set "true" or "false"'}
+
+  test-ssl-require-sni-host-match-global:
+    description: >-
+      tls.requireSniHostMatch applies the 421 to every HTTPS request carrying
+      SNI, with no route scope (#567).
+    extraContext: {tls: {requireSniHostMatch: true}}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: plain}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - {host: plain.example.com, http: *httpRoot}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: '# ssl/sni-host-match'}
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'http-request return status 421 if \{ ssl_fc \} \{ ssl_fc_has_sni 1 \} \{ var\(txn\.sni_host\) -m found \}  !\{ ssl_fc_sni,lower,strcmp\(txn\.sni_host\) eq 0 \}'
+
+  test-ssl-require-sni-host-match-off-by-default:
+    description: Without the setting or the annotation no 421 Host/SNI rule renders.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: plain}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - {host: plain.example.com, http: *httpRoot}
+    assertions:
+      - {type: not_contains, target: haproxy.cfg, pattern: 'str\(sni_host_mismatch\)'}

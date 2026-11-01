@@ -231,6 +231,52 @@ templateSnippets:
       http-request deny deny_status 405 if { var(txn.am_method) -m found } !{ var(txn.resource_key),concat(|,txn.am_method),map({{ maps["methods"] }}) -m found }
       {%- end %}
 
+  # require-sni-host-match — 421 when the Host differs from the TLS SNI.
+  # haptic-sni-host-routes.map: "<route id>" -> 1.
+  features-053-haptic-sni-host-match:
+    requires: [ingresses]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/require-sni-host-match']"]
+      group: haptic-gateway-security
+      effects: [publishValue]
+    template: |-
+      {%- var ingress = resources.ingresses.GetSingle(
+        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
+      {%- if ingress != nil -%}
+        {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
+        {%- var value = ingress.Metadata.Annotations["haproxy-haptic.org/require-sni-host-match"] -%}
+        {%- if value != "true" && value != "false" -%}
+          {{- fail("Ingress " + key + " sets haproxy-haptic.org/require-sni-host-match to '" + value + "'. Set \"true\" or \"false\".") -}}
+        {%- end -%}
+        {%- if value == "true" -%}
+          {{- shared.Publish("shm", "any", "any") -}}
+          {{- shared.Publish("shm-route", key, key + " 1") -}}
+        {%- end -%}
+      {%- end -%}
+
+  frontend-filters-053-haptic-sni-host-match:
+    requires: [ingresses]
+    template: |
+      {%- import "util-register-map" for RegisterMap -%}
+      {%- import "util-sni-host-mismatch" for SniHostMismatch -%}
+      {%- if incremental_value_count("haptic-gateway-security", "shm") > 0 -%}
+      {%%
+        var routesVal, _ = shared.ComputeIfAbsent("hapticSniHostRoutes", func() any {
+          var rows = []any{}
+          for _, v := range incremental_values("haptic-gateway-security", "shm-route") {
+            rows = append(rows, tostring(v))
+          }
+          var lines = []string{}
+          for _, r := range sort_strings(rows) {
+            lines = append(lines, tostring(r))
+          }
+          return RegisterMap("haptic-sni-host-routes.map", lines, map[string]any{"ordered": false})
+        })
+      %%}
+      {{- SniHostMismatch("haptic/require-sni-host-match", "{ var(txn.resource_key),map(" + tostring(routesVal) + ") -m found }") }}
+      {%- end %}
+
   # ==========================================================================
   # require-content-type — 415 when a body method lacks an allowed type.
   # haptic-content-types.map: "<route id>|<type>" -> 1, a map_beg lookup on
