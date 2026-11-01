@@ -61,7 +61,7 @@ templateSnippets:
         {%- if fragment != "" -%}{{- shared.Publish("fragments:hi", ingress.Metadata.Namespace + "/" + ingress.Metadata.Name, fragment) -}}{%- end -%}
       {%- end -%}
 
-  frontend-filters-610-haproxy-ingress-access-control:
+  frontend-filters-098-haproxy-ingress-access-control:
     requires: [ingresses]
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}

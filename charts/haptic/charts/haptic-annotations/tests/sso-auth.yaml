@@ -96,6 +96,42 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: "http-request del-header Authorization if \\{ var\\(txn\\.sso_cfg\\) -m found \\}\\n(?s:.*?)http-request set-header Authorization \"Bearer %\\[var\\(txn\\.hub\\.sso_auth\\.token\\)\\]\""}
       - {type: contains, target: haproxy.cfg, pattern: "http-after-response add-header Set-Cookie %\\[var\\(txn\\.hub\\.sso_auth\\.set_cookie_header_2\\)\\]"}
 
+  test-haptic-sso-auth-allowlist-denies-before-sign-in:
+    _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
+    description: >-
+      A source the allowlist refuses is denied before any SPOE call, so it never
+      reaches the OIDC sign-in (#568).
+    extraContext: { spoaHub: *ssoSpoaHub, ssoAuth: *ssoAllowIdp }
+    fixtures:
+      services: *ssoServices
+      secrets: [*ssoSecret]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: app
+            name: web
+            annotations:
+              haproxy-haptic.org/sso-auth: app-oidc
+              haproxy-haptic.org/allowlist-source-range: "192.0.2.10/32"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: app.example.com
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend: {service: { name: web, port: { number: 80 } }}
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)http-request deny if \{ var\(txn\.ac\) -m str "haptic:allow" "haptic:both" \}[^\n]*\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request send-spoe-group spoa-hub-check-sso-auth '
+      - type: not_contains
+        target: haproxy.cfg
+        pattern: '(?m)http-request send-spoe-group [^\n]*\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request deny if \{ var\(txn\.ac\) -m str "haptic:allow"'
+
   test-haptic-sso-auth-issuer-not-allowed:
     _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
     description: >-

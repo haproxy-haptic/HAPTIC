@@ -68,7 +68,7 @@ templateSnippets:
         {{- PublishForwardFor(ingress, "haproxy.org/forwarded-for", map[string]string{"true": "", "false": "ignore"}, "") -}}
       {%- end -%}
 
-  frontend-filters-200-haproxytech-access-control:
+  frontend-filters-097-haproxytech-access-control:
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}
       {{- AccessControlLane("haproxytech") -}}
