@@ -186,6 +186,50 @@ func (u *upgrade) repairBrokenDeployment(ctx context.Context) error {
 	return s.UpgradeTraffic(ctx, "recovered")
 }
 
+// completePartlyAppliedRelease leaves one library at a revision its config does
+// not name, as a sync that failed between objects does; the next hooked upgrade
+// must pass its hooks and its apply complete the release (#559).
+func (u *upgrade) completePartlyAppliedRelease(ctx context.Context) error {
+	s := u.session
+	libraries, err := readJSON[unstructured.UnstructuredList](ctx, s, "get", "haproxytemplatelibraries")
+	if err != nil {
+		return err
+	}
+	if len(libraries.Items) == 0 {
+		return errors.New("release has no template library to leave behind")
+	}
+	name := libraries.Items[0].GetName()
+	patch, err := json.Marshal([]jsonPatchOp{{jsonPatchReplace, "/spec/revision", "partly-applied"}})
+	if err != nil {
+		return err
+	}
+	if _, err := s.Kube(ctx, nil, "patch", "haproxytemplatelibrary", name, "--type=json", "--field-manager="+stagingManager, "-p", string(patch)); err != nil {
+		return err
+	}
+	if err := u.releaseStagingOwnership(ctx, name); err != nil {
+		return err
+	}
+	if _, err := s.Helm(ctx, append(u.targetArgs(u.chart), "--timeout", "20m")...); err != nil {
+		return err
+	}
+	// Helm 3 patches only what changed between release manifests, so the stray
+	// revision survives the upgrade; complete it the way an Argo CD sync applies.
+	if err := u.applyTargetCustomResources(ctx, "--field-manager=helm"); err != nil {
+		return err
+	}
+	library, err := readJSON[unstructured.Unstructured](ctx, s, "get", "haproxytemplatelibrary", name)
+	if err != nil {
+		return err
+	}
+	if revision, _, _ := unstructured.NestedString(library.Object, "spec", "revision"); revision == "partly-applied" {
+		return fmt.Errorf("upgrade left library %s at the partly applied revision", name)
+	}
+	if err := s.WaitValidated(ctx, 180*time.Second); err != nil {
+		return err
+	}
+	return s.UpgradeTraffic(ctx, "completed")
+}
+
 func (u *upgrade) stageBrokenLiveConfiguration(ctx context.Context) error {
 	s := u.session
 	if u.baseline != handoverBaseline {
@@ -212,7 +256,7 @@ func (u *upgrade) stageBrokenLiveConfiguration(ctx context.Context) error {
 	if name == "" {
 		return errors.New("released main-template library is missing")
 	}
-	patch, err := json.Marshal([]jsonPatchOp{{"replace", "/spec/haproxyConfig/template", brokenTemplate}})
+	patch, err := json.Marshal([]jsonPatchOp{{jsonPatchReplace, "/spec/haproxyConfig/template", brokenTemplate}})
 	if err != nil {
 		return err
 	}
@@ -225,6 +269,8 @@ func (u *upgrade) stageBrokenLiveConfiguration(ctx context.Context) error {
 // stagingManager owns the injected breakage only until releaseStagingOwnership
 // drops it; a retained owner would make the repair's server-side apply conflict.
 const stagingManager = "upgrade-scenario-staging"
+
+const jsonPatchReplace = "replace"
 
 type jsonPatchOp struct {
 	Op    string `json:"op"`
@@ -244,7 +290,7 @@ func (u *upgrade) releaseStagingOwnership(ctx context.Context, name string) erro
 	}
 	patch, err := json.Marshal([]jsonPatchOp{
 		{"test", "/metadata/resourceVersion", library.GetResourceVersion()},
-		{"replace", "/metadata/managedFields", kept},
+		{jsonPatchReplace, "/metadata/managedFields", kept},
 	})
 	if err != nil {
 		return err

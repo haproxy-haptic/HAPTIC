@@ -41,16 +41,12 @@ func readLiveConfiguration(ctx context.Context, cluster *liveCluster, namespace,
 	if err != nil {
 		return nil, fmt.Errorf("read existing library references: %w", err)
 	}
+	// A library at another revision than its config names is a partly applied
+	// release; validateAssembly rejects it, so the validated incoming set
+	// completes it instead of every hooked upgrade failing here (#559).
 	for _, ref := range refs {
-		library, err := snapshot.read(ctx, cluster, templateLibraryGVR, namespace, ref.Name)
-		if apierrors.IsNotFound(err) {
-			continue
-		}
-		if err != nil {
+		if _, err := snapshot.read(ctx, cluster, templateLibraryGVR, namespace, ref.Name); err != nil && !apierrors.IsNotFound(err) {
 			return nil, err
-		}
-		if conversion.RevisionOf(library) != ref.Revision {
-			return nil, fmt.Errorf("existing library %s/%s has a different revision from its config; finish the current apply before upgrading", namespace, ref.Name)
 		}
 	}
 	if err := snapshot.requireUnchanged(ctx, cluster); err != nil {

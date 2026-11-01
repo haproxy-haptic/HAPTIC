@@ -74,13 +74,18 @@ func TestLiveConfigurationDistinguishesMissingLibraryFromAPIAndTornApply(t *test
 		_, err := readLiveConfiguration(t.Context(), cluster, "test", "old-config")
 		require.ErrorContains(t, err, "denied")
 	})
-	t.Run("revision mismatch is not recovery", func(t *testing.T) {
+	t.Run("partly applied release uses validated recovery", func(t *testing.T) {
 		cluster, _, library := preparationFixture()
 		require.NoError(t, unstructured.SetNestedField(library.Object, "r2", "spec", "revision"))
 		_, err := cluster.dyn.Resource(templateLibraryGVR).Namespace("test").Update(t.Context(), library, metav1.UpdateOptions{})
 		require.NoError(t, err)
-		_, err = readLiveConfiguration(t.Context(), cluster, "test", "old-config")
-		require.ErrorContains(t, err, "different revision")
+		snapshot, err := readLiveConfiguration(t.Context(), cluster, "test", "old-config")
+		require.NoError(t, err)
+		require.ErrorContains(t, snapshot.validateAssembly(), `at revision "r1", but it reports "r2"`)
+		compatible, err := assessLiveConfiguration(t.Context(), snapshot, schemaSource{}, slog.New(slog.DiscardHandler))
+		require.NoError(t, err)
+		assert.False(t, compatible)
+		require.NoError(t, snapshot.requireUnchanged(t.Context(), cluster))
 	})
 	t.Run("missing member appears during preparation", func(t *testing.T) {
 		cluster, _, library := preparationFixture()
