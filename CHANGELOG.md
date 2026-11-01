@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `oauth` annotations of the HAPTIC and haproxy-ingress libraries send the request's path and query as `rd` to oauth2-proxy's sign-in instead of the literal `%[path]`; a trailing `$escaped_request_uri` in any `auth-signin` URL is expanded the same way ([#550](https://github.com/haproxy-haptic/HAPTIC/issues/550)).
 - The `oauth` annotations no longer apply external authentication to the Ingress's own oauth2-proxy path, which redirected browsers in a loop ([#551](https://github.com/haproxy-haptic/HAPTIC/issues/551)).
 - The `vector` and `spoa-hub` sidecar health checks no longer trigger Falco's "Redirect STDOUT/STDIN to Network Connection in Container" rule every few seconds ([#555](https://github.com/haproxy-haptic/HAPTIC/issues/555)).
+- Source allow-lists and deny-lists of every annotation family are enforced before the SPOA hub, so a refused client is denied before WAF, external authentication or OIDC sign-in ([#568](https://github.com/haproxy-haptic/HAPTIC/issues/568)).
 
 #### Security
 

@@ -567,8 +567,9 @@ Snippets use numeric prefixes (e.g., `backends-500-ingress`) to control executio
 | Range | Purpose | Examples |
 |-------|---------|----------|
 | 000-099 | Infrastructure/initialization | `features-050-ssl-initialization` |
+| 096-099 | Source-address access control, before the SPOA hub (100) so a refused client reaches no WAF or auth call | `frontend-filters-096-haptic-access-control` |
 | 100-199 | Feature registration, basic config | `features-100-gateway-tls`, `frontend-filters-100-server-header` |
-| 200-299 | Access control, security | `frontend-filters-200-haproxytech-access-control` |
+| 200-299 | Request limits, security | `frontend-filters-250-request-body-size` |
 | 300-399 | CORS, header manipulation | `frontend-filters-300-haproxytech-cors` |
 | 400-499 | Redirects, rewrites | `frontend-filters-450-haproxytech-redirects` |
 | 500-599 | Core functionality | `backends-500-ingress`, `map-host-500-gateway` |

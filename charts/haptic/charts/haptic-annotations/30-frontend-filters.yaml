@@ -64,7 +64,7 @@ templateSnippets:
         {%- if fragment != "" -%}{{- shared.Publish("fragments:haptic", ingress.Metadata.Namespace + "/" + ingress.Metadata.Name, fragment) -}}{%- end -%}
       {%- end -%}
 
-  frontend-filters-810-haptic-access-control:
+  frontend-filters-096-haptic-access-control:
     requires: [ingresses]
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}

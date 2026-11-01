@@ -24,7 +24,7 @@ templateSnippets:
         {%- if fragment != "" -%}{{- shared.Publish("fragments:ni", ingress.Metadata.Namespace + "/" + ingress.Metadata.Name, fragment) -}}{%- end -%}
       {%- end -%}
 
-  frontend-filters-700-nginx-ingress-access-control:
+  frontend-filters-099-nginx-ingress-access-control:
     requires: [ingresses]
     template: |-
       {%- import "util-access-control-lane" for AccessControlLane -%}
