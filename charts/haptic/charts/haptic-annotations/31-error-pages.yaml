@@ -29,6 +29,7 @@ templateSnippets:
         }
         var allowed = []string{}
         var alternatives = "%%"
+        var bareVariables = []string{}
         for _, entryName := range keys(configured) {
           var entry = configured.(map[string]any)[entryName]
           var enabled = entry | dig("enabled")
@@ -42,6 +43,9 @@ templateSnippets:
           if enabled == true {
             allowed = append(allowed, expression)
             alternatives = alternatives + "|" + sanitize_regex(expression)
+            if regex_search(expression, "^%[A-Za-z]+$") {
+              bareVariables = append(bareVariables, sanitize_regex(expression))
+            }
           }
         }
         for _, code := range keys(codes) {
@@ -64,6 +68,9 @@ templateSnippets:
           }
           if kind == "lf-file" && !regex_search(body, "^(?:[^%]|" + alternatives + ")*$") {
             return pages, ref + "whose lf-file " + code + ".body uses an expression the operator hasn't allowed; use only " + join(allowed, ", ") + " or %%"
+          }
+          if kind == "lf-file" && len(bareVariables) > 0 && regex_search(body, "(?:" + join(bareVariables, "|") + ")[A-Za-z0-9_]") {
+            return pages, ref + "whose lf-file " + code + ".body runs a letter or digit into a % variable such as %ID; add a space or punctuation after it"
           }
           pages[code] = map[string]any{
             "file": "error-page." + ns + "." + name + "." + code + ".http",

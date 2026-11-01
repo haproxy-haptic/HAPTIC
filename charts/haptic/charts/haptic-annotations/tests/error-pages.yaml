@@ -348,3 +348,23 @@ validationTests:
       - {type: contains, target: events, pattern: "names ConfigMap default/absent, which doesn't exist"}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s*http-request deny if \{ var\(txn\.ac_denied\) -m bool \}$'}
       - {type: not_contains, target: haproxy.cfg, pattern: 'deny_status 403 content-type'}
+
+  test-haptic-error-pages-rejects-run-on-variable:
+    description: >-
+      HAProxy reads %IDs as one variable name and fails to load, so a letter
+      right after a bare variable is rejected before it reaches the config.
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: ingresses, namespace: default, name: ep-ingress}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: error-pages}
+          data:
+            503.type: lf-file
+            503.body: "Request %IDs failed."
+      ingresses:
+        - *errorPagesIngress
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "runs a letter or digit into a % variable"}
