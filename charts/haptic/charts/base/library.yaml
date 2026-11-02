@@ -1888,6 +1888,7 @@ templateSnippets:
 
   frontend-filters-250-request-body-size:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {%- var bsMap, _ = pathResolver.GetPath("body-size.map", "map") -%}
       {# Resource-agnostic request body-size enforcement. The per-backend limit
          (bytes) is looked up from body-size.map keyed on the resolved backend;
@@ -1905,7 +1906,7 @@ templateSnippets:
           copy of the deny's; `deny` ends rule processing, so the first matching
           gate's value is the one that survives. #}
       http-request set-var(txn.denied_by) str(body_too_large) if { var(txn.haptic_body_limit) -m int gt 0 } { req.body_size,sub(txn.haptic_body_limit) -m int gt 0 }
-      http-request deny deny_status 413 if { var(txn.haptic_body_limit) -m int gt 0 } { req.body_size,sub(txn.haptic_body_limit) -m int gt 0 }
+      {{- Refusal("deny deny_status 413", "{ var(txn.haptic_body_limit) -m int gt 0 } { req.body_size,sub(txn.haptic_body_limit) -m int gt 0 }") }}
 
   frontend-filters-260-request-set-host:
     template: |
@@ -2139,6 +2140,28 @@ templateSnippets:
     template: |-
       {%- macro FrontendFilterChain() -%}
       {{- on_own_lines(render_glob "frontend-filters-*") -}}
+      {%- end macro -%}
+
+  # Refusal(rule, cond) emits `http-request <rule> if <cond>` after the
+  # refusal-pages-* rules, which see rule, cond and refusalStatus.
+  util-refusal:
+    template: |-
+      {%- macro Refusal(rule string, cond string) string -%}
+      {%%
+        var refusalStatus = ""
+        var words = split(rule, " ")
+        for i, w := range words {
+          if (w == "deny_status" || w == "status") && i+1 < len(words) {
+            refusalStatus = words[i+1]
+            break
+          }
+        }
+        if refusalStatus == "" {
+          fail("Refusal rule '" + rule + "' names no deny_status or status.")
+        }
+      %%}
+      {{- on_own_lines(render_glob "refusal-pages-*" inherit_context) }}
+      http-request {{ rule }} if {{ cond }}
       {%- end macro -%}
 
   util-register-map:

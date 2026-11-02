@@ -517,6 +517,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
         --test test-gateway-policy-waf-catalogs \
         --test test-gateway-policy-waf-baseline \
         --test test-haptic-rate-limit-shared-ip \
+        --test test-haptic-rate-limit-shared-error-page \
         --test test-haptic-rate-limit-shared-ip-allowlist \
         --test test-haptic-rate-limit-shared-ip-before-waf \
         --test test-haptic-rate-limit-shared-exact-consumer \

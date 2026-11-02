@@ -222,7 +222,7 @@ Request/response header manipulation, capture, CORS, source-IP allow/deny, and u
 
 | Annotation | Behavior |
 |------------|----------|
-| `haproxy-haptic.org/error-pages` | Names a ConfigMap in the Ingress's namespace whose pages replace the `403` HAProxy sends a source that `allowlist-source-range` or `denylist-source-range` refuses, and the `500`, `502`, `503`, and `504` it generates for the Ingress's backends. See [Custom error pages](#custom-error-pages). |
+| `haproxy-haptic.org/error-pages` | Names a ConfigMap in the Ingress's namespace whose pages replace the `401`, `403`, `413`, and `429` HAProxy sends when it refuses a request, and the `500`, `502`, `503`, and `504` it generates for the Ingress's backends. See [Custom error pages](#custom-error-pages). |
 | `haproxy-haptic.org/allowlist-source-range` | Allows only the listed CIDRs and denies all other source IPs for the host. |
 | `haproxy-haptic.org/cors-allow-credentials` | Sets `Access-Control-Allow-Credentials: true` when enabled. |
 | `haproxy-haptic.org/cors-allow-headers` | Sets the `Access-Control-Allow-Headers` response header. |
@@ -245,7 +245,7 @@ Request/response header manipulation, capture, CORS, source-IP allow/deny, and u
 
 #### Custom error pages
 
-HAProxy answers with its own page when it refuses a source (`403`) or when a backend has no available server (`503`), times out (`504`), or returns an invalid response (`502`). To replace those pages for an Ingress, point `error-pages` at a ConfigMap in its namespace. Each key is prefixed with the status code it replaces:
+HAProxy answers with its own page when it refuses a request (`401`, `403`, `413`, `429`) or when a backend has no available server (`503`), times out (`504`), or returns an invalid response (`502`). To replace those pages for an Ingress, point `error-pages` at a ConfigMap in its namespace. Each key is prefixed with the status code it replaces:
 
 ```yaml
 apiVersion: v1
@@ -281,7 +281,13 @@ spec:
               service: {name: app, port: {number: 80}}
 ```
 
-- Codes `403`, `500`, `502`, `503`, and `504` are accepted. The `403` page answers sources the allow- or deny-list refuses. A response the backend sends itself is passed through unchanged.
+- Codes `401`, `403`, `413`, `429`, `500`, `502`, `503`, and `504` are accepted. A refusal page answers every refusal of the Ingress with that status:
+    - `401`: JWT, API key, HMAC, external authentication, and SSO sign-in
+    - `403`: the allow- or deny-list, the WAF, SSO groups, and consumer groups
+    - `413`: the request-body size limits
+    - `429`: the rate limits, keeping their `Retry-After` header
+
+    A response the backend sends itself is passed through unchanged. Basic authentication's `401` keeps HAProxy's page.
 - `type: file` sends the body unchanged. It costs nothing per request, so use it for static pages.
 - `type: lf-file` fills in log-format expressions on each request. By default the body may use `%[src]` (the client address), `%[req.hdr(host),lower,url_enc]` (the requested host, URL-encoded so a wildcard host can't inject markup), `%ID` (the request ID) and `%%` (a literal `%`), written exactly like that. Any other `%` sequence is rejected.
 - The operator decides which expressions are allowed, in `controller.config.templatingSettings.extraContext.customResponses.expressions`:

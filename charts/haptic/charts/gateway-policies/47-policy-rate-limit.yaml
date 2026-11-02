@@ -6,10 +6,11 @@ maps:
 templateSnippets:
   frontend-filters-862-gateway-policy-consumer:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {%- var path, err = pathResolver.GetPath("gw-policy-consumer.map", "map") -%}
       {%- if err != nil -%}{{ fail(tostring(err)) }}{%- end -%}
       {{ "\n" }}http-request set-var(txn.denied_by) str(policy_consumer_missing) if { var(txn.policy_id),map({{ path }}) -m found } !{ var(txn.haptic_consumer),length gt 0 }
-      http-request deny deny_status 401 if { var(txn.policy_id),map({{ path }}) -m found } !{ var(txn.haptic_consumer),length gt 0 }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.policy_id),map(` + tostring(path) + `) -m found } !{ var(txn.haptic_consumer),length gt 0 }`) }}
 
   map-rate-limit-830-gateway-http:
     requires: [httproutes]

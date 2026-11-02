@@ -265,6 +265,7 @@ templateSnippets:
   frontend-filters-863-haptic-rate-limit:
     requires: [ingresses]
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {#
         Per-source rate limit on the client leg. sc1 is the slot this block owns
         (sc0 is left to the vendor libraries' backend limiters). The threshold
@@ -298,7 +299,7 @@ templateSnippets:
       http-request set-var(txn.denied_by) str(rate_limit_local) if { var(txn.lrl_counter) -m str req } { sc_http_req_rate(1),sub(txn.lrl_threshold) -m int gt 0 } !{ var(txn.rl_allow) -m bool }
       http-request set-var(txn.denied_by) str(rate_limit_local) if { var(txn.lrl_counter) -m str conn } { sc_conn_cur(1),sub(txn.lrl_threshold) -m int gt 0 } !{ var(txn.rl_allow) -m bool }
       {%- for _, s := range sort_strings(statuses) %}
-      http-request deny deny_status {{ s }} if { var(txn.lrl_status) -m str {{ s }} } { var(txn.denied_by) -m str rate_limit_local }
+      {{- Refusal(`deny deny_status ` + tostring(s), `{ var(txn.lrl_status) -m str ` + tostring(s) + ` } { var(txn.denied_by) -m str rate_limit_local }`) }}
       {%- end %}
       {%- end %}
 
