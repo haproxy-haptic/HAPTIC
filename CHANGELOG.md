@@ -15,9 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `fileRegistry.Register("secret", …)` delivers a file to sidecars under `secrets/` without a reload. Its content is published only as a Kubernetes Secret, and readable resources carry a keyed digest instead of a content digest.
 - `spec.dataplane.secretsDir` sets the secret file directory (default `/etc/haproxy/secrets`).
 - The `secret:<name>` validation test target asserts on a rendered secret file.
+- `haptic preflight --resources <path>` and `--resources-from-cluster` also render the configuration against the resources the controller will watch and run `haproxy -c` on the result ([#586](https://github.com/haproxy-haptic/HAPTIC/issues/586)).
 
 ### Fixed
 
+- A render no longer panics when a template imports a snippet exporting a `var` function both directly and from inside a macro; the snippet now initializes at whichever import runs first ([#585](https://github.com/haproxy-haptic/HAPTIC/issues/585)).
 - After a release was only partly applied, the pre-rollout hook failed every later sync or upgrade with "finish the current apply before upgrading". It now validates the incoming release and applies it, which completes the partial one ([#559](https://github.com/haproxy-haptic/HAPTIC/issues/559)).
 
 ### Helm chart
@@ -27,14 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `secret-storage` tmpfs volume at `/etc/haproxy/secrets`, mounted in the agent and SPOA hub containers but not in the HAProxy container.
 - `haproxy-haptic.org/sso-auth` signs users in with OpenID Connect through the SPOA hub's sso-auth plugin, using a provider Secret in the Ingress's namespace; `sso-auth-allowed-groups` admits only members of the listed groups, and `pass-token` forwards the ID or access token as `Authorization: Bearer` and refreshes it ([#548](https://github.com/haproxy-haptic/HAPTIC/issues/548)).
 - `controller.config.templatingSettings.extraContext.ssoAuth.allowedIssuers` lists the identity providers sso-auth provider Secrets may use.
-- `haproxy-haptic.org/error-pages` names a ConfigMap whose pages replace the `403` HAProxy sends a refused source and the `500`, `502`, `503`, and `504` it generates for the Ingress's backends, as a static `file` or an `lf-file` limited to operator-allowed expressions ([#571](https://github.com/haproxy-haptic/HAPTIC/issues/571), [#577](https://github.com/haproxy-haptic/HAPTIC/issues/577)).
+- Governance rules take a label `selector` to apply only to matching resources, and `defaultFrom` to pick a default by a value of the resource such as its hosts ([#582](https://github.com/haproxy-haptic/HAPTIC/issues/582)).
+- `haproxy-haptic.org/error-pages` names a ConfigMap whose pages replace the `401`, `403`, `413`, and `429` HAProxy sends when it refuses a request and the `500`, `502`, `503`, and `504` it generates for the Ingress's backends, as a static `file` or an `lf-file` limited to operator-allowed expressions ([#571](https://github.com/haproxy-haptic/HAPTIC/issues/571), [#577](https://github.com/haproxy-haptic/HAPTIC/issues/577), [#578](https://github.com/haproxy-haptic/HAPTIC/issues/578)).
 - `controller.config.templatingSettings.extraContext.customResponses.defaultErrorPages` names a ConfigMap whose error pages apply to every Ingress; an Ingress's own `error-pages` override it per status code ([#583](https://github.com/haproxy-haptic/HAPTIC/issues/583)).
 - `controller.config.templatingSettings.extraContext.tls.requireSniHostMatch` and the `haproxy-haptic.org/require-sni-host-match` annotation answer `421` when an HTTPS request's Host differs from its TLS SNI ([#567](https://github.com/haproxy-haptic/HAPTIC/issues/567)).
 - `vector.requestMetrics.serverLabel: counters` adds the `server` label to `requests_total` only, keeping it off the histograms ([#564](https://github.com/haproxy-haptic/HAPTIC/issues/564)).
 
 #### Changed
 
+- The CRDs moved from `crds/` to the `haptic-crds` subchart (`charts/haptic-crds/crds/`), which keeps them out of the Helm release Secret; Helm still installs them, and the `apply-crds` hook still upgrades them ([#588](https://github.com/haproxy-haptic/HAPTIC/issues/588)).
 - The sso-auth plugin's SPOE message is `check-sso-auth`, and its default params are empty; the previous defaults made the plugin fail to load.
+- The controller requests `500m` CPU instead of `100m`, so its startup validation finishes within the startup probe on a busy node ([#570](https://github.com/haproxy-haptic/HAPTIC/issues/570)).
 
 #### Fixed
 

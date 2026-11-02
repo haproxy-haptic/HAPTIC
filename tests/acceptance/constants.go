@@ -27,7 +27,7 @@ const (
 	HAProxyTemplateConfigKind = "HAProxyTemplateConfig"
 
 	// CRDDirectory is the path to the CRD manifests relative to the test directory.
-	CRDDirectory = "../../charts/haptic/crds/"
+	CRDDirectory = "../../charts/haptic/charts/haptic-crds/crds/"
 )
 
 // ControllerImageName and ClusterName let a run use its own image and kind cluster.

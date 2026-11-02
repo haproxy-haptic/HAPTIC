@@ -99,7 +99,7 @@ func runApplyCRDs(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	crdDir := filepath.Join(chartDir, "crds")
+	crdDir := filepath.Join(chartDir, "charts", "haptic-crds", "crds")
 
 	crds, err := loadCRDs(crdDir)
 	if err != nil {

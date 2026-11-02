@@ -48,6 +48,40 @@ validationTests:
         pattern: "!\\{ var\\(txn\\.hub\\.rate_limit\\.allowed\\) -m found \\}"
       - {type: contains, target: haproxy.cfg, pattern: "http-after-response set-header X-RateLimit-Limit"}
 
+  test-haptic-rate-limit-shared-error-page:
+    _helm_skip_test: '{{ if not .Values.rateLimit.shared.enabled }}true{{ end }}'
+    description: >-
+      An error-pages 429 page answers the shared limiter's refusal with the
+      Ingress's body and keeps the refusal's Retry-After header (#578).
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: limits-page}
+          data:
+            429.body: "Slow down."
+            429.content-type: text/plain
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: rl-page
+            annotations:
+              haproxy-haptic.org/rate-limit-requests: "100"
+              haproxy-haptic.org/rate-limit-period: "1m"
+              haproxy-haptic.org/error-pages: limits-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: rl-page.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^\s*http-request deny deny_status 429 hdr Retry-After %\[var\(txn\.hub\.rate_limit\.retry_after\)\] content-type "text/plain" file \S*error-page\.default\.limits-page\.429\.http if \{ var\(txn\.rl_verdict_class\) -m str limited fallback-limited \} \{ var\(txn\.resource_key\),map\(\S*haptic-error-page-429\.map\) -m str default/limits-page \}\n\s*http-request deny deny_status 429 hdr Retry-After %\[var\(txn\.hub\.rate_limit\.retry_after\)\] if \{ var\(txn\.rl_verdict_class\) -m str limited fallback-limited \}$'
+
   # Gated on coraza too: the SPOE group it matches is emitted by the deployment,
   # not the fixture, so extraContext cannot make this self-contained (#129).
   test-haptic-rate-limit-shared-ip-allowlist:

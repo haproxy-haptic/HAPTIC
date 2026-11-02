@@ -941,8 +941,8 @@ extract-schemas: ## Extract CustomResourceDefinitions into $(SCHEMA_DIR) for off
 	@# (haproxytemplateconfigs, haproxycfgs, the auxiliary file
 	@# CRDs) are always relevant for chart authors who validate
 	@# templates that reference them.
-	@if [ -d charts/haptic/crds ]; then \
-		find charts/haptic/crds -name '*.yaml' -exec cp -v {} $(SCHEMA_DIR)/ \; ; \
+	@if [ -d charts/haptic/charts/haptic-crds/crds ]; then \
+		find charts/haptic/charts/haptic-crds/crds -name '*.yaml' -exec cp -v {} $(SCHEMA_DIR)/ \; ; \
 	fi
 	@# Upstream Gateway API CRDs from the module cache. Picks up
 	@# whichever release go.mod is currently on, so the extracted
@@ -1213,13 +1213,13 @@ verify-generate: ## Verify generated code (CRDs, DeepCopy) is up-to-date
 	@echo "Verifying generated code is up-to-date..."
 	@$(MAKE) generate-crds generate-deepcopy generate-chart-defaults
 	@# tests/schemas is the offline --schema-dir. Its HAPTIC CRD copies must
-	@# track charts/haptic/crds, or an author can validate a config against a
+	@# track charts/haptic/charts/haptic-crds/crds, or an author can validate a config against a
 	@# field the real CRD dropped (e.g. a deleted validationTest key) and never
 	@# see it pruned live. Refresh those copies deterministically (a plain cp,
 	@# no module cache) and fold them into the diff below. The Gateway API copies
 	@# come from GOMODCACHE via `make extract-schemas`; the go.mod pin guards
 	@# their version, so they are not regenerated here.
-	@cp charts/haptic/crds/*.yaml $(SCHEMA_DIR)/
+	@cp charts/haptic/charts/haptic-crds/crds/*.yaml $(SCHEMA_DIR)/
 	@# --intent-to-add stages a brand-new CRD copy as empty so git diff sees it
 	@# too, not just modifications to existing ones.
 	@git add --intent-to-add '$(SCHEMA_DIR)/haproxy-haptic.org_*.yaml' >/dev/null 2>&1 || true
@@ -1227,10 +1227,10 @@ verify-generate: ## Verify generated code (CRDs, DeepCopy) is up-to-date
 	@# running this with a freshly regenerated (but not yet committed) type threw
 	@# that work away and left the tree unbuildable. CI runs on a fresh checkout,
 	@# so there is nothing there worth reverting either.
-	@if ! git diff --quiet --exit-code -- charts/haptic/crds/ charts/haptic/charts/helm-helpers/files/default-values.json 'pkg/apis/**/zz_generated.*.go' '$(SCHEMA_DIR)/haproxy-haptic.org_*.yaml'; then \
+	@if ! git diff --quiet --exit-code -- charts/haptic/charts/haptic-crds/crds/ charts/haptic/charts/helm-helpers/files/default-values.json 'pkg/apis/**/zz_generated.*.go' '$(SCHEMA_DIR)/haproxy-haptic.org_*.yaml'; then \
 		echo ""; \
 		echo "ERROR: Generated files are out of date:"; \
-		git diff --stat -- charts/haptic/crds/ charts/haptic/charts/helm-helpers/files/default-values.json 'pkg/apis/**/zz_generated.*.go' '$(SCHEMA_DIR)/haproxy-haptic.org_*.yaml'; \
+		git diff --stat -- charts/haptic/charts/haptic-crds/crds/ charts/haptic/charts/helm-helpers/files/default-values.json 'pkg/apis/**/zz_generated.*.go' '$(SCHEMA_DIR)/haproxy-haptic.org_*.yaml'; \
 		echo ""; \
 		echo "The regenerated files have been left in place — commit them."; \
 		exit 1; \
@@ -1246,11 +1246,11 @@ generate-chart-defaults: ## Copy the chart's default values to where its templat
 
 generate-crds: ## Generate CRD manifests from Go types
 	@echo "Generating CRD manifests..."
-	@mkdir -p charts/haptic/crds
+	@mkdir -p charts/haptic/charts/haptic-crds/crds
 	$(CONTROLLER_GEN) crd:crdVersions=v1 \
 		paths=./pkg/apis/haproxytemplate/v1alpha1/... \
-		output:crd:dir=./charts/haptic/crds/
-	@echo "✓ CRD manifests generated in charts/haptic/crds/"
+		output:crd:dir=./charts/haptic/charts/haptic-crds/crds/
+	@echo "✓ CRD manifests generated in charts/haptic/charts/haptic-crds/crds/"
 
 generate-deepcopy: ## Generate DeepCopy methods for API types
 	@echo "Generating DeepCopy methods..."

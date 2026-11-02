@@ -10,7 +10,7 @@ Kubernetes API type definitions for the controller's CRDs.
 - `HAProxyCfg` — published rendered HAProxy config (output)
 - `HAProxyMapFile`, `HAProxyGeneralFile`, `HAProxyCRTListFile` — published auxiliary files (output)
 
-All `zz_generated_deepcopy.go` files are produced by `controller-gen`. The OpenAPI CRD manifests in `charts/haptic/crds/` are also generated from these types — `make generate` regenerates both.
+All `zz_generated_deepcopy.go` files are produced by `controller-gen`. The OpenAPI CRD manifests in `charts/haptic/charts/haptic-crds/crds/` are also generated from these types — `make generate` regenerates both.
 
 ## Workflow
 
@@ -20,12 +20,12 @@ make generate                    # runs controller-gen + clientset-gen
 make verify-generate             # CI runs this; fails if any output drifted
 ```
 
-Never hand-edit anything in this tree's `zz_generated_*.go` files or the corresponding output under `pkg/generated/` and `charts/haptic/crds/` — they are recreated from scratch on every `make generate`.
+Never hand-edit anything in this tree's `zz_generated_*.go` files or the corresponding output under `pkg/generated/` and `charts/haptic/charts/haptic-crds/crds/` — they are recreated from scratch on every `make generate`.
 
 ## See Also
 
 - `pkg/generated/` — typed clientset, informers, and listers generated from these types
-- `charts/haptic/crds/` — OpenAPI CRD manifests generated from these types
+- `charts/haptic/charts/haptic-crds/crds/` — OpenAPI CRD manifests generated from these types
 - `docs/site/docs/crd-reference.md` — operator-facing field reference
 - `Makefile` — `generate` / `generate-crds` / `generate-deepcopy` / `generate-clientset` targets
 

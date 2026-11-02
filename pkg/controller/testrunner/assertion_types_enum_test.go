@@ -34,7 +34,7 @@ func TestSupportedAssertionTypesMatchTheCRDEnum(t *testing.T) {
 		"haproxy-haptic.org_haproxytemplateconfigs.yaml",
 	} {
 		t.Run(crd, func(t *testing.T) {
-			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "charts", "haptic", "crds", crd))
+			raw, err := os.ReadFile(filepath.Join("..", "..", "..", "charts", "haptic", "charts", "haptic-crds", "crds", crd))
 			require.NoError(t, err)
 
 			var doc map[string]any

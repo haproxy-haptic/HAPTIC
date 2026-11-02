@@ -229,7 +229,8 @@ controller:
     runAsUser: 65532
   resources:  # @schema skipProperties; additionalProperties: true
     requests:
-      cpu: 100m
+      # Each start's load gate needs ~50 CPU-seconds within its 240s budget (#570).
+      cpu: 500m
       memory: 1Gi
     limits:
       memory: 1Gi

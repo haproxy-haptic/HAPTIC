@@ -2741,6 +2741,16 @@
       },
       "additionalProperties": false
     },
+    "haptic-crds": {
+      "type": "object",
+      "properties": {
+        "global": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
     "helm-helpers": {
       "type": "object",
       "properties": {

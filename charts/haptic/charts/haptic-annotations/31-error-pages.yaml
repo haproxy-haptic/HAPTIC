@@ -1,6 +1,6 @@
 templateSnippets:
-  # Reports a bad ConfigMap once per Ingress and publishes its 403 page for
-  # frontend-filters-096-haptic-access-control.
+  # Reports a bad ConfigMap once per Ingress and publishes the pages its
+  # frontend refusals answer with, for refusal-pages-500-haptic-error-pages.
   features-096-haptic-error-pages:
     requires: [ingresses, configmaps]
     incremental:
@@ -20,8 +20,47 @@ templateSnippets:
         {%- var pages, problem = ErrorPages(ns, name, props["expressions"]) -%}
         {%- if problem != "" -%}
           {{- WebhookRejectOrWarn(ingress, "ErrorPagesInvalid", "Ingress " + key + " annotation 'haproxy-haptic.org/error-pages' " + problem + ". Its errors keep the default pages. Fix the ConfigMap or the annotation.") -}}
-        {%- else if pages["403"] != nil -%}
-          {{- shared.Publish("route403", key, merge(pages["403"], map[string]any{"route": key, "id": ns + "/" + name})) -}}
+        {%- else -%}
+          {%- for _, code := range []string{"401", "403", "413", "429"} -%}
+            {%- if pages[code] != nil -%}
+              {{- shared.Publish("route" + code, key, merge(pages[code], map[string]any{"route": key, "id": ns + "/" + name})) -}}
+            {%- end -%}
+          {%- end -%}
+        {%- end -%}
+      {%- end -%}
+
+  # Answers a frontend refusal of a route whose error-pages ConfigMap has a page
+  # for its status; the map sends each route to its ConfigMap's page.
+  refusal-pages-500-haptic-error-pages:
+    template: |-
+      {%- import "util-register-map" for RegisterMap -%}
+      {%- if incremental_value_count("haptic-error-pages", "route" + refusalStatus) > 0 -%}
+        {%%
+          var pagesVal, _ = shared.ComputeIfAbsent("hapticErrorPages" + refusalStatus, func() any {
+            var byID = map[string]map[string]any{}
+            var rows = []any{}
+            for _, v := range incremental_values("haptic-error-pages", "route" + refusalStatus) {
+              var r = v.(map[string]any)
+              byID[tostring(r["id"])] = r
+              rows = append(rows, tostring(r["route"]) + " " + tostring(r["id"]))
+            }
+            var lines = []string{}
+            for _, row := range sort_strings(rows) {
+              lines = append(lines, tostring(row))
+            }
+            var mapPath = RegisterMap("haptic-error-page-" + refusalStatus + ".map", lines, map[string]any{"ordered": false})
+            var pages = []any{}
+            for _, id := range keys(byID) {
+              var r = byID[id]
+              var path, _ = fileRegistry.Register("file", tostring(r["file"]), tostring(r["body"]))
+              pages = append(pages, map[string]any{"id": id, "path": path, "map": mapPath, "contentType": r["contentType"], "type": r["type"]})
+            }
+            return pages
+          })
+        %%}
+        {%- for _, p := range pagesVal.([]any) -%}
+          {%- var page = p.(map[string]any) %}
+      http-request {{ rule }} content-type "{{ page["contentType"] }}" {{ page["type"] }} {{ page["path"] }} if {{ cond }} { var(txn.resource_key),map({{ page["map"] }}) -m str {{ page["id"] }} }
         {%- end -%}
       {%- end -%}
 
@@ -32,7 +71,7 @@ templateSnippets:
         {%- var pages, problem = ErrorPages(ingress.Metadata.Namespace, ingress.Metadata.Annotations["haproxy-haptic.org/error-pages"], props["customResponseExpressions"]) -%}
         {%- if problem == "" -%}
           {%- for _, code := range keys(pages) -%}
-            {%- if code == "403" -%}{%- continue -%}{%- end -%}
+            {%- if !hasPrefix(code, "5") -%}{%- continue -%}{%- end -%}
             {%- var page = pages[code] -%}
             {%- var path, _ = RegisterBackendFile("file", tostring(page["file"]), tostring(page["body"])) %}
       http-error status {{ code }} content-type "{{ page["contentType"] }}" {{ page["type"] }} {{ path }}

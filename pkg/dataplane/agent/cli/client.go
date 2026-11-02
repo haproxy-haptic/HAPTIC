@@ -165,6 +165,29 @@ func (c *Client) Execute(programs []Program) ([]api.OpResult, error) {
 	return run.results, err
 }
 
+// logCommand records one runtime command and HAProxy's verdict at debug level.
+// Only the verb and its target are logged: map keys and values can be API keys,
+// and a certificate payload carries its private key.
+func (c *Client) logCommand(cmd Command, result CommandResult) {
+	command := commandTarget(cmd.Text)
+	if result.Err != nil {
+		c.logger.Debug("runtime command refused", "command", command, "payload_bytes", len(cmd.Payload), "error", result.Err)
+		return
+	}
+	c.logger.Debug("runtime command applied", "command", command, "payload_bytes", len(cmd.Payload))
+}
+
+// commandTarget keeps a command's verb, object and target: `set map <path>`,
+// `add map @<version> <path>`, `set server <backend/server>`.
+func commandTarget(text string) string {
+	fields := strings.Fields(text)
+	keep := min(3, len(fields))
+	if keep == 3 && strings.HasPrefix(fields[2], "@") && len(fields) > 3 {
+		keep = 4
+	}
+	return strings.Join(fields[:keep], " ")
+}
+
 func (c *Client) abort(p Program) {
 	for _, cmd := range p.Abort {
 		if _, err := c.Raw(cmd.Text); err != nil {
@@ -251,7 +274,9 @@ func (e *execution) once(index int, cmd Command) (CommandResult, error) {
 	if err != nil {
 		return CommandResult{}, fmt.Errorf("runtime socket: %w", err)
 	}
-	return matchBatch(raw, []Command{{Text: experimentalPrefix, Optional: true}, cmd})[1], nil
+	result := matchBatch(raw, []Command{{Text: experimentalPrefix, Optional: true}, cmd})[1]
+	e.client.logCommand(cmd, result)
+	return result, nil
 }
 
 // add appends a command to the pending line, flushing around the commands that
@@ -292,6 +317,7 @@ func (e *execution) flush() error {
 	results := matchBatch(raw, commands)[1:]
 	var first error
 	for i, r := range results {
+		e.client.logCommand(pending[i].Command, r)
 		if pending[i].Capture && r.Err == nil {
 			e.version = mapVersion(r.Output)
 		}
