@@ -15,10 +15,12 @@
 package renderer
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -223,11 +225,13 @@ const gatewayFeatureLegacyProjectionRoot = `{%- import "util-reference-grant-per
 # grpc-routes={{ grpcRoutes | toJSON() }}`
 
 // The cold render's cost is bounded by allocations per Gateway rather than wall
-// time, which a loaded runner stretches (#576). The test is sequential, so no
-// other test allocates in this process meanwhile.
+// time, which a loaded runner stretches (#576), and by time per Gateway relative
+// to the 300-Gateway run, which load stretches alike. The test is sequential, so
+// no other test allocates in this process meanwhile.
 func TestGatewayFeaturePublicationsScaleByChangedGateway(t *testing.T) {
-	var baselinePerGateway float64
-	for _, gatewayCount := range []int{300, 1000, 3000} {
+	const baselineGateways = 300
+	var baselineAllocs, baselineNanos float64
+	for _, gatewayCount := range []int{baselineGateways, 1000, 3000} {
 		t.Run(fmt.Sprintf("gateways=%d", gatewayCount), func(t *testing.T) {
 			fixture := newGatewayFeaturePublicationFixture(t)
 			for index := range gatewayCount {
@@ -236,14 +240,19 @@ func TestGatewayFeaturePublicationsScaleByChangedGateway(t *testing.T) {
 
 			var before, after runtime.MemStats
 			runtime.ReadMemStats(&before)
-			cold := renderGatewayFeaturesAndCommit(t, fixture)
+			started := time.Now()
+			cold := renderGatewayFeaturesAndCommitWithin(t, fixture, t.Context())
+			nanos := float64(time.Since(started)) / float64(gatewayCount)
 			runtime.ReadMemStats(&after)
-			perGateway := float64(after.Mallocs-before.Mallocs) / float64(gatewayCount)
-			if baselinePerGateway == 0 {
-				baselinePerGateway = perGateway
+			allocs := float64(after.Mallocs-before.Mallocs) / float64(gatewayCount)
+			if gatewayCount == baselineGateways {
+				baselineAllocs, baselineNanos = allocs, nanos
 			} else {
-				assert.LessOrEqual(t, perGateway, 1.5*baselinePerGateway,
+				require.NotZero(t, baselineAllocs, "the gateways=300 baseline must run first")
+				assert.LessOrEqual(t, allocs, 1.5*baselineAllocs,
 					"cold render allocations per Gateway grew superlinearly")
+				assert.LessOrEqual(t, nanos, 3*baselineNanos,
+					"cold render time per Gateway grew superlinearly")
 			}
 			assert.Contains(t, cold.HAProxyConfig, "# typed-access-smoke: ns=default name=gateway-000000")
 			assert.Contains(t, cold.HAProxyConfig,
@@ -707,7 +716,13 @@ func assertGatewayFeatureExecutions(
 
 func renderGatewayFeaturesAndCommit(t *testing.T, fixture *gatewayRouteAnalysisFixture) *RenderResult {
 	t.Helper()
-	ctx := t.Context()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	return renderGatewayFeaturesAndCommitWithin(t, fixture, ctx)
+}
+
+func renderGatewayFeaturesAndCommitWithin(t *testing.T, fixture *gatewayRouteAnalysisFixture, ctx context.Context) *RenderResult {
+	t.Helper()
 	result, err := fixture.service.Render(ctx, fixture.provider, rendercontext.RenderModeReconcile)
 	require.NoError(t, err)
 	require.NoError(t, result.InputTransaction.Commit(ctx))
