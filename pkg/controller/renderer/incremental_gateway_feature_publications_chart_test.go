@@ -15,11 +15,10 @@
 package renderer
 
 import (
-	"context"
 	"encoding/base64"
 	"fmt"
+	"runtime"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -223,7 +222,11 @@ const gatewayFeatureLegacyProjectionRoot = `{%- import "util-reference-grant-per
 # http-routes={{ httpRoutes | toJSON() }}
 # grpc-routes={{ grpcRoutes | toJSON() }}`
 
+// The cold render's cost is bounded by allocations per Gateway rather than wall
+// time, which a loaded runner stretches (#576). The test is sequential, so no
+// other test allocates in this process meanwhile.
 func TestGatewayFeaturePublicationsScaleByChangedGateway(t *testing.T) {
+	var baselinePerGateway float64
 	for _, gatewayCount := range []int{300, 1000, 3000} {
 		t.Run(fmt.Sprintf("gateways=%d", gatewayCount), func(t *testing.T) {
 			fixture := newGatewayFeaturePublicationFixture(t)
@@ -231,9 +234,17 @@ func TestGatewayFeaturePublicationsScaleByChangedGateway(t *testing.T) {
 				fixture.addGateway(t, gatewayFeatureGateway(fmt.Sprintf("gateway-%06d", index), 8080))
 			}
 
-			coldStarted := time.Now()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
 			cold := renderGatewayFeaturesAndCommit(t, fixture)
-			assert.Less(t, time.Since(coldStarted), 30*time.Second)
+			runtime.ReadMemStats(&after)
+			perGateway := float64(after.Mallocs-before.Mallocs) / float64(gatewayCount)
+			if baselinePerGateway == 0 {
+				baselinePerGateway = perGateway
+			} else {
+				assert.LessOrEqual(t, perGateway, 1.5*baselinePerGateway,
+					"cold render allocations per Gateway grew superlinearly")
+			}
 			assert.Contains(t, cold.HAProxyConfig, "# typed-access-smoke: ns=default name=gateway-000000")
 			assert.Contains(t, cold.HAProxyConfig,
 				fmt.Sprintf("# typed-access-smoke: ns=default name=gateway-%06d", gatewayCount-1))
@@ -696,8 +707,7 @@ func assertGatewayFeatureExecutions(
 
 func renderGatewayFeaturesAndCommit(t *testing.T, fixture *gatewayRouteAnalysisFixture) *RenderResult {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
+	ctx := t.Context()
 	result, err := fixture.service.Render(ctx, fixture.provider, rendercontext.RenderModeReconcile)
 	require.NoError(t, err)
 	require.NoError(t, result.InputTransaction.Commit(ctx))
