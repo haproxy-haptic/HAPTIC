@@ -77,7 +77,7 @@ golang.org/x/tools v0.49.0/go.mod h1:SJNXV9DBKT0UbdttsQjbfJlAE/q+y36++zo3uL3N0Oo
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gotest.tools/v3 v3.5.2 h1:7koQfIKdy+I8UTetycgUqXWSDwpgv193Ka+qRsmBY8Q=
 gotest.tools/v3 v3.5.2/go.mod h1:LtdLGcnqToBH83WByAAi/wiwSFCArdFIUV/xxN4pcjA=
-oras.land/oras v1.3.5 h1:U0Fd58+ApiFKkWz4meDwrXMVI8Gum29OZBvBZTvzMGs=
-oras.land/oras v1.3.5/go.mod h1:sQLDLkeVpHeoEqOxcJdDjGshEwpHHl0Yw5MzhoMwaVA=
-oras.land/oras-go/v2 v2.6.4 h1:l4uv+UT7QK4Hju+KOEZ/c8iOjq3iZH7cULoRpUnSDAU=
-oras.land/oras-go/v2 v2.6.4/go.mod h1:imXEFiYkTZUVVYkfv/r5GVmWeiLkGtNQA8FU4F/sjKs=
+oras.land/oras v1.3.6 h1:Lhsfr2tQLjsu/+CJZp6vYatwKT+62fbIUTlp4lUrfOA=
+oras.land/oras v1.3.6/go.mod h1:ZIq0Z4vyJS5nRTtgHjHS0W6L/TPL05wr00ZpJeeJFq0=
+oras.land/oras-go/v2 v2.7.0 h1:0bXRBBSqYgPSjZRrhJbT71Rb465c+rdlft2xdQPxLtQ=
+oras.land/oras-go/v2 v2.7.0/go.mod h1:imXEFiYkTZUVVYkfv/r5GVmWeiLkGtNQA8FU4F/sjKs=
