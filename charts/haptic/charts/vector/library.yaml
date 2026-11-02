@@ -716,7 +716,8 @@ templateSnippets:
             # handshake plus keep-alive idle too early, and it can then end
             # before the backend it waited on. Request receipt is
             # accept + Th + Ti; the phases follow HAProxy's fixed order.
-            accept_ns = to_unix_timestamp(parse_timestamp(string(o.ts) ?? "", "%Y-%m-%dT%H:%M:%S%.fZ") ?? now(), unit: "nanoseconds")
+            # Microseconds can't overflow; Vector 0.61 makes the nanosecond conversion fallible.
+            accept_ns = to_unix_timestamp(parse_timestamp(string(o.ts) ?? "", "%Y-%m-%dT%H:%M:%S%.fZ") ?? now(), unit: "microseconds") * 1000
             ms = 1000000
             req_ns = accept_ns + (th + ti) * ms
             # te_us carries no whole-ms truncation; req+Ta is the fallback.
