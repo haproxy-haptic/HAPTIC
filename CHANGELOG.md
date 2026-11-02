@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Changed
 
 - The sso-auth plugin's SPOE message is `check-sso-auth`, and its default params are empty; the previous defaults made the plugin fail to load.
+- The controller requests `500m` CPU instead of `100m`, so its startup validation finishes within the startup probe on a busy node ([#570](https://github.com/haproxy-haptic/HAPTIC/issues/570)).
 
 #### Fixed
 
