@@ -282,8 +282,8 @@ spec:
 ```
 
 - Codes `401`, `403`, `413`, `429`, `500`, `502`, `503`, and `504` are accepted. A refusal page answers every refusal of the Ingress with that status:
-    - `401`: JWT, API key, HMAC, external authentication, and SSO sign-in
-    - `403`: the allow- or deny-list, the WAF, SSO groups, and consumer groups
+    - `401`: JWT, API key, HMAC, external authentication, and single sign-on (`sso-auth`)
+    - `403`: the allow- or deny-list, the WAF, `sso-auth-allowed-groups`, and consumer groups
     - `413`: the request-body size limits
     - `429`: the rate limits, keeping their `Retry-After` header
 
