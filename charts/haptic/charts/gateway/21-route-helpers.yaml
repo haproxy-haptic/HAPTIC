@@ -405,6 +405,13 @@ templateSnippets:
         } else if lifetime == "Permanent" && absolute > 0 {
           cookie = cookie + " attr Max-Age=" + tostring(absolute)
         }
+        var path = dig_string(sp, "", "cookie", "path")
+        if spType != "Header" && path != "" {
+          if !regex_search(path, "^/[A-Za-z0-9._~!$&()*+,=:@%/-]*$") {
+            return map[string]any{"error": "cookie path '" + path + "' contains a character HAProxy can't take in a cookie attribute"}
+          }
+          cookie = cookie + " attr Path=" + path
+        }
         var directives = []any{"# GEP-1619 session persistence (" + spType + ")", cookie, "dynamic-cookie-key " + cookieKey}
         if spType == "Header" {
           directives = append(directives,

@@ -966,16 +966,20 @@ extract-schemas: ## Extract CustomResourceDefinitions into $(SCHEMA_DIR) for off
 	@# vendor sync). Without -mod=mod, version detection silently fails
 	@# and the target emits the haptic CRDs only, surfacing as a
 	@# confusing "where are the Gateway API schemas?" moment downstream.
-	@gw_api_version="$$($(GO) list -mod=mod -m -f '{{.Version}}' sigs.k8s.io/gateway-api 2>/dev/null || true)"; \
+	@# Experimental is a superset of standard, and the chart's main template
+	@# profile tests the experimental channel; the schemas-ga-* bundles cover standard.
+	@gw_api_version="$$($(GO) list -mod=mod -m -f '{{.Version}}' sigs.k8s.io/gateway-api)" || exit 1; \
+	$(GO) mod download sigs.k8s.io/gateway-api || exit 1; \
 	gw_api_dir="$$($(GO) env GOMODCACHE)/sigs.k8s.io/gateway-api@$${gw_api_version}"; \
-	if [ -n "$$gw_api_version" ] && [ -d "$$gw_api_dir/config/crd/standard" ]; then \
-		for f in $$gw_api_dir/config/crd/standard/gateway.networking.k8s.io_*.yaml; do \
-			kind="$$(head -3 "$$f" | grep '^kind:' | awk '{print $$2}')"; \
-			if [ "$$kind" = "CustomResourceDefinition" ]; then \
-				cp -v "$$f" $(SCHEMA_DIR)/ ; \
-			fi \
-		done \
-	fi
+	if [ ! -d "$$gw_api_dir/config/crd/experimental" ]; then \
+		echo "Gateway API $$gw_api_version CRDs not found in $$gw_api_dir" >&2; exit 1; \
+	fi; \
+	for f in $$gw_api_dir/config/crd/experimental/gateway.networking.k8s.io_*.yaml; do \
+		kind="$$(head -3 "$$f" | grep '^kind:' | awk '{print $$2}')"; \
+		if [ "$$kind" = "CustomResourceDefinition" ]; then \
+			cp -v "$$f" $(SCHEMA_DIR)/ ; \
+		fi \
+	done
 	@echo
 	@echo "Schemas written to $(SCHEMA_DIR)/. Usage:"
 	@echo "  haptic validate -f config.yaml --schema-dir=$(SCHEMA_DIR)"

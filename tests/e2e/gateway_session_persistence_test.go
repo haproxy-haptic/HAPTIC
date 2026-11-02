@@ -71,12 +71,12 @@ spec:
   parentRefs: [{name: test-gateway}]
   hostnames: [%[3]s]
   rules:
-    - sessionPersistence: {type: %[4]s, sessionName: %[5]s}
+    - sessionPersistence: {type: %[4]s, %[8]s: {name: %[5]s}}
       backendRefs: [{name: %[6]s, port: %[7]d}]
 ---
 `
-			manifest := fmt.Sprintf(route, "cookie-route", ns, cookieHost, "Cookie", cookieName, backend.Service, backend.Port) +
-				fmt.Sprintf(route, "header-route", ns, headerHost, "Header", headerName, backend.Service, backend.Port)
+			manifest := fmt.Sprintf(route, "cookie-route", ns, cookieHost, "Cookie", cookieName, backend.Service, backend.Port, "cookie") +
+				fmt.Sprintf(route, "header-route", ns, headerHost, "Header", headerName, backend.Service, backend.Port, "header")
 			if err := kubectlApplyStdin(ctx, []byte(manifest)); err != nil {
 				t.Fatalf("apply HTTPRoutes: %v", err)
 			}
