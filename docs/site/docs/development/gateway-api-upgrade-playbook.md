@@ -60,15 +60,13 @@ verification. Work through the sections in order.
     profile's `⊘ <name> stripped:` output lines (one test name per line,
     `#` comments allowed).
 
-4. Regenerate the gateway library's `requires` annotations:
-
-    ```bash
-    helm template charts/haptic \
-      --set controller.templateLibraries.gateway.experimentalChannel=true \
-      | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
-      | yq ea '. as $i ireduce ({}; . * $i)' > /tmp/merged.yaml
-    python3 scripts/gen-gateway-requires.py /tmp/merged.yaml
-    ```
+4. Edit `requires` and `requiresFields` by hand. Add them where a snippet or
+    test starts using a resource kind or field the new release adds; leave
+    the existing ones alone. Some are deliberate feature gates that no code
+    path reads, such as `backendtlspolicies` on the BackendTLSPolicy
+    route-ancestor components, so don't regenerate them from the templates.
+    The degraded profiles in `./scripts/test-templates.sh` fail when a
+    snippet compiles against a kind its `requires` doesn't name.
 
 5. Nothing to re-pin. The conformance suite refuses to run when the installed
     CRDs and the suite disagree on `bundle-version`, so both installers derive
