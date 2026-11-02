@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/boumenot/gocover-cobertura v1.5.0
 	github.com/google/go-containerregistry v0.22.1
-	oras.land/oras v1.3.5
+	oras.land/oras v1.3.6
 )
 
 require (
@@ -38,5 +38,5 @@ require (
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
-	oras.land/oras-go/v2 v2.6.4 // indirect
+	oras.land/oras-go/v2 v2.7.0 // indirect
 )
