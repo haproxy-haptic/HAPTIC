@@ -246,9 +246,12 @@ templateSnippets:
   frontend-filters-076-nginx-ingress-mtls-match-cn:
     requires: [ingresses]
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {{- render "nginx-ingress-match-cn-publications" -}}
       {%- for _, rule := range incremental_values("nginx-ingress-match-cn", "rule") %}
-      {{ tostring(rule) }}
+        {%- var r = rule.(map[string]any) %}
+      # nginx-ingress/auth-tls-match-cn ({{ r["key"] }})
+      {{- Refusal("deny deny_status 403", tostring(r["cond"])) }}
       {%- end %}
 
   nginx-ingress-match-cn-publications:
@@ -271,7 +274,7 @@ templateSnippets:
           {{- fail("Invalid value for annotation 'nginx.ingress.kubernetes.io/auth-tls-match-cn' on Ingress '" + key + "': contains " + injection + ", which would break the client-certificate check. Remove it from the pattern.") -}}
         {%- end -%}
         {%- if pattern != "" -%}
-          {{- shared.Publish("rule", key, "# nginx-ingress/auth-tls-match-cn (" + key + ")\nhttp-request deny deny_status 403 if { var(txn.resource_key) -m str " + key + " } !{ ssl_c_s_dn(,0,rfc2253) -m reg \"" + EscapeDquoteValue(pattern) + "\" }") -}}
+          {{- shared.Publish("rule", key, map[string]any{"key": key, "cond": "{ var(txn.resource_key) -m str " + key + " } !{ ssl_c_s_dn(,0,rfc2253) -m reg \"" + EscapeDquoteValue(pattern) + "\" }"}) -}}
         {%- end -%}
       {%- end -%}
 
