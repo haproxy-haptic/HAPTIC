@@ -10,6 +10,7 @@ templateSnippets:
       {{- render "haptic-jwt-file-publications" default "" -}}
   frontend-filters-858-haptic-jwt:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {%- if incremental_value_count("haptic-jwt-routes", "any") > 0 -%}
       {%- var routes, e1 = pathResolver.GetPath("haptic-jwt-routes.map", "map") -%}
       {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
@@ -38,28 +39,28 @@ templateSnippets:
       {%- end %}
       http-request set-var(txn.haptic_jwt_alg) http_auth_bearer,jwt_header_query('$.alg') if { var(txn.jwt_state) -m str ok }
       http-request set-var(txn.denied_by) str(jwt_algorithm) if { var(txn.jwt_state) -m str ok } !{ var(txn.haptic_jwt_alg),strcmp(txn.jwt_alg) -m int 0 }
-      http-request deny deny_status 401 if { var(txn.jwt_state) -m str ok } !{ var(txn.haptic_jwt_alg),strcmp(txn.jwt_alg) -m int 0 }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } !{ var(txn.haptic_jwt_alg),strcmp(txn.jwt_alg) -m int 0 }`) }}
       {%- for _, k := range sort_strings(keys) %}
         {%- var pair = split(tostring(k), "|") %}
         {%- var pemPath, pe = pathResolver.GetPath(pair[1], "file") %}
         {%- if pe != nil %}{{ fail(tostring(pe)) }}{% end %}
       http-request set-var(txn.denied_by) str(jwt_signature) if { var(txn.jwt_state) -m str ok } { var(txn.jwt_alg) -m str {{ pair[0] }} } { var(txn.jwt_key) -m str {{ pair[1] }} } !{ http_auth_bearer,jwt_verify({{ pair[0] }},"{{ pemPath }}") -m int 1 }
-      http-request deny deny_status 401 if { var(txn.jwt_state) -m str ok } { var(txn.jwt_alg) -m str {{ pair[0] }} } { var(txn.jwt_key) -m str {{ pair[1] }} } !{ http_auth_bearer,jwt_verify({{ pair[0] }},"{{ pemPath }}") -m int 1 }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.jwt_alg) -m str ` + tostring(pair[0]) + ` } { var(txn.jwt_key) -m str ` + tostring(pair[1]) + ` } !{ http_auth_bearer,jwt_verify(` + tostring(pair[0]) + `,"` + tostring(pemPath) + `") -m int 1 }`) }}
       {%- end %}
       http-request set-var(txn.haptic_jwt_now) date() if { var(txn.jwt_state) -m str ok }
       http-request set-var(txn.haptic_jwt_exp) http_auth_bearer,jwt_payload_query('$.exp','int') if { var(txn.jwt_state) -m str ok }
       http-request set-var(txn.denied_by) str(jwt_expired) if { var(txn.jwt_state) -m str ok } { var(txn.haptic_jwt_exp) -m found } { var(txn.haptic_jwt_exp),sub(txn.haptic_jwt_now) -m int lt 0 }
-      http-request deny deny_status 401 if { var(txn.jwt_state) -m str ok } { var(txn.haptic_jwt_exp) -m found } { var(txn.haptic_jwt_exp),sub(txn.haptic_jwt_now) -m int lt 0 }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.haptic_jwt_exp) -m found } { var(txn.haptic_jwt_exp),sub(txn.haptic_jwt_now) -m int lt 0 }`) }}
       http-request set-var(txn.haptic_jwt_nbf) http_auth_bearer,jwt_payload_query('$.nbf','int') if { var(txn.jwt_state) -m str ok }
       http-request set-var(txn.denied_by) str(jwt_not_yet_valid) if { var(txn.jwt_state) -m str ok } { var(txn.haptic_jwt_nbf) -m found } { var(txn.haptic_jwt_nbf),sub(txn.haptic_jwt_now) -m int gt 0 }
-      http-request deny deny_status 401 if { var(txn.jwt_state) -m str ok } { var(txn.haptic_jwt_nbf) -m found } { var(txn.haptic_jwt_nbf),sub(txn.haptic_jwt_now) -m int gt 0 }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.haptic_jwt_nbf) -m found } { var(txn.haptic_jwt_nbf),sub(txn.haptic_jwt_now) -m int gt 0 }`) }}
       http-request set-var(txn.denied_by) str(jwt_issuer) if { var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(8,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.iss'),strcmp(txn.jwt_iss) -m int 0 }
-      http-request deny deny_status 401 if { var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(8,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.iss'),strcmp(txn.jwt_iss) -m int 0 }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(8,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.iss'),strcmp(txn.jwt_iss) -m int 0 }`) }}
       http-request set-var(txn.denied_by) str(jwt_audience) if { var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(9,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.aud'),strcmp(txn.jwt_aud) -m int 0 }
-      http-request deny deny_status 401 if { var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(9,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.aud'),strcmp(txn.jwt_aud) -m int 0 }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(9,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.aud'),strcmp(txn.jwt_aud) -m int 0 }`) }}
       {%- for _, cl := range sort_strings(reqs) %}
       http-request set-var(txn.denied_by) str(jwt_required_claim) if { var(txn.jwt_state) -m str ok } { var(txn.jwt_req) -m sub ,{{ cl }}, } !{ http_auth_bearer,jwt_payload_query('$.{{ cl }}') -m found }
-      http-request deny deny_status 401 if { var(txn.jwt_state) -m str ok } { var(txn.jwt_req) -m sub ,{{ cl }}, } !{ http_auth_bearer,jwt_payload_query('$.{{ cl }}') -m found }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.jwt_req) -m sub ,` + tostring(cl) + `, } !{ http_auth_bearer,jwt_payload_query('$.` + tostring(cl) + `') -m found }`) }}
       {%- end %}
       http-request set-var(txn.haptic_consumer) http_auth_bearer,jwt_payload_query('$.sub') if { var(txn.jwt_state) -m str ok } !{ var(txn.haptic_consumer) -m found }
       {%- for _, f := range sort_strings(fwds) %}

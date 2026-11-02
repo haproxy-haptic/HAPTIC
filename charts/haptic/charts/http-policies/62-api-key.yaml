@@ -1,6 +1,7 @@
 templateSnippets:
   frontend-filters-860-haptic-api-key:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {%- if incremental_value_count("haptic-api-key-routes", "any") > 0 -%}
       {%- var routes, e1 = pathResolver.GetPath("haptic-api-key-routes.map", "map") -%}
       {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
@@ -29,7 +30,7 @@ templateSnippets:
       {%- end %}
       http-request set-var(txn.ak_consumer) var(txn.ak_secret),concat(|,txn.haptic_apikey),map({{ keys }}) if { var(txn.ak_state) -m str ok } { var(txn.haptic_apikey) -m found }
       http-request set-var(txn.denied_by) str(api_key) if { var(txn.ak_state) -m str ok } !{ var(txn.ak_consumer) -m found }
-      http-request deny deny_status 401 if { var(txn.ak_state) -m str ok } !{ var(txn.ak_consumer) -m found }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.ak_state) -m str ok } !{ var(txn.ak_consumer) -m found }`) }}
       http-request set-var(txn.haptic_consumer) var(txn.ak_consumer) if { var(txn.ak_consumer) -m found } !{ var(txn.haptic_consumer) -m found }
       {%- for _, f := range sort_strings(fwds) %}
       http-request del-header {{ f }} if { var(txn.ak_fwd) -m str {{ f }} } { var(txn.ak_cfg),field(6,' ') -m str true }

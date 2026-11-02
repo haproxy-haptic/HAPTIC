@@ -730,6 +730,38 @@ validationTests:
         target: haproxy.cfg
         pattern: 'http-request deny deny_status 403 if \{ var\(txn\.resource_key\) -m str default/tenant-a \} !\{ ssl_c_s_dn\(,0,rfc2253\) -m reg "\^CN=a\(,\|\\\$\)" \}'
 
+  test-haptic-auth-tls-match-subject-error-page:
+    description: The Ingress's error-pages 403 page answers a certificate subject that doesn't match (#578).
+    fixtures:
+      secrets: [*clientCASecret]
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: cert-page}
+          data:
+            403.body: "Use your team certificate."
+            403.content-type: text/plain
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: tenant-a
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: "client-ca"
+              haproxy-haptic.org/auth-tls-match-subject: "^CN=a(,|$)"
+              haproxy-haptic.org/error-pages: cert-page
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: a.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^\s*# haptic/auth-tls-match-subject \(default/tenant-a\)\n\s*http-request deny deny_status 403 content-type "text/plain" file \S*error-page\.default\.cert-page\.403\.http if \{ var\(txn\.resource_key\) -m str default/tenant-a \} !\{ ssl_c_s_dn\(,0,rfc2253\) -m reg "\^CN=a\(,\|\\\$\)" \} \{ var\(txn\.resource_key\),map\(\S*haptic-error-page-403\.map\) -m str default/cert-page \}\n\s*http-request deny deny_status 403 if \{ var\(txn\.resource_key\) -m str default/tenant-a \}'
+
   test-haptic-auth-tls-match-subject-needs-secret:
     description: Without auth-tls-secret no certificate is verified for the host, so a subject match is refused instead of silently checking nothing.
     fixtures:

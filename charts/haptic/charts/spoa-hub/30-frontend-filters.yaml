@@ -18,6 +18,7 @@ templateSnippets:
   # block by the route library) is exempt: no dispatch, no verdict, no headers.
   util-spoa-rate-limit-dispatch:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {% macro DispatchSharedRateLimit(keySpec string, extraCond string, failClosed bool) string %}
       {%- if extraCond != "" %}{%- extraCond = " " + extraCond %}{%- end %}
       http-request unset-var(txn.rl_verdict_class)
@@ -31,13 +32,13 @@ templateSnippets:
       http-request set-var(txn.rl_key) var(txn.rl_budget),concat(|,txn.rl_dim) if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} }{{ extraCond }}
       http-request set-var(txn.rl_rule_invalid) bool(true) if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } !{ var(txn.rl_dim),length gt 0 }{{ extraCond }}
       http-request set-var(txn.denied_by) str(rate_limit_shared_invalid) if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } { var(txn.rl_rule_invalid) -m bool }{{ extraCond }}
-      http-request deny deny_status 429 hdr Retry-After 1 if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } { var(txn.rl_rule_invalid) -m bool }{{ extraCond }}
+      {{- Refusal(`deny deny_status 429 hdr Retry-After 1`, `{ var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str ` + tostring(keySpec) + ` } { var(txn.rl_rule_invalid) -m bool }` + tostring(extraCond)) }}
       http-request send-spoe-group spoa-hub-check-ratelimit check-ratelimit-group if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } !{ var(txn.rl_rule_invalid) -m bool }{{ extraCond }}
       http-request set-var(txn.rate_limit_degraded) str(1) if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } !{ var(txn.hub.rate_limit.allowed) -m found }{{ extraCond }}
       http-request set-var(txn.rate_limit_degraded) str(1) if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } { var(txn.hub.rate_limit.degraded) -m bool }{{ extraCond }}
       {%- if failClosed %}
       http-request set-var(txn.denied_by) str(rate_limit_shared_unavailable) if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } !{ var(txn.hub.rate_limit.allowed) -m found }{{ extraCond }}
-      http-request deny deny_status 429 hdr Retry-After 1 if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } !{ var(txn.hub.rate_limit.allowed) -m found }{{ extraCond }}
+      {{- Refusal(`deny deny_status 429 hdr Retry-After 1`, `{ var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str ` + tostring(keySpec) + ` } !{ var(txn.hub.rate_limit.allowed) -m found }` + tostring(extraCond)) }}
       {%- end %}
       http-request set-var(txn.rl_verdict_class) str(limited) if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } { var(txn.hub.rate_limit.allowed) -m found } !{ var(txn.hub.rate_limit.allowed) -m bool }{{ extraCond }}
       http-request set-var(txn.rl_verdict_class) str(fallback-limited) if { var(txn.rl_verdict_class) -m str limited } { var(txn.hub.rate_limit.degraded) -m bool } { var(txn.hub.rate_limit.accounted) -m bool }{{ extraCond }}
@@ -46,8 +47,8 @@ templateSnippets:
       http-request set-var(txn.denied_by) str(rate_limit_shared) if { var(txn.rl_verdict_class) -m str limited }{{ extraCond }}
       http-request set-var(txn.denied_by) str(rate_limit_shared_unavailable) if { var(txn.rl_verdict_class) -m str fallback-limited unavailable }{{ extraCond }}
       http-request set-var(txn.denied_by) str(rate_limit_shared_invalid) if { var(txn.rl_verdict_class) -m str invalid }{{ extraCond }}
-      http-request deny deny_status 429 hdr Retry-After %[var(txn.hub.rate_limit.retry_after)] if { var(txn.rl_verdict_class) -m str limited fallback-limited }{{ extraCond }}
-      http-request deny deny_status 429 hdr Retry-After 1 if { var(txn.rl_verdict_class) -m str unavailable invalid }{{ extraCond }}
+      {{- Refusal(`deny deny_status 429 hdr Retry-After %[var(txn.hub.rate_limit.retry_after)]`, `{ var(txn.rl_verdict_class) -m str limited fallback-limited }` + tostring(extraCond)) }}
+      {{- Refusal(`deny deny_status 429 hdr Retry-After 1`, `{ var(txn.rl_verdict_class) -m str unavailable invalid }` + tostring(extraCond)) }}
       {# http-after-response also covers HAProxy's internally generated 429. #}
       http-after-response set-header X-RateLimit-Limit %[var(txn.hub.rate_limit.limit)] if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } { var(txn.hub.rate_limit.allowed) -m found } !{ var(txn.hub.rate_limit.degraded) -m found } !{ var(txn.hub.rate_limit.accounted) -m found }{{ extraCond }}
       http-after-response set-header X-RateLimit-Remaining %[var(txn.hub.rate_limit.remaining)] if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } { var(txn.hub.rate_limit.allowed) -m found } !{ var(txn.hub.rate_limit.degraded) -m found } !{ var(txn.hub.rate_limit.accounted) -m found }{{ extraCond }}
@@ -180,6 +181,7 @@ templateSnippets:
   # (band 863), after native API-key/JWT rules have established txn.haptic_consumer.
   frontend-spoe-filters-020-rate-limit-config:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {%- var messagesAny = extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}) %}
       {%- var messages = toStringSlice(messagesAny) %}
       {%- if messages contains "check-ratelimit" %}
@@ -202,7 +204,7 @@ templateSnippets:
       http-request set-var(txn.rl_rule_invalid) bool(true) if { var(txn.rl_cfg) -m found } !{ var(txn.rl_mode) -m str lease exact }
       http-request set-var(txn.rl_rule_invalid) bool(true) if { var(txn.rl_cfg) -m found } !{ var(txn.rl_keyspec) -m str ip consumer }
       http-request set-var(txn.denied_by) str(rate_limit_shared_invalid) if { var(txn.rl_cfg) -m found } { var(txn.rl_rule_invalid) -m bool }
-      http-request deny deny_status 429 hdr Retry-After 1 if { var(txn.rl_cfg) -m found } { var(txn.rl_rule_invalid) -m bool }
+      {{- Refusal(`deny deny_status 429 hdr Retry-After 1`, `{ var(txn.rl_cfg) -m found } { var(txn.rl_rule_invalid) -m bool }`) }}
       {%- end %}
 
   # Source-IP limits are the public-edge DoS guard. Run them before Coraza so
@@ -262,6 +264,7 @@ templateSnippets:
   # (i.e. coraza is enabled).
   frontend-spoe-filters-050-coraza:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {%- var messagesAny = extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}) %}
       {%- var messages = toStringSlice(messagesAny) %}
       {%- if messages contains "check-request" %}
@@ -317,7 +320,7 @@ templateSnippets:
       http-request return status 411 if { var(txn.coraza_body_mode) -m str buffered } !{ var(txn.coraza_detect_only) -m bool } { req.hdr(Transfer-Encoding) -m found } !{ req.hdr(Content-Length) -m found }
       http-request set-var(txn.coraza_body_size) req.body_size if { var(txn.coraza_body_mode) -m str buffered }
       http-request set-var(txn.denied_by) str(waf_body_too_large) if { var(txn.coraza_body_mode) -m str buffered } !{ var(txn.coraza_detect_only) -m bool } { var(txn.coraza_body_size),sub(txn.coraza_max_body) -m int gt 0 }
-      http-request return status 413 if { var(txn.coraza_body_mode) -m str buffered } !{ var(txn.coraza_detect_only) -m bool } { var(txn.coraza_body_size),sub(txn.coraza_max_body) -m int gt 0 }
+      {{- Refusal(`return status 413`, `{ var(txn.coraza_body_mode) -m str buffered } !{ var(txn.coraza_detect_only) -m bool } { var(txn.coraza_body_size),sub(txn.coraza_max_body) -m int gt 0 }`) }}
       {# The wait is split by enforcement mode because only one of them is
           allowed to block.
 
@@ -344,7 +347,7 @@ templateSnippets:
       http-request wait-for-body time {{ corazaBodyWaitTimeout }} if { var(txn.coraza_body_mode) -m str buffered } !{ var(txn.coraza_detect_only) -m bool }
       http-request set-var(txn.coraza_body_len) req.body_len if { var(txn.coraza_body_mode) -m str buffered }
       http-request set-var(txn.denied_by) str(waf_body_incomplete) if { var(txn.coraza_body_mode) -m str buffered } !{ var(txn.coraza_detect_only) -m bool } { var(txn.coraza_body_len),sub(txn.coraza_body_size) -m int lt 0 }
-      http-request return status 413 if { var(txn.coraza_body_mode) -m str buffered } !{ var(txn.coraza_detect_only) -m bool } { var(txn.coraza_body_len),sub(txn.coraza_body_size) -m int lt 0 }
+      {{- Refusal(`return status 413`, `{ var(txn.coraza_body_mode) -m str buffered } !{ var(txn.coraza_detect_only) -m bool } { var(txn.coraza_body_len),sub(txn.coraza_body_size) -m int lt 0 }`) }}
       {# body-complete must mirror the wait split exactly, or it lies. The SPOE
           contract (20-config-content.yaml) is that a buffered profile sets
           complete only after HAProxy proves the advertised body fits and was
@@ -388,7 +391,7 @@ templateSnippets:
       http-request set-var(txn.denied_by) str(waf_status_400) if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 400 }
       http-request return status 400 if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 400 }
       http-request set-var(txn.denied_by) str(waf_status_413) if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 413 }
-      http-request return status 413 if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 413 }
+      {{- Refusal(`return status 413`, `{ var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 413 }`) }}
       http-request set-var(txn.denied_by) str(waf_unavailable) if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 500:599 }
       http-request return status 503 if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 500:599 }
       {# `-m found` first: an unset action means the plugin never answered, and
@@ -396,7 +399,7 @@ templateSnippets:
           requests fail-open exists to let through. Same gate the rate limiter
           puts on its 429 above. #}
       http-request set-var(txn.denied_by) str(waf) if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.action) -m found } !{ var(txn.hub.coraza.action) -m str allow }
-      http-request deny deny_status 403 if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.action) -m found } !{ var(txn.hub.coraza.action) -m str allow }
+      {{- Refusal(`deny deny_status 403`, `{ var(txn.coraza_active) -m bool } { var(txn.hub.coraza.action) -m found } !{ var(txn.hub.coraza.action) -m str allow }`) }}
       {%- end %}
       {%- end %}
 
@@ -408,6 +411,7 @@ templateSnippets:
 
   frontend-spoe-filters-100-external-auth:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {%- var messagesAny = extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}) %}
       {%- var messages = toStringSlice(messagesAny) %}
       {%- if messages contains "check-auth" %}
@@ -450,7 +454,7 @@ templateSnippets:
       http-request redirect location %[var(txn.auth_signin_base)]%[pathq,url_enc] code 302 if { var(txn.auth_url) -m found } !{ var(txn.hub.external_auth.allowed) -m bool } { var(txn.auth_signin_base) -m found }
       http-request redirect location %[var(txn.auth_signin)] code 302 if { var(txn.auth_url) -m found } !{ var(txn.hub.external_auth.allowed) -m bool } { var(txn.auth_signin) -m found }
       http-request set-var(txn.denied_by) str(external_auth) if { var(txn.auth_url) -m found } !{ var(txn.hub.external_auth.allowed) -m bool }
-      http-request deny deny_status 401 if { var(txn.auth_url) -m found } !{ var(txn.hub.external_auth.allowed) -m bool }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.auth_url) -m found } !{ var(txn.hub.external_auth.allowed) -m bool }`) }}
       {# Fail-headers extension point: ingress libraries emit one
           `http-after-response set-header` per unique header in any
           ingress's auth-headers-fail union. Runs on the deny
@@ -474,6 +478,7 @@ templateSnippets:
   # client-supplied credential could only be a forgery.
   frontend-spoe-filters-110-sso-auth:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {%- var messages = toStringSlice(extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{})) %}
       {%- if messages contains "check-sso-auth" && strip(render_glob "map-sso-auth-*") != "" %}
       {%- var sso = "{ var(txn.sso_cfg) -m found }" %}
@@ -491,9 +496,9 @@ templateSnippets:
       http-request set-var(txn.denied_by) str(sso_auth) if {{ sso }} !{ var({{ verdict }}.allowed) -m bool }
       http-request return status 503 if {{ sso }} !{ var({{ verdict }}.action) -m found }
       http-request redirect location %[var({{ verdict }}.redirect_url)] code 302 if {{ sso }} { var({{ verdict }}.action) -m str redirect }
-      http-request deny deny_status 403 if {{ sso }} { var({{ verdict }}.action) -m str forbidden }
+      {{- Refusal(`deny deny_status 403`, tostring(sso) + ` { var(` + tostring(verdict) + `.action) -m str forbidden }`) }}
       http-request deny deny_status 503 if {{ sso }} !{ var({{ verdict }}.allowed) -m bool } { var({{ verdict }}.status_code) -m int 503 }
-      http-request deny deny_status 401 if {{ sso }} !{ var({{ verdict }}.allowed) -m bool }
+      {{- Refusal(`deny deny_status 401`, tostring(sso) + ` !{ var(` + tostring(verdict) + `.allowed) -m bool }`) }}
       http-request set-header Authorization "Bearer %[var({{ verdict }}.token)]" if {{ sso }} { var({{ verdict }}.token) -m found }
       http-request set-header X-Auth-Request-User %[var({{ verdict }}.sub)] if {{ sso }} { var({{ verdict }}.sub) -m found }
       http-request set-header X-Auth-Request-Email %[var({{ verdict }}.email)] if {{ sso }} { var({{ verdict }}.email) -m found }
@@ -515,6 +520,7 @@ templateSnippets:
   # under DoS. Consumer quotas run in the selected backend after native auth.
   frontend-spoe-filters-200-request-validation:
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {%- var messagesAny = extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}) %}
       {%- var messages = toStringSlice(messagesAny) %}
       {%- if messages contains "validate-request" %}
@@ -536,18 +542,18 @@ templateSnippets:
       http-request return status 411 if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } !{ req.hdr(Content-Length) -m found }
       http-request set-var(txn.req_schema_body_size) req.body_size if { var(txn.req_schema_id) -m found } { method POST PUT PATCH }
       http-request set-var(txn.denied_by) str(schema_body_too_large) if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.req_schema_body_size),sub(txn.req_schema_max_body) -m int gt 0 }
-      http-request return status 413 if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.req_schema_body_size),sub(txn.req_schema_max_body) -m int gt 0 }
+      {{- Refusal(`return status 413`, `{ var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.req_schema_body_size),sub(txn.req_schema_max_body) -m int gt 0 }`) }}
       http-request wait-for-body time {{ requestValidationWaitTimeout }} if { var(txn.req_schema_id) -m found } { method POST PUT PATCH }
       http-request set-var(txn.req_schema_body_len) req.body_len if { var(txn.req_schema_id) -m found } { method POST PUT PATCH }
       http-request set-var(txn.denied_by) str(schema_body_incomplete) if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.req_schema_body_len),sub(txn.req_schema_body_size) -m int lt 0 }
-      http-request return status 413 if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.req_schema_body_len),sub(txn.req_schema_body_size) -m int lt 0 }
+      {{- Refusal(`return status 413`, `{ var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.req_schema_body_len),sub(txn.req_schema_body_size) -m int lt 0 }`) }}
       http-request send-spoe-group spoa-hub-validate-request validate-request-group if { var(txn.req_schema_id) -m found } { method POST PUT PATCH }
       http-request set-var(txn.schema_degraded) str(1) if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } !{ var(txn.hub.api_gateway.allowed) -m found }
       {# Missing verdicts fail closed unless the route explicitly opts out. #}
       http-request set-var(txn.denied_by) str(schema_unavailable) if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } !{ var(txn.hub.api_gateway.allowed) -m found } !{ var(txn.req_schema_fail_open) -m str true }
       http-request return status 422 if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } !{ var(txn.hub.api_gateway.allowed) -m found } !{ var(txn.req_schema_fail_open) -m str true }
       http-request set-var(txn.denied_by) str(schema_body_too_large) if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.hub.api_gateway.outcome) -m str body_too_large }
-      http-request return status 413 if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.hub.api_gateway.outcome) -m str body_too_large }
+      {{- Refusal(`return status 413`, `{ var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.hub.api_gateway.outcome) -m str body_too_large }`) }}
       http-request set-var(txn.denied_by) str(schema_unsupported_media_type) if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.hub.api_gateway.outcome) -m str unsupported_media_type }
       http-request return status 415 if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.hub.api_gateway.outcome) -m str unsupported_media_type }
       http-request set-var(txn.denied_by) str(schema_invalid) if { var(txn.req_schema_id) -m found } { method POST PUT PATCH } { var(txn.hub.api_gateway.allowed) -m found } !{ var(txn.hub.api_gateway.allowed) -m bool }

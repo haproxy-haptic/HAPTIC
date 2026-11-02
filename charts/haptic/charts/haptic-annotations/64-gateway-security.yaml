@@ -536,6 +536,7 @@ templateSnippets:
   frontend-filters-861-haptic-hmac:
     requires: [ingresses]
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {#
         Annotations:
           - haproxy-haptic.org/hmac-secret: "<ns/name>" | "<name>" (required; Secret
@@ -576,14 +577,14 @@ templateSnippets:
       http-request wait-for-body time {{ bodyWait }} if { var(txn.hm_state) -m str ok } { var(txn.hm_signed) -m str body }
       {# wait-for-body also returns when the buffer fills: https://docs.haproxy.org/3.0/configuration.html#4.2-http-request%20wait-for-body #}
       http-request set-var(txn.denied_by) str(hmac_body_incomplete) if { var(txn.hm_state) -m str ok } { var(txn.hm_signed) -m str body } !{ req.body_len,sub(txn.hm_body_size) -m int 0 }
-      http-request return status 413 if { var(txn.hm_state) -m str ok } { var(txn.hm_signed) -m str body } !{ req.body_len,sub(txn.hm_body_size) -m int 0 }
+      {{- Refusal(`return status 413`, `{ var(txn.hm_state) -m str ok } { var(txn.hm_signed) -m str body } !{ req.body_len,sub(txn.hm_body_size) -m int 0 }`) }}
       {%- for _, a := range sort_strings(algs) %}
       http-request set-var(txn.haptic_hmac) req.body,hmac({{ a }},txn.hm_key),hex,lower if { var(txn.hm_state) -m str ok } { var(txn.hm_signed) -m str body } { var(txn.hm_alg) -m str {{ a }} }
       http-request set-var(txn.haptic_hmac) path,hmac({{ a }},txn.hm_key),hex,lower if { var(txn.hm_state) -m str ok } { var(txn.hm_signed) -m str path } { var(txn.hm_alg) -m str {{ a }} }
       {%- end %}
       {%- for _, h := range sort_strings(hdrs) %}
       http-request set-var(txn.denied_by) str(hmac) if { var(txn.hm_state) -m str ok } { var(txn.hm_hdr) -m str {{ h }} } !{ req.hdr({{ h }}),strcmp(txn.haptic_hmac) -m int 0 }
-      http-request deny deny_status 401 if { var(txn.hm_state) -m str ok } { var(txn.hm_hdr) -m str {{ h }} } !{ req.hdr({{ h }}),strcmp(txn.haptic_hmac) -m int 0 }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.hm_state) -m str ok } { var(txn.hm_hdr) -m str ` + tostring(h) + ` } !{ req.hdr(` + tostring(h) + `),strcmp(txn.haptic_hmac) -m int 0 }`) }}
       {%- end %}
       {%- end %}
 
@@ -734,6 +735,7 @@ templateSnippets:
   frontend-filters-862-haptic-consumer-groups:
     requires: [ingresses]
     template: |
+      {%- import "util-refusal" for Refusal -%}
       {#
         Annotations:
           - haproxy-haptic.org/consumer-groups-secret: "<ns/name>" | "<name>" (required)
@@ -761,5 +763,5 @@ templateSnippets:
       http-request deny deny_status 503 if { var(txn.cg_state) -m str missing invalid }
       http-request set-var(txn.cg_group) var(txn.cg_secret),concat(|,txn.haptic_consumer),map({{ groups }}) if { var(txn.cg_state) -m str ok } { var(txn.haptic_consumer) -m found }
       http-request set-var(txn.denied_by) str(consumer_groups) if { var(txn.cg_state) -m str ok } !{ var(txn.resource_key),concat(|,txn.cg_group),map({{ allow }}) -m found }
-      http-request deny deny_status 403 if { var(txn.cg_state) -m str ok } !{ var(txn.resource_key),concat(|,txn.cg_group),map({{ allow }}) -m found }
+      {{- Refusal(`deny deny_status 403`, `{ var(txn.cg_state) -m str ok } !{ var(txn.resource_key),concat(|,txn.cg_group),map(` + tostring(allow) + `) -m found }`) }}
       {%- end %}

@@ -215,7 +215,7 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^\s*# ni/access-control\n(?:\s*http-request .*\n)*?\s*http-request deny deny_status 403 content-type "text/plain" file \S*error-page\.haptic\.org-pages\.403\.http if \{ var\(txn\.ac_denied\) -m bool \}\n\s*http-request deny if \{ var\(txn\.ac_denied\) -m bool \}$'
+        pattern: '(?m)^\s*# ni/access-control\n(?:\s*http-request .*\n)*?\s*http-request deny deny_status 403 content-type "text/plain" file \S*error-page\.haptic\.org-pages\.403\.http if \{ var\(txn\.ac_denied\) -m bool \}\n\s*http-request deny deny_status 403 if \{ var\(txn\.ac_denied\) -m bool \}$'
 
   test-nginx-ingress-access-control:
     description: Nginx Ingress whitelist-source-range creates ACL and deny rule

@@ -502,6 +502,7 @@ In addition to the snippet-based extension points below, libraries may declare f
 | `map-weighted-backend-*` | Weighted routing map | gateway |
 | `status-extra-*` | Status frontend directives (Prometheus exporter, custom endpoints) | base |
 | `status-patches-*` | Status patch registration (side effects only) | gateway, ingress |
+| `refusal-pages-*` | Custom-page rules ahead of a frontend refusal. Rendered by base's `Refusal(rule, cond)` with `rule`, `cond`, and `refusalStatus` inherited; append the page's `content-type` and `file` to `rule`. Every frontend `401`/`403`/`413`/`429` refusal goes through `Refusal` | haptic-annotations, ingress-annotations-compat |
 
 **Extension Point Variable Passing:**
 

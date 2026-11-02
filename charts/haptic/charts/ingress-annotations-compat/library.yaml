@@ -1387,9 +1387,8 @@ templateSnippets:
   util-access-control-lane:
     template: |-
       {%- import "util-register-map" for RegisterMap -%}
-      {#- `responses` are deny rules a family answers a refused route with; the
-          plain deny after them catches every other route. -#}
-      {%- macro AccessControlLane(family string, responses string) -%}
+      {%- import "util-refusal" for Refusal -%}
+      {%- macro AccessControlLane(family string) -%}
         {%- var fragments = incremental_values("ingress-access-control", "fragments:" + family) -%}
         {%- if incremental_value_count("ingress-access-control", family) > 0 -%}
           {%%
@@ -1468,17 +1467,19 @@ templateSnippets:
         {%- end -%}
         {%- for _, f := range fragments -%}{{- tostring(f) -}}{%- end -%}
         {%- if incremental_value_count("ingress-access-control", family) > 0 || len(fragments) > 0 %}
-      {{- responses }}
-          {%- for _, pagesAny := range incremental_values("default-error-pages", "pages") -%}
-            {%- var page, has403 = pagesAny.(map[string]any)["403"].(map[string]any) -%}
-            {%- if has403 -%}
-              {%- var path, _ = pathResolver.GetPath(tostring(page["file"]), "file") %}
-      http-request deny deny_status 403 content-type "{{ page["contentType"] }}" {{ page["type"] }} {{ path }} if { var(txn.ac_denied) -m bool }
-            {%- end -%}
-          {%- end %}
-      http-request deny if { var(txn.ac_denied) -m bool }
+      {{- Refusal("deny deny_status 403", "{ var(txn.ac_denied) -m bool }") }}
         {%- end -%}
       {%- end macro -%}
+
+  refusal-pages-900-default-error-pages:
+    template: |-
+      {%- for _, pagesAny := range incremental_values("default-error-pages", "pages") -%}
+        {%- var page, has = pagesAny.(map[string]any)[refusalStatus].(map[string]any) -%}
+        {%- if has -%}
+          {%- var path, _ = pathResolver.GetPath(tostring(page["file"]), "file") %}
+      http-request {{ rule }} content-type "{{ page["contentType"] }}" {{ page["type"] }} {{ path }} if {{ cond }}
+        {%- end -%}
+      {%- end -%}
 
   # ErrorPages returns an error-pages ConfigMap's pages by status code, or the
   # reason it can't be used.
@@ -1496,8 +1497,8 @@ templateSnippets:
         var ref = "names ConfigMap " + ns + "/" + name + ", "
         var codes = map[string]bool{}
         for _, dataKey := range keys(cm.Data) {
-          if !regex_search(dataKey, "^(403|500|502|503|504)\\.(body|type|content-type)$") {
-            return pages, ref + "whose key '" + dataKey + "' isn't <code>.body, <code>.type or <code>.content-type for 403, 500, 502, 503 or 504"
+          if !regex_search(dataKey, "^(401|403|413|429|500|502|503|504)\\.(body|type|content-type)$") {
+            return pages, ref + "whose key '" + dataKey + "' isn't <code>.body, <code>.type or <code>.content-type for 401, 403, 413, 429, 500, 502, 503 or 504"
           }
           codes[split(dataKey, ".")[0]] = true
         }
