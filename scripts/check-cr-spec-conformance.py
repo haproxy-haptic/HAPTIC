@@ -118,12 +118,12 @@ def main() -> int:
         sys.exit(f"usage: {Path(sys.argv[0]).name} <chart-dir> [helm template args...]")
     chart = Path(sys.argv[1])
     extra = sys.argv[2:]
-    declared = crd_spec_properties(chart / "crds")
+    declared = crd_spec_properties(chart / "charts" / "haptic-crds" / "crds")
     if not declared:
         print(f"no CRDs with a closed spec schema under {chart / 'crds'}", file=sys.stderr)
         return 1
 
-    schemas = crd_spec_schemas(chart / "crds")
+    schemas = crd_spec_schemas(chart / "charts" / "haptic-crds" / "crds")
     failures = []
     breaches = []
     checked = 0

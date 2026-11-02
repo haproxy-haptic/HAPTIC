@@ -1,0 +1,4 @@
+apiVersion: v2
+name: haptic-crds
+version: 0.1.0
+description: HAPTIC custom resource definitions, kept out of the release Secret
