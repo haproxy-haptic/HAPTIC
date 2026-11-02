@@ -377,6 +377,58 @@ validationTests:
       - {type: haproxy_valid}
       - {type: contains, target: haproxy.cfg, pattern: "(?m)^  cookie LONGLIVED insert indirect nocache dynamic maxlife 5400s attr Max-Age=5400$"}
 
+  test-httproute-session-persistence-cookie-path-permanent:
+    requires: [gatewayclasses, gateways, httproutes]
+    requiresFields: [httproutes.spec.rules.sessionPersistence.cookie.path]
+    _helm_skip_test: '{{ include "haptic.gatewayExperimental.disabled" . }}'
+    description: "GEP-1619 cookie.path scopes the inserted cookie, and cookie.lifetimeType Permanent gives it a Max-Age of absoluteTimeout."
+    extraContext: {controllerName: "haproxy-haptic.org/controller"}
+    fixtures:
+      gatewayclasses: *gatewayclassesGatewayclass
+      gateways: *sessionGateways
+      services: *sessionServices
+      httproutes:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: HTTPRoute
+          metadata: {name: session-path, namespace: default}
+          spec:
+            parentRefs: [{name: gw-sp}]
+            hostnames: [sticky.example.com]
+            rules:
+              - sessionPersistence:
+                  type: Cookie
+                  absoluteTimeout: 1h
+                  cookie: {name: CART, path: /shop, lifetimeType: Permanent}
+                backendRefs: [{name: sticky-svc, port: 80}]
+    assertions:
+      - {type: haproxy_valid}
+      - {type: contains, target: haproxy.cfg, pattern: "(?m)^  cookie CART insert indirect nocache dynamic maxlife 3600s attr Max-Age=3600 attr Path=/shop$"}
+
+  test-httproute-session-persistence-invalid-cookie-path-rejected:
+    requires: [gatewayclasses, gateways, httproutes]
+    requiresFields: [httproutes.spec.rules.sessionPersistence.cookie.path]
+    _helm_skip_test: '{{ include "haptic.gatewayExperimental.disabled" . }}'
+    description: "A cookie path that would break the cookie directive is refused instead of being spliced into the configuration."
+    extraContext: {controllerName: "haproxy-haptic.org/controller"}
+    fixtures:
+      gatewayclasses: *gatewayclassesGatewayclass
+      gateways: *sessionGateways
+      services: *sessionServices
+      httproutes:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: HTTPRoute
+          metadata: {name: session-bad-path, namespace: default}
+          spec:
+            parentRefs: [{name: gw-sp}]
+            hostnames: [sticky.example.com]
+            rules:
+              - sessionPersistence: {type: Cookie, cookie: {name: CART, path: "/a; Domain=evil"}}
+                backendRefs: [{name: sticky-svc, port: 80}]
+    assertions:
+      - {type: haproxy_valid}
+      - {type: not_contains, target: haproxy.cfg, pattern: "(?m)^  cookie "}
+      - {type: contains, target: events, pattern: "Warning InvalidSessionPersistence .*HTTPRoute default/session-bad-path rule 0: cookie path '/a; Domain=evil' contains a character"}
+
   test-httproute-session-persistence-invalid-name-rejected:
     requires: [gatewayclasses, gateways, httproutes]
     requiresFields: [httproutes.spec.rules.sessionPersistence.sessionName]

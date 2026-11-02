@@ -37,8 +37,12 @@ verification. Work through the sections in order.
     go mod vendor
     ```
 
-2. Refresh the offline schemas. The target copies the gateway CRDs of the
-    release pinned in `go.mod` from the module cache into `tests/schemas/`:
+2. Refresh the offline schemas. The target downloads the release pinned in
+    `go.mod` and copies its experimental-channel gateway CRDs into
+    `tests/schemas/`. The main template profile tests the experimental
+    channel; the `tests/schemas-ga-*` bundles cover the standard channel.
+    Commit the result: a test whose `requiresFields` the schemas lack is
+    stripped, not failed.
 
     ```bash
     make extract-schemas
