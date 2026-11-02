@@ -12,9 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `fileRegistry.Register("secret", …)` delivers a file to sidecars under `secrets/` without a reload. Its content is published only as a Kubernetes Secret, and readable resources carry a keyed digest instead of a content digest.
-- `spec.dataplane.secretsDir` sets the secret file directory (default `/etc/haproxy/secrets`).
-- The `secret:<name>` validation test target asserts on a rendered secret file.
+- `fileRegistry.Register("secret", …)` delivers a file to sidecars under `spec.dataplane.secretsDir` (default `/etc/haproxy/secrets`) without a reload. Its content is published only as a Kubernetes Secret, readable resources carry a keyed digest instead of a content digest, and the `secret:<name>` validation test target asserts on it.
 - `haptic preflight --resources <path>` and `--resources-from-cluster` also render the configuration against the resources the controller will watch and run `haproxy -c` on the result ([#586](https://github.com/haproxy-haptic/HAPTIC/issues/586)).
 
 ### Fixed
@@ -40,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Changed
 
 - The CRDs moved from `crds/` to the `haptic-crds` subchart (`charts/haptic-crds/crds/`), which keeps them out of the Helm release Secret; Helm still installs them, and the `apply-crds` hook still upgrades them ([#588](https://github.com/haproxy-haptic/HAPTIC/issues/588)).
-- The sso-auth plugin's SPOE message is `check-sso-auth`, and its default params are empty; the previous defaults made the plugin fail to load.
+- Update the bundled Vector image to 0.61.0.
 - The controller requests `500m` CPU instead of `100m`, so its startup validation finishes within the startup probe on a busy node ([#570](https://github.com/haproxy-haptic/HAPTIC/issues/570)).
 
 #### Fixed
