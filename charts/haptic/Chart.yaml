@@ -18,6 +18,8 @@ appVersion: "0.9.0"
 dependencies:
   - name: helm-helpers
     version: 0.1.0
+  - name: haptic-crds
+    version: 0.1.0
   - name: base
     version: 0.1.0
     condition: controller.templateLibraries.base.enabled
