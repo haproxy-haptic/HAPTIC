@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The CRDs moved from `crds/` to the `haptic-crds` subchart (`charts/haptic-crds/crds/`), which keeps them out of the Helm release Secret; Helm still installs them, and the `apply-crds` hook still upgrades them ([#588](https://github.com/haproxy-haptic/HAPTIC/issues/588)).
 - The sso-auth plugin's SPOE message is `check-sso-auth`, and its default params are empty; the previous defaults made the plugin fail to load.
+- The controller requests `500m` CPU instead of `100m`, so its startup validation finishes within the startup probe on a busy node ([#570](https://github.com/haproxy-haptic/HAPTIC/issues/570)).
 
 #### Fixed
 

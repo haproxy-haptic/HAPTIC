@@ -582,7 +582,7 @@ Configure controller placement, pod metadata, and runtime settings under `contro
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `controller.resources.requests.cpu` | string | `100m` | CPU request |
+| `controller.resources.requests.cpu` | string | `500m` | CPU request. Each start validates the configuration within 4 minutes, which needs about 50 CPU-seconds |
 | `controller.resources.requests.memory` | string | `1Gi` | Memory request (matches `limits.memory`) |
 | `controller.resources.limits.memory` | string | `1Gi` | Memory limit. The floor is the load gate, which runs the bundled `validationTests` on every config load and peaks above 512Mi — see [Controller resource sizing](./operations/performance.md#controller-resource-sizing) |
 

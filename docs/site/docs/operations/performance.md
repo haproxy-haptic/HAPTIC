@@ -1,6 +1,6 @@
 # Resource sizing and performance
 
-For a default installation, reserve **about 1 CPU core and 5.4 GiB of memory**
+For a default installation, reserve **about 1.85 CPU cores and 5.4 GiB of memory**
 across four pods: two controllers and two HAProxy pods, including their sidecars.
 These are Kubernetes resource requests, not constant CPU or memory consumption.
 The containers can use spare CPU when busy; their combined memory limits are
@@ -17,7 +17,7 @@ pods, and their default sidecars:
 
 | Routing workload | CPU request per controller | Memory request and limit per controller | Total installation requests: CPU / memory |
 | --- | ---: | ---: | ---: |
-| Small installation, up to roughly 100 routes | `100m` | `1Gi` (chart default) | 1.05 cores / 5.4 GiB |
+| Small installation, up to roughly 100 routes | `500m` (chart default) | `1Gi` (chart default) | 1.85 cores / 5.4 GiB |
 | Hundreds of routes, approaching 1,000 | `500m` | `2Gi` | 1.85 cores / 7.4 GiB |
 | Several thousand routes, around 3,000 | `1` | `4Gi` | 2.85 cores / 11.4 GiB |
 
@@ -46,6 +46,11 @@ controller:
 Set memory through the container's Kubernetes requests and limits. Leave CPU
 limits unset unless your cluster requires them, so startup and bursts of
 configuration changes can use spare node CPU.
+
+Don't lower the CPU request below the `500m` default. Each controller start
+validates the configuration before the pod becomes ready, which takes about 50
+CPU-seconds and must finish within 4 minutes. On a busy node, the request is
+the CPU the controller can count on.
 
 Keep the default `1Gi` controller memory budget even for a small route set:
 startup also compiles templates and validates the configuration. Setting memory
@@ -80,13 +85,13 @@ features. CPU uses Kubernetes units (`1000m` = one core).
 
 | Container | Copies | CPU request each | Memory request each | Memory limit each |
 | --- | ---: | ---: | ---: | ---: |
-| Controller | 2 | `100m` | `1Gi` | `1Gi` |
+| Controller | 2 | `500m` | `1Gi` | `1Gi` |
 | Configuration validator | 2 | `25m` | `64Mi` | `256Mi` |
 | HAProxy | 2 | `250m` | `1Gi` | `1Gi` |
 | HAPTIC agent | 2 | `50m` | `256Mi` | `256Mi` |
 | Vector log and metrics collector | 2 | `50m` | `256Mi` | `1Gi` |
 | SPOA plugin hub | 2 | `50m` | `128Mi` | `256Mi` |
-| **Total** | **4 pods** | **`1050m`** | **`5.375Gi`** | **`7.5Gi`** |
+| **Total** | **4 pods** | **`1850m`** | **`5.375Gi`** | **`7.5Gi`** |
 
 Allow room for rolling upgrades. With these defaults, one extra controller pod
 and one extra HAProxy pod bring memory requests to about **8.1 GiB** during
