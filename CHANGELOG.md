@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-02
+
 ### Added
 
 - `fileRegistry.Register("secret", …)` delivers a file to sidecars under `spec.dataplane.secretsDir` (default `/etc/haproxy/secrets`) without a reload. Its content is published only as a Kubernetes Secret, readable resources carry a keyed digest instead of a content digest, and the `secret:<name>` validation test target asserts on it.

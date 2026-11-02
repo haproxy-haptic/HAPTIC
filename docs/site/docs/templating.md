@@ -45,7 +45,7 @@ Upgrade with the complete file:
 
 ```bash
 helm upgrade haptic oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.9.0 --namespace haptic \
+  --version 0.10.0 --namespace haptic \
   -f haptic-values.yaml
 ```
 
