@@ -1,6 +1,6 @@
 # Resource sizing and performance
 
-For a default installation, reserve **about 1 CPU core and 5.4 GiB of memory**
+For a default installation, reserve **about 1.85 CPU cores and 5.4 GiB of memory**
 across four pods: two controllers and two HAProxy pods, including their sidecars.
 These are Kubernetes resource requests, not constant CPU or memory consumption.
 The containers can use spare CPU when busy; their combined memory limits are

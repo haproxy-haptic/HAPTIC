@@ -19,7 +19,7 @@ To try HAPTIC without a cluster, use the [browser example](#try-in-your-browser)
 - `kubectl` configured to access the cluster
 - Helm 3.8 or newer
 - Capacity for the [default installation](operations/performance.md): about
-  1 CPU core and 5.4 GiB of memory requests, plus room for installation Jobs
+  1.85 CPU cores and 5.4 GiB of memory requests, plus room for installation Jobs
 
 ## Install with Helm
 
