@@ -1405,7 +1405,7 @@ func chartCRDDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, "charts", "haptic", "crds"), nil
+	return filepath.Join(root, "charts", "haptic", "charts", "haptic-crds", "crds"), nil
 }
 
 // repoRoot walks up from the current working directory until it finds a

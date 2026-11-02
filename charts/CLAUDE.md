@@ -2654,7 +2654,8 @@ charts/haptic/
 │   ├── clusterrole.yaml        # RBAC permissions
 │   └── ...                     # Other K8s resources
 │
-└── crds/                        # Custom Resource Definitions
+└── charts/haptic-crds/crds/     # Custom Resource Definitions; a subchart so the
+    │                            # release Secret doesn't store them
     ├── haproxy-haptic.org_haproxytemplateconfigs.yaml
     ├── haproxy-haptic.org_haproxytemplatelibraries.yaml
     ├── haproxy-haptic.org_haproxycfgs.yaml
@@ -2704,7 +2705,7 @@ helm template charts/haptic \
 
 - Helm template reference: <https://helm.sh/docs/chart_template_guide/>
 - yq documentation: <https://github.com/mikefarah/yq>
-- HAProxyTemplateConfig CRD: `crds/haproxy-haptic.org_haproxytemplateconfigs.yaml`
+- HAProxyTemplateConfig CRD: `charts/haptic-crds/crds/haproxy-haptic.org_haproxytemplateconfigs.yaml`
 - Controller validation: `pkg/controller/testrunner/CLAUDE.md`
 - Template engine: `pkg/templating/CLAUDE.md`
 

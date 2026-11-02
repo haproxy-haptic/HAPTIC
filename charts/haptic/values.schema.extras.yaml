@@ -7,6 +7,8 @@
 
 # One namespace per Chart.yaml dependency: Helm coalesces each enabled
 # subchart's values, plus `global`, into the parent's values before validation.
+haptic-crds:
+  global: {}  # @schema additionalProperties: true
 helm-helpers:
   global: {}  # @schema additionalProperties: true
 base:

@@ -119,7 +119,7 @@ Renders the templates in a HAProxyTemplateConfig repeatedly against fixture data
 
 ### `apply-crds` — Server-Side Apply Bundled CRDs (applycrds.go)
 
-Reads the CRDs from the image-embedded chart (`resolveChartDir` → `<chart>/crds`,
+Reads the CRDs from the image-embedded chart (`resolveChartDir` → `<chart>/charts/haptic-crds/crds`,
 shared with `chartrender.go`) and server-side applies each to the
 cluster with field manager `haptic-crd-installer`. Closes the "Helm never upgrades
 `crds/`" gap for additive schema changes. Flags: `--chart`, `--kubeconfig`.
