@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A render no longer panics when a template imports a snippet exporting a `var` function both directly and from inside a macro; the snippet now initializes at whichever import runs first ([#585](https://github.com/haproxy-haptic/HAPTIC/issues/585)).
 - After a release was only partly applied, the pre-rollout hook failed every later sync or upgrade with "finish the current apply before upgrading". It now validates the incoming release and applies it, which completes the partial one ([#559](https://github.com/haproxy-haptic/HAPTIC/issues/559)).
 
 ### Helm chart
