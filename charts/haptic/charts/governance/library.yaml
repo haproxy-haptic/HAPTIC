@@ -122,10 +122,54 @@ templateSnippets:
               if rule["min"] != nil && rule["max"] != nil && toint(tostring(rule["min"])) > toint(tostring(rule["max"])) {
                 fail("governance.rules." + rname + ".min must be <= max.")
               }
-              if rule["default"] != nil {
-                var path = tostring(fallback(rule["path"], ""))
-                if !isConcretePath(path) {
-                  fail("governance.rules." + rname + ".default requires a concrete path (filtered/wildcard paths are validate-only).")
+              for _, field := range []string{"default", "defaultFrom"} {
+                if rule[field] != nil && !isConcretePath(tostring(fallback(rule["path"], ""))) {
+                  fail("governance.rules." + rname + "." + field + " requires a concrete path (filtered/wildcard paths are validate-only).")
+                }
+              }
+              if rule["defaultFrom"] != nil {
+                var from, fromOk = rule["defaultFrom"].(map[string]any)
+                if !fromOk { fail("governance.rules." + rname + ".defaultFrom must be a map with path and values.") }
+                var fromPath = tostring(fallback(from["path"], ""))
+                if len(split(fromPath, "[*]")) > 2 || !isConcretePath(replace(fromPath, "[*]", "[0]")) {
+                  fail("governance.rules." + rname + ".defaultFrom.path must be a concrete JSONPath with at most one [*], got \"" + fromPath + "\".")
+                }
+                if _, valuesOk := from["values"].(map[string]any); !valuesOk {
+                  fail("governance.rules." + rname + ".defaultFrom.values must be a map from key to default.")
+                }
+              }
+              if rule["selector"] != nil {
+                var where = "governance.rules." + rname + ".selector"
+                var selector, selectorOk = rule["selector"].(map[string]any)
+                if !selectorOk { fail(where + " must be a map with matchLabels and/or matchExpressions.") }
+                for _, field := range keys(selector) {
+                  if field != "matchLabels" && field != "matchExpressions" { fail(where + "." + field + " isn't supported; use matchLabels or matchExpressions.") }
+                }
+                var labelKey = "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?/)?[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$"
+                if selector["matchLabels"] != nil {
+                  var matchLabels, labelsOk = selector["matchLabels"].(map[string]any)
+                  if !labelsOk { fail(where + ".matchLabels must be a map of label to value.") }
+                  for _, key := range keys(matchLabels) {
+                    if !regex_search(key, labelKey) { fail(where + ".matchLabels key '" + key + "' isn't a label key.") }
+                  }
+                }
+                if selector["matchExpressions"] != nil && toSlice(selector["matchExpressions"]) == nil {
+                  fail(where + ".matchExpressions must be a list.")
+                }
+                for _, exprAny := range toSlice(selector["matchExpressions"]) {
+                  var expr, exprOk = exprAny.(map[string]any)
+                  if !exprOk { fail(where + ".matchExpressions entries must be maps with key, operator and values.") }
+                  var key = tostring(fallback(expr["key"], ""))
+                  var operator = tostring(fallback(expr["operator"], ""))
+                  var count = len(toSlice(expr["values"]))
+                  if !regex_search(key, labelKey) { fail(where + ".matchExpressions key '" + key + "' isn't a label key.") }
+                  if operator == "In" || operator == "NotIn" {
+                    if count == 0 { fail(where + ".matchExpressions " + key + " " + operator + " needs values.") }
+                  } else if operator == "Exists" || operator == "DoesNotExist" {
+                    if count > 0 { fail(where + ".matchExpressions " + key + " " + operator + " takes no values.") }
+                  } else {
+                    fail(where + ".matchExpressions operator must be In, NotIn, Exists or DoesNotExist, got \"" + operator + "\".")
+                  }
                 }
               }
               var ruleNamespaces = namespaceSet("governance.rules." + rname + ".namespaces", rule["namespaces"])
@@ -193,11 +237,70 @@ templateSnippets:
             return false
           }
 
+          var label = func(key string) any { return jsonpathGet(current, "metadata.labels['" + key + "']") }
+          var matchesSelector = func(selectorAny any) bool {
+            if selectorAny == nil { return true }
+            var selector = selectorAny.(map[string]any)
+            var matchLabels, _ = selector["matchLabels"].(map[string]any)
+            for _, key := range keys(matchLabels) {
+              var value = label(key)
+              if value == nil || tostring(value) != tostring(matchLabels[key]) { return false }
+            }
+            for _, exprAny := range toSlice(selector["matchExpressions"]) {
+              var expr = exprAny.(map[string]any)
+              var value = label(tostring(expr["key"]))
+              var inValues = false
+              for _, candidate := range toSlice(expr["values"]) {
+                if value != nil && tostring(candidate) == tostring(value) { inValues = true }
+              }
+              var operator = tostring(expr["operator"])
+              if operator == "In" && !inValues || operator == "NotIn" && inValues ||
+                operator == "Exists" && value == nil || operator == "DoesNotExist" && value != nil {
+                return false
+              }
+            }
+            return true
+          }
+
+          var defaultFor = func(rule map[string]any) (any, string) {
+            if rule["defaultFrom"] == nil { return rule["default"], "" }
+            var from = rule["defaultFrom"].(map[string]any)
+            var values = from["values"].(map[string]any)
+            var keyPath = tostring(from["path"])
+            var parts = split(keyPath, "[*]")
+            var found = []string{}
+            if len(parts) == 1 {
+              if present(jsonpathGet(current, keyPath)) { found = append(found, strip(tostring(jsonpathGet(current, keyPath)))) }
+            } else {
+              for i := 0; ; i++ {
+                var element = parts[0] + "[" + tostring(i) + "]"
+                if jsonpathGet(current, element) == nil { break }
+                var key = jsonpathGet(current, element + parts[1])
+                if present(key) { found = append(found, strip(tostring(key))) }
+              }
+            }
+            var chosen = map[string]bool{}
+            var result any = nil
+            for _, key := range found {
+              var value, mapped = values[key]
+              if !mapped { value = rule["default"] }
+              if value == nil { continue }
+              chosen[tostring(value)] = true
+              result = value
+            }
+            if len(found) == 0 { return rule["default"], "" }
+            if len(chosen) > 1 {
+              return rule["default"], "the keys at " + keyPath + " map to different defaults; move keys with different defaults to separate resources"
+            }
+            return result, ""
+          }
+
           for _, ruleAny := range toSlice(props | dig("rules") | fallback([]any{})) {
             var rule = ruleAny.(map[string]any)
             ruleName = tostring(rule["name"])
             if len(toSlice(rule["namespaces"])) > 0 && !listsNamespace(rule["namespaces"]) { continue }
             if listsNamespace(rule["exemptNamespaces"]) { continue }
+            if !matchesSelector(rule["selector"]) { continue }
             var enf = tostring(fallback(rule["enforcement"], "reject"))
             var custom = tostring(fallback(rule["message"], ""))
             var path = tostring(fallback(rule["path"], ""))
@@ -226,9 +329,13 @@ templateSnippets:
             if path == "" { continue }
 
             var value = jsonpathGet(current, path)
-            if !present(value) && rule["default"] != nil {
-              current = deriveResource(source, current, path, rule["default"])
-              value = rule["default"]
+            if !present(value) {
+              var derived, conflict = defaultFor(rule)
+              if conflict != "" { violate(enf, custom, conflict) }
+              if derived != nil {
+                current = deriveResource(source, current, path, derived)
+                value = derived
+              }
             }
 
             if tostring(fallback(rule["required"], "false")) == "true" && !present(value) {
@@ -1154,3 +1261,193 @@ validationTests:
       - { type: contains, target: haproxy.cfg, pattern: 'balance leastconn' }
       # The disabled rule injected nothing, so the rate limiter never armed.
       - { type: not_contains, target: haproxy.cfg, pattern: 'stick-table type ip size 100k expire 1s store http_req_rate' }
+
+  test-governance-selector-skips-labelled:
+    _helm_skip_test: '{{ if or (not .Values.controller.templateLibraries.governance.enabled) (not .Values.controller.templateLibraries.hapticAnnotations.enabled) }}true{{ end }}'
+    description: >-
+      A NotIn selector leaves an Ingress carrying the opt-out label alone, while
+      an Ingress without the label gets the default (#582).
+    extraContext:
+      renderMode: reconcile
+      governance:
+        enabled: true
+        rules:
+          staff-sources:
+            enabled: true
+            resource: ingresses
+            path: metadata.annotations['haproxy-haptic.org/denylist-source-range']
+            default: "203.0.113.5"
+            selector:
+              matchExpressions:
+                - {key: example.org/open-to-all, operator: NotIn, values: ["true"]}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: default, name: open, labels: { example.org/open-to-all: "true" } }
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: open.example.com
+                http:
+                  paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: default, name: staff }
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: staff.example.com
+                http:
+                  paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:ing-ac-deny.map", pattern: '(?m)^203\.0\.113\.5/32\|default/staff 1$' }
+      - { type: not_contains, target: "map:ing-ac-deny.map", pattern: 'default/open' }
+
+  test-governance-selector-match-labels:
+    _helm_skip_test: '{{ if or (not .Values.controller.templateLibraries.governance.enabled) (not .Values.controller.templateLibraries.hapticAnnotations.enabled) }}true{{ end }}'
+    description: matchLabels and Exists apply a rule only to Ingresses carrying the labels.
+    extraContext:
+      renderMode: reconcile
+      governance:
+        enabled: true
+        rules:
+          internal-sources:
+            enabled: true
+            resource: ingresses
+            path: metadata.annotations['haproxy-haptic.org/denylist-source-range']
+            default: "203.0.113.5"
+            selector:
+              matchLabels: { example.org/zone: internal }
+              matchExpressions:
+                - {key: example.org/team, operator: Exists}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: default, name: internal, labels: { example.org/zone: internal, example.org/team: a } }
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: internal.example.com
+                http:
+                  paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: default, name: no-team, labels: { example.org/zone: internal } }
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: no-team.example.com
+                http:
+                  paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:ing-ac-deny.map", pattern: '(?m)^203\.0\.113\.5/32\|default/internal 1$' }
+      - { type: not_contains, target: "map:ing-ac-deny.map", pattern: 'default/no-team' }
+
+  test-governance-default-from-key:
+    _helm_skip_test: '{{ if or (not .Values.controller.templateLibraries.governance.enabled) (not .Values.controller.templateLibraries.hapticAnnotations.enabled) }}true{{ end }}'
+    description: >-
+      defaultFrom picks the default by the Ingress's hosts: every host maps to
+      the same list, a host missing from values uses default (#582).
+    extraContext:
+      renderMode: reconcile
+      governance:
+        enabled: true
+        rules:
+          staff-sources:
+            enabled: true
+            resource: ingresses
+            path: metadata.annotations['haproxy-haptic.org/denylist-source-range']
+            default: "192.0.2.1"
+            defaultFrom:
+              path: spec.rules[*].host
+              values:
+                a.example.com: "203.0.113.5"
+                a2.example.com: "203.0.113.5"
+                b.example.com: "198.51.100.7"
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: default, name: a }
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: a.example.com
+                http:
+                  paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
+              - host: a2.example.com
+                http:
+                  paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: default, name: other }
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: other.example.com
+                http:
+                  paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:ing-ac-deny.map", pattern: '(?m)^203\.0\.113\.5/32\|default/a 1$' }
+      - { type: contains, target: "map:ing-ac-deny.map", pattern: '(?m)^192\.0\.2\.1/32\|default/other 1$' }
+
+  test-governance-default-from-conflict-rejected:
+    _helm_skip_test: '{{ if not .Values.controller.templateLibraries.governance.enabled }}true{{ end }}'
+    description: >-
+      Hosts that map to different defaults are a violation, so one Ingress
+      can't take the weaker list for every host.
+    extraContext:
+      renderMode: admission
+      admissionSubject: { store: ingresses, namespace: default, name: mixed }
+      governance:
+        enabled: true
+        rules:
+          staff-sources:
+            enabled: true
+            resource: ingresses
+            path: metadata.annotations['haproxy-haptic.org/denylist-source-range']
+            defaultFrom:
+              path: spec.rules[*].host
+              values:
+                a.example.com: "203.0.113.5"
+                b.example.com: "198.51.100.7"
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: default, name: mixed }
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: a.example.com
+                http:
+                  paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
+              - host: b.example.com
+                http:
+                  paths: [{ path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }]
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "ingresses default/mixed violates governance rule 'staff-sources': the keys at spec\\.rules\\[\\*\\]\\.host map to different defaults" }
+
+  test-governance-selector-invalid-operator-rejected:
+    _helm_skip_test: '{{ if not .Values.controller.templateLibraries.governance.enabled }}true{{ end }}'
+    description: A selector operator other than In, NotIn, Exists or DoesNotExist fails the render.
+    extraContext:
+      governance:
+        enabled: true
+        rules:
+          main:
+            enabled: true
+            resource: ingresses
+            path: metadata.annotations['haproxy-haptic.org/denylist-source-range']
+            default: "203.0.113.5"
+            selector:
+              matchExpressions:
+                - {key: example.org/zone, operator: Equals, values: [a]}
+    fixtures: *fixturesAnyExampleCom
+    assertions:
+      - { type: contains, target: rendering_error, pattern: 'governance\.rules\.main\.selector\.matchExpressions operator must be In, NotIn, Exists or DoesNotExist' }
