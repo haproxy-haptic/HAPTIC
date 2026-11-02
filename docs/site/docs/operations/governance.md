@@ -265,6 +265,48 @@ controller:
 
 `pattern: '^$'` forbids a value: any non-empty annotation fails the rule.
 
+## Scope a rule by label
+
+To apply a rule only to resources with certain labels, give it a `selector`. It works like a Kubernetes label selector:
+
+- `matchLabels` requires each listed label to have the listed value.
+- `matchExpressions` entries take a `key`, an `operator` (`In`, `NotIn`, `Exists`, or `DoesNotExist`), and `values` for `In` and `NotIn`.
+
+A resource must match every entry. `NotIn` also matches a resource that doesn't have the label, so it's the way to let resources opt out. The namespace lists still apply.
+
+## Pick a default by host
+
+`defaultFrom` looks up the default by a value of the resource itself, such as its hosts. `path` is a concrete JSONPath and may contain one `[*]` to read every element of a list. `values` maps each value found to its default. A value missing from `values` uses the rule's `default`.
+
+If a resource's values map to different defaults, the rule reports a violation and the resource gets the rule's `default`. With `enforcement: reject`, such a resource is denied at admission, so set `default` to your strictest value.
+
+This example refuses, for each internal host, the staff address ranges that mustn't reach it, unless the Ingress has the `example.org/open-to-all: "true"` label:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        governance:
+          enabled: true
+          rules:
+            staff-sources:
+              enabled: true
+              resource: ingresses
+              path: metadata.annotations['haproxy-haptic.org/denylist-source-range']
+              default: "10.8.0.0/16"
+              defaultFrom:
+                path: spec.rules[*].host
+                values:
+                  payroll.internal.example.com: "10.8.0.0/16"
+                  wiki.internal.example.com: "10.8.4.0/24,10.8.9.0/24"
+              selector:
+                matchExpressions:
+                  - {key: example.org/open-to-all, operator: NotIn, values: ["true"]}
+```
+
+A default applies only when the resource doesn't set `path` itself; an Ingress that sets the annotation keeps its own value.
+
 ## Govern any watched resource
 
 Rules are generic — set `resource` to any name in your `watchedResources`, not just `ingresses`. The same rule shape governs `httproutes`, a custom CRD, or anything else HAPTIC watches:
