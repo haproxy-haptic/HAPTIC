@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -938,4 +939,68 @@ func TestExactCycleMatchingEvaluatesInheritedIndexes(t *testing.T) {
 	matched, err := observations.matches(t.Context(), session)
 	require.NoError(t, err)
 	require.False(t, matched, "inherited index identity does not prove pending inputs were evaluated")
+}
+
+func TestReturnToAnEarlierCycleKeepsAnHTTPReadChange(t *testing.T) {
+	var body atomic.Value
+	body.Store("alice")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body.Load().(string)))
+	}))
+	t.Cleanup(server.Close)
+	cfg := &config.Config{
+		Dataplane: testDataplaneConfig(),
+		WatchedResources: map[string]config.WatchedResource{
+			"hosts": {APIVersion: "example.test/v1", Resources: "hosts", IndexBy: []string{"metadata.namespace", "metadata.name"}},
+		},
+		TemplateSnippets: map[string]config.TemplateSnippet{
+			"host-lines": {
+				Name: "host-lines", Requires: []string{"hosts"},
+				Incremental: &config.IncrementalTemplate{Source: "hosts", Group: "hosts"},
+				Template:    `{{ item | dig_string("", "metadata", "name") }} {{ item | dig_string("", "spec", "value") }}` + "\n",
+			},
+		},
+		HAProxyConfig: config.HAProxyConfig{Template: "hosts:\n{{ render \"host-lines\" }}"},
+		Maps: map[string]config.MapFile{
+			"users.map": {Template: fmt.Sprintf(`{{ http.Fetch(%q, map[string]any{"critical": true}) }}`, server.URL)},
+		},
+	}
+	declarations := helpers.BuildAdditionalDeclarations(cfg, &typebootstrap.Result{
+		Types: map[string]reflect.Type{}, Kinds: map[string]string{}, Errors: map[string]error{},
+	})
+	engine, err := helpers.NewEngineFromConfigWithOptions(cfg, nil, nil, declarations, helpers.EngineOptions{})
+	require.NoError(t, err)
+	bus, logger := testutil.NewTestBusAndLogger()
+	component := controllerhttpstore.New(bus, logger, -time.Hour)
+	service := NewRenderService(&RenderServiceConfig{
+		Engine: engine, Config: cfg, Logger: logger, HTTPStoreComponent: component,
+	})
+	hosts := k8sstore.NewMemoryStore(2)
+	require.NoError(t, hosts.Add(incrementalTestResource("default", "h1", map[string]any{"value": "a"}), []string{"default", "h1"}))
+	provider := stores.NewRealStoreProvider(map[string]stores.Store{"hosts": hosts})
+	render := func(step string) *RenderResult {
+		result, err := service.Render(t.Context(), provider, rendercontext.RenderModeReconcile)
+		require.NoError(t, err)
+		require.NoError(t, result.InputTransaction.Commit(t.Context()))
+		waitForIncrementalCache(t, service)
+		t.Logf("%s: cache state %q, roots reused %d, users.map %q", step, result.CacheState, result.RootsReused, auxContents(t, result)["users.map"])
+		return result
+	}
+	setHost := func(v string) {
+		require.NoError(t, hosts.Update(incrementalTestResource("default", "h1", map[string]any{"value": v}), []string{"default", "h1"}))
+	}
+
+	render("state A")
+	render("state A again")
+	setHost("b")
+	render("state B")
+	body.Store("alice bob")
+	promoteIncrementalHTTPBody(t, component, server.URL)
+	changed := render("state B, users changed")
+	assert.Contains(t, auxContents(t, changed)["users.map"], "bob")
+	assert.EqualValues(t, "replay", render("state B, unchanged").CacheState)
+	setHost("a")
+	back := render("back to state A")
+	assert.Positive(t, back.RootsReused)
+	assert.Contains(t, auxContents(t, back)["users.map"], "bob")
 }

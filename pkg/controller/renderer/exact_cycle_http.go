@@ -143,6 +143,12 @@ func exactCycleHTTPSnapshots(
 	for index := range snapshots {
 		byURL[snapshots[index].URL] = snapshots[index]
 	}
+	reused := session.reusedRootHTTPSnapshots()
+	for index := range reused {
+		if _, fetched := byURL[reused[index].URL]; !fetched {
+			byURL[reused[index].URL] = reused[index]
+		}
+	}
 	if session != nil && !session.exactCycleFullCold() {
 		session.httpMu.Lock()
 		observed := make([]incremental.InputKey, 0, len(session.httpObserved))
@@ -170,6 +176,19 @@ func exactCycleHTTPSnapshots(
 		cacheable = cacheable && snapshot.Found && snapshot.Cacheable && snapshot.Token.Valid()
 	}
 	return result, cacheable
+}
+
+// reusedRootHTTPSnapshots returns the previous cycle's HTTP reads when this
+// cycle reused a root, whose fetches therefore didn't run (#604).
+func (r *incrementalRenderSession) reusedRootHTTPSnapshots() []httpstore.ContentSnapshot {
+	if r == nil || r.rootReuser.reused() == 0 {
+		return nil
+	}
+	previous := r.rootReuser.candidate.http
+	if previous == nil || previous.disabled || previous.state == nil {
+		return nil
+	}
+	return previous.state.Snapshots()
 }
 
 func exactCycleHTTPStateMatchesSnapshots(

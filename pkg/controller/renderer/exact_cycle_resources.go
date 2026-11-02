@@ -297,6 +297,10 @@ func (r *incrementalRenderSession) captureExactCycleResourceObservations() (
 		}
 		build.count++
 	}
+	if err := r.carryReusedRootResourceProofs(builds); err != nil {
+		r.mu.Unlock()
+		return nil, err
+	}
 	r.mu.Unlock()
 
 	scopeTxn := iradix.New[exactCycleResourceScope]().Txn()
@@ -325,6 +329,44 @@ func (r *incrementalRenderSession) captureExactCycleResourceObservations() (
 	}
 	observations.seal = observations
 	return observations, nil
+}
+
+// carryReusedRootResourceProofs keeps a reused root's reads, which didn't run
+// this cycle; reuse required them to match the current roots (#604).
+func (r *incrementalRenderSession) carryReusedRootResourceProofs(builds map[string]*exactCycleResourceScopeBuild) error {
+	if r.rootReuser.reused() == 0 {
+		return nil
+	}
+	previous := r.rootReuser.candidate.resources
+	if err := previous.validate(); err != nil {
+		return err
+	}
+	var carryErr error
+	previous.scopes.Root().Walk(func(key []byte, scope exactCycleResourceScope) bool {
+		alias := string(key)
+		root := r.renderSnapshots[alias]
+		if root == nil || root.RevisionSource() != scope.source {
+			carryErr = errExactCycleUnavailable
+			return true
+		}
+		build := builds[alias]
+		if build == nil {
+			build = &exactCycleResourceScopeBuild{root: root, proofs: iradix.New[struct{}]().Txn()}
+			builds[alias] = build
+		}
+		if build.root != root {
+			carryErr = errors.New("exact cycle resource proofs span multiple immutable roots")
+			return true
+		}
+		scope.proofs.Root().Walk(func(proof []byte, _ struct{}) bool {
+			if _, replaced := build.proofs.Insert(proof, struct{}{}); !replaced {
+				build.count++
+			}
+			return false
+		})
+		return false
+	})
+	return carryErr
 }
 
 func (o *exactCycleResourceObservations) matches(

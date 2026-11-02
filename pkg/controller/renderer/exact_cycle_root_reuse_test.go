@@ -196,3 +196,60 @@ func TestAuxiliaryRootsReuseTheirOutputWhenTheyObservedNothingNew(t *testing.T) 
 	assert.Equal(t, cold.HAProxyConfig, changedPath.HAProxyConfig)
 	assert.Equal(t, auxContents(t, cold), contents)
 }
+
+func TestReturnToAnEarlierCycleKeepsADirectReadChange(t *testing.T) {
+	cfg := &config.Config{
+		Dataplane: testDataplaneConfig(),
+		WatchedResources: map[string]config.WatchedResource{
+			"hosts":  {APIVersion: "example.test/v1", Resources: "hosts", IndexBy: []string{"metadata.namespace", "metadata.name"}},
+			"idents": {APIVersion: "example.test/v1", Resources: "idents", IndexBy: []string{"metadata.namespace", "metadata.name"}},
+		},
+		TemplateSnippets: map[string]config.TemplateSnippet{
+			"host-lines": {
+				Name: "host-lines", Requires: []string{"hosts"},
+				Incremental: &config.IncrementalTemplate{Source: "hosts", Group: "hosts"},
+				Template:    `{{ item | dig_string("", "metadata", "name") }} {{ item | dig_string("", "spec", "value") }}` + "\n",
+			},
+		},
+		HAProxyConfig: config.HAProxyConfig{Template: "hosts:\n{{ render \"host-lines\" }}"},
+		Maps: map[string]config.MapFile{
+			"users.map": {Template: `{%- var u = resources.idents.GetSingle("default", "users") -%}` +
+				`{%- if u != nil -%}{{ u | dig_string("", "spec", "value") }}{%- end -%}`},
+		},
+	}
+	declarations := helpers.BuildAdditionalDeclarations(cfg, &typebootstrap.Result{
+		Types: map[string]reflect.Type{}, Kinds: map[string]string{}, Errors: map[string]error{},
+	})
+	engine, err := helpers.NewEngineFromConfigWithOptions(cfg, nil, nil, declarations, helpers.EngineOptions{})
+	require.NoError(t, err)
+	_, logger := testutil.NewTestBusAndLogger()
+	service := NewRenderService(&RenderServiceConfig{Engine: engine, Config: cfg, Logger: logger})
+	hosts, idents := k8sstore.NewMemoryStore(2), k8sstore.NewMemoryStore(2)
+	require.NoError(t, hosts.Add(incrementalTestResource("default", "h1", map[string]any{"value": "a"}), []string{"default", "h1"}))
+	require.NoError(t, idents.Add(incrementalTestResource("default", "users", map[string]any{"value": "alice"}), []string{"default", "users"}))
+	provider := stores.NewRealStoreProvider(map[string]stores.Store{"hosts": hosts, "idents": idents})
+	render := func(step string) *RenderResult {
+		result, err := service.Render(t.Context(), provider, rendercontext.RenderModeReconcile)
+		require.NoError(t, err)
+		require.NoError(t, result.InputTransaction.Commit(t.Context()))
+		waitForIncrementalCache(t, service)
+		t.Logf("%s: cache state %q, roots reused %d, users.map %q", step, result.CacheState, result.RootsReused, auxContents(t, result)["users.map"])
+		return result
+	}
+	setHost := func(v string) {
+		require.NoError(t, hosts.Update(incrementalTestResource("default", "h1", map[string]any{"value": v}), []string{"default", "h1"}))
+	}
+
+	render("state A")
+	render("state A again")
+	setHost("b")
+	render("state B")
+	require.NoError(t, idents.Update(incrementalTestResource("default", "users", map[string]any{"value": "alice bob"}), []string{"default", "users"}))
+	changed := render("state B, users changed")
+	assert.Contains(t, auxContents(t, changed)["users.map"], "bob")
+	assert.EqualValues(t, "replay", render("state B, unchanged").CacheState)
+	setHost("a")
+	back := render("back to state A")
+	assert.Positive(t, back.RootsReused)
+	assert.Contains(t, auxContents(t, back)["users.map"], "bob")
+}
