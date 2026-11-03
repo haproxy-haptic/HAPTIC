@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Templates can parse URL components with `parse_url`.
+
 - Templates can convert JSON Web Key Sets to PEM public keys with `jwks_public_keys`.
 
 ### Fixed
@@ -23,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Helm chart
 
 #### Added
+
+- JWT routes can serve OAuth protected-resource metadata from a ConfigMap and advertise it with a Bearer challenge ([#611](https://github.com/haproxy-haptic/HAPTIC/issues/611)).
 
 - `haproxy-haptic.org/jwt-jwks-url` refreshes public signing keys from an approved HTTPS JWKS endpoint and selects the token's `kid`, supporting overlapping keys during rotation ([#608](https://github.com/haproxy-haptic/HAPTIC/issues/608)).
 

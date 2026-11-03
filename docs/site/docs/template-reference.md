@@ -139,6 +139,10 @@ Every entry below is callable in two equivalent styles: as a plain function (`fn
 | `make_guid(parts...)` | Build a value for HAProxy's `guid` directive from parts joined by `:`, auto-truncating with a hash suffix past its 127-character limit | `guid {{ make_guid("be", beKey) }}` |
 | `selectattr(items, attr[, op, value])` | Jinja2-style attribute filter. `op` is `eq`, `ne` or `in`; omitted, it keeps items whose `attr` is truthy. `attr` is one literal key — a dotted path matches nothing, so prefer `filter` with a closure | `selectattr(rules, "host", "ne", "")` |
 
+### URL components
+
+`parse_url(value)` returns `(fields, error)`. The fields are `scheme`, `host`, `hostname`, `port`, `path`, `escapedPath`, `rawQuery`, `forceQuery`, `fragment`, `opaque`, and `hasUserInfo`. Relative references are accepted; check the scheme and authority your template permits. `escapedPath` preserves escaped separators such as `%2F`.
+
 ### Public signing keys
 
 `jwks_public_keys(document, algorithm)` reads a JSON Web Key Set (JWKS) and returns a `map[string]string` from key ID

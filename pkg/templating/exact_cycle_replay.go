@@ -67,7 +67,7 @@ var exactCycleReplayPureFunctions = map[string]struct{}{
 	"make_guid": {}, "map": {}, builtinMapExtract: {}, builtinMarshalJSON: {}, builtinMarshalJSONIndent: {},
 	builtinMarshalYAML: {}, builtinMax: {}, builtinMD5: {}, "merge": {}, builtinMin: {},
 	"namespace": {}, funcOnOwnLinesJoin: {}, funcOnOwnLinesStart: {}, builtinParseDuration: {}, builtinParseFloat: {}, builtinParseInt: {}, builtinParseTime: {},
-	builtinPow: {}, builtinPublicKeyInfo: {}, builtinJWKSPublicKeys: {}, builtinParseYAML: {}, builtinQueryEscape: {}, declRegexp: {}, "regex_search": {}, "reject": {},
+	builtinPow: {}, builtinPublicKeyInfo: {}, builtinParseURL: {}, builtinJWKSPublicKeys: {}, builtinParseYAML: {}, builtinQueryEscape: {}, declRegexp: {}, "regex_search": {}, "reject": {},
 	"replace": {}, builtinReplaceAll: {}, builtinRuneCount: {}, "sanitize_regex": {}, "selectattr": {},
 	"semver_gte": {}, "seq": {}, builtinSHA1: {}, builtinSHA256: {}, "shard_slice": {},
 	"sort_by": {}, "sort_ints": {}, "sort_strings": {}, builtinSplit: {}, builtinSplitAfter: {},
@@ -76,7 +76,7 @@ var exactCycleReplayPureFunctions = map[string]struct{}{
 	"strings_trim": {}, "strip": {}, "title": {}, "toJSON": {}, builtinToKebab: {},
 	builtinToLower: {}, "toSlice": {}, "toStringSlice": {}, builtinToUpper: {}, "to_str_map": {},
 	"tofloat": {}, "toint": {}, "tostring": {}, builtinTrim: {}, builtinTrimLeft: {},
-	builtinTrimPrefix: {}, builtinTrimRight: {}, builtinTrimSpace: {}, builtinTrimSuffix: {}, "unmarshalJSON": {},
+	builtinTrimPrefix: {}, builtinTrimRight: {}, builtinTrimSpace: {}, builtinTrimSuffix: {}, builtinUnmarshalJSON: {},
 	"unmarshalYAML": {}, "unique": {}, "unique_by": {}, "untar_gz": {},
 }
 
@@ -691,10 +691,10 @@ func validExactCycleCallable(callable *scriggo.UsedNativeCallable) bool {
 		return callable.MemberPath == "ComputeIfAbsent" || callable.MemberPath == "Get"
 	case declRegexp:
 		return slices.Contains([]string{"FindSubmatch", "Match", memberReplaceAll}, callable.MemberPath)
-	case "unmarshalJSON", "unmarshalYAML":
+	case builtinUnmarshalJSON, "unmarshalYAML":
 		return callable.MemberPath == "Error"
-	case builtinParseYAML:
-		return callable.MemberPath == "[1].Error"
+	case builtinParseYAML, builtinParseURL:
+		return callable.MemberPath == memberSecondResultError
 	case builtinParseDuration:
 		return slices.Contains([]string{
 			"[0].Hours", "[0].Milliseconds", "[0].Minutes", "[0].Nanoseconds", "[0].Seconds", "[0].String",
@@ -723,7 +723,7 @@ func validExactCyclePlanCallable(path string) bool {
 	for _, method := range []string{
 		memberBackend, "BackendWhenAny", "Fragment", "MapMeta", memberProfile, "ProfileGroup", "Section",
 	} {
-		if path == method || path == method+"[1].Error" {
+		if path == method || path == method+memberSecondResultError {
 			return true
 		}
 	}

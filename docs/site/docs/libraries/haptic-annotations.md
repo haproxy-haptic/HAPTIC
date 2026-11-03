@@ -481,6 +481,8 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/jwt-audience` | Required `aud` claim value (exact match); an array `aud` (multiple audiences) isn't matched — scalar only. |
 | `haproxy-haptic.org/jwt-forward-claims` | Comma-separated `<claim>:<header>` pairs forwarded upstream after verification; each header is stripped from the client request first (anti-spoof). |
 | `haproxy-haptic.org/jwt-issuer` | Required `iss` claim value (exact match). |
+| `haproxy-haptic.org/jwt-resource-metadata-configmap` | Same-namespace ConfigMap `name[:key]` containing an OAuth protected-resource metadata JSON document; key defaults to `metadata.json`. Enables a public discovery endpoint and a Bearer challenge on JWT `401` responses. Requires a JWT signing-key source. |
+| `haproxy-haptic.org/jwt-resource-metadata-path` | Discovery path override: `/.well-known/oauth-protected-resource` or the default path-suffixed form derived from the document's `resource` URL. Requires `jwt-resource-metadata-configmap`. |
 | `haproxy-haptic.org/jwt-required-claims` | Comma-separated claim names that must be present in the payload; a missing claim is denied `401`. |
 | `haproxy-haptic.org/jwt-jwks-url` | HTTPS JSON Web Key Set (JWKS) endpoint from `extraContext.jwt.allowedJWKSURLs`, used instead of `jwt-secret`. Refreshes every `extraContext.jwt.refreshInterval` (default `5m`). Selects the key by `kid`; an unknown or missing ID returns `401`. No usable keys returns `503`. |
 | `haproxy-haptic.org/jwt-secret` | Names the Secret (data key `pubkey.pem`) for asymmetric JWT verification with an alg-confusion guard, `exp`/`iss`/`aud`/required-claim checks, and the shared consumer identity from `sub`. Fails closed (`503`) when the Secret is absent. A new key Secret reloads once; routes sharing a key are added and removed without one, and key rotation needs a reload. |
@@ -633,3 +635,28 @@ Remove these annotations from existing manifests:
 | Annotation | Behavior |
 |------------|----------|
 | `haproxy-haptic.org/scale-server-slots` | No longer has any effect. HAPTIC manages server membership without reserved slots. Setting it emits a Warning Event; remove the annotation. |
+
+### OAuth protected-resource discovery
+
+Set `haproxy-haptic.org/jwt-resource-metadata-configmap: oauth-metadata` on a JWT-protected Ingress, and create this ConfigMap in the same namespace:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth-metadata
+data:
+  metadata.json: |
+    {
+      "resource": "https://mcp.example.com/mcp",
+      "authorization_servers": ["https://login.example.com/realms/staff"],
+      "scopes_supported": ["openid"],
+      "bearer_methods_supported": ["header"]
+    }
+```
+
+The `resource` must be an HTTPS URL on an Ingress host, without credentials, a query, or a fragment. HAPTIC serves the document at `https://mcp.example.com/.well-known/oauth-protected-resource/mcp`, and includes that URL in `WWW-Authenticate: Bearer resource_metadata="…"` on JWT authentication failures. To use the root discovery path, set `haproxy-haptic.org/jwt-resource-metadata-path: /.well-known/oauth-protected-resource`.
+
+The discovery endpoint accepts unauthenticated `GET` and `HEAD` requests and returns JSON directly from HAProxy. It takes precedence over application routing and authentication at that exact host and path; TLS client-certificate and server-name checks still apply. Other methods return `405`. Documents are limited to 8 KiB and return `Cache-Control: no-store`. ConfigMap edits update the response; conflicting documents at one endpoint are rejected. Remove the annotation before deleting its ConfigMap.
+
+The challenge accompanies JWT `401` responses, including custom error pages. It doesn't accompany authorization `403` responses, unavailable-key `503` responses, or backend-generated errors. See [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html) for client discovery and resource-identifier checks.

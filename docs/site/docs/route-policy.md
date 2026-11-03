@@ -42,6 +42,7 @@ RSA keys require at least 2048 bits. ECDSA curves must match the selected algori
 | `algorithm` | `RS256` | `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`, `ES256`, `ES384`, or `ES512` |
 | `issuer` | Unset | Required `iss` value when configured |
 | `audience` | Unset | Required `aud` value when configured |
+| `resourceMetadata` | Unset | `{configMapRef: {name, key}, path}` serves a same-namespace ConfigMap as public OAuth metadata and adds a Bearer discovery challenge to JWT `401` responses. The key defaults to `metadata.json`; the path defaults to the resource-path discovery URL. |
 | `requiredClaims` | `[]` | Claims that must be present; use `[exp, sub]` for expiring tokens with a consumer identity |
 | `forwardClaims` | `[]` | List of `{claim, header}` entries copied into request headers after verification |
 
@@ -132,3 +133,5 @@ sets `Accepted=False` when all rules are invalid, `PartiallyInvalid=True` when
 some remain valid, and `ResolvedRefs=False` for unresolved policy or credential
 references. Fixing the dependency restores enforcement without changing the
 attachment.
+
+JWT `resourceMetadata` uses the same [document and discovery rules](libraries/haptic-annotations.md#oauth-protected-resource-discovery) as the Ingress annotations. Set the document's `resource` to an HTTPS URL on the route's host. Discovery is scoped to the Gateway listeners that accept the route. Removing or invalidating a referenced ConfigMap makes the policy invalid; protected traffic remains denied.

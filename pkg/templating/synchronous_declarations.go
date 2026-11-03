@@ -82,10 +82,12 @@ var synchronousDeclarationNames = [...]string{
 	builtinSHA1,
 	builtinSHA256,
 	builtinPublicKeyInfo,
+	builtinParseURL,
 	builtinJWKSPublicKeys,
 	builtinParseYAML,
 	builtinBase64,
 	builtinHex,
+	builtinUnmarshalJSON,
 	builtinMarshalJSON,
 	builtinMarshalJSONIndent,
 	builtinMarshalYAML,
@@ -132,9 +134,11 @@ var synchronousDeclarationNames = [...]string{
 }
 
 var synchronousDeclarationMembers = map[string][]string{
+	builtinUnmarshalJSON: {"Error"},
+	builtinParseURL:      {memberSecondResultError},
 	builtinParseDuration: {"[0].Milliseconds"},
 	builtinParseTime:     {"UnixNano"},
-	builtinParseYAML:     {"[1].Error"},
+	builtinParseYAML:     {memberSecondResultError},
 }
 
 func certifySynchronousDeclarations(decl native.Declarations) {

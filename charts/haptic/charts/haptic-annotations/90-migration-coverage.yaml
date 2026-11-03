@@ -308,6 +308,12 @@ _migrationCoverage:
       haproxy-haptic.org/jwt-issuer:
         status: supported
         note: "Required `iss` claim value (exact match)."
+      haproxy-haptic.org/jwt-resource-metadata-configmap:
+        status: supported
+        note: "Same-namespace ConfigMap with public OAuth resource metadata and a Bearer discovery challenge."
+      haproxy-haptic.org/jwt-resource-metadata-path:
+        status: supported
+        note: "Root or resource-path discovery endpoint for JWT metadata."
       haproxy-haptic.org/jwt-required-claims:
         status: supported
         note: "Comma-separated claim names that must be present in the payload; a missing claim → 401."

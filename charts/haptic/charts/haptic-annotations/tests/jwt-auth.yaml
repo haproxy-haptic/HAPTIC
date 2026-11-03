@@ -210,3 +210,253 @@ validationTests:
     assertions:
       - type: haproxy_valid
       - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^ *# haptic/jwt$'}
+
+  test-haptic-jwt-resource-metadata:
+    fixtures: &jwt-metadata-fixtures
+      secrets: [*jwt-public-key]
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource":"https://mcp.example.com/mcp","authorization_servers":["https://login.example.com/realms/staff"],"bearer_methods_supported":["header"],"scopes_supported":["openid"]}'
+      ingresses:
+        - &jwt-metadata-ingress
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: mcp
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-resource-metadata-configmap: oauth-metadata
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: mcp.example.com
+                http:
+                  paths:
+                    - {path: /mcp, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - {type: haproxy_valid}
+      - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: '(?m)^mcp\.example\.com\|mcp\.example\.com\|/\.well-known/oauth-protected-resource/mcp '}
+      - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: 'authorization_servers%22%3a%5b%22https%3a%2f%2flogin\.example\.com'}
+      - {type: contains, target: map:jwt-resource-metadata-challenge.map, pattern: '(?m)^default/mcp\|mcp\.example\.com Bearer%20resource_metadata%3d%22https%3a%2f%2fmcp\.example\.com%2f\.well-known%2foauth-protected-resource%2fmcp%22$'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-after-response set-header WWW-Authenticate .*status 401.*jwt_'}
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - 'http-request set-var\(txn\.jwt_metadata_body\)'
+          - 'http-request return status 200 content-type application/json .*txn\.jwt_metadata_body'
+          - 'http-request deny deny_status 401 .*jwt_verify'
+
+  test-haptic-jwt-resource-metadata-root:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      ingresses:
+        - <<: *jwt-metadata-ingress
+          metadata:
+            namespace: default
+            name: mcp
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-resource-metadata-configmap: oauth-metadata
+              haproxy-haptic.org/jwt-resource-metadata-path: /.well-known/oauth-protected-resource
+    assertions:
+      - {type: haproxy_valid}
+      - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: '(?m)^mcp\.example\.com\|mcp\.example\.com\|/\.well-known/oauth-protected-resource '}
+      - {type: contains, target: map:jwt-resource-metadata-challenge.map, pattern: '(?m)%2foauth-protected-resource%22$'}
+
+  test-haptic-jwt-resource-metadata-without-jwt:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      ingresses:
+        - <<: *jwt-metadata-ingress
+          metadata:
+            namespace: default
+            name: mcp
+            annotations:
+              haproxy-haptic.org/jwt-resource-metadata-configmap: oauth-metadata
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'enables JWT metadata without JWT verification'}
+
+  test-haptic-jwt-resource-metadata-non-object:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '[]'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'not a JSON object'}
+
+  test-haptic-jwt-resource-metadata-null:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: 'null'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'not a JSON object'}
+
+  test-haptic-jwt-resource-metadata-malformed:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'not a JSON object'}
+
+  test-haptic-jwt-resource-metadata-http:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "http://mcp.example.com/mcp"}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'invalid resource URL'}
+
+  test-haptic-jwt-resource-metadata-query:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "https://mcp.example.com/mcp?"}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'invalid resource URL'}
+
+  test-haptic-jwt-resource-metadata-fragment:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "https://mcp.example.com/mcp#"}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'invalid resource URL'}
+
+  test-haptic-jwt-resource-metadata-credentials:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "https://user@mcp.example.com/mcp"}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'invalid resource URL'}
+
+  test-haptic-jwt-resource-metadata-wrong-host:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "https://other.example.com/mcp"}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'does not serve the metadata resource host'}
+
+  test-haptic-jwt-resource-metadata-issuer:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "https://mcp.example.com/mcp", "authorization_servers": ["http://issuer.example.com"]}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'invalid authorization server'}
+
+  test-haptic-jwt-resource-metadata-bearer-method:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "https://mcp.example.com/mcp", "bearer_methods_supported": ["query"]}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'Authorization header'}
+
+  test-haptic-jwt-resource-metadata-scope-type:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "https://mcp.example.com/mcp", "scopes_supported": [1]}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'non-empty strings'}
+
+  test-haptic-jwt-resource-metadata-conflict:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: first-metadata}
+          data:
+            metadata.json: '{"resource":"https://mcp.example.com/first"}'
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: second-metadata}
+          data:
+            metadata.json: '{"resource":"https://mcp.example.com/second"}'
+      ingresses:
+        - <<: *jwt-metadata-ingress
+          metadata:
+            namespace: default
+            name: first
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-resource-metadata-configmap: first-metadata
+              haproxy-haptic.org/jwt-resource-metadata-path: /.well-known/oauth-protected-resource
+        - <<: *jwt-metadata-ingress
+          metadata:
+            namespace: default
+            name: second
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-resource-metadata-configmap: second-metadata
+              haproxy-haptic.org/jwt-resource-metadata-path: /.well-known/oauth-protected-resource
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'metadata documents conflict'}
+
+  test-haptic-jwt-resource-metadata-invalid-path:
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      ingresses:
+        - <<: *jwt-metadata-ingress
+          metadata:
+            namespace: default
+            name: invalid-path
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-resource-metadata-configmap: oauth-metadata
+              haproxy-haptic.org/jwt-resource-metadata-path: /mcp
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'metadata path is invalid'}

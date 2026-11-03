@@ -1,0 +1,132 @@
+templateSnippets:
+  util-resource-metadata:
+    template: |-
+      {%- macro MetadataURL(value string, result map[string]any) -%}
+        {%%
+          var parsed, err = parse_url(value)
+          result["error"] = ""
+          if err != nil || parsed["scheme"] != "https" || parsed["hostname"] == "" || parsed["opaque"] != "" ||
+              parsed["hasUserInfo"] == true || parsed["rawQuery"] != "" || parsed["forceQuery"] == true || strings_contains(value, "#") {
+            result["error"] = "Metadata URL is invalid. Use an absolute HTTPS URL without credentials, query, or fragment."
+          } else {
+            for key, field := range parsed { result[key] = field }
+          }
+        %%}
+      {%- end macro -%}
+
+      {%- macro ReadResourceMetadata(namespace string, name string, key string, pathOverride string, result map[string]any) -%}
+        {%%
+          result["error"] = ""
+          var reject = func(message string) { if result["error"] == "" { result["error"] = message } }
+          var source = resources.configmaps.GetSingle(namespace, name)
+          var encoded = dig_string(source, "", "data", key)
+          if source == nil || encoded == "" {
+            reject("ConfigMap " + namespace + "/" + name + " has no protected-resource metadata. Set data[" + key + "] to a JSON document.")
+          } else if len(encoded) > 8192 {
+            reject("Protected-resource metadata exceeds 8 KiB. Reduce the JSON document.")
+          } else {
+            var document map[string]any
+            var decodeErr = unmarshalJSON(encoded, &document)
+            if decodeErr != nil || document == nil {
+              reject("Protected-resource metadata is not a JSON object. Correct the ConfigMap document.")
+            } else {
+              var resource, resourceString = document["resource"].(string)
+              var resourceURL = map[string]any{}
+              MetadataURL(resource, resourceURL)
+              if !resourceString || resourceURL["error"] != "" {
+                reject("Protected-resource metadata has an invalid resource URL. Set resource to the public HTTPS URL clients use, without credentials, query, or fragment.")
+              } else {
+                var metadataPath = "/.well-known/oauth-protected-resource" + tostring(resourceURL["escapedPath"])
+                if pathOverride != "" {
+                  if pathOverride != "/.well-known/oauth-protected-resource" && pathOverride != metadataPath {
+                    reject("Protected-resource metadata path is invalid. Use the root well-known path or the resource's path-suffixed well-known path.")
+                  }
+                  metadataPath = pathOverride
+                }
+                result["host"] = toLower(tostring(resourceURL["hostname"]))
+                result["authority"] = trimSuffix(toLower(tostring(resourceURL["host"])), ":443")
+                result["resourcePath"] = resourceURL["escapedPath"]
+                result["metadataPath"] = metadataPath
+                result["url"] = "https://" + tostring(resourceURL["host"]) + metadataPath
+              }
+              for _, field := range []string{"authorization_servers", "scopes_supported", "bearer_methods_supported"} {
+                var fieldValue, present = document[field]
+                if !present { continue }
+                var values, array = fieldValue.([]any)
+                if !array { reject("Protected-resource metadata " + field + " is invalid. Use an array of strings."); continue }
+                for _, value := range values {
+                  var text, isString = value.(string)
+                  if !isString || text == "" { reject("Protected-resource metadata " + field + " is invalid. Use non-empty strings."); continue }
+                  if field == "authorization_servers" {
+                    var issuer = map[string]any{}
+                    MetadataURL(text, issuer)
+                    if issuer["error"] != "" { reject("Protected-resource metadata has an invalid authorization server. Use HTTPS issuer URLs without credentials, query, or fragment.") }
+                  }
+                  if field == "bearer_methods_supported" && text != "header" {
+                    reject("JWT routes accept bearer tokens only in the Authorization header. Set bearer_methods_supported to [\"header\"].")
+                  }
+                }
+              }
+              var body = trimSpace(encoded)
+              result["body"] = body
+            }
+          }
+        %%}
+      {%- end macro -%}
+
+  util-publish-resource-metadata:
+    template: |-
+      {%- macro PublishResourceMetadata(routeID string, hostKeys []any, metadata map[string]any) -%}
+        {%- var endpoints = []any{} -%}
+        {%- for _, host := range hostKeys -%}
+          {%- endpoints = append(endpoints, tostring(host) + "|" + tostring(metadata["authority"]) + "|" + tostring(metadata["metadataPath"])) -%}
+        {%- end -%}
+        {{- shared.Publish("records", routeID, map[string]any{"routeID": routeID, "authority": metadata["authority"], "endpoints": endpoints, "body": metadata["body"], "url": metadata["url"]}) -}}
+      {%- end macro -%}
+
+  features-855-jwt-resource-metadata:
+    template: |-
+      {%- import "util-register-map" for RegisterMap -%}
+      {{- render_glob "jwt-resource-metadata-*" -}}
+      {%- if incremental_value_count("jwt-resource-metadata", "records") > 0 -%}
+        {%%
+          var bodies = map[string]string{}
+          var challenges = map[string]string{}
+          for _, value := range incremental_values("jwt-resource-metadata", "records") {
+            var record = value.(map[string]any)
+            var body = tostring(record["body"])
+            for _, endpoint := range toStringSlice(record["endpoints"]) {
+              var previous, exists = bodies[endpoint]
+              if exists && previous != body { fail("Protected-resource metadata documents conflict at " + endpoint + ". Use one document per discovery endpoint.") }
+              bodies[endpoint] = body
+            }
+            challenges[tostring(record["routeID"]) + "|" + tostring(record["authority"])] = "Bearer resource_metadata=\"" + tostring(record["url"]) + "\""
+          }
+          var bodyLines = []any{}
+          for key, body := range bodies { bodyLines = append(bodyLines, key + " " + queryEscape(body)) }
+          var challengeLines = []any{}
+          for key, challenge := range challenges { challengeLines = append(challengeLines, key + " " + queryEscape(challenge)) }
+          _ = RegisterMap("jwt-resource-metadata-body.map", sort_strings(bodyLines), map[string]any{"ordered": false})
+          _ = RegisterMap("jwt-resource-metadata-challenge.map", sort_strings(challengeLines), map[string]any{"ordered": false})
+        %%}
+      {%- end -%}
+
+  frontend-filters-005a-jwt-resource-metadata:
+    template: |
+      {%- if incremental_value_count("jwt-resource-metadata", "records") > 0 -%}
+      {%- var bodies, bodyErr = pathResolver.GetPath("jwt-resource-metadata-body.map", "map") -%}
+      {%- var challenges, challengeErr = pathResolver.GetPath("jwt-resource-metadata-challenge.map", "map") -%}
+      {%- if bodyErr != nil || challengeErr != nil -%}{{ fail("Protected-resource metadata maps are unavailable. Check the HTTP policy library.") }}{%- end -%}
+      http-request set-var-fmt(txn.jwt_metadata_lookup) %[var(txn.host_match)]|%[var(txn.host_full),regsub(:443$,)]|%[var(txn.path)]
+      http-request set-var(txn.jwt_metadata_body) var(txn.jwt_metadata_lookup),map({{ bodies }})
+      http-request set-var-fmt(txn.jwt_challenge_lookup) %[var(txn.policy_id)]|%[var(txn.host_full),regsub(:443$,)]
+      http-request set-var(txn.jwt_challenge) var(txn.jwt_challenge_lookup),map({{ challenges }})
+      {%- end %}
+
+  frontend-filters-059-jwt-resource-metadata:
+    template: |
+      {%- if incremental_value_count("jwt-resource-metadata", "records") > 0 -%}
+      http-after-response set-header WWW-Authenticate %[var(txn.jwt_challenge),url_dec(1)] if { status 401 } { var(txn.denied_by) -m beg jwt_ } { var(txn.jwt_challenge) -m found }
+      http-request return status 405 hdr Allow "GET, HEAD" if { var(txn.jwt_metadata_body) -m found } !{ method GET HEAD }
+      http-request return status 200 content-type application/json hdr Cache-Control no-store lf-string %[var(txn.jwt_metadata_body),url_dec(1)] if { var(txn.jwt_metadata_body) -m found }
+      {%- end %}

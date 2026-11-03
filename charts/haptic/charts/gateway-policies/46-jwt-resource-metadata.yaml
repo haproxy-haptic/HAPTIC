@@ -1,0 +1,57 @@
+templateSnippets:
+  jwt-resource-metadata-gateway-http:
+    requires: [httproutes, gateways, configmaps, namespaces, secrets]
+    incremental:
+      source: httproutes
+      whenAnyPathExists: ["spec.rules[*].filters"]
+      consumes: [gateway-policy-records, gateway-host-port-scopes, gateway-frontend-mtls]
+      optionalConsumes: [gateway-host-listenersets]
+      group: jwt-resource-metadata
+      effects: [publishValue]
+    template: |-
+      {%- import "util-gateway-resource-metadata" for GatewayResourceMetadata -%}
+      {{- GatewayResourceMetadata(item, "HTTPRoute") -}}
+
+  jwt-resource-metadata-gateway-grpc:
+    requires: [grpcroutes, gateways, configmaps, namespaces, secrets]
+    incremental:
+      source: grpcroutes
+      whenAnyPathExists: ["spec.rules[*].filters"]
+      consumes: [gateway-policy-records, gateway-host-port-scopes, gateway-frontend-mtls]
+      optionalConsumes: [gateway-host-listenersets]
+      group: jwt-resource-metadata
+      effects: [publishValue]
+    template: |-
+      {%- import "util-gateway-resource-metadata" for GatewayResourceMetadata -%}
+      {{- GatewayResourceMetadata(item, "GRPCRoute") -}}
+
+  util-gateway-resource-metadata:
+    template: |-
+      {%- import "util-gateway-policy-decision" for GatewayPolicyDecision -%}
+      {%- import "util-gateway-route-effective-hosts-incremental" for GatewayRouteEffectiveHosts -%}
+      {%- import "util-publish-resource-metadata" for PublishResourceMetadata -%}
+      {%- import "util-host-key" for MapKeyForHost -%}
+      {%- macro GatewayResourceMetadata(route any, kind string) -%}
+        {%%
+          for index, rule := range toSlice(dig(route, "spec", "rules")) {
+            var record = map[string]any{}
+            GatewayPolicyDecision(route, kind, rule, index, record)
+            var metadataValue = dig(record, "authentication", "jwt", "metadata")
+            if record["attached"] != true || record["error"] != "" || metadataValue == nil { continue }
+            var metadata = metadataValue.(map[string]any)
+            var resourceHost = tostring(metadata["host"])
+            var effectiveHosts = map[string]int{}
+            GatewayRouteEffectiveHosts(route, effectiveHosts)
+            var hosts = []any{}
+            for scopedHost := range effectiveHosts {
+              var host = strings_splitn(scopedHost, ":", 2)[0]
+              var matches = host == "" || host == resourceHost
+              if hasPrefix(host, "*.") && hasSuffix(resourceHost, host[1:]) {
+                matches = !strings_contains(trimSuffix(resourceHost, host[1:]), ".")
+              }
+              if matches { hosts = append(hosts, MapKeyForHost(scopedHost)) }
+            }
+            if len(hosts) > 0 { PublishResourceMetadata(tostring(record["id"]), hosts, metadata) }
+          }
+        %%}
+      {%- end macro -%}

@@ -4,7 +4,7 @@ validationTests:
     - httproutes
     - grpcroutes
     - routepolicies
-    fixtures:
+    fixtures: &authentication-fixtures
       gateways:
       - apiVersion: gateway.networking.k8s.io/v1
         kind: Gateway
@@ -4244,3 +4244,29 @@ validationTests:
     - type: not_contains
       target: map:coraza-app.map
       pattern: gateway/h_default_same-name_0
+
+  test-gateway-policy-jwt-resource-metadata:
+    requires: [httproutes, grpcroutes, routepolicies]
+    fixtures:
+      <<: *authentication-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource":"https://same-name.example.com/jwt","authorization_servers":["https://issuer.example.com"]}'
+      routepolicies:
+        - apiVersion: haproxy-haptic.org/v1alpha1
+          kind: HAProxyRoutePolicy
+          metadata: {namespace: default, name: jwt}
+          spec:
+            authentication:
+              jwt:
+                <<: *id002
+                resourceMetadata:
+                  configMapRef: {name: oauth-metadata}
+    assertions:
+      - {type: haproxy_valid}
+      - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: '(?m)^same-name\.example\.com:18846\|same-name\.example\.com\|/\.well-known/oauth-protected-resource/jwt '}
+      - {type: contains, target: map:jwt-resource-metadata-challenge.map, pattern: '(?m)^gateway/h_default_same-name_1\|same-name\.example\.com Bearer%20resource_metadata'}
+      - {type: contains, target: haproxy.cfg, pattern: 'deny deny_status 503 .*gw-policy-errors.map.* !\{ var\(txn.jwt_metadata_body\) -m found \}'}

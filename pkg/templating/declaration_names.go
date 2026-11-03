@@ -44,13 +44,14 @@ const (
 
 // Member names proved on runtime globals.
 const (
-	memberList       = "List"
-	memberFetch      = "Fetch"
-	memberPending    = "Pending"
-	memberGetSingle  = "GetSingle"
-	memberAPIVersion = "APIVersion"
-	memberBackend    = "Backend"
-	memberReplaceAll = "ReplaceAll"
+	memberList              = "List"
+	memberFetch             = "Fetch"
+	memberPending           = "Pending"
+	memberGetSingle         = "GetSingle"
+	memberAPIVersion        = "APIVersion"
+	memberSecondResultError = "[1].Error"
+	memberBackend           = "Backend"
+	memberReplaceAll        = "ReplaceAll"
 )
 
 // Scriggo's synthetic root package for template declarations.
@@ -78,6 +79,7 @@ const (
 	builtinIndexBy           = "index_by"
 	builtinLastIndex         = "lastIndex"
 	builtinMapExtract        = "map_extract"
+	builtinUnmarshalJSON     = "unmarshalJSON"
 	builtinMarshalJSON       = "marshalJSON"
 	builtinMarshalJSONIndent = "marshalJSONIndent"
 	builtinMarshalYAML       = "marshalYAML"
@@ -91,6 +93,7 @@ const (
 	builtinParseYAML         = "parse_yaml"
 	builtinPow               = "pow"
 	builtinPublicKeyInfo     = "public_key_info"
+	builtinParseURL          = "parse_url"
 	builtinJWKSPublicKeys    = "jwks_public_keys"
 	builtinQueryEscape       = "queryEscape"
 	builtinReplaceAll        = "replaceAll"
