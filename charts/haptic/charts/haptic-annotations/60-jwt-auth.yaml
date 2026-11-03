@@ -5,7 +5,6 @@ templateSnippets:
   util-haptic-jwt-route:
     template: |-
       {%- import "util-public-key-secret" for ReadPublicKeySecret -%}
-      {%- import "util-jwks" for ReadJWKS -%}
       {%- import "util-validate-config-value" for ValidateConfigValue -%}
       {%- import "util-haptic-secret-ref" for HapticSecretRef -%}
       {%- macro HapticJWTRoute(ingress any, result map[string]any) -%}
@@ -49,8 +48,12 @@ templateSnippets:
           {%- result["keyFile"] = "_" -%}
           {%- var info = map[string]any{} -%}
           {%- if jwksURL != "" -%}
-            {{- ReadJWKS(jwksURL, alg, props["jwt"], info) -}}
-            {%- result["jwks"] = info["keys"] -%}
+            {%- var selected, found = shared.Select("haptic-jwks-sources", "routes", key) -%}
+            {%- if !found -%}{{ fail("Ingress " + key + " has no JWKS source record. Check the JWT template libraries.") }}{%- end -%}
+            {%- info = selected.(map[string]any) -%}
+            {%- var parsedKeys = map[string]string{} -%}
+            {%- for kid, pem := range info["keys"].(map[string]any) -%}{%- parsedKeys[kid] = tostring(pem) -%}{%- end -%}
+            {%- result["jwks"] = parsedKeys -%}
             {%- result["keyFile"] = sha256(jwksURL + "|" + alg) -%}
             {%- result["state"] = "jwks" -%}
             {%- result["source"] = jwksURL -%}
@@ -119,8 +122,8 @@ templateSnippets:
   map-haptic-jwt-routes-858-haptic:
     requires: [ingresses]
     incremental:
-      bindingsTemplate: |
-        {{ map[string]any{"ingresses": map[string]any{"jwt": extraContext | dig("jwt") | fallback(map[string]any{})}} | toJSON() }}
+      source: ingresses
+      consumes: [haptic-jwks-sources]
       whenAnyPathExists:
         - "metadata.annotations['haproxy-haptic.org/jwt-secret']"
         - "metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"
@@ -147,8 +150,8 @@ templateSnippets:
   features-858-haptic-jwt-names:
     requires: [ingresses]
     incremental:
-      bindingsTemplate: |
-        {{ map[string]any{"ingresses": map[string]any{"jwt": extraContext | dig("jwt") | fallback(map[string]any{})}} | toJSON() }}
+      source: ingresses
+      consumes: [haptic-jwks-sources]
       whenAnyPathExists:
         - "metadata.annotations['haproxy-haptic.org/jwt-secret']"
         - "metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"
@@ -193,8 +196,8 @@ templateSnippets:
   haptic-jwt-file-publications:
     requires: [ingresses]
     incremental:
-      bindingsTemplate: |
-        {{ map[string]any{"ingresses": map[string]any{"jwt": extraContext | dig("jwt") | fallback(map[string]any{})}} | toJSON() }}
+      source: ingresses
+      consumes: [haptic-jwks-sources]
       whenAnyPathExists:
         - "metadata.annotations['haproxy-haptic.org/jwt-secret']"
         - "metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"
@@ -217,8 +220,8 @@ templateSnippets:
   map-haptic-jwks-858-haptic:
     requires: [ingresses]
     incremental:
-      bindingsTemplate: |
-        {{ map[string]any{"ingresses": map[string]any{"jwt": extraContext | dig("jwt") | fallback(map[string]any{})}} | toJSON() }}
+      source: ingresses
+      consumes: [haptic-jwks-sources]
       whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"]
     template: |-
       {%- import "util-haptic-jwt-route" for HapticJWTRoute -%}
@@ -231,3 +234,28 @@ templateSnippets:
           {{- shared.Unique("haptic-jwks", mapKey, "\n" + mapKey + " haptic-jwks-" + sha256(jwks[kid]) + ".pem") -}}
         {%- end -%}
       {%- end -%}
+
+  haptic-jwks-source-publications:
+    requires: [ingresses]
+    incremental:
+      bindingsTemplate: |
+        {{ map[string]any{"ingresses": map[string]any{"jwt": extraContext | dig("jwt") | fallback(map[string]any{})}} | toJSON() }}
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"]
+      group: haptic-jwks-sources
+      effects: [publishValue]
+    template: |-
+      {%- import "util-jwks" for ReadJWKS -%}
+      {%- var url = dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/jwt-jwks-url") -%}
+      {%- if url != "" && dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/jwt-secret") == "" -%}
+        {%- var algorithm = dig_string(item, "RS256", "metadata", "annotations", "haproxy-haptic.org/jwt-algorithm") -%}
+        {%- if algorithm == "" -%}{%- algorithm = "RS256" -%}{%- end -%}
+        {%- var info = map[string]any{} -%}
+        {{- ReadJWKS(url, algorithm, props["jwt"], info) -}}
+        {%- var publishedKeys = map[string]any{} -%}
+        {%- for kid, pem := range info["keys"].(map[string]string) -%}{%- publishedKeys[kid] = pem -%}{%- end -%}
+        {%- info["keys"] = publishedKeys -%}
+        {{- shared.Publish("routes", dig_string(item, "", "metadata", "namespace") + "/" + dig_string(item, "", "metadata", "name"), info) -}}
+      {%- end -%}
+
+  features-001-haptic-jwks-sources:
+    template: '{{- render "haptic-jwks-source-publications" -}}'
