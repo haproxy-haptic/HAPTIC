@@ -56,7 +56,7 @@ Keep `preRolloutValidation.enabled: true` so deployment also checks the final va
 | `--release` | `haptic` | Release name, which resource names are derived from |
 | `--chart` | image-embedded chart | Chart directory, then `$HAPTIC_CHART_DIR`, then the copy inside the controller image |
 | `--kubeconfig` | `$KUBECONFIG`, then in-cluster | Which cluster to read API schemas from — see [Schemas](#schemas) |
-| `--schema-dir` | `$HAPTIC_SCHEMA_DIR` | Read schemas from a directory instead of the cluster, for running fully offline |
+| `--schema-dir` | `$HAPTIC_SCHEMA_DIR` | Read API schemas from a directory instead of the cluster |
 | `--api-versions` | — | Extra API versions your cluster serves. The Gateway API `GatewayClass` version is always declared, so the Gateway library renders the same way it does in the cluster |
 | `--resources` | — | Manifest file or directory of the resources the controller watches once deployed. Repeatable. See [Check against your resources](#check-against-your-resources) |
 | `--resources-from-cluster` | off | List the watched resources from the cluster (read-only) and render against them |
@@ -79,7 +79,7 @@ configuration against the resources the controller is going to watch, and run
 `haproxy -c` on the result, pass them in:
 
 ```bash
-# Manifests on disk, offline (with --schema-dir, or a cluster for the schemas):
+# Manifests on disk (schemas come from the cluster unless --schema-dir is set):
 haptic preflight --values ./haptic-values.yaml --chart ./chart --resources ./rendered/
 
 # The resources in the target cluster, listed read-only:
@@ -92,7 +92,7 @@ apply. The render uses your values' `extraContext`, as the controller does.
 
 - `--resources` reads every `.yaml` and `.yml` file under each path, including `kind: List` documents. Include everything the configuration reads, such as the default TLS certificate Secret and ConfigMaps your annotations name; a missing one fails the render the way it would in the cluster.
 - `--resources-from-cluster` needs `list` access to every watched resource, Secrets included, like the controller's own ServiceAccount.
-- HTTP resources a template fetches aren't available, so a configuration that fetches one fails this check.
+- HTTP inputs are fetched with the template's authentication and fetch options. Each resource render uses a fresh HTTP cache. A failed non-critical fetch returns empty content; a failed critical fetch fails the check.
 
 ### Schemas
 

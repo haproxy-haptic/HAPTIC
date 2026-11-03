@@ -79,7 +79,7 @@ Schemas default to the **live cluster** (`--kubeconfig`, `$KUBECONFIG`, then
 in-cluster), unlike `validate`, which is dir-or-nothing. There is no
 no-schemas mode here: without schemas the render silently falls back to
 untyped access and would pass on a weaker check than the controller runs.
-`--schema-dir` switches it fully offline.
+`--schema-dir` reads API schemas offline; resource checks can still fetch HTTP inputs.
 
 `schemasource.go` holds the shared abstraction — `schemaSource` is a directory
 fetcher, a `liveCluster`, or the zero value (no schemas, the `validate`

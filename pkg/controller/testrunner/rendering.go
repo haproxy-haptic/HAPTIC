@@ -137,7 +137,7 @@ type RenderOutput struct {
 // Returns rendered haproxy.cfg, auxiliary files, k8sResources (template name → YAML),
 // status patches (key `<ns>/<name>:<phase>` → JSON-marshalled status content), and
 // include-stats (when profiling) bundled in a RenderOutput, plus the render error.
-func (r *Runner) renderWithStores(ctx context.Context, engine templating.Engine, storeMap map[string]stores.Store, validationPaths *dataplane.ValidationPaths, httpStore *FixtureHTTPStoreWrapper, currentConfig *renderplan.CurrentConfig, currentFiles map[string]string, extraContext map[string]any) (RenderOutput, error) {
+func (r *Runner) renderWithStores(ctx context.Context, engine templating.Engine, storeMap map[string]stores.Store, validationPaths *dataplane.ValidationPaths, httpStore templating.HTTPFetcher, currentConfig *renderplan.CurrentConfig, currentFiles map[string]string, extraContext map[string]any) (RenderOutput, error) {
 	bctx, err := r.buildRenderingContext(ctx, storeMap, validationPaths, httpStore, currentConfig, currentFiles, extraContext)
 	if err != nil {
 		return RenderOutput{}, err
@@ -457,7 +457,7 @@ func (r *Runner) renderK8sResources(
 	return k8sResources, nil
 }
 
-func (r *Runner) buildRenderingContext(ctx context.Context, storeMap map[string]stores.Store, validationPaths *dataplane.ValidationPaths, httpStore *FixtureHTTPStoreWrapper, currentConfig *renderplan.CurrentConfig, currentFiles map[string]string, extraContext map[string]any) (*rendercontext.BuildResult, error) {
+func (r *Runner) buildRenderingContext(ctx context.Context, storeMap map[string]stores.Store, validationPaths *dataplane.ValidationPaths, httpStore templating.HTTPFetcher, currentConfig *renderplan.CurrentConfig, currentFiles map[string]string, extraContext map[string]any) (*rendercontext.BuildResult, error) {
 	extraContextOpts, err := ExtraContextOptions(extraContext)
 	if err != nil {
 		return nil, err
