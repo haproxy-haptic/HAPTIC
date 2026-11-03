@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Fixed
 
+- Validation tests use the deployed resource names and selectors when `nameOverride` or `fullnameOverride` is set, including aliased chart dependencies ([#618](https://github.com/haproxy-haptic/HAPTIC/issues/618)).
+
 - JWT audience validation accepts an exact member of a string-array `aud` claim for Ingress annotations and route policies, and rejects non-string values ([#609](https://github.com/haproxy-haptic/HAPTIC/issues/609)).
 
 ## [0.10.0] - 2026-11-02

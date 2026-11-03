@@ -371,6 +371,7 @@ test-support: build-map-identity-check ## Run script, browser, process, playgrou
 		scripts/tests/test_conformance_provenance.py \
 		scripts/tests/test_check_controller_output.py \
 		scripts/tests/test_check_image_pins.py \
+		scripts/tests/test_chart_test_context.py \
 		scripts/tests/test_analyze_gateway_api_bench.py \
 		scripts/tests/test_analyze_gateway_api_children.py \
 		scripts/tests/test_analyze_gateway_api_outcomes.py \
