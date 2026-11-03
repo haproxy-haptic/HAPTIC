@@ -69,9 +69,9 @@ Use `denied_by` to identify why HAPTIC rejected a request. Values include
 `consumer_groups`, `body_too_large`, `schema_invalid` and the `*_unavailable`
 fail-closed variants.
 
-JWT routes report `jwt_missing` when no non-empty Bearer token is available,
-including an absent or empty Authorization header or a different authentication
-scheme. A supplied token still goes through key selection, algorithm, signature,
+When signing keys are available, JWT routes report `jwt_missing` for requests
+without a non-empty Bearer token, including an absent or empty Authorization
+header or a different authentication scheme. A supplied token still goes through key selection, algorithm, signature,
 and claim checks, which report their own denial reasons.
 
 ## Add your own fields
