@@ -1,9 +1,11 @@
 TestGatewayExternalAuth
+TestGatewayJWTMetadata
 TestGatewayRoutePolicyAuthentication
 TestGatewaySessionPersistence
 TestHapticAPIKey
 TestHapticBasicAuth
 TestHapticExternalAuth
+TestHapticJWTMetadata
 TestHapticRequestValidation
 TestHapticWAFPolicies
 TestIngressBasic

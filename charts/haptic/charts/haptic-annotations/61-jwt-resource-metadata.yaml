@@ -1,0 +1,56 @@
+templateSnippets:
+  jwt-resource-metadata-ingress:
+    requires: [ingresses, configmaps]
+    incremental:
+      source: ingresses
+      whenAnyPathExists:
+        - "metadata.annotations['haproxy-haptic.org/jwt-resource-metadata-configmap']"
+        - "metadata.annotations['haproxy-haptic.org/jwt-resource-metadata-path']"
+      optionalConsumes: [haptic-jwks-sources]
+      group: jwt-resource-metadata
+      effects: [publishValue, recordEvent]
+    template: |-
+      {%- import "util-haptic-jwt-route" for HapticJWTRoute -%}
+      {%- import "util-resource-metadata" for ReadResourceMetadata -%}
+      {%- import "util-publish-resource-metadata" for PublishResourceMetadata -%}
+      {%- import "util-host-key" for MapKeyForHost -%}
+      {%%
+        var namespace = dig_string(item, "", "metadata", "namespace")
+        var name = dig_string(item, "", "metadata", "name")
+        var routeID = namespace + "/" + name
+        var ref = dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/jwt-resource-metadata-configmap")
+        var path = dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/jwt-resource-metadata-path")
+        if ref != "" || path != "" {
+          var jwt = map[string]any{}
+          HapticJWTRoute(item, jwt)
+          if jwt["enabled"] != true || jwt["state"] == "nosecret" {
+            fail("Ingress " + routeID + " enables JWT metadata without JWT verification. Configure a JWT signing-key source.")
+          }
+          var parts = strings_splitn(ref, ":", 2)
+          var key = "metadata.json"
+          if len(parts) == 2 { key = parts[1] }
+          if !regex_search(parts[0], "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$") || !regex_search(key, "^[A-Za-z0-9._-]+$") {
+            fail("Ingress " + routeID + " has an invalid JWT metadata reference. Use a same-namespace ConfigMap name, optionally followed by :key.")
+          }
+          var metadata = map[string]any{}
+          ReadResourceMetadata(namespace, parts[0], key, path, metadata)
+          if metadata["unavailable"] == true {
+            shared.Publish("unavailable", routeID, routeID)
+            recordEvent(resources.ingresses.GetSingle(namespace, name), "JWTMetadataUnavailable", "Ingress " + routeID + " cannot read JWT metadata from ConfigMap " + namespace + "/" + parts[0] + ". Requests return 503. Restore data[" + key + "].")
+          } else {
+            if metadata["error"] != "" { fail("Ingress " + routeID + ": " + tostring(metadata["error"])) }
+            var resourceHost = tostring(metadata["host"])
+            var hosts = []any{}
+            for _, rule := range toSlice(dig(item, "spec", "rules")) {
+              var host = dig_string(rule, "", "host")
+              var matches = host == "" || host == resourceHost
+              if hasPrefix(host, "*.") && hasSuffix(resourceHost, host[1:]) {
+                matches = !strings_contains(trimSuffix(resourceHost, host[1:]), ".")
+              }
+              if matches { hosts = append(hosts, MapKeyForHost(host)) }
+            }
+            if len(hosts) == 0 { fail("Ingress " + routeID + " does not serve the metadata resource host. Set resource to a URL on an Ingress host.") }
+            PublishResourceMetadata(routeID, hosts, metadata)
+          }
+        }
+      %%}

@@ -15,6 +15,9 @@ instructions apply to every agent and future session.
    so never run them in parallel (`make -j` included).
 4. For chart changes, also run `./scripts/test-templates.sh`.
 
+For native checks, rebuild the controller image after chart or CRD changes; the
+Go source hash doesn't cover embedded chart inputs.
+
 ## While iterating
 
 - Batch fixes before pushing. Every pull request runs the complete matrix,

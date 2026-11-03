@@ -289,8 +289,10 @@ func registerScriggoBuiltinCore(decl native.Declarations) {
 	decl[builtinSHA256] = builtin.Sha256
 	decl["randBytes"] = scriggoRandBytes
 	decl[builtinPublicKeyInfo] = scriggoPublicKeyInfo
+	decl[builtinParseURL] = scriggoParseURL
 	decl[builtinJSONArrayPattern] = scriggoJSONStringArrayPattern
 	decl[builtinJWKSPublicKeys] = scriggoJWKSPublicKeys
+	decl[builtinParseJSON] = scriggoParseJSON
 	decl[builtinParseYAML] = scriggoParseYAML
 
 	// encoding

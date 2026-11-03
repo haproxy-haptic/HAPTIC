@@ -69,13 +69,14 @@ templateSnippets:
       {%- end macro -%}
 
   util-gateway-policy-record:
-    requires: [routepolicies, secrets]
+    requires: [routepolicies, secrets, configmaps]
     template: |-
       {%- import "util-gateway-policy-reference" for GatewayPolicyReference -%}
       {%- import "util-gateway-route-identity" for GatewayRuleID -%}
       {%- import "util-policy-authentication" for PolicyAuthentication -%}
       {%- import "util-policy-rate-limit" for PolicyRateLimit -%}
       {%- import "util-policy-cache" for PolicyCache -%}
+      {%- import "util-hostname-intersect-gateway" for HostnameSinglePairMatch -%}
       {%- macro GatewayPolicyRecord(route any, kind string, rule any, index int, result map[string]any) -%}
         {%%
           GatewayPolicyReference(route, rule, result)
@@ -119,12 +120,28 @@ templateSnippets:
                   }
                 }
               }
+              var metadataName = dig_string(auth, "", "jwt", "resourceMetadata", "configMapRef", "name")
+              if metadataName != "" {
+                result["dependencies"] = append(result["dependencies"].([]any), map[string]any{
+                  "store": "configmaps", "namespace": namespace, "name": metadataName,
+                })
+              }
               if result["error"] == "" && authenticated {
                 var authentication = map[string]any{}
                 PolicyAuthentication(namespace, auth, authentication)
                 result["authentication"] = authentication
                 result["error"] = authentication["error"]
                 result["resolvedReason"] = authentication["resolvedReason"]
+                var resourceHost = dig_string(authentication, "", "jwt", "metadata", "host")
+                var routeHosts = toSlice(dig(route, "spec", "hostnames"))
+                if resourceHost != "" && len(routeHosts) > 0 {
+                  var matched = false
+                  for _, value := range routeHosts {
+                    var host = tostring(value)
+                    if HostnameSinglePairMatch(host, resourceHost) == "true" { matched = true }
+                  }
+                  if !matched { result["error"] = "JWT metadata resource host is not served by this route. Set resource to a URL on a route hostname." }
+                }
               }
               if result["error"] == "" && dig(spec, "rateLimit") != nil {
                 var settings = map[string]any{}
@@ -245,5 +262,5 @@ templateSnippets:
     template: |
       {%- var path, err = pathResolver.GetPath("gw-policy-errors.map", "map") -%}
       {%- if err != nil -%}{{ fail(tostring(err)) }}{%- end -%}
-      {{ "\n" }}http-request set-var(txn.denied_by) str(route_policy_unavailable) if { var(txn.policy_id),map({{ path }}) -m found }
-      http-request deny deny_status 503 if { var(txn.policy_id),map({{ path }}) -m found }
+      {{ "\n" }}http-request set-var(txn.denied_by) str(route_policy_unavailable) if { var(txn.policy_id),map({{ path }}) -m found }{% if incremental_value_count("jwt-resource-metadata", "records") > 0 %} !{ var(txn.jwt_metadata_body) -m found }{% end %}
+      http-request deny deny_status 503 if { var(txn.policy_id),map({{ path }}) -m found }{% if incremental_value_count("jwt-resource-metadata", "records") > 0 %} !{ var(txn.jwt_metadata_body) -m found }{% end %}

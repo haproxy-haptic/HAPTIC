@@ -309,6 +309,12 @@ func (c *Coordinator) handleReconciliationTriggered(ctx context.Context, event *
 			"correlation_id", correlationID)
 		return nil
 	}
+	// The watcher queues the newer snapshot; preserve accepted state until it renders.
+	if errors.Is(err, stores.ErrSnapshotChanged) {
+		c.recordRender(nil, err)
+		c.logger.Debug("Reconciliation superseded by a resource change", "correlation_id", correlationID)
+		return nil
+	}
 	if !pipeline.RenderHeld(err) {
 		c.ledger.deployedFrom.Store(acceptedBefore)
 	}

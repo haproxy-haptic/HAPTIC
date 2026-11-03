@@ -214,6 +214,6 @@ templateSnippets:
       {%- if incremental_ranked_fragment_bytes("gateway-route-filter-maps", "extauth-error") > 0 %}
       {%- var gwm, _ = shared.ComputeIfAbsent("gatewayRouteMaps", func() any { return nil }) %}
       {%- var errorMap = tostring(dig(gwm, "extauthErrorPath")) %}
-      http-request set-var(txn.denied_by) str(external_auth_unavailable) if { var(txn.gw_rule_id),map({{ errorMap }}) -m found }
-      http-request deny deny_status 500 if { var(txn.gw_rule_id),map({{ errorMap }}) -m found }
+      http-request set-var(txn.denied_by) str(external_auth_unavailable) if { var(txn.gw_rule_id),map({{ errorMap }}) -m found }{% if incremental_value_count("jwt-resource-metadata", "records") > 0 %} !{ var(txn.jwt_metadata_body) -m found }{% end %}
+      http-request deny deny_status 500 if { var(txn.gw_rule_id),map({{ errorMap }}) -m found }{% if incremental_value_count("jwt-resource-metadata", "records") > 0 %} !{ var(txn.jwt_metadata_body) -m found }{% end %}
       {%- end %}

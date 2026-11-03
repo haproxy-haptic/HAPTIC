@@ -6,6 +6,7 @@ templateSnippets:
       {%- import "util-jwt-groups" for JWTGroups -%}
       {%- import "util-api-key-secret" for ReadAPIKeySecret -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
+      {%- import "util-resource-metadata" for ReadResourceMetadata -%}
       {%- macro PolicyAuthentication(namespace string, config any, result map[string]any) -%}
         {%%
           result["error"] = ""
@@ -92,6 +93,19 @@ templateSnippets:
               headers[folded] = true
               forwardedHeaders[folded] = true
               forwarded = append(forwarded, claim + ":" + header)
+            }
+            var metadataConfig = dig(jwt, "resourceMetadata")
+            if metadataConfig != nil {
+              var metadata = map[string]any{}
+              var metadataName = dig_string(metadataConfig, "", "configMapRef", "name")
+              var metadataKey = dig_string(metadataConfig, "metadata.json", "configMapRef", "key")
+              if metadataName == "" || metadataKey == "" {
+                reject("JWT metadata requires a ConfigMap name and key. Configure resourceMetadata.configMapRef.")
+              } else {
+                ReadResourceMetadata(namespace, metadataName, metadataKey, dig_string(metadataConfig, "", "path"), metadata)
+                if metadata["error"] != "" { reject(tostring(metadata["error"])) }
+                settings["metadata"] = metadata
+              }
             }
             settings["fwd"] = forwarded
             result["jwt"] = settings
