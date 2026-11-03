@@ -25,9 +25,9 @@ templateSnippets:
           } else if len(encoded) > 8192 {
             reject("Protected-resource metadata exceeds 8 KiB. Reduce the JSON document.")
           } else {
-            var document map[string]any
-            var decodeErr = unmarshalJSON(encoded, &document)
-            if decodeErr != nil || document == nil {
+            var decoded, decodeErr = parse_json(encoded)
+            var document, object = decoded.(map[string]any)
+            if decodeErr != nil || !object || document == nil {
               reject("Protected-resource metadata is not a JSON object. Correct the ConfigMap document.")
             } else {
               var resource, resourceString = document["resource"].(string)

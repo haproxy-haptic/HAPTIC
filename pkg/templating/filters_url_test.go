@@ -48,7 +48,7 @@ func TestParseURLPreservesAuthorityAndEscaping(t *testing.T) {
 }
 
 func TestParseURLAndJSONIncrementalEntryPoint(t *testing.T) {
-	source := `{% var value map[string]any %}{% var err = unmarshalJSON(item["document"].(string), &value) %}{% if err != nil %}invalid{% else %}{% var parsed, parseErr = parse_url(value["url"].(string)) %}{% if parseErr != nil %}invalid{% else %}{{ parsed["escapedPath"] }}{% end %}{% end %}`
+	source := `{% var value, err = parse_json(item["document"].(string)) %}{% if err != nil %}invalid{% else %}{% var parsed, parseErr = parse_url(value.(map[string]any)["url"].(string)) %}{% if parseErr != nil %}invalid{% else %}{{ parsed["escapedPath"] }}{% end %}{% end %}`
 	engine, err := New(map[string]string{"test": source}, &Options{EntryPoints: []string{"test"}, IncrementalEntryPoints: []string{"test"}})
 	require.NoError(t, err)
 	require.True(t, engine.compiledTemplates["test"].BatchSafe())

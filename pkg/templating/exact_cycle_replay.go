@@ -67,7 +67,7 @@ var exactCycleReplayPureFunctions = map[string]struct{}{
 	"make_guid": {}, "map": {}, builtinMapExtract: {}, builtinMarshalJSON: {}, builtinMarshalJSONIndent: {},
 	builtinMarshalYAML: {}, builtinMax: {}, builtinMD5: {}, "merge": {}, builtinMin: {},
 	"namespace": {}, funcOnOwnLinesJoin: {}, funcOnOwnLinesStart: {}, builtinParseDuration: {}, builtinParseFloat: {}, builtinParseInt: {}, builtinParseTime: {},
-	builtinPow: {}, builtinPublicKeyInfo: {}, builtinParseURL: {}, builtinJWKSPublicKeys: {}, builtinParseYAML: {}, builtinQueryEscape: {}, declRegexp: {}, "regex_search": {}, "reject": {},
+	builtinPow: {}, builtinPublicKeyInfo: {}, builtinParseURL: {}, builtinJWKSPublicKeys: {}, builtinParseYAML: {}, builtinParseJSON: {}, builtinQueryEscape: {}, declRegexp: {}, "regex_search": {}, "reject": {},
 	"replace": {}, builtinReplaceAll: {}, builtinRuneCount: {}, "sanitize_regex": {}, "selectattr": {},
 	"semver_gte": {}, "seq": {}, builtinSHA1: {}, builtinSHA256: {}, "shard_slice": {},
 	"sort_by": {}, "sort_ints": {}, "sort_strings": {}, builtinSplit: {}, builtinSplitAfter: {},
@@ -76,7 +76,7 @@ var exactCycleReplayPureFunctions = map[string]struct{}{
 	"strings_trim": {}, "strip": {}, "title": {}, "toJSON": {}, builtinToKebab: {},
 	builtinToLower: {}, "toSlice": {}, "toStringSlice": {}, builtinToUpper: {}, "to_str_map": {},
 	"tofloat": {}, "toint": {}, "tostring": {}, builtinTrim: {}, builtinTrimLeft: {},
-	builtinTrimPrefix: {}, builtinTrimRight: {}, builtinTrimSpace: {}, builtinTrimSuffix: {}, builtinUnmarshalJSON: {},
+	builtinTrimPrefix: {}, builtinTrimRight: {}, builtinTrimSpace: {}, builtinTrimSuffix: {}, "unmarshalJSON": {},
 	"unmarshalYAML": {}, "unique": {}, "unique_by": {}, "untar_gz": {},
 }
 
@@ -691,9 +691,9 @@ func validExactCycleCallable(callable *scriggo.UsedNativeCallable) bool {
 		return callable.MemberPath == "ComputeIfAbsent" || callable.MemberPath == "Get"
 	case declRegexp:
 		return slices.Contains([]string{"FindSubmatch", "Match", memberReplaceAll}, callable.MemberPath)
-	case builtinUnmarshalJSON, "unmarshalYAML":
+	case "unmarshalJSON", "unmarshalYAML":
 		return callable.MemberPath == "Error"
-	case builtinParseYAML, builtinParseURL:
+	case builtinParseYAML, builtinParseURL, builtinParseJSON:
 		return callable.MemberPath == memberSecondResultError
 	case builtinParseDuration:
 		return slices.Contains([]string{

@@ -84,10 +84,10 @@ var synchronousDeclarationNames = [...]string{
 	builtinPublicKeyInfo,
 	builtinParseURL,
 	builtinJWKSPublicKeys,
+	builtinParseJSON,
 	builtinParseYAML,
 	builtinBase64,
 	builtinHex,
-	builtinUnmarshalJSON,
 	builtinMarshalJSON,
 	builtinMarshalJSONIndent,
 	builtinMarshalYAML,
@@ -134,8 +134,8 @@ var synchronousDeclarationNames = [...]string{
 }
 
 var synchronousDeclarationMembers = map[string][]string{
-	builtinUnmarshalJSON: {"Error"},
 	builtinParseURL:      {memberSecondResultError},
+	builtinParseJSON:     {memberSecondResultError},
 	builtinParseDuration: {"[0].Milliseconds"},
 	builtinParseTime:     {"UnixNano"},
 	builtinParseYAML:     {memberSecondResultError},

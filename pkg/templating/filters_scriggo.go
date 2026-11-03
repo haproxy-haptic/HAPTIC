@@ -291,6 +291,7 @@ func registerScriggoBuiltinCore(decl native.Declarations) {
 	decl[builtinPublicKeyInfo] = scriggoPublicKeyInfo
 	decl[builtinParseURL] = scriggoParseURL
 	decl[builtinJWKSPublicKeys] = scriggoJWKSPublicKeys
+	decl[builtinParseJSON] = scriggoParseJSON
 	decl[builtinParseYAML] = scriggoParseYAML
 
 	// encoding
@@ -300,7 +301,7 @@ func registerScriggoBuiltinCore(decl native.Declarations) {
 	decl[builtinMarshalJSONIndent] = builtin.MarshalJSONIndent
 	decl[builtinMarshalYAML] = builtin.MarshalYAML
 	decl[builtinMD5] = builtin.Md5
-	decl[builtinUnmarshalJSON] = scriggoUnmarshalJSON
+	decl["unmarshalJSON"] = scriggoUnmarshalJSON
 	decl["unmarshalYAML"] = scriggoUnmarshalYAML
 
 	// html

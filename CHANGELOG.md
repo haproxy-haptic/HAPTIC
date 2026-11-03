@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Templates can parse URL components with `parse_url`.
+- Templates can decode JSON with `parse_json` and parse URL components with `parse_url`.
 
 - Templates can convert JSON Web Key Sets to PEM public keys with `jwks_public_keys`.
 
