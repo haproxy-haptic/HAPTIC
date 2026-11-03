@@ -24,6 +24,13 @@ validationTests:
         content: '{"keys":[{"kty":"RSA","kid":"old","n":"u6RhujxV_1Hn5vayn06Zno8bwCH8WSoNJLdZXbHaPG3WhbpyXgUvMH-55udbTepqYwu9yNiH4smAUl4RljsFVoUQ6VpE-N7vbj3aY1GKZuy0xkS35f5KqoUTj-krctEDU-JJrgje7TvQdJQOrFWInyUtsajQvktMv5UJErk2nVd0e4Ir_SYd8cKNxwDz68H3W9ggmfKJoWwljPblQ2B9ZUgC5Feejdi_SavAYCOpjsHceFo4AyYwnOT8j0GUO1vRM63SLPgGRNmrT4HQokKR_KdZkD5CXvDtPIgTlA9oGnWueHBNpZPuJjbmey7b2E_pZdawJrV7wSnG_QPJJ12XwQ","e":"AQAB","use":"sig","alg":"RS256"},{"kty":"RSA","kid":"new","n":"u6RhujxV_1Hn5vayn06Zno8bwCH8WSoNJLdZXbHaPG3WhbpyXgUvMH-55udbTepqYwu9yNiH4smAUl4RljsFVoUQ6VpE-N7vbj3aY1GKZuy0xkS35f5KqoUTj-krctEDU-JJrgje7TvQdJQOrFWInyUtsajQvktMv5UJErk2nVd0e4Ir_SYd8cKNxwDz68H3W9ggmfKJoWwljPblQ2B9ZUgC5Feejdi_SavAYCOpjsHceFo4AyYwnOT8j0GUO1vRM63SLPgGRNmrT4HQokKR_KdZkD5CXvDtPIgTlA9oGnWueHBNpZPuJjbmey7b2E_pZdawJrV7wSnG_QPJJ12XwQ","e":"AQAB","use":"sig","alg":"RS256"}]}'
     assertions:
       - type: haproxy_valid
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - 'deny deny_status 503 if .*jwt_state.*missing nosecret'
+          - 'set-var\(txn\.denied_by\) str\(jwt_missing\).*jwt_state.*ok jwks.*http_auth_bearer -m len gt 0'
+          - 'deny deny_status 401 if .*jwt_state.*ok jwks.*http_auth_bearer -m len gt 0'
+          - 'set-var\(txn\.jwt_kid\)'
       - {type: contains, target: map:haptic-jwt-routes.map, pattern: 'default/jwks RS256 [0-9a-f]+ jwks'}
       - {type: contains, target: map:haptic-jwks.map, pattern: '[0-9a-f]+\.6f6c64 haptic-jwks-[0-9a-f]+\.pem'}
       - {type: contains, target: map:haptic-jwks.map, pattern: '[0-9a-f]+\.6e6577 haptic-jwks-[0-9a-f]+\.pem'}

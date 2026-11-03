@@ -65,9 +65,14 @@ that feature is in use: `waf_action`, `waf_rule_id` and `waf_score`;
 
 Use `denied_by` to identify why HAPTIC rejected a request. Values include
 `rate_limit_local`, `rate_limit_shared`, `rate_limit_shared_unavailable`, `waf`,
-`jwt_signature`, `jwt_expired`, `api_key`, `hmac`, `basic_auth`,
+`jwt_missing`, `jwt_signature`, `jwt_expired`, `api_key`, `hmac`, `basic_auth`,
 `consumer_groups`, `body_too_large`, `schema_invalid` and the `*_unavailable`
 fail-closed variants.
+
+JWT routes report `jwt_missing` when no non-empty Bearer token is available,
+including an absent or empty Authorization header or a different authentication
+scheme. A supplied token still goes through key selection, algorithm, signature,
+and claim checks, which report their own denial reasons.
 
 ## Add your own fields
 

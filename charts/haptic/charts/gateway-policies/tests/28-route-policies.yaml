@@ -203,6 +203,8 @@ validationTests:
       patterns:
       - set-var\(txn.policy_id\)
       - str\(route_policy_unavailable\)
+      - str\(jwt_missing\)
+      - 'deny deny_status 401 if .*jwt_state.*ok jwks.*http_auth_bearer -m len gt 0'
       - str\(jwt_signature\)
       - str\(api_key\)
   test-gateway-policy-invalid-dependencies:

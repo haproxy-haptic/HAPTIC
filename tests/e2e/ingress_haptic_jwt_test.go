@@ -104,7 +104,7 @@ func TestHapticJWT(t *testing.T) {
 				"pubkey.pem": pubPEM,
 			})
 		},
-		Assess: []SimpleIngressAssertion{
+		Assess: append(jwtDenialAssertions("jwt_algorithm"), []SimpleIngressAssertion{
 			{
 				Name: "no token returns 401",
 				Check: func(t *testing.T, host string) {
@@ -133,8 +133,43 @@ func TestHapticJWT(t *testing.T) {
 					httpclient.New(t).GET(host, "/").WithHeader("Authorization", "Bearer "+algConfusedToken).ExpectStatus(t, http.StatusUnauthorized)
 				},
 			},
-		},
+		}...),
 	})
+}
+
+func jwtDenialAssertions(malformedReason string) []SimpleIngressAssertion {
+	cases := []struct {
+		name, authorization, reason string
+	}{
+		{"absent", "", "jwt_missing"},
+		{"empty-bearer", "Bearer ", "jwt_missing"},
+		{"basic", "Basic dXNlcjpwYXNz", "jwt_missing"},
+		{"invalid-signature", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.AAAA", "jwt_signature"},
+		{"malformed", "Bearer invalid", malformedReason},
+	}
+	assertions := make([]SimpleIngressAssertion, 0, len(cases))
+	for _, test := range cases {
+		assertions = append(assertions, SimpleIngressAssertion{
+			Name: "JWT denial reason " + test.name,
+			Check: func(t *testing.T, host string) {
+				t.Helper()
+				started := time.Now()
+				path := "/jwt-denial-" + test.name
+				request := httpclient.New(t).GET(host, path)
+				if test.authorization != "" {
+					request = request.WithHeader("Authorization", test.authorization)
+				}
+				request.ExpectStatus(t, http.StatusUnauthorized)
+				record := findAccessLogRecordWhere(t.Context(), t, started, path, func(record map[string]any) bool {
+					return record["path"] == path && record["host"] == host
+				})
+				if got := recordString(t, record, "denied_by"); got != test.reason {
+					t.Fatalf("JWT denial reason = %q, want %q", got, test.reason)
+				}
+			},
+		})
+	}
+	return assertions
 }
 
 func TestHapticJWTClaimConstraints(t *testing.T) {

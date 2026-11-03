@@ -34,6 +34,8 @@ templateSnippets:
       http-request set-var(txn.denied_by) str(jwt_unavailable) if { var(txn.jwt_state) -m str nosecret }
       http-request set-var(txn.denied_by) str(jwt_key_unavailable) if { var(txn.jwt_state) -m str missing }
       http-request deny deny_status 503 if { var(txn.jwt_state) -m str missing nosecret }
+      http-request set-var(txn.denied_by) str(jwt_missing) if { var(txn.jwt_state) -m str ok jwks } !{ http_auth_bearer -m len gt 0 }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok jwks } !{ http_auth_bearer -m len gt 0 }`) }}
       {%- for _, fh := range sort_strings(fwdhdrs) %}
       http-request del-header {{ fh }} if { var(txn.jwt_fwd) -m sub :{{ fh }}, }
       {%- end %}
