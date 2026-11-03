@@ -85,7 +85,7 @@ templateSnippets:
           {%- var audRaw = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-audience") -%}
           {%- if audRaw != "" -%}
             {%- var audV = ValidateConfigValue(audRaw, "haproxy-haptic.org/jwt-audience", key, false) -%}
-            {%- if audV == "[]" -%}{{ fail("Ingress " + key + " has ambiguous jwt-audience []. Set a non-array audience identifier.") }}{%- end -%}
+            {%- if hasPrefix(audV, "[") -%}{{ fail("Ingress " + key + " has ambiguous jwt-audience. Use an identifier that does not start with [.") }}{%- end -%}
             {%- if regex_search(audV, "[\"{}\\\\]") -%}{{ fail("Invalid value for annotation 'haproxy-haptic.org/jwt-audience' on Ingress '" + key + "': must not contain '\"', '{', '}' or '\\'.") }}{%- end -%}
             {%- result["aud"] = audV -%}
             {%- result["audSet"] = true -%}
