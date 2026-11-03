@@ -26,7 +26,7 @@ templateSnippets:
             }
             groups = sort_strings(toSlice(groups))
             result["groupsClaim"] = claim
-            result["groupsKey"] = sha256(claim + "|" + toJSON(groups))
+            result["groupsKey"] = sha256(toJSON(groups))
             result["allowedGroups"] = toSlice(groups)
           }
         %%}
@@ -56,8 +56,10 @@ maps:
       {%- for _, value := range incremental_values("haptic-jwt-routes", "groupValues") -%}
         {%- var record = value.(map[string]any) -%}
         {%- var key = tostring(record["key"]) -%}
+        {%- var patterns = []string{} -%}
         {%- for _, value := range toStringSlice(record["values"]) -%}
           {%- var pattern = json_string_array_pattern(value) -%}
-          {{- "\n^" + key + "\\." + pattern[1:] + " 1" -}}
+          {%- patterns = append(patterns, pattern[1:]) -%}
         {%- end -%}
+        {{- "\n^" + key + "\\.(" + join(patterns, "|") + ") 1" -}}
       {%- end -%}

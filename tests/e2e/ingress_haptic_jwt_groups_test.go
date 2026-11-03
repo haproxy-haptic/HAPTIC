@@ -71,7 +71,7 @@ func TestHapticJWTGroups(t *testing.T) {
 
 func jwtGroupAssertions(t *testing.T, key *rsa.PrivateKey, claim, group string) []SimpleIngressAssertion {
 	t.Helper()
-	assertions := make([]SimpleIngressAssertion, 0, 17)
+	assertions := make([]SimpleIngressAssertion, 0, 18)
 	for _, tc := range []struct {
 		name    string
 		value   any
@@ -80,6 +80,7 @@ func jwtGroupAssertions(t *testing.T, key *rsa.PrivateKey, claim, group string) 
 	}{
 		{"scalar member", group, false, http.StatusOK},
 		{"second allowed group", "second", false, http.StatusOK},
+		{"second allowed group array", []string{"other", "second"}, false, http.StatusOK},
 		{"array first", []string{group, "other"}, false, http.StatusOK},
 		{"array last", []string{"other", group}, false, http.StatusOK},
 		{"escaped scalar", json.RawMessage(fmt.Sprintf(`"\u%04x%s"`, group[0], group[1:])), false, http.StatusOK},

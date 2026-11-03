@@ -257,7 +257,23 @@ validationTests:
                 http:
                   paths:
                     - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+        - <<: *jwt-groups-ingress
+          metadata:
+            namespace: default
+            name: jwt-groups-roles
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-allowed-groups: operators,admins
+              haproxy-haptic.org/jwt-groups-claim: roles
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwt-roles.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
     assertions:
+      - {type: match_count, target: map:haptic-jwt-groups-array.map, pattern: '(?m)^\^[0-9a-f]{64}', expected: "1"}
       - type: haproxy_valid
       - {type: contains, target: map:haptic-jwt-routes.map, pattern: '(?m)false false groups [0-9a-f]{64}$'}
       - {type: contains, target: map:haptic-jwt-groups-scalar.map, pattern: '[0-9a-f]{64}\.61646d696e73 1'}
