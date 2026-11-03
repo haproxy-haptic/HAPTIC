@@ -480,7 +480,10 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/jwt-algorithm` | JWT signature algorithm (default `RS256`); asymmetric only (`RS`/`ES`/`PS` `256`/`384`/`512`) — symmetric `HS*` is rejected so no shared secret is inlined. |
 | `haproxy-haptic.org/jwt-audience` | Required `aud` string or exact member of an `aud` string array. Missing, empty, or non-string audiences return `401`. The identifier `[]` is rejected because HAProxy can't distinguish it from an empty array. |
 | `haproxy-haptic.org/jwt-forward-claims` | Comma-separated `<claim>:<header>` pairs forwarded upstream after verification; each header is stripped from the client request first (anti-spoof). |
+
 | `haproxy-haptic.org/jwt-issuer` | Required `iss` claim value (exact match). |
+| `haproxy-haptic.org/jwt-allowed-groups` | Comma-separated permitted group names. A verified token must contain an exact match in its group string or string array; otherwise the route returns `403`. |
+| `haproxy-haptic.org/jwt-groups-claim` | Top-level group claim name, default `groups`. Requires `jwt-allowed-groups`. |
 | `haproxy-haptic.org/jwt-required-claims` | Comma-separated claim names that must be present in the payload; a missing claim is denied `401`. |
 | `haproxy-haptic.org/jwt-jwks-url` | HTTPS JSON Web Key Set (JWKS) endpoint from `extraContext.jwt.allowedJWKSURLs`, used instead of `jwt-secret`. Refreshes every `extraContext.jwt.refreshInterval` (default `5m`). Selects the key by `kid`; an unknown or missing ID returns `401`. No usable keys returns `503`. |
 | `haproxy-haptic.org/jwt-secret` | Names the Secret (data key `pubkey.pem`) for asymmetric JWT verification with an alg-confusion guard, `exp`/`iss`/`aud`/required-claim checks, and the shared consumer identity from `sub`. Fails closed (`503`) when the Secret is absent. A new key Secret reloads once; routes sharing a key are added and removed without one, and key rotation needs a reload. |
@@ -502,6 +505,15 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/require-content-type` | Requires an allowed `Content-Type` (comma-separated) on body methods (POST/PUT/PATCH); a disallowed type is rejected with `415` (prefix-matched, so charset suffixes still match). Applied from a per-route map. |
 | `haproxy-haptic.org/require-headers` | Requires the listed request headers (comma-separated); a request missing any is rejected with `400`. Applied from a per-route map; the first route to require a new header name reloads once. |
 | `haproxy-haptic.org/require-sni-host-match` | `"true"` answers `421 Misdirected Request` when a request's `Host` differs from the TLS SNI it arrived on. A browser that reused one HTTP/2 connection for several hosts retries on a new connection. Applied from a per-route map. |
+
+#### JWT group authorization
+
+Group authorization accepts up to 32 names of 1–256 characters from `!` (U+0021) through `~` (U+007E), without a leading `[`. The scalar JSON decoder in HAProxy doesn't reliably decode Unicode escapes outside this range, and a leading `[` can make a string indistinguishable from an array. Claim names use up to 128 letters, digits, underscores, or hyphens. Group names are case-sensitive.
+
+```yaml
+haproxy-haptic.org/jwt-allowed-groups: admins,operators
+haproxy-haptic.org/jwt-groups-claim: groups
+```
 
 #### Authentication and reloads
 

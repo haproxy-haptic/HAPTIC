@@ -179,7 +179,7 @@ validationTests:
     - type: contains
       target: map:haptic-jwt-routes.map
       pattern: (?m)^gateway/h_default_same-name_1 RS256 haptic-jwt-default_jwt-keys\.pem ok https://issuer\.example\.com
-        api ,exp, ,sub:X-User, true true$
+        api ,exp, ,sub:X-User, true true _ _$
     - type: contains
       target: map:haptic-jwt-routes.map
       pattern: '(?m)^gateway/h_default_same-name_2 '
@@ -4275,3 +4275,99 @@ validationTests:
             jwt: *id002
     assertions:
     - {type: contains, target: rendering_error, pattern: 'JWT audience \[\] is ambiguous'}
+
+  test-gateway-policy-jwt-groups:
+    requires: [httproutes, grpcroutes, routepolicies]
+    extraContext: {renderMode: admission}
+    fixtures:
+      <<: *authentication-fixtures
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: api}
+        spec:
+          authentication:
+            apiKey: *id001
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: jwt}
+        spec:
+          authentication:
+            jwt:
+              <<: *id002
+              allowedGroups: [admins, operators]
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: ssl-passthrough}
+        spec:
+          authentication:
+            apiKey: *id001
+            jwt: *id002
+    assertions:
+    - {type: haproxy_valid}
+    - {type: contains, target: 'map:haptic-jwt-routes.map', pattern: '(?m)^gateway/h_default_same-name_1 .* groups [0-9a-f]{64}$'}
+    - {type: contains, target: 'map:haptic-jwt-groups-scalar.map', pattern: '(?m)^[0-9a-f]{64}\.61646d696e73 1$'}
+    - {type: contains, target: haproxy.cfg, pattern: 'str\(jwt_groups\)'}
+
+  test-gateway-policy-jwt-custom-groups:
+    requires: [httproutes, grpcroutes, routepolicies]
+    extraContext: {renderMode: admission}
+    fixtures:
+      <<: *authentication-fixtures
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: api}
+        spec:
+          authentication:
+            apiKey: *id001
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: jwt}
+        spec:
+          authentication:
+            jwt:
+              <<: *id002
+              allowedGroups: [admins]
+              groupsClaim: roles
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: ssl-passthrough}
+        spec:
+          authentication:
+            apiKey: *id001
+            jwt: *id002
+    assertions:
+    - {type: haproxy_valid}
+    - {type: contains, target: 'map:haptic-jwt-routes.map', pattern: '(?m)^gateway/h_default_same-name_1 .* roles [0-9a-f]{64}$'}
+    - {type: contains, target: haproxy.cfg, pattern: "jwt_payload_query\\('\\$\\.roles'"}
+
+  test-gateway-policy-jwt-invalid-groups:
+    requires: [httproutes, grpcroutes, routepolicies]
+    extraContext: {renderMode: admission}
+    fixtures:
+      <<: *authentication-fixtures
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: api}
+        spec:
+          authentication:
+            apiKey: *id001
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: jwt}
+        spec:
+          authentication:
+            jwt:
+              <<: *id002
+              allowedGroups: ["admin team"]
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: ssl-passthrough}
+        spec:
+          authentication:
+            apiKey: *id001
+            jwt: *id002
+    assertions:
+    - {type: contains, target: rendering_error, pattern: 'JWT allowed group is invalid'}

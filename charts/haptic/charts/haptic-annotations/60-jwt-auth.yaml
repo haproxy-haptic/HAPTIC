@@ -4,6 +4,7 @@ templateSnippets:
   # Presence flags distinguish an unset claim from the literal "_".
   util-haptic-jwt-route:
     template: |-
+      {%- import "util-jwt-groups" for JWTGroups -%}
       {%- import "util-public-key-secret" for ReadPublicKeySecret -%}
       {%- import "util-jwks" for ReadJWKS -%}
       {%- import "util-validate-config-value" for ValidateConfigValue -%}
@@ -15,6 +16,9 @@ templateSnippets:
         {%- var jwksURL = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-jwks-url") -%}
         {%- result["jwks"] = map[string]string{} -%}
         {%- result["enabled"] = false -%}
+        {%- result["groupsClaim"] = "_" -%}
+        {%- result["groupsKey"] = "_" -%}
+        {%- result["allowedGroups"] = []string{} -%}
         {%- result["intent"] = "" -%}
         {%- result["issSet"] = false -%}
         {%- result["audSet"] = false -%}
@@ -23,7 +27,7 @@ templateSnippets:
         {%- if jwtSecret == "" && jwksURL == "" -%}
           {#- Without the key every other jwt-* annotation is inert, so the route
               would be served with no token verification at all. -#}
-          {%- for _, a := range []string{"jwt-issuer", "jwt-audience", "jwt-required-claims", "jwt-forward-claims", "jwt-algorithm"} -%}
+          {%- for _, a := range []string{"jwt-issuer", "jwt-audience", "jwt-required-claims", "jwt-forward-claims", "jwt-algorithm", "jwt-allowed-groups", "jwt-groups-claim"} -%}
             {%- if tostring(result["intent"]) == "" && dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/" + a) != "" -%}
               {%- result["intent"] = a -%}
               {%- result["enabled"] = true -%}
@@ -87,6 +91,15 @@ templateSnippets:
             {%- result["aud"] = audV -%}
             {%- result["audSet"] = true -%}
           {%- end -%}
+          {%- var groupInput = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-allowed-groups") -%}
+          {%- var groupValues = []any{} -%}
+          {%- if groupInput != "" -%}
+            {%- for _, value := range split(groupInput, ",") -%}{%- groupValues = append(groupValues, strip(value)) -%}{%- end -%}
+          {%- end -%}
+          {%- var groups = map[string]any{} -%}
+          {{- JWTGroups(dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-groups-claim"), groupValues, groups) -}}
+          {%- if groups["error"] != "" -%}{{- fail("Ingress " + key + ": " + tostring(groups["error"])) -}}{%- end -%}
+          {%- for _, field := range []string{"groupsClaim", "groupsKey", "allowedGroups"} -%}{%- result[field] = groups[field] -%}{%- end -%}
           {%- var claims = []string{} -%}
           {%- for _, claim := range split(dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-required-claims"), ",") -%}
             {%- var cl = strip(claim) -%}
@@ -126,6 +139,8 @@ templateSnippets:
         - "metadata.annotations['haproxy-haptic.org/jwt-secret']"
         - "metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"
         - "metadata.annotations['haproxy-haptic.org/jwt-algorithm']"
+        - "metadata.annotations['haproxy-haptic.org/jwt-allowed-groups']"
+        - "metadata.annotations['haproxy-haptic.org/jwt-groups-claim']"
         - "metadata.annotations['haproxy-haptic.org/jwt-issuer']"
         - "metadata.annotations['haproxy-haptic.org/jwt-audience']"
         - "metadata.annotations['haproxy-haptic.org/jwt-required-claims']"
@@ -139,7 +154,7 @@ templateSnippets:
         {%- if len(route["req"].([]string)) > 0 -%}{%- req = "," + join(route["req"].([]string), ",") + "," -%}{%- end -%}
         {%- var fwd = "_" -%}
         {%- if len(route["fwd"].([]string)) > 0 -%}{%- fwd = "," + join(route["fwd"].([]string), ",") + "," -%}{%- end -%}
-      {{ "\n" }}{{ dig_string(item, "", "metadata", "namespace") }}/{{ dig_string(item, "", "metadata", "name") }} {{ route["alg"] }} {{ route["keyFile"] }} {{ route["state"] }} {{ route["iss"] }} {{ route["aud"] }} {{ req }} {{ fwd }} {{ route["issSet"] }} {{ route["audSet"] }}
+      {{ "\n" }}{{ dig_string(item, "", "metadata", "namespace") }}/{{ dig_string(item, "", "metadata", "name") }} {{ route["alg"] }} {{ route["keyFile"] }} {{ route["state"] }} {{ route["iss"] }} {{ route["aud"] }} {{ req }} {{ fwd }} {{ route["issSet"] }} {{ route["audSet"] }} {{ route["groupsClaim"] }} {{ route["groupsKey"] }}
       {%- end -%}
 
   # Distinct (algorithm, key file) pairs, required claims and forwarded claims
@@ -154,6 +169,8 @@ templateSnippets:
         - "metadata.annotations['haproxy-haptic.org/jwt-secret']"
         - "metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"
         - "metadata.annotations['haproxy-haptic.org/jwt-algorithm']"
+        - "metadata.annotations['haproxy-haptic.org/jwt-allowed-groups']"
+        - "metadata.annotations['haproxy-haptic.org/jwt-groups-claim']"
         - "metadata.annotations['haproxy-haptic.org/jwt-issuer']"
         - "metadata.annotations['haproxy-haptic.org/jwt-audience']"
         - "metadata.annotations['haproxy-haptic.org/jwt-required-claims']"
@@ -162,6 +179,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-haptic-jwt-route" for HapticJWTRoute -%}
+      {%- import "util-publish-jwt-groups" for PublishJWTGroups -%}
       {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
       {%- var route = map[string]any{} -%}
       {{- HapticJWTRoute(item, route) -}}
@@ -184,6 +202,7 @@ templateSnippets:
           {%- var pair = tostring(route["alg"]) + "|" + tostring(route["keyFile"]) -%}
           {{- shared.Publish("keys", pair, pair) -}}
         {%- end -%}
+        {{- PublishJWTGroups(route) -}}
         {%- if route["audSet"] == true -%}{{- shared.Publish("audiences", tostring(route["aud"]), route["aud"]) -}}{%- end -%}
         {%- for _, cl := range route["req"].([]string) -%}{{- shared.Publish("req", cl, cl) -}}{%- end -%}
         {%- for _, f := range route["fwd"].([]string) -%}

@@ -303,6 +303,7 @@ templateSnippets:
 
   util-features-856-gateway-jwt-names:
     template: |-
+      {%- import "util-publish-jwt-groups" for PublishJWTGroups -%}
       {%- import "util-gateway-policy-decision" for GatewayPolicyDecision -%}
       {%- macro PublishGatewayJWTNames(route any, kind string) -%}
         {%- for index, rule := range toSlice(dig(route, "spec", "rules")) -%}
@@ -313,6 +314,7 @@ templateSnippets:
             {%- var pair = tostring(jwt["alg"]) + "|" + tostring(jwt["keyFile"]) -%}
             {{- shared.Publish("any", "any", "any") -}}
             {{- shared.Publish("keys", pair, pair) -}}
+            {{- PublishJWTGroups(jwt) -}}
             {%- if jwt["audSet"] == true -%}{{- shared.Publish("audiences", tostring(jwt["aud"]), jwt["aud"]) -}}{%- end -%}
             {%- for _, claim := range toSlice(jwt["req"]) -%}{{- shared.Publish("req", tostring(claim), claim) -}}{%- end -%}
             {%- for _, value := range toSlice(jwt["fwd"]) -%}
