@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Resource updates no longer report a valid configuration as failed when they replace an active render's snapshot.
+
 - HTTP content refreshes identify their proposed URLs so unrelated invalid routing inputs cannot block signing-key withdrawal.
 
 - Rejected HTTP refreshes clear their conditional-request validators so unchanged content can be validated again after a transient configuration failure.
