@@ -720,6 +720,9 @@ func preInstallParallel(ctx context.Context) (string, error) {
 	g.Go(func() error {
 		return setupDefaultSSLCert(gctx)
 	})
+	if os.Getenv("HAPTIC_E2E_PROFILE") != "conformance" {
+		g.Go(func() error { return setupJWKSServerCertificate(gctx) })
+	}
 	// The custom-CRD example library is enabled in the e2e install (see
 	// helmInstallChart) so the reload-free suite can prove the runtime lane is
 	// resource-agnostic. Its Route CRD ships with no chart schema, so install it
@@ -966,6 +969,7 @@ func applyBackendFixtures(ctx context.Context) (context.Context, error) {
 	}{
 		{"echo-server", devassets.EchoServerYAML},
 		{"blocklist-server", devassets.BlocklistServerYAML},
+		{"jwks-server", devassets.JWKSServerYAML},
 		{"auth-server", devassets.AuthServerYAML},
 		{"haproxy-demo-backend", demo},
 		{"haproxy-test-backend", testBackend},

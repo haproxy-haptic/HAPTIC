@@ -114,3 +114,6 @@ maps:
   haptic-jwt-routes.map:
     template: |
       {{ on_own_lines(render_glob "map-haptic-jwt-routes-*") -}}
+  haptic-jwks.map:
+    template: |
+      {{ on_own_lines(render_glob "map-haptic-jwks-*") -}}

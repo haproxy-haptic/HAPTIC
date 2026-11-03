@@ -23,6 +23,7 @@ templateSnippets:
       whenAnyPathExists:
         - "metadata.annotations['haproxy-haptic.org/api-key-secret']"
         - "metadata.annotations['haproxy-haptic.org/jwt-secret']"
+        - "metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"
       effects: [publishValue]
     template: |-
       {#
@@ -34,7 +35,7 @@ templateSnippets:
       #}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
-      {%- if ingress != nil && (ingress.Metadata.Annotations["haproxy-haptic.org/jwt-secret"] != "" || ingress.Metadata.Annotations["haproxy-haptic.org/api-key-secret"] != "") -%}
+      {%- if ingress != nil && (ingress.Metadata.Annotations["haproxy-haptic.org/jwt-secret"] != "" || ingress.Metadata.Annotations["haproxy-haptic.org/jwt-jwks-url"] != "" || ingress.Metadata.Annotations["haproxy-haptic.org/api-key-secret"] != "") -%}
         {{- shared.Publish("fragments", "global", "\n%(consumer)[var(txn.haptic_consumer)]") -}}
       {%- end -%}
 

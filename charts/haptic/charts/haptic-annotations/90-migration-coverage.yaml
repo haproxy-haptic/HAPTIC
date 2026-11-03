@@ -311,6 +311,9 @@ _migrationCoverage:
       haproxy-haptic.org/jwt-required-claims:
         status: supported
         note: "Comma-separated claim names that must be present in the payload; a missing claim → 401."
+      haproxy-haptic.org/jwt-jwks-url:
+        status: supported
+        note: "Approved HTTPS JWKS endpoint; refreshes signing keys and selects the token's kid. Mutually exclusive with jwt-secret."
       haproxy-haptic.org/jwt-secret:
         status: supported
         note: "Secret (data key `pubkey.pem`) → asymmetric JWT verification with an alg-confusion guard (token alg must equal the configured alg AND jwt_verify uses the constant configured alg), exp/iss/aud/required-claim checks, and the shared consumer identity from `sub`. Fails closed (503) per route when the Secret is absent; key rotation needs a reload."

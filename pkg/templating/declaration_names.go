@@ -91,6 +91,7 @@ const (
 	builtinParseYAML         = "parse_yaml"
 	builtinPow               = "pow"
 	builtinPublicKeyInfo     = "public_key_info"
+	builtinJWKSPublicKeys    = "jwks_public_keys"
 	builtinQueryEscape       = "queryEscape"
 	builtinReplaceAll        = "replaceAll"
 	builtinRuneCount         = "runeCount"

@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Templates can convert JSON Web Key Sets to PEM public keys with `jwks_public_keys`.
+
+### Fixed
+
+- Rejected HTTP refreshes clear their conditional-request validators so unchanged content can be validated again after a transient configuration failure.
+
+- Admission accepts valid new HTTP inputs when a template handles fetch errors; the renderer now completes its required full rerender before reporting a template error.
+
+### Helm chart
+
+#### Added
+
+- `haproxy-haptic.org/jwt-jwks-url` refreshes public signing keys from an approved HTTPS JWKS endpoint and selects the token's `kid`, supporting overlapping keys during rotation ([#608](https://github.com/haproxy-haptic/HAPTIC/issues/608)).
+
 ## [0.10.0] - 2026-11-02
 
 ### Added
