@@ -67,7 +67,7 @@ var exactCycleReplayPureFunctions = map[string]struct{}{
 	"make_guid": {}, "map": {}, builtinMapExtract: {}, builtinMarshalJSON: {}, builtinMarshalJSONIndent: {},
 	builtinMarshalYAML: {}, builtinMax: {}, builtinMD5: {}, "merge": {}, builtinMin: {},
 	"namespace": {}, funcOnOwnLinesJoin: {}, funcOnOwnLinesStart: {}, builtinParseDuration: {}, builtinParseFloat: {}, builtinParseInt: {}, builtinParseTime: {},
-	builtinPow: {}, builtinPublicKeyInfo: {}, builtinJSONArrayPattern: {}, builtinParseYAML: {}, builtinQueryEscape: {}, declRegexp: {}, "regex_search": {}, "reject": {},
+	builtinPow: {}, builtinPublicKeyInfo: {}, builtinJSONArrayPattern: {}, builtinJWKSPublicKeys: {}, builtinParseYAML: {}, builtinQueryEscape: {}, declRegexp: {}, "regex_search": {}, "reject": {},
 	"replace": {}, builtinReplaceAll: {}, builtinRuneCount: {}, "sanitize_regex": {}, "selectattr": {},
 	"semver_gte": {}, "seq": {}, builtinSHA1: {}, builtinSHA256: {}, "shard_slice": {},
 	"sort_by": {}, "sort_ints": {}, "sort_strings": {}, builtinSplit: {}, builtinSplitAfter: {},

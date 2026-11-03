@@ -140,6 +140,15 @@ Every entry below is callable in two equivalent styles: as a plain function (`fn
 | `make_guid(parts...)` | Build a value for HAProxy's `guid` directive from parts joined by `:`, auto-truncating with a hash suffix past its 127-character limit | `guid {{ make_guid("be", beKey) }}` |
 | `selectattr(items, attr[, op, value])` | Jinja2-style attribute filter. `op` is `eq`, `ne` or `in`; omitted, it keeps items whose `attr` is truthy. `attr` is one literal key — a dotted path matches nothing, so prefer `filter` with a closure | `selectattr(rules, "host", "ne", "")` |
 
+### Public signing keys
+
+`jwks_public_keys(document, algorithm)` reads a JSON Web Key Set (JWKS) and returns a `map[string]string` from key ID
+to PEM public key, plus an error. It selects public RSA or EC signing keys that
+match the requested RS, PS, or ES algorithm. Key sets with no matching keys return
+an empty map; malformed selected keys and duplicate selected IDs return an error.
+The document limit is 1 MiB and 64 keys. Selected IDs contain 1–256 bytes; RSA
+moduli contain 2048–8192 bits. The helper performs no network requests.
+
 ### Collection pipelines
 
 Type-preserving stages, chained with `|`. Each stage retains type information for its result, so typed field access works in later stages and misspelled fields fail compilation. Predicates are closures — write them long-hand (`func(e T) bool { … }`) or as `x => expr` with both types inferred. See [Templating — Collection pipelines](./template-resources.md#collection-pipelines) for the guided version.

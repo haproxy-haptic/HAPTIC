@@ -290,6 +290,7 @@ func registerScriggoBuiltinCore(decl native.Declarations) {
 	decl["randBytes"] = scriggoRandBytes
 	decl[builtinPublicKeyInfo] = scriggoPublicKeyInfo
 	decl[builtinJSONArrayPattern] = scriggoJSONStringArrayPattern
+	decl[builtinJWKSPublicKeys] = scriggoJWKSPublicKeys
 	decl[builtinParseYAML] = scriggoParseYAML
 
 	// encoding

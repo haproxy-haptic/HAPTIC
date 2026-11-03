@@ -338,6 +338,12 @@ func makeIncrementalMixedSignatureFrameTrampoline(function any) *native.Function
 		return makeIncrementalStringParserFrameTrampoline(function)
 	case func(string) (map[string]any, error):
 		return makeIncrementalStringParserFrameTrampoline(function)
+	case func(string, string) (map[string]string, error):
+		return makeIncrementalFunctionFrameTrampoline(function, func(frame native.FunctionCallFrame) {
+			value, err := function(frame.ArgString(0), frame.ArgString(1))
+			frame.SetResultValue(0, reflect.ValueOf(value))
+			incrementalFrameSetError(frame, err)
+		})
 	case func(string) (time.Duration, error):
 		return makeIncrementalFunctionFrameTrampoline(function, func(frame native.FunctionCallFrame) {
 			value, err := function(frame.ArgString(0))

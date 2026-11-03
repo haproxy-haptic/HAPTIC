@@ -13,8 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `json_string_array_pattern(value)` produces a regular expression for exact membership in a JSON string array.
+- Templates can convert JSON Web Key Sets to PEM public keys with `jwks_public_keys`.
+
+### Fixed
+
+- Admission accepts valid new HTTP inputs when a template handles fetch errors; the renderer now completes its required full rerender before reporting a template error.
 
 ### Helm chart
+
+#### Added
+
+- `haproxy-haptic.org/jwt-jwks-url` refreshes public signing keys from an approved HTTPS JWKS endpoint and selects the token's `kid`, supporting overlapping keys during rotation ([#608](https://github.com/haproxy-haptic/HAPTIC/issues/608)).
 
 #### Fixed
 

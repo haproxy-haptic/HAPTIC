@@ -1,97 +1,26 @@
-# HAPTIC-native annotation library — JWT bearer-token authentication.
-#
-# Verifies a JWT presented in the Authorization: Bearer header against an
-# asymmetric public key (RS*/ES*/PS*) held in a Secret, with a hardened
-# alg-confusion guard, standard claim checks (exp/nbf/iss/aud/required),
-# optional claim forwarding, and the shared consumer identity
-# (txn.haptic_consumer, from the `sub` claim). Runs on every HTTP frontend at
-# frontend-filters-858 — before API-key auth (860) — so a JWT `sub` wins the
-# set-once consumer identity, and before the cache switch (865), so a cached
-# route is verified on the client leg too.
-#
-# Everything per route lives in haptic-jwt-routes.map, read by one uniform rule
-# block, so a route is added, changed or removed with map operations only and
-# its backend stays dynamic. HAProxy loads a `jwt_verify` public key at parse
-# time from a literal path, so the one per-value text is a verify rule per
-# distinct (algorithm, key file) pair in use: a new key Secret still reloads,
-# a new route using a known key does not.
-#
-# Security model:
-#   - ASYMMETRIC ONLY. HS* (symmetric) JWT is rejected: the shared HMAC secret
-#     would have to be inlined into the rendered config (visible in the
-#     HAProxyCfg CR and on disk). Only the public key ever appears in config.
-#   - Alg-confusion hardened: the token's header `alg` must equal the configured
-#     algorithm AND jwt_verify is called with the CONSTANT configured algorithm
-#     (never the token's), so an attacker can't downgrade RS256→HS256 and sign
-#     with the public key.
-#   - Fail-CLOSED per route: if the key Secret is absent at render time the route
-#     returns 503 (not open, not a whole-render failure); a present-but-malformed
-#     Secret fails the render loudly.
-#   - Forwarded claim headers are del-header'd off the client request first
-#     (a client must not be able to spoof an identity claim).
+# JWT key sources and route settings; see docs/site/docs/libraries/haptic-annotations.md.
 templateSnippets:
-
-  # ==========================================================================
-  # util — resolve the JWT public key per Secret; register the PEM file.
-  # ==========================================================================
-  util-haptic-jwt-key:
-    template: |
-      {%- import "util-public-key-secret" for ReadPublicKeySecret -%}
-      {%- macro ResolveHapticJWTKey(secretNs string, secretName string, ingressKey string, result map[string]any) %}
-        {{- ReadPublicKeySecret(secretNs, secretName, result) -}}
-        {%%
-          if result["error"] != "" {
-            fail("Ingress " + ingressKey + ": " + tostring(result["error"]))
-          }
-          if result["found"] == true {
-            result["pubkey"] = result["content"]
-          }
-        %%}
-      {%- end macro -%}
-
-  # ==========================================================================
-  # Register the public-key PEM file once per Secret (global side-effect).
-  # ==========================================================================
-  haptic-jwt-file-publications:
-    requires: [ingresses]
-    incremental:
-      source: ingresses
-      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/jwt-secret']"]
-      group: haptic-jwt-files
-      effects: [publishValue]
-    template: |-
-      {%- import "util-haptic-jwt-key" for ResolveHapticJWTKey -%}
-      {%- import "util-haptic-secret-ref" for HapticSecretRef -%}
-      {%- var ns = dig_string(item, "", "metadata", "namespace") -%}
-      {%- var key = ns + "/" + dig_string(item, "", "metadata", "name") -%}
-      {%- var jwtSecret = dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/jwt-secret") -%}
-      {%- if jwtSecret != "" -%}
-        {%- var refParts = split(HapticSecretRef(ns, jwtSecret, "haproxy-haptic.org/jwt-secret", key), "/") -%}
-        {%- var info = map[string]any{} -%}
-        {{- ResolveHapticJWTKey(refParts[0], refParts[1], key, info) -}}
-        {%- if info["found"] == true -%}
-          {%- var filename = tostring(info["filename"]) -%}
-          {{- shared.Publish("files", filename, map[string]any{"filename": filename, "content": tostring(info["pubkey"])}) -}}
-        {%- end -%}
-      {%- end -%}
 
   # Presence flags distinguish an unset claim from the literal "_".
   util-haptic-jwt-route:
     template: |-
-      {%- import "util-haptic-jwt-key" for ResolveHapticJWTKey -%}
+      {%- import "util-public-key-secret" for ReadPublicKeySecret -%}
+      {%- import "util-jwks" for ReadJWKS -%}
       {%- import "util-validate-config-value" for ValidateConfigValue -%}
       {%- import "util-haptic-secret-ref" for HapticSecretRef -%}
       {%- macro HapticJWTRoute(ingress any, result map[string]any) -%}
         {%- var ns = dig_string(ingress, "", "metadata", "namespace") -%}
         {%- var key = ns + "/" + dig_string(ingress, "", "metadata", "name") -%}
         {%- var jwtSecret = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-secret") -%}
+        {%- var jwksURL = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-jwks-url") -%}
+        {%- result["jwks"] = map[string]string{} -%}
         {%- result["enabled"] = false -%}
         {%- result["intent"] = "" -%}
         {%- result["issSet"] = false -%}
         {%- result["audSet"] = false -%}
         {%- result["req"] = []string{} -%}
         {%- result["fwd"] = []string{} -%}
-        {%- if jwtSecret == "" -%}
+        {%- if jwtSecret == "" && jwksURL == "" -%}
           {#- Without the key every other jwt-* annotation is inert, so the route
               would be served with no token verification at all. -#}
           {%- for _, a := range []string{"jwt-issuer", "jwt-audience", "jwt-required-claims", "jwt-forward-claims", "jwt-algorithm"} -%}
@@ -106,6 +35,9 @@ templateSnippets:
             {%- end -%}
           {%- end -%}
         {%- else -%}
+          {%- if jwtSecret != "" && jwksURL != "" -%}
+            {{- fail("Ingress " + key + " sets both jwt-secret and jwt-jwks-url. Select one JWT key source.") -}}
+          {%- end -%}
           {%- result["enabled"] = true -%}
           {%- var alg = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-algorithm") -%}
           {%- if alg == "" -%}{%- alg = "RS256" -%}{%- end -%}
@@ -113,17 +45,30 @@ templateSnippets:
             {{- fail("Invalid value '" + alg + "' for annotation 'haproxy-haptic.org/jwt-algorithm' on Ingress '" + key + "'. Only asymmetric algorithms are supported (RS256/384/512, ES256/384/512, PS256/384/512); symmetric HS* JWT would require inlining the shared secret.") -}}
           {%- end -%}
           {%- result["alg"] = alg -%}
-          {%- var secretRef = HapticSecretRef(ns, jwtSecret, "haproxy-haptic.org/jwt-secret", key) -%}
-          {%- var refParts = split(secretRef, "/") -%}
-          {%- result["secretRef"] = secretRef -%}
-          {%- var info = map[string]any{} -%}
-          {{- ResolveHapticJWTKey(refParts[0], refParts[1], key, info) -}}
           {%- result["state"] = "ok" -%}
           {%- result["keyFile"] = "_" -%}
-          {%- if info["found"] == true -%}
-            {%- result["keyFile"] = tostring(info["filename"]) -%}
+          {%- var info = map[string]any{} -%}
+          {%- if jwksURL != "" -%}
+            {{- ReadJWKS(jwksURL, alg, props["jwt"], info) -}}
+            {%- result["jwks"] = info["keys"] -%}
+            {%- result["keyFile"] = sha256(jwksURL + "|" + alg) -%}
+            {%- result["state"] = "jwks" -%}
+            {%- result["source"] = jwksURL -%}
           {%- else -%}
+            {%- var secretRef = HapticSecretRef(ns, jwtSecret, "haproxy-haptic.org/jwt-secret", key) -%}
+            {%- var refParts = split(secretRef, "/") -%}
+            {%- result["secretRef"] = secretRef -%}
+            {%- result["source"] = "Secret " + secretRef -%}
+            {{- ReadPublicKeySecret(refParts[0], refParts[1], info) -}}
+            {%- if info["error"] != "" -%}{{ fail("Ingress " + key + ": " + tostring(info["error"])) }}{%- end -%}
+            {%- if info["found"] == true -%}
+              {%- result["keyFile"] = info["filename"] -%}
+              {%- result["publicKey"] = info["content"] -%}
+            {%- end -%}
+          {%- end -%}
+          {%- if info["found"] != true -%}
             {%- result["state"] = "missing" -%}
+            {%- result["keyFile"] = "_" -%}
           {%- end -%}
           {%- result["iss"] = "_" -%}
           {%- var issRaw = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-issuer") -%}
@@ -175,9 +120,11 @@ templateSnippets:
   map-haptic-jwt-routes-858-haptic:
     requires: [ingresses]
     incremental:
-      source: ingresses
+      bindingsTemplate: |
+        {{ map[string]any{"ingresses": map[string]any{"jwt": extraContext | dig("jwt") | fallback(map[string]any{})}} | toJSON() }}
       whenAnyPathExists:
         - "metadata.annotations['haproxy-haptic.org/jwt-secret']"
+        - "metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"
         - "metadata.annotations['haproxy-haptic.org/jwt-algorithm']"
         - "metadata.annotations['haproxy-haptic.org/jwt-issuer']"
         - "metadata.annotations['haproxy-haptic.org/jwt-audience']"
@@ -201,9 +148,11 @@ templateSnippets:
   features-858-haptic-jwt-names:
     requires: [ingresses]
     incremental:
-      source: ingresses
+      bindingsTemplate: |
+        {{ map[string]any{"ingresses": map[string]any{"jwt": extraContext | dig("jwt") | fallback(map[string]any{})}} | toJSON() }}
       whenAnyPathExists:
         - "metadata.annotations['haproxy-haptic.org/jwt-secret']"
+        - "metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"
         - "metadata.annotations['haproxy-haptic.org/jwt-algorithm']"
         - "metadata.annotations['haproxy-haptic.org/jwt-issuer']"
         - "metadata.annotations['haproxy-haptic.org/jwt-audience']"
@@ -222,9 +171,15 @@ templateSnippets:
         {%- var name = dig_string(item, "", "metadata", "name") -%}
         {%- var key = ns + "/" + name -%}
         {%- if tostring(route["intent"]) != "" -%}
-          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "JWTSecretMissing", "Ingress " + key + " sets 'haproxy-haptic.org/" + tostring(route["intent"]) + "' but no 'haproxy-haptic.org/jwt-secret'. Tokens cannot be verified without the key, so this route fails closed with 503. Set jwt-secret, or remove the other jwt-* annotations.") -}}
+          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "JWTSecretMissing", "Ingress " + key + " sets 'haproxy-haptic.org/" + tostring(route["intent"]) + "' but no 'haproxy-haptic.org/jwt-secret'. Tokens cannot be verified without the key, so this route fails closed with 503. Set jwt-secret or jwt-jwks-url, or remove the other jwt-* annotations.") -}}
         {%- else if tostring(route["state"]) == "missing" -%}
-          {{- recordEvent(resources.ingresses.GetSingle(ns, name), "JWTSecretMissing", "Ingress " + key + " references Secret '" + tostring(route["secretRef"]) + "' in 'haproxy-haptic.org/jwt-secret', but it could not be resolved. Requests are denied with 503 until the key is present.") -}}
+          {{- recordEvent(resources.ingresses.GetSingle(ns, name), "JWTSecretMissing", "Ingress " + key + " cannot use JWT keys from " + tostring(route["source"]) + ". Requests return 503. Make the configured key source available.") -}}
+        {%- else if route["state"] == "jwks" -%}
+          {{- shared.Publish("jwks", "any", "any") -}}
+          {%- for _, pem := range route["jwks"].(map[string]string) -%}
+            {%- var pair = tostring(route["alg"]) + "|haptic-jwks-" + sha256(pem) + ".pem" -%}
+            {{- shared.Publish("keys", pair, pair) -}}
+          {%- end -%}
         {%- else -%}
           {%- var pair = tostring(route["alg"]) + "|" + tostring(route["keyFile"]) -%}
           {{- shared.Publish("keys", pair, pair) -}}
@@ -237,6 +192,44 @@ templateSnippets:
         {%- end -%}
       {%- end -%}
 
-  # ==========================================================================
-  # JWT verification chain: one block per HTTP frontend.
-  # ==========================================================================
+  haptic-jwt-file-publications:
+    requires: [ingresses]
+    incremental:
+      bindingsTemplate: |
+        {{ map[string]any{"ingresses": map[string]any{"jwt": extraContext | dig("jwt") | fallback(map[string]any{})}} | toJSON() }}
+      whenAnyPathExists:
+        - "metadata.annotations['haproxy-haptic.org/jwt-secret']"
+        - "metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"
+      group: haptic-jwt-files
+      effects: [publishValue]
+    template: |-
+      {%- import "util-haptic-jwt-route" for HapticJWTRoute -%}
+      {%- var route = map[string]any{} -%}
+      {{- HapticJWTRoute(item, route) -}}
+      {%- if route["state"] == "ok" -%}
+        {%- var filename = tostring(route["keyFile"]) -%}
+        {{- shared.Publish("files", filename, map[string]any{"filename": filename, "content": tostring(route["publicKey"])}) -}}
+      {%- else if route["state"] == "jwks" -%}
+        {%- for _, pem := range route["jwks"].(map[string]string) -%}
+          {%- var filename = "haptic-jwks-" + sha256(pem) + ".pem" -%}
+          {{- shared.Publish("files", filename, map[string]any{"filename": filename, "content": pem}) -}}
+        {%- end -%}
+      {%- end -%}
+
+  map-haptic-jwks-858-haptic:
+    requires: [ingresses]
+    incremental:
+      bindingsTemplate: |
+        {{ map[string]any{"ingresses": map[string]any{"jwt": extraContext | dig("jwt") | fallback(map[string]any{})}} | toJSON() }}
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/jwt-jwks-url']"]
+    template: |-
+      {%- import "util-haptic-jwt-route" for HapticJWTRoute -%}
+      {%- var route = map[string]any{} -%}
+      {{- HapticJWTRoute(item, route) -}}
+      {%- if route["state"] == "jwks" -%}
+        {%- var jwks = route["jwks"].(map[string]string) -%}
+        {%- for _, kid := range sort_strings(toSlice(jwks | keys())) -%}
+          {%- var mapKey = tostring(route["keyFile"]) + "." + hex(kid) -%}
+          {{- shared.Unique("haptic-jwks", mapKey, "\n" + mapKey + " haptic-jwks-" + sha256(jwks[kid]) + ".pem") -}}
+        {%- end -%}
+      {%- end -%}

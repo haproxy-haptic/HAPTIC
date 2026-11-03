@@ -92,6 +92,7 @@ const (
 	builtinPow               = "pow"
 	builtinPublicKeyInfo     = "public_key_info"
 	builtinJSONArrayPattern  = "json_string_array_pattern"
+	builtinJWKSPublicKeys    = "jwks_public_keys"
 	builtinQueryEscape       = "queryEscape"
 	builtinReplaceAll        = "replaceAll"
 	builtinRuneCount         = "runeCount"

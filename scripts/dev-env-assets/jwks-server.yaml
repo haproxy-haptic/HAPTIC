@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jwks-server
+  namespace: haptic
+data:
+  keys.json: '{"keys":[]}'
+  default.conf: |
+    server {
+      listen 8443 ssl;
+      ssl_certificate /tls/tls.crt;
+      ssl_certificate_key /tls/tls.key;
+      root /data;
+      location / { default_type application/json; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jwks-server
+  namespace: haptic
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: jwks-server}
+  template:
+    metadata:
+      labels: {app: jwks-server}
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports: [{containerPort: 8443}]
+          readinessProbe:
+            httpGet: {path: /keys.json, port: 8443, scheme: HTTPS}
+            periodSeconds: 1
+          volumeMounts:
+            - {name: config, mountPath: /etc/nginx/conf.d, readOnly: true}
+            - {name: data, mountPath: /data, readOnly: true}
+            - {name: tls, mountPath: /tls, readOnly: true}
+      volumes:
+        - name: config
+          configMap:
+            name: jwks-server
+            items: [{key: default.conf, path: default.conf}]
+        - name: data
+          configMap:
+            name: jwks-server
+            items: [{key: keys.json, path: keys.json}]
+        - name: tls
+          secret: {secretName: jwks-server-tls}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jwks-server
+  namespace: haptic
+spec:
+  selector: {app: jwks-server}
+  ports: [{port: 443, targetPort: 8443}]
