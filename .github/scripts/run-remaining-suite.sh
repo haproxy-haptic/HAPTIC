@@ -58,7 +58,7 @@ case "$PILOT_SUITE" in
         exit "$result"
         ;;
     chart) make lint-chart-ci chart-schema-check; exit ;;
-    vector) make test-vector-spans test-vector-metrics; exit ;;
+    vector) make test-vector-spans test-vector-metrics test-vector-backpressure; exit ;;
 esac
 
 chart_version="0.0.0-github.g${PILOT_SOURCE_SHA:0:8}"
