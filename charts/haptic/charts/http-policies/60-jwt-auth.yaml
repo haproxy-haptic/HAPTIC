@@ -81,6 +81,22 @@ templateSnippets:
       http-request set-var(txn.denied_by) str(jwt_required_claim) if { var(txn.jwt_state) -m str ok } { var(txn.jwt_req) -m sub ,{{ cl }}, } !{ http_auth_bearer,jwt_payload_query('$.{{ cl }}') -m found }
       {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.jwt_req) -m sub ,` + tostring(cl) + `, } !{ http_auth_bearer,jwt_payload_query('$.` + tostring(cl) + `') -m found }`) }}
       {%- end %}
+      {%- if incremental_value_count("haptic-jwt-routes", "groupValues") > 0 %}
+      {%- var scalarGroups, sgErr = pathResolver.GetPath("haptic-jwt-groups-scalar.map", "map") %}
+      {%- var arrayGroups, agErr = pathResolver.GetPath("haptic-jwt-groups-array.map", "map") %}
+      {%- if sgErr != nil || agErr != nil %}{{ fail("JWT group maps are unavailable.") }}{%- end %}
+      http-request set-var(txn.jwt_groups_claim) var(txn.jwt_cfg),field(10,' ') if { var(txn.jwt_state) -m str ok }
+      http-request set-var(txn.jwt_groups_key) var(txn.jwt_cfg),field(11,' ') if { var(txn.jwt_state) -m str ok }
+      {%- for _, claim := range incremental_values("haptic-jwt-routes", "groupClaims") %}
+      http-request set-var(txn.jwt_groups_value) http_auth_bearer,jwt_payload_query('$.{{ claim }}','int') if { var(txn.jwt_groups_claim) -m str {{ claim }} }
+      http-request set-var(txn.jwt_groups_array) bool(true) if { var(txn.jwt_groups_claim) -m str {{ claim }} } { http_auth_bearer,jwt_payload_query('$.{{ claim }}[0]') -m found }
+      {%- end %}
+      http-request set-var(txn.jwt_groups_hex) var(txn.jwt_groups_value),hex,lower if { var(txn.jwt_groups_value) -m found }
+      http-request set-var(txn.jwt_groups_match) bool(true) if { var(txn.jwt_groups_key),concat(.,txn.jwt_groups_hex),map({{ scalarGroups }}) -m str 1 }
+      http-request set-var(txn.jwt_groups_match) bool(true) if { var(txn.jwt_groups_array) -m bool } { var(txn.jwt_groups_key),concat(.,txn.jwt_groups_value),map_reg({{ arrayGroups }}) -m str 1 }
+      http-request set-var(txn.denied_by) str(jwt_groups) if { var(txn.jwt_state) -m str ok } !{ var(txn.jwt_groups_key) -m str _ } !{ var(txn.jwt_groups_match) -m bool }
+      {{- Refusal(`deny deny_status 403`, `{ var(txn.jwt_state) -m str ok } !{ var(txn.jwt_groups_key) -m str _ } !{ var(txn.jwt_groups_match) -m bool }`) }}
+      {%- end %}
       http-request set-var(txn.haptic_consumer) http_auth_bearer,jwt_payload_query('$.sub') if { var(txn.jwt_state) -m str ok } !{ var(txn.haptic_consumer) -m found }
       {%- for _, f := range sort_strings(fwds) %}
         {%- var pair = strings_splitn(tostring(f), ":", 2) %}

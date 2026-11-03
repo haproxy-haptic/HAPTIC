@@ -89,7 +89,7 @@ func newGatewayPolicyAuthScenario(ctx context.Context, t *testing.T, client klie
 	mustCreateImmutableSecret(ctx, t, client, namespace, "keys", map[string][]byte{"keys": []byte("old-key:consumer-a\n")})
 	policy := gatewayRoutePolicy(namespace, "access", map[string]any{
 		"authentication": map[string]any{
-			"jwt":    map[string]any{"secretRef": map[string]any{"name": "jwt"}, "requiredClaims": []any{"exp", "sub"}, "issuer": "policy-test", "audience": "api"},
+			"jwt":    map[string]any{"secretRef": map[string]any{"name": "jwt"}, "requiredClaims": []any{"exp", "sub"}, "issuer": "policy-test", "audience": "api", "allowedGroups": []any{"admins", "operators"}, "groupsClaim": "roles"},
 			"apiKey": map[string]any{"secretRef": map[string]any{"name": "keys"}, "consumerHeader": "X-Consumer"},
 		},
 	})
@@ -119,18 +119,47 @@ func newGatewayPolicyAuthScenario(ctx context.Context, t *testing.T, client klie
 	waitForRouteDeployed(ctx, t, client, grpcRouteGVR, namespace, "same-name")
 	forward := ForwardGateway(ctx, t, namespace, "policy", 443)
 	token := signRS256(t, key, map[string]any{"alg": "RS256", "typ": "JWT"}, map[string]any{
-		"sub": "jwt-consumer", "exp": time.Now().Add(time.Hour).Unix(), "iss": "policy-test", "aud": "api",
+		"sub": "jwt-consumer", "exp": time.Now().Add(time.Hour).Unix(), "iss": "policy-test", "aud": "api", "roles": []string{"other", "admins"},
 	})
 	for _, audience := range []any{"api", []string{"other", "api"}, []string{"api", "last"}} {
 		arrayToken := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{
-			"sub": "jwt-consumer", "exp": time.Now().Add(time.Hour).Unix(), "iss": "policy-test", "aud": audience,
+			"sub": "jwt-consumer", "exp": time.Now().Add(time.Hour).Unix(), "iss": "policy-test", "aud": audience, "roles": "operators",
 		})
 		httpclient.ForForwarded(t, 0, forward.HTTPSPort).HTTPS(host, "/").
 			WithHeader("Authorization", "Bearer "+arrayToken).WithHeader("X-API-Key", "old-key").ExpectOK(t)
 	}
+	checkGatewayPolicyGroups(t, key, host, forward.HTTPSPort)
 	checkGatewayPolicySharedIngressKey(ctx, t, client, namespace, backend, token)
 	return &gatewayPolicyAuthScenario{client: client, namespace: namespace, host: host, grpcHost: grpcHost, token: token,
 		httpsPort: forward.HTTPSPort, requests: httpclient.ForForwarded(t, 0, forward.HTTPSPort), policy: policy}
+}
+
+func checkGatewayPolicyGroups(t *testing.T, key *rsa.PrivateKey, host string, port int) {
+	t.Helper()
+	for _, tc := range []struct {
+		groups any
+		status int
+	}{
+		{[]string{"other", "admins"}, http.StatusOK},
+		{"operators", http.StatusOK},
+		{nil, http.StatusForbidden},
+		{[]string{"outsiders"}, http.StatusForbidden},
+		{[]any{"admins", 1}, http.StatusForbidden},
+	} {
+		claims := map[string]any{"sub": "member", "exp": time.Now().Add(time.Hour).Unix(), "iss": "policy-test", "aud": "api", "groups": "admins"}
+		if tc.groups != nil {
+			claims["roles"] = tc.groups
+		}
+		token := signRS256(t, key, map[string]any{"alg": "RS256"}, claims)
+		for _, path := range []string{"/", "/redirect"} {
+			statusCode := tc.status
+			if path == "/redirect" && statusCode == http.StatusOK {
+				statusCode = http.StatusFound
+			}
+			httpclient.ForForwarded(t, 0, port).HTTPS(host, path).
+				WithHeader("Authorization", "Bearer "+token).WithHeader("X-API-Key", "old-key").ExpectStatus(t, statusCode)
+		}
+	}
 }
 
 func checkGatewayPolicySharedIngressKey(ctx context.Context, t *testing.T, client klient.Client, namespace string, backend BackendRef, token string) {

@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 
+- JWT routes can require group membership through `jwt-allowed-groups` and `jwt-groups-claim`, or route-policy `allowedGroups` and `groupsClaim`; verified tokens without a permitted group receive `403` ([#610](https://github.com/haproxy-haptic/HAPTIC/issues/610)).
+
 - `haproxy-haptic.org/jwt-jwks-url` refreshes public signing keys from an approved HTTPS JWKS endpoint and selects the token's `kid`, supporting overlapping keys during rotation ([#608](https://github.com/haproxy-haptic/HAPTIC/issues/608)).
 
 #### Fixed
