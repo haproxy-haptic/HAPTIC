@@ -17,10 +17,12 @@ templateSnippets:
       {%- macro ReadResourceMetadata(namespace string, name string, key string, pathOverride string, result map[string]any) -%}
         {%%
           result["error"] = ""
+          result["unavailable"] = false
           var reject = func(message string) { if result["error"] == "" { result["error"] = message } }
           var source = resources.configmaps.GetSingle(namespace, name)
           var encoded = dig_string(source, "", "data", key)
           if source == nil || encoded == "" {
+            result["unavailable"] = true
             reject("ConfigMap " + namespace + "/" + name + " has no protected-resource metadata. Set data[" + key + "] to a JSON document.")
           } else if len(encoded) > 8192 {
             reject("Protected-resource metadata exceeds 8 KiB. Reduce the JSON document.")
@@ -102,14 +104,43 @@ templateSnippets:
             }
             challenges[tostring(record["routeID"]) + "|" + tostring(record["authority"])] = "Bearer resource_metadata=\"" + tostring(record["url"]) + "\""
           }
+          // HAProxy reserves newline and NUL bytes in its 16 KiB map reader: haproxy/haproxy#3537.
           var bodyLines = []any{}
-          for key, body := range bodies { bodyLines = append(bodyLines, key + " " + queryEscape(body)) }
+          for key, body := range bodies {
+            var line = key + " " + queryEscape(body)
+            if len(line) > 16382 { fail("Protected-resource metadata at " + key + " exceeds the encoded map line limit. Reduce the JSON document or resource URL.") }
+            bodyLines = append(bodyLines, line)
+          }
           var challengeLines = []any{}
-          for key, challenge := range challenges { challengeLines = append(challengeLines, key + " " + queryEscape(challenge)) }
+          for key, challenge := range challenges {
+            var line = key + " " + queryEscape(challenge)
+            if len(line) > 16382 { fail("Protected-resource metadata challenge at " + key + " exceeds the encoded map line limit. Shorten the resource URL.") }
+            challengeLines = append(challengeLines, line)
+          }
           _ = RegisterMap("jwt-resource-metadata-body.map", sort_strings(bodyLines), map[string]any{"ordered": false})
           _ = RegisterMap("jwt-resource-metadata-challenge.map", sort_strings(challengeLines), map[string]any{"ordered": false})
         %%}
       {%- end -%}
+
+  features-856-jwt-resource-metadata-unavailable:
+    template: |-
+      {%- import "util-register-map" for RegisterMap -%}
+      {%- if incremental_value_count("jwt-resource-metadata", "unavailable") > 0 -%}
+        {%- var lines = []any{} -%}
+        {%- for _, route := range incremental_values("jwt-resource-metadata", "unavailable") -%}
+          {%- lines = append(lines, tostring(route) + " unavailable") -%}
+        {%- end -%}
+        {%- _ = RegisterMap("jwt-resource-metadata-unavailable.map", sort_strings(lines), map[string]any{"ordered": false}) -%}
+      {%- end -%}
+
+  frontend-filters-058-jwt-resource-metadata-unavailable:
+    template: |
+      {%- if incremental_value_count("jwt-resource-metadata", "unavailable") > 0 -%}
+      {%- var unavailable, err = pathResolver.GetPath("jwt-resource-metadata-unavailable.map", "map") -%}
+      {%- if err != nil -%}{{ fail(tostring(err)) }}{%- end %}
+      http-request set-var(txn.denied_by) str(jwt_unavailable) if { var(txn.policy_id),map({{ unavailable }}) -m found }
+      http-request deny deny_status 503 if { var(txn.policy_id),map({{ unavailable }}) -m found }
+      {%- end %}
 
   frontend-filters-005a-jwt-resource-metadata:
     template: |

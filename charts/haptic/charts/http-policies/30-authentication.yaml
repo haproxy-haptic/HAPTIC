@@ -3,6 +3,7 @@ templateSnippets:
     requires: [secrets]
     template: |-
       {%- import "util-public-key-secret" for ReadPublicKeySecret -%}
+      {%- import "util-jwt-groups" for JWTGroups -%}
       {%- import "util-api-key-secret" for ReadAPIKeySecret -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
       {%- import "util-resource-metadata" for ReadResourceMetadata -%}
@@ -64,6 +65,10 @@ templateSnippets:
               settings[target] = value
               settings[target + "Set"] = true
             }
+            var groups = map[string]any{}
+            JWTGroups(dig_string(jwt, "", "groupsClaim"), toSlice(dig(jwt, "allowedGroups")), groups)
+            if groups["error"] != "" { reject(tostring(groups["error"])) }
+            for _, field := range []string{"groupsClaim", "groupsKey", "allowedGroups"} { settings[field] = groups[field] }
             var claims = []any{}
             for _, claim := range toSlice(dig(jwt, "requiredClaims")) {
               var name = tostring(claim)
@@ -153,5 +158,5 @@ templateSnippets:
         {%- if len(toStringSlice(settings["fwd"])) > 0 -%}
           {%- forwarded = "," + join(toStringSlice(settings["fwd"]), ",") + "," -%}
         {%- end -%}
-        {{- settings["alg"] }} {{ settings["keyFile"] }} {{ settings["state"] }} {{ settings["iss"] }} {{ settings["aud"] }} {{ required }} {{ forwarded }} {{ settings["issSet"] }} {{ settings["audSet"] -}}
+        {{- settings["alg"] }} {{ settings["keyFile"] }} {{ settings["state"] }} {{ settings["iss"] }} {{ settings["aud"] }} {{ required }} {{ forwarded }} {{ settings["issSet"] }} {{ settings["audSet"] }} {{ settings["groupsClaim"] }} {{ settings["groupsKey"] -}}
       {%- end macro -%}

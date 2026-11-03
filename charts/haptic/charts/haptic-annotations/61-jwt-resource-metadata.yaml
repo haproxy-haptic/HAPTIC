@@ -8,7 +8,7 @@ templateSnippets:
         - "metadata.annotations['haproxy-haptic.org/jwt-resource-metadata-path']"
       optionalConsumes: [haptic-jwks-sources]
       group: jwt-resource-metadata
-      effects: [publishValue]
+      effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-haptic-jwt-route" for HapticJWTRoute -%}
       {%- import "util-resource-metadata" for ReadResourceMetadata -%}
@@ -34,18 +34,23 @@ templateSnippets:
           }
           var metadata = map[string]any{}
           ReadResourceMetadata(namespace, parts[0], key, path, metadata)
-          if metadata["error"] != "" { fail("Ingress " + routeID + ": " + tostring(metadata["error"])) }
-          var resourceHost = tostring(metadata["host"])
-          var hosts = []any{}
-          for _, rule := range toSlice(dig(item, "spec", "rules")) {
-            var host = dig_string(rule, "", "host")
-            var matches = host == "" || host == resourceHost
-            if hasPrefix(host, "*.") && hasSuffix(resourceHost, host[1:]) {
-              matches = !strings_contains(trimSuffix(resourceHost, host[1:]), ".")
+          if metadata["unavailable"] == true {
+            shared.Publish("unavailable", routeID, routeID)
+            recordEvent(resources.ingresses.GetSingle(namespace, name), "JWTMetadataUnavailable", "Ingress " + routeID + " cannot read JWT metadata from ConfigMap " + namespace + "/" + parts[0] + ". Requests return 503. Restore data[" + key + "].")
+          } else {
+            if metadata["error"] != "" { fail("Ingress " + routeID + ": " + tostring(metadata["error"])) }
+            var resourceHost = tostring(metadata["host"])
+            var hosts = []any{}
+            for _, rule := range toSlice(dig(item, "spec", "rules")) {
+              var host = dig_string(rule, "", "host")
+              var matches = host == "" || host == resourceHost
+              if hasPrefix(host, "*.") && hasSuffix(resourceHost, host[1:]) {
+                matches = !strings_contains(trimSuffix(resourceHost, host[1:]), ".")
+              }
+              if matches { hosts = append(hosts, MapKeyForHost(host)) }
             }
-            if matches { hosts = append(hosts, MapKeyForHost(host)) }
+            if len(hosts) == 0 { fail("Ingress " + routeID + " does not serve the metadata resource host. Set resource to a URL on an Ingress host.") }
+            PublishResourceMetadata(routeID, hosts, metadata)
           }
-          if len(hosts) == 0 { fail("Ingress " + routeID + " does not serve the metadata resource host. Set resource to a URL on an Ingress host.") }
-          PublishResourceMetadata(routeID, hosts, metadata)
         }
       %%}

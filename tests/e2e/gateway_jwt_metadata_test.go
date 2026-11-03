@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -52,7 +53,7 @@ func testGatewayJWTMetadata(ctx context.Context, t *testing.T, client klient.Cli
 	require.NoError(t, client.Resources(namespace).Create(ctx, document))
 	for _, discovery := range []bool{false, true} {
 		name := "ordinary"
-		jwt := map[string]any{"secretRef": map[string]any{"name": "jwt"}}
+		jwt := map[string]any{"secretRef": map[string]any{"name": "jwt"}, "allowedGroups": []any{"admins"}}
 		if discovery {
 			name = "discovery"
 			jwt["resourceMetadata"] = map[string]any{"configMapRef": map[string]any{"name": "oauth"}}
@@ -82,6 +83,7 @@ func testGatewayJWTMetadata(ctx context.Context, t *testing.T, client klient.Cli
 	primary.HTTPS(host, path).ExpectMatching(t, "Gateway public metadata", func(response *httpclient.Response) bool {
 		return response.Status == http.StatusOK && string(response.Body) == body
 	})
+	assertJWTMetadataGroups(t, primary, key, host)
 	response := secondary.HTTPS(host, path).ExpectStatus(t, http.StatusUnauthorized)
 	require.Empty(t, response.Header.Get("WWW-Authenticate"))
 	require.NoError(t, client.Resources(namespace).Delete(ctx, document))
@@ -92,4 +94,13 @@ func testGatewayJWTMetadata(ctx context.Context, t *testing.T, client klient.Cli
 	require.NoError(t, client.Resources(namespace).Create(ctx, document))
 	primary.HTTPS(host, path).ExpectOK(t)
 	primary.HTTPS(host, "/mcp").ExpectHeader(t, "WWW-Authenticate", challenge)
+}
+
+func assertJWTMetadataGroups(t *testing.T, requests *httpclient.Client, key *rsa.PrivateKey, host string) {
+	t.Helper()
+	wrongGroup := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{"groups": []string{"guests"}, "exp": time.Now().Add(time.Hour).Unix()})
+	response := requests.HTTPS(host, "/mcp").WithHeader("Authorization", "Bearer "+wrongGroup).ExpectStatus(t, http.StatusForbidden)
+	require.Empty(t, response.Header.Get("WWW-Authenticate"))
+	allowed := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{"groups": []string{"admins"}, "exp": time.Now().Add(time.Hour).Unix()})
+	requests.HTTPS(host, "/mcp").WithHeader("Authorization", "Bearer "+allowed).ExpectEchoPath(t, "/mcp")
 }

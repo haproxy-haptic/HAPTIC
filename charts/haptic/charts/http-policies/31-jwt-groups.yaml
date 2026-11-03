@@ -1,0 +1,65 @@
+templateSnippets:
+  util-jwt-groups:
+    template: |-
+      {%- macro JWTGroups(claim string, values []any, result map[string]any) -%}
+        {%%
+          result["error"] = ""
+          result["groupsClaim"] = "_"
+          result["groupsKey"] = "_"
+          result["allowedGroups"] = []any{}
+          if len(values) == 0 {
+            if claim != "" { result["error"] = "JWT groups claim has no allowed groups. Configure at least one allowed group." }
+          } else {
+            if claim == "" { claim = "groups" }
+            if len(claim) > 128 || !regex_search(claim, "^[A-Za-z0-9_-]+$") {
+              result["error"] = "JWT groups claim is invalid. Use up to 128 letters, digits, underscores, or hyphens."
+            }
+            if len(values) > 32 { result["error"] = "JWT allowed groups exceeds 32 entries. Use at most 32 groups." }
+            var groups = []string{}
+            var seen = map[string]bool{}
+            for _, value := range values {
+              var group = tostring(value)
+              if len(group) == 0 || len(group) > 256 || !regex_search(group, "^[!-~]+$") || hasPrefix(group, "[") {
+                result["error"] = "JWT allowed group is invalid. Use 1-256 printable ASCII characters without spaces or a leading [."
+              }
+              if !seen[group] { groups = append(groups, group); seen[group] = true }
+            }
+            groups = sort_strings(toSlice(groups))
+            result["groupsClaim"] = claim
+            result["groupsKey"] = sha256(toJSON(groups))
+            result["allowedGroups"] = toSlice(groups)
+          }
+        %%}
+      {%- end macro -%}
+
+  util-publish-jwt-groups:
+    template: |-
+      {%- macro PublishJWTGroups(settings map[string]any) -%}
+        {%- if settings["groupsKey"] != "_" -%}
+          {%- var claim = tostring(settings["groupsClaim"]) -%}
+          {{- shared.Publish("groupClaims", claim, claim) -}}
+          {{- shared.Publish("groupValues", tostring(settings["groupsKey"]), map[string]any{"key": settings["groupsKey"], "values": toSlice(settings["allowedGroups"])}) -}}
+        {%- end -%}
+      {%- end macro -%}
+maps:
+  haptic-jwt-groups-scalar.map:
+    template: |-
+      {%- for _, value := range incremental_values("haptic-jwt-routes", "groupValues") -%}
+        {%- var record = value.(map[string]any) -%}
+        {%- var key = tostring(record["key"]) -%}
+        {%- for _, value := range toStringSlice(record["values"]) -%}
+          {{- "\n" + key + "." + toLower(hex(value)) + " 1" -}}
+        {%- end -%}
+      {%- end -%}
+  haptic-jwt-groups-array.map:
+    template: |-
+      {%- for _, value := range incremental_values("haptic-jwt-routes", "groupValues") -%}
+        {%- var record = value.(map[string]any) -%}
+        {%- var key = tostring(record["key"]) -%}
+        {%- var patterns = []string{} -%}
+        {%- for _, value := range toStringSlice(record["values"]) -%}
+          {%- var pattern = json_string_array_pattern(value) -%}
+          {%- patterns = append(patterns, pattern[1:]) -%}
+        {%- end -%}
+        {{- "\n^" + key + "\\.(" + join(patterns, "|") + ") 1" -}}
+      {%- end -%}

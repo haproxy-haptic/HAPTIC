@@ -13,11 +13,13 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/e2e-framework/klient"
 
@@ -41,6 +43,7 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 	metadataPath := "/.well-known/oauth-protected-resource/mcp"
 	annotations := map[string]string{
 		"haproxy-haptic.org/jwt-secret":                      "jwt-keys",
+		"haproxy-haptic.org/jwt-allowed-groups":              "admins",
 		"haproxy-haptic.org/jwt-resource-metadata-configmap": "oauth:document.json",
 		"haproxy-haptic.org/error-pages":                     "refusal",
 	}
@@ -51,10 +54,11 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	public := pem.EncodeToMemory(&pem.Block{Type: "RSA PUBLIC KEY", Bytes: x509.MarshalPKCS1PublicKey(&key.PublicKey)})
-	token := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{"sub": "alice", "exp": time.Now().Add(time.Hour).Unix()})
+	token := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{"sub": "alice", "groups": []string{"admins"}, "exp": time.Now().Add(time.Hour).Unix()})
+	wrongGroup := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{"sub": "alice", "groups": []string{"guests"}, "exp": time.Now().Add(time.Hour).Unix()})
 	var client klient.Client
 	var document *corev1.ConfigMap
-	body := `{"resource":"https://` + host + `/mcp","authorization_servers":["https://login.example.com"],"display_name":"%[req.hdr(secret)]"}`
+	body := `{"resource":"https://` + host + `/mcp","authorization_servers":["https://login.example.com"],"display_name":"%[req.hdr(secret)]","extension":"` + strings.Repeat("/", 5200) + `"}`
 	RunSimpleIngressTest(t, &SimpleIngressTest{
 		Description: "JWT protected-resource discovery " + name,
 		Host:        host, Path: "/mcp", TLSSecretName: "certificate", Annotations: annotations,
@@ -88,7 +92,9 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 				require.Equal(t, "no-store", response.Header.Get("Cache-Control"))
 				require.Empty(t, response.Header.Get("WWW-Authenticate"))
 			}
-			response := requests.GET(host, metadataPath).WithMethod(http.MethodHead).ExpectOK(t)
+			response := requests.GET(host, "/mcp").WithHeader("Authorization", "Bearer "+wrongGroup).ExpectStatus(t, http.StatusForbidden)
+			require.Empty(t, response.Header.Get("WWW-Authenticate"))
+			response = requests.GET(host, metadataPath).WithMethod(http.MethodHead).ExpectOK(t)
 			require.Empty(t, response.Body)
 			response = requests.GET(host, metadataPath).WithMethod(http.MethodPost).ExpectStatus(t, http.StatusMethodNotAllowed)
 			require.Equal(t, "GET, HEAD", response.Header.Get("Allow"))
@@ -102,6 +108,26 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 				return response.Status == http.StatusOK && string(response.Body) == updated
 			})
 			requests.GET(host, "/mcp").ExpectHeader(t, "WWW-Authenticate", challenge)
+			require.NoError(t, client.Resources(document.Namespace).Delete(t.Context(), document))
+			response = requests.GET(host, "/mcp").WithHeader("Authorization", "Bearer "+token).ExpectStatus(t, http.StatusServiceUnavailable)
+			require.Empty(t, response.Header.Get("WWW-Authenticate"))
+			requests.GET(host, metadataPath).ExpectStatus(t, http.StatusNotFound)
+			ingress := &networkingv1.Ingress{}
+			require.NoError(t, client.Resources(document.Namespace).Get(t.Context(), "echo", document.Namespace, ingress))
+			backend := ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service
+			NewIngress(t.Context(), t, client, document.Namespace, &IngressSpec{
+				Name: "unrelated", Host: "other-" + host, Path: "/alive", BackendService: backend.Name, BackendPort: backend.Port.Number,
+			})
+			requests.GET("other-"+host, "/alive").ExpectEchoPath(t, "/alive")
+			document = &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "oauth", Namespace: document.Namespace}, Data: map[string]string{"document.json": ""}}
+			require.NoError(t, client.Resources(document.Namespace).Create(t.Context(), document))
+			requests.GET(host, "/mcp").ExpectStatus(t, http.StatusServiceUnavailable)
+			document.Data["document.json"] = updated
+			require.NoError(t, client.Resources(document.Namespace).Update(t.Context(), document))
+			requests.GET(host, metadataPath).ExpectMatching(t, "restored ConfigMap republishes metadata", func(response *httpclient.Response) bool {
+				return response.Status == http.StatusOK && string(response.Body) == updated
+			})
+			requests.GET(host, "/mcp").WithHeader("Authorization", "Bearer "+token).ExpectEchoPath(t, "/mcp")
 		}}},
 	})
 }

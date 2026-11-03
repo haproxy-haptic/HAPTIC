@@ -483,6 +483,8 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/jwt-issuer` | Required `iss` claim value (exact match). |
 | `haproxy-haptic.org/jwt-resource-metadata-configmap` | Same-namespace ConfigMap `name[:key]` containing an OAuth protected-resource metadata JSON document; key defaults to `metadata.json`. Enables a public discovery endpoint and a Bearer challenge on JWT `401` responses. Requires a JWT signing-key source. |
 | `haproxy-haptic.org/jwt-resource-metadata-path` | Discovery path override: `/.well-known/oauth-protected-resource` or the default path-suffixed form derived from the document's `resource` URL. Requires `jwt-resource-metadata-configmap`. |
+| `haproxy-haptic.org/jwt-allowed-groups` | Comma-separated permitted group names. A verified token must contain an exact match in its group string or string array; otherwise the route returns `403`. |
+| `haproxy-haptic.org/jwt-groups-claim` | Top-level group claim name, default `groups`. Requires `jwt-allowed-groups`. |
 | `haproxy-haptic.org/jwt-required-claims` | Comma-separated claim names that must be present in the payload; a missing claim is denied `401`. |
 | `haproxy-haptic.org/jwt-jwks-url` | HTTPS JSON Web Key Set (JWKS) endpoint from `extraContext.jwt.allowedJWKSURLs`, used instead of `jwt-secret`. Refreshes every `extraContext.jwt.refreshInterval` (default `5m`). Selects the key by `kid`; an unknown or missing ID returns `401`. No usable keys returns `503`. |
 | `haproxy-haptic.org/jwt-secret` | Names the Secret (data key `pubkey.pem`) for asymmetric JWT verification with an alg-confusion guard, `exp`/`iss`/`aud`/required-claim checks, and the shared consumer identity from `sub`. Fails closed (`503`) when the Secret is absent. A new key Secret reloads once; routes sharing a key are added and removed without one, and key rotation needs a reload. |
@@ -504,6 +506,15 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/require-content-type` | Requires an allowed `Content-Type` (comma-separated) on body methods (POST/PUT/PATCH); a disallowed type is rejected with `415` (prefix-matched, so charset suffixes still match). Applied from a per-route map. |
 | `haproxy-haptic.org/require-headers` | Requires the listed request headers (comma-separated); a request missing any is rejected with `400`. Applied from a per-route map; the first route to require a new header name reloads once. |
 | `haproxy-haptic.org/require-sni-host-match` | `"true"` answers `421 Misdirected Request` when a request's `Host` differs from the TLS SNI it arrived on. A browser that reused one HTTP/2 connection for several hosts retries on a new connection. Applied from a per-route map. |
+
+#### JWT group authorization
+
+Group authorization accepts up to 32 names of 1–256 characters from `!` (U+0021) through `~` (U+007E), without a leading `[`. The scalar JSON decoder in HAProxy doesn't reliably decode Unicode escapes outside this range, and a leading `[` can make a string indistinguishable from an array. Claim names use up to 128 letters, digits, underscores, or hyphens. Group names are case-sensitive.
+
+```yaml
+haproxy-haptic.org/jwt-allowed-groups: admins,operators
+haproxy-haptic.org/jwt-groups-claim: groups
+```
 
 #### Authentication and reloads
 
@@ -657,6 +668,6 @@ data:
 
 The `resource` must be an HTTPS URL on an Ingress host, without credentials, a query, or a fragment. HAPTIC serves the document at `https://mcp.example.com/.well-known/oauth-protected-resource/mcp`, and includes that URL in `WWW-Authenticate: Bearer resource_metadata="…"` on JWT authentication failures. To use the root discovery path, set `haproxy-haptic.org/jwt-resource-metadata-path: /.well-known/oauth-protected-resource`.
 
-The discovery endpoint accepts unauthenticated `GET` and `HEAD` requests and returns JSON directly from HAProxy. It takes precedence over application routing and authentication at that exact host and path; TLS client-certificate and server-name checks still apply. Other methods return `405`. Documents are limited to 8 KiB and return `Cache-Control: no-store`. ConfigMap edits update the response; conflicting documents at one endpoint are rejected. Remove the annotation before deleting its ConfigMap.
+The discovery endpoint accepts unauthenticated `GET` and `HEAD` requests and returns JSON directly from HAProxy. It takes precedence over application routing and authentication at that exact host and path; TLS client-certificate and server-name checks still apply. Other methods return `405`. Documents are limited to 8 KiB; each URL-encoded map line, including its host and path key, must also fit within 16382 bytes. Responses return `Cache-Control: no-store`. ConfigMap edits update the response; conflicting documents at one endpoint are rejected. A missing or empty ConfigMap removes discovery and returns `503` for that Ingress; other routes keep updating. Restoring the document restores discovery and JWT authentication.
 
 The challenge accompanies JWT `401` responses, including custom error pages. It doesn't accompany authorization `403` responses, unavailable-key `503` responses, or backend-generated errors. See [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html) for client discovery and resource-identifier checks.

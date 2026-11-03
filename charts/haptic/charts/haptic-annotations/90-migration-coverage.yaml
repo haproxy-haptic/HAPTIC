@@ -302,6 +302,12 @@ _migrationCoverage:
       haproxy-haptic.org/jwt-audience:
         status: supported
         note: "Required aud string or exact member of an aud string array."
+      haproxy-haptic.org/jwt-allowed-groups:
+        status: supported
+        note: "Verified JWT group membership, using native scalar and array maps; unmatched claims return 403."
+      haproxy-haptic.org/jwt-groups-claim:
+        status: supported
+        note: "Selects the top-level JWT claim used for group membership; defaults to groups."
       haproxy-haptic.org/jwt-forward-claims:
         status: supported
         note: "Comma-separated `<claim>:<header>` pairs forwarded upstream after verification; each header is del-header'd first (anti-spoof)."

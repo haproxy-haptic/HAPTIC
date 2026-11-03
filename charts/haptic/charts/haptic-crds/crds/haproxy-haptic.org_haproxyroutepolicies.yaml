@@ -39,6 +39,11 @@ spec:
                     jwt:
                       type: object
                       required: [secretRef]
+                      x-kubernetes-validations:
+                      - rule: '!has(self.groupsClaim) || has(self.allowedGroups)'
+                        message: groupsClaim requires allowedGroups.
+                      - rule: '!has(self.allowedGroups) || self.allowedGroups.all(group, !group.startsWith("["))'
+                        message: Group names must not start with [.
                       properties:
                         secretRef:
                           type: object
@@ -84,6 +89,21 @@ spec:
                               type: string
                               maxLength: 2048
                               pattern: '^/\.well-known/oauth-protected-resource(/.*)?$'
+                        allowedGroups:
+                          type: array
+                          minItems: 1
+                          maxItems: 32
+                          x-kubernetes-list-type: set
+                          items:
+                            type: string
+                            minLength: 1
+                            maxLength: 256
+                            pattern: '^[!-~]+$'
+                        groupsClaim:
+                          type: string
+                          minLength: 1
+                          maxLength: 128
+                          pattern: '^[A-Za-z0-9_-]+$'
                         requiredClaims:
                           type: array
                           maxItems: 32
