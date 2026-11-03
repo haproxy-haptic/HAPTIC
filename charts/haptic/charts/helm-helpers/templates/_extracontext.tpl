@@ -1023,12 +1023,12 @@
 {{- toYaml $extraContext }}
 {{- end }}
 
-{{- /* The values validationTests render from: the chart defaults, except what
-       selects which libraries and tests exist (every value _helm_load and
-       _helm_skip_test read), which follows the deployment. */ -}}
+{{- /* Validation uses chart defaults except release identity and library/test selection. */ -}}
 {{- define "haptic.testValues" -}}
 {{- $helpers := index .Subcharts "helm-helpers" }}
 {{- $values := $helpers.Files.Get "files/default-values.json" | fromJson }}
+{{- $_ := set $values "nameOverride" .Values.nameOverride }}
+{{- $_ := set $values "fullnameOverride" .Values.fullnameOverride }}
 {{- $_ := set $values "haproxyVersion" .Values.haproxyVersion }}
 {{- $_ := set $values.controller "templateLibraries" (deepCopy .Values.controller.templateLibraries) }}
 {{- $_ := set $values.spoaHub "enabled" (eq (include "haptic.spoaHub.enabled" .) "true") }}
