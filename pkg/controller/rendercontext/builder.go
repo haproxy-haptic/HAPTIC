@@ -256,6 +256,13 @@ func WithAdmissionSubjectStores(aliases []string, namespace, name string) Option
 	}
 }
 
+// WithAdmissionHTTPURLs identifies HTTP content under admission review.
+func WithAdmissionHTTPURLs(urls []string) Option {
+	return func(b *Builder) {
+		b.admissionSubject = map[string]any{"httpURLs": append([]string(nil), urls...)}
+	}
+}
+
 // WithDetachedExtraContext supplies a caller-owned extra-context snapshot.
 // The caller keeps it isolated from template mutation: see
 // RenderService.attemptExtraContext.
