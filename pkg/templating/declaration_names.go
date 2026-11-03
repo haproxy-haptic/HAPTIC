@@ -91,6 +91,7 @@ const (
 	builtinParseYAML         = "parse_yaml"
 	builtinPow               = "pow"
 	builtinPublicKeyInfo     = "public_key_info"
+	builtinJSONArrayPattern  = "json_string_array_pattern"
 	builtinQueryEscape       = "queryEscape"
 	builtinReplaceAll        = "replaceAll"
 	builtinRuneCount         = "runeCount"

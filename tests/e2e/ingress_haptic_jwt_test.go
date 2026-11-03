@@ -26,6 +26,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -153,6 +154,8 @@ func TestHapticJWTClaimConstraints(t *testing.T) {
 	}{
 		{"ordinary", "https://issuer.example.com", "api"},
 		{"underscore", "_", "_"},
+		{"numeric", "https://issuer.example.com", "123"},
+		{"boolean", "https://issuer.example.com", "1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			RunSimpleIngressTest(t, &SimpleIngressTest{
@@ -175,22 +178,34 @@ func TestHapticJWTClaimConstraints(t *testing.T) {
 
 func jwtClaimAssertions(t *testing.T, priv *rsa.PrivateKey, issuer, audience string) []SimpleIngressAssertion {
 	t.Helper()
-	assertions := make([]SimpleIngressAssertion, 0, 5)
+	assertions := make([]SimpleIngressAssertion, 0, 18)
 	for _, tc := range []struct {
-		name, issuer, audience string
-		status                 int
+		name, issuer string
+		audience     any
+		status       int
 	}{
 		{"matching claims", issuer, audience, http.StatusOK},
 		{"wrong issuer", "wrong", audience, http.StatusUnauthorized},
 		{"missing issuer", "", audience, http.StatusUnauthorized},
 		{"wrong audience", issuer, "wrong", http.StatusUnauthorized},
-		{"missing audience", issuer, "", http.StatusUnauthorized},
+		{"missing audience", issuer, nil, http.StatusUnauthorized},
+		{"array first", issuer, []string{audience, "other"}, http.StatusOK},
+		{"array middle", issuer, []string{"other", audience, "last"}, http.StatusOK},
+		{"array last", issuer, []string{"other", audience}, http.StatusOK},
+		{"escaped array value", issuer, json.RawMessage(fmt.Sprintf(`["\u%04x%s"]`, audience[0], audience[1:])), http.StatusOK},
+		{"substring only", issuer, []string{"prefix-" + audience, audience + "-suffix"}, http.StatusUnauthorized},
+		{"empty array", issuer, []string{}, http.StatusUnauthorized},
+		{"nested array", issuer, [][]string{{audience}}, http.StatusUnauthorized},
+		{"mixed array", issuer, []any{audience, true}, http.StatusUnauthorized},
+		{"array-shaped string", issuer, fmt.Sprintf(`[%q]`, audience), http.StatusUnauthorized},
+		{"numeric audience", issuer, 123, http.StatusUnauthorized},
+		{"boolean audience", issuer, true, http.StatusUnauthorized},
 	} {
 		claims := map[string]any{"sub": "alice", "exp": time.Now().Add(time.Hour).Unix()}
 		if tc.issuer != "" {
 			claims["iss"] = tc.issuer
 		}
-		if tc.audience != "" {
+		if tc.audience != nil {
 			claims["aud"] = tc.audience
 		}
 		token := signRS256(t, priv, map[string]any{"alg": "RS256", "typ": "JWT"}, claims)

@@ -313,6 +313,7 @@ templateSnippets:
             {%- var pair = tostring(jwt["alg"]) + "|" + tostring(jwt["keyFile"]) -%}
             {{- shared.Publish("any", "any", "any") -}}
             {{- shared.Publish("keys", pair, pair) -}}
+            {%- if jwt["audSet"] == true -%}{{- shared.Publish("audiences", tostring(jwt["aud"]), jwt["aud"]) -}}{%- end -%}
             {%- for _, claim := range toSlice(jwt["req"]) -%}{{- shared.Publish("req", tostring(claim), claim) -}}{%- end -%}
             {%- for _, value := range toSlice(jwt["fwd"]) -%}
               {%- var forward = tostring(value) -%}

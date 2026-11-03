@@ -4,7 +4,7 @@ validationTests:
     - httproutes
     - grpcroutes
     - routepolicies
-    fixtures:
+    fixtures: &authentication-fixtures
       gateways:
       - apiVersion: gateway.networking.k8s.io/v1
         kind: Gateway
@@ -4244,3 +4244,34 @@ validationTests:
     - type: not_contains
       target: map:coraza-app.map
       pattern: gateway/h_default_same-name_0
+
+  test-gateway-policy-ambiguous-audience:
+    description: Reject a policy audience indistinguishable from an empty array.
+    requires: [httproutes, grpcroutes, routepolicies]
+    extraContext: {renderMode: admission}
+    fixtures:
+      <<: *authentication-fixtures
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: api}
+        spec:
+          authentication:
+            apiKey: *id001
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: jwt}
+        spec:
+          authentication:
+            jwt:
+              <<: *id002
+              audience: '[]'
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: ssl-passthrough}
+        spec:
+          authentication:
+            apiKey: *id001
+            jwt: *id002
+    assertions:
+    - {type: contains, target: rendering_error, pattern: 'JWT audience \[\] is ambiguous'}

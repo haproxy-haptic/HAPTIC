@@ -81,7 +81,10 @@ validationTests:
       - type: contains
         target: haproxy.cfg
         pattern: 'jwt_payload_query\(''\$\.iss''\),strcmp\(txn\.jwt_iss\) -m int 0'
-      - {type: contains, target: haproxy.cfg, pattern: 'jwt_payload_query\(''\$\.aud''\),strcmp\(txn\.jwt_aud\) -m int 0'}
+      - {type: contains, target: haproxy.cfg, pattern: 'var\(txn\.jwt_aud_value\),hex,lower,strcmp\(txn\.jwt_aud_hex\) -m int 0'}
+      - {type: contains, target: haproxy.cfg, pattern: 'jwt_payload_query\(''\$\.aud\[0\]''\) -m found'}
+      - {type: contains, target: haproxy.cfg, pattern: 'map_reg\([^)]*haptic-jwt-audiences\.map\) -m str 1'}
+      - {type: contains, target: map:haptic-jwt-audiences.map, pattern: '(?m)^\^6d792d617069\\\.'}
       - type: contains
         target: haproxy.cfg
         pattern: 'http-request deny deny_status 401 if \{ var\(txn\.jwt_state\) -m str ok \} \{ var\(txn\.jwt_req\) -m sub ,scope, \} !\{ http_auth_bearer,jwt_payload_query\(''\$\.scope''\) -m found \}'
@@ -131,7 +134,30 @@ validationTests:
         pattern: 'deny deny_status 401 if \{ var\(txn\.jwt_state\) -m str ok \} \{ var\(txn\.jwt_cfg\),field\(8,'' ''\) -m str true \} !\{ http_auth_bearer,jwt_payload_query\(''\$\.iss''\),strcmp\(txn\.jwt_iss\) -m int 0 \}'
       - type: contains
         target: haproxy.cfg
-        pattern: 'deny deny_status 401 if \{ var\(txn\.jwt_state\) -m str ok \} \{ var\(txn\.jwt_cfg\),field\(9,'' ''\) -m str true \} !\{ http_auth_bearer,jwt_payload_query\(''\$\.aud''\),strcmp\(txn\.jwt_aud\) -m int 0 \}'
+        pattern: 'deny deny_status 401 if \{ var\(txn\.jwt_state\) -m str ok \} \{ var\(txn\.jwt_cfg\),field\(9,'' ''\) -m str true \} !\{ var\(txn\.jwt_aud_match\) -m bool \}'
+
+  test-haptic-jwt-ambiguous-audience:
+    description: Reject an audience identifier indistinguishable from an empty array.
+    fixtures:
+      secrets: [*jwt-public-key]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwt-array-name
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-audience: '[]'
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwt-array-name.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'ambiguous jwt-audience'}
 
   test-haptic-jwt-annotations-without-secret-fail-closed:
     description: >-

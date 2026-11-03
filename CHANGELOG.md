@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `json_string_array_pattern(value)` produces a regular expression for exact membership in a JSON string array.
+
+### Helm chart
+
+#### Fixed
+
+- JWT audience validation accepts an exact member of a string-array `aud` claim for Ingress annotations and route policies, and rejects non-string values ([#609](https://github.com/haproxy-haptic/HAPTIC/issues/609)).
+
 ## [0.10.0] - 2026-11-02
 
 ### Added

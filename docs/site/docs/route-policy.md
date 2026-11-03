@@ -41,7 +41,7 @@ RSA keys require at least 2048 bits. ECDSA curves must match the selected algori
 | `secretRef.name` | Required | Public-key Secret |
 | `algorithm` | `RS256` | `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`, `ES256`, `ES384`, or `ES512` |
 | `issuer` | Unset | Required `iss` value when configured |
-| `audience` | Unset | Required `aud` value when configured |
+| `audience` | Unset | Required `aud` string or exact member of an `aud` string array; `[]` isn't a supported identifier |
 | `requiredClaims` | `[]` | Claims that must be present; use `[exp, sub]` for expiring tokens with a consumer identity |
 | `forwardClaims` | `[]` | List of `{claim, header}` entries copied into request headers after verification |
 
