@@ -37,6 +37,16 @@ templateSnippets:
       {%- for _, fh := range sort_strings(fwdhdrs) %}
       http-request del-header {{ fh }} if { var(txn.jwt_fwd) -m sub :{{ fh }}, }
       {%- end %}
+      {%- if incremental_value_count("haptic-jwt-routes", "jwks") > 0 %}
+      {%- var jwksMap, jwksErr = pathResolver.GetPath("haptic-jwks.map", "map") %}
+      {%- if jwksErr != nil %}{{ fail(tostring(jwksErr)) }}{%- end %}
+      http-request set-var(txn.jwt_kid) http_auth_bearer,jwt_header_query('$.kid'),hex,lower if { var(txn.jwt_state) -m str jwks }
+      http-request set-var(txn.jwt_selected_key) var(txn.jwt_key),concat(.,txn.jwt_kid),map({{ jwksMap }}) if { var(txn.jwt_state) -m str jwks }
+      http-request set-var(txn.denied_by) str(jwt_signature) if { var(txn.jwt_state) -m str jwks } !{ var(txn.jwt_selected_key) -m found }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str jwks } !{ var(txn.jwt_selected_key) -m found }`) }}
+      http-request set-var(txn.jwt_key) var(txn.jwt_selected_key) if { var(txn.jwt_state) -m str jwks }
+      http-request set-var(txn.jwt_state) str(ok) if { var(txn.jwt_state) -m str jwks }
+      {%- end %}
       http-request set-var(txn.haptic_jwt_alg) http_auth_bearer,jwt_header_query('$.alg') if { var(txn.jwt_state) -m str ok }
       http-request set-var(txn.denied_by) str(jwt_algorithm) if { var(txn.jwt_state) -m str ok } !{ var(txn.haptic_jwt_alg),strcmp(txn.jwt_alg) -m int 0 }
       {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } !{ var(txn.haptic_jwt_alg),strcmp(txn.jwt_alg) -m int 0 }`) }}

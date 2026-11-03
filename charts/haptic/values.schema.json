@@ -653,6 +653,21 @@
                       },
                       "additionalProperties": false
                     },
+                    "jwt": {
+                      "type": "object",
+                      "properties": {
+                        "allowedJWKSURLs": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "refreshInterval": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "prometheusExporter": {
                       "type": "object",
                       "properties": {

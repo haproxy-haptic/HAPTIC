@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/helpers"
 	controllerhttpstore "github.com/haproxy-haptic/HAPTIC/pkg/controller/httpstore"
@@ -148,4 +149,40 @@ func TestPendingHTTPOverlayRequiresMatchingSourceAndValidationMode(t *testing.T)
 	require.ErrorIs(t, err, errIncrementalUnsupported)
 	require.NoError(t, fixture.service.RetireIncrementalCache())
 	require.NoError(t, other.service.RetireIncrementalCache())
+}
+
+func TestAdmissionHTTPColdRestartSurvivesTemplateErrorHandling(t *testing.T) {
+	fixture := newIncrementalHTTPTestFixtureWithTemplate(t, `{%- var body, fetchErr = http.Fetch(item | dig_string("", "spec", "url"), map[string]any{"critical": true}) -%}
+{%- if fetchErr != nil -%}{{ fail("upstream unavailable") }}{%- end -%}
+{%- if body == "invalid" -%}{{ fail("invalid upstream content") }}{%- end -%}
+{{ item | dig_string("", "metadata", "name") }}={{ body }}
+`)
+	require.Equal(t, "a=first\nb=stable\n", fixture.render(t))
+	require.Equal(t, "a=first\nb=stable\n", fixture.render(t))
+	accepted := fixture.service.incremental.snapshot
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(r.URL.Path[1:]))
+	}))
+	t.Cleanup(server.Close)
+	for _, body := range []string{"fresh", "invalid"} {
+		t.Run(body, func(t *testing.T) {
+			url := server.URL + "/" + body
+			resource := &unstructured.Unstructured{Object: incrementalTestResource("default", "c", map[string]any{"url": url})}
+			provider := stores.NewOverlayStoreProvider(fixture.provider, stores.NewValidationContext(map[string]*stores.StoreOverlay{
+				"routes": stores.NewStoreOverlayForCreate(resource),
+			}))
+			result, err := fixture.service.Render(t.Context(), provider, rendercontext.RenderModeAdmission)
+			if body == "invalid" {
+				require.ErrorContains(t, err, "invalid upstream content")
+				require.Nil(t, result)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, "a=first\nb=stable\nc=fresh\n", result.HAProxyConfig)
+				result.InputTransaction.Abort()
+			}
+			require.Same(t, accepted, fixture.service.incremental.snapshot)
+			_, found := fixture.httpComponent.GetStore().Get(url)
+			require.False(t, found)
+		})
+	}
 }

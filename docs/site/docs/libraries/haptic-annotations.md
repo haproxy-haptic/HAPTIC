@@ -482,6 +482,7 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/jwt-forward-claims` | Comma-separated `<claim>:<header>` pairs forwarded upstream after verification; each header is stripped from the client request first (anti-spoof). |
 | `haproxy-haptic.org/jwt-issuer` | Required `iss` claim value (exact match). |
 | `haproxy-haptic.org/jwt-required-claims` | Comma-separated claim names that must be present in the payload; a missing claim is denied `401`. |
+| `haproxy-haptic.org/jwt-jwks-url` | HTTPS JSON Web Key Set (JWKS) endpoint from `extraContext.jwt.allowedJWKSURLs`, used instead of `jwt-secret`. Refreshes every `extraContext.jwt.refreshInterval` (default `5m`). Selects the key by `kid`; an unknown or missing ID returns `401`. No usable keys returns `503`. |
 | `haproxy-haptic.org/jwt-secret` | Names the Secret (data key `pubkey.pem`) for asymmetric JWT verification with an alg-confusion guard, `exp`/`iss`/`aud`/required-claim checks, and the shared consumer identity from `sub`. Fails closed (`503`) when the Secret is absent. A new key Secret reloads once; routes sharing a key are added and removed without one, and key rotation needs a reload. |
 | `haproxy-haptic.org/mock-response` | A non-empty value returns it as a canned response body, short-circuiting the backend (for stubbing an API). The body comes from a per-route map; the first route with a new status and content-type pair reloads once. |
 | `haproxy-haptic.org/mock-response-code` | HTTP status for `mock-response` (default `200`). |
@@ -514,6 +515,54 @@ header, JWT key file, HMAC algorithm, signature header, or required JWT claim—
 configuration and requires a reload. Enabling a feature on its first route or
 removing its last route also adds or removes the shared rules.
 
+#### Rotating JWT signing keys
+
+Allow the provider's HTTPS JWKS endpoint in your Helm values:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        jwt:
+          allowedJWKSURLs:
+            staff: https://login.example.com/realms/staff/protocol/openid-connect/certs
+          refreshInterval: 5m
+```
+
+Set these annotations on the Ingress:
+
+```yaml
+haproxy-haptic.org/jwt-jwks-url: "https://login.example.com/realms/staff/protocol/openid-connect/certs"
+haproxy-haptic.org/jwt-issuer: "https://login.example.com/realms/staff"
+haproxy-haptic.org/jwt-audience: "my-api"
+```
+
+Use either `jwt-jwks-url` or `jwt-secret`. The JWKS URL must match an approved
+entry exactly. The controller needs network access to that endpoint and must trust
+its TLS certificate. Configure an internal certificate authority through the
+controller's trust store when your provider uses one.
+
+Each controller replica refreshes each URL once per interval. HAProxy selects the
+public key by the token's `kid`, verifies the configured algorithm (default
+`RS256`), and applies the same claim checks as Secret-based verification. Keys
+marked for encryption or another algorithm are ignored. JWKS documents are
+limited to 1 MiB and 64 keys; selected keys require unique, nonempty IDs. RSA keys
+must contain 2048–8192 bits; EC keys use P-256, P-384, or P-521 for the matching
+ES algorithm.
+
+Publish a new key before using it to sign tokens, allowing time for the refresh,
+validation, and HAProxy reload. Keep the old key in the JWKS while its tokens
+remain valid. Both keys work during this overlap. Removing a key prevents its
+use after the updated configuration deploys. An empty key set denies requests
+with `503`; a missing or unknown token `kid` returns `401`.
+
+The existing HTTP store retains previously accepted content when a refresh fails
+or contains malformed keys. This keeps existing tokens working during an outage,
+but also delays key revocation until a valid refresh succeeds. Before any usable
+keys are available, the route returns `503`. Refreshing an unchanged key set
+requires no HAProxy reload; changing the public keys does.
+
 #### Request-body validation
 
 JSON request-body validation is opt-in via `controller.config.templatingSettings.extraContext.apiGateway.requestSchemaValidation.enabled=true`. Supply a JSON schema in a ConfigMap or Secret. HAProxy rejects bodies above the route cap before SPOE, waits up to `requestBody.waitTimeout` only on matching POST/PUT/PATCH routes, and then validates the complete body. The process-global `tune.bufsize` comes from `extraContext.requestBodyInspection.haproxyBuffer.sizeBytes`; `reservedBytes` (default `8192`) protects request headers and rewrite space. Any validator or policy body cap above the remaining capacity fails. Requests without `Content-Length` return `411`, duplicate lengths return `400`, and incomplete buffering returns `413` instead of validating truncated input. Request-body transformation isn't supported.
@@ -527,7 +576,7 @@ each only when the corresponding annotation or feature is in use:
 
 | Field | Contributed when | Meaning |
 |-------|------------------|---------|
-| `consumer` | any resource sets `jwt-secret` or `api-key-secret` | Authenticated consumer identity — the key a per-consumer rate limit buckets on |
+| `consumer` | any resource sets `jwt-secret`, `jwt-jwks-url`, or `api-key-secret` | Authenticated consumer identity — the key a per-consumer rate limit buckets on |
 | `cache`, `app_backend` | the Varnish tier is enabled | Varnish's `HIT`/`MISS`/`STALE` verdict, and the application backend the route resolved to (the core `backend` field reads `varnish_cache` for cached routes) |
 | `client_ip_peer` | any resource sets `src-ip-header` | The real TCP peer, which is how you spot a client claiming an address it doesn't own once `set-src` has rewritten `client_ip` |
 | `captured_headers` | any resource sets `request-capture` | The captured request headers |

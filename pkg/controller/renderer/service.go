@@ -1268,14 +1268,14 @@ func (s *RenderService) renderMainAttempt(
 	if resourceErr := bctx.Err(ctx); resourceErr != nil {
 		return rendercontext.MainDocumentRender{}, false, resourceErr
 	}
+	if !forceCold && incrementalAttemptRequiresColdRestart(renderSession, inputTransaction) {
+		return rendercontext.MainDocumentRender{}, true, nil
+	}
 	if err != nil {
 		if !forceCold && errors.Is(err, errIncrementalColdRestart) {
 			return rendercontext.MainDocumentRender{}, true, nil
 		}
 		return rendercontext.MainDocumentRender{}, false, fmt.Errorf("rendering %s: %w", names.MainTemplateName, err)
-	}
-	if !forceCold && incrementalAttemptRequiresColdRestart(renderSession, inputTransaction) {
-		return rendercontext.MainDocumentRender{}, true, nil
 	}
 	return mainRender, false, nil
 }
@@ -1292,14 +1292,14 @@ func (s *RenderService) renderAuxiliaryAttempt(
 	if resourceErr := bctx.Err(ctx); resourceErr != nil {
 		return nil, false, resourceErr
 	}
+	if !forceCold && incrementalAttemptRequiresColdRestart(renderSession, inputTransaction) {
+		return nil, true, nil
+	}
 	if err != nil {
 		if !forceCold && errors.Is(err, errIncrementalColdRestart) {
 			return nil, true, nil
 		}
 		return nil, false, err
-	}
-	if !forceCold && incrementalAttemptRequiresColdRestart(renderSession, inputTransaction) {
-		return nil, true, nil
 	}
 	return staticFiles, false, nil
 }
@@ -1316,14 +1316,14 @@ func (s *RenderService) renderResourcesAttempt(
 	if resourceErr := bctx.Err(ctx); resourceErr != nil {
 		return false, resourceErr
 	}
+	if !forceCold && incrementalAttemptRequiresColdRestart(renderSession, inputTransaction) {
+		return true, nil
+	}
 	if err != nil {
 		if !forceCold && errors.Is(err, errIncrementalColdRestart) {
 			return true, nil
 		}
 		return false, err
-	}
-	if !forceCold && incrementalAttemptRequiresColdRestart(renderSession, inputTransaction) {
-		return true, nil
 	}
 	return false, nil
 }

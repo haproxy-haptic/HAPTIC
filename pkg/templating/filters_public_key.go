@@ -25,6 +25,11 @@ import (
 	"fmt"
 )
 
+const (
+	publicKeyPEMType      = "PUBLIC KEY"
+	publicKeyAlgorithmRSA = "RSA"
+)
+
 func scriggoPublicKeyInfo(encoded string) (map[string]any, error) {
 	data := bytes.TrimSpace([]byte(encoded))
 	if !bytes.HasPrefix(data, []byte("-----BEGIN ")) || bytes.Count(data, []byte("-----BEGIN ")) != 1 {
@@ -37,7 +42,7 @@ func scriggoPublicKeyInfo(encoded string) (map[string]any, error) {
 	var key any
 	var err error
 	switch block.Type {
-	case "PUBLIC KEY":
+	case publicKeyPEMType:
 		key, err = x509.ParsePKIXPublicKey(block.Bytes)
 	case "RSA PUBLIC KEY":
 		key, err = x509.ParsePKCS1PublicKey(block.Bytes)
@@ -51,7 +56,7 @@ func scriggoPublicKeyInfo(encoded string) (map[string]any, error) {
 	var bits int
 	switch public := key.(type) {
 	case *rsa.PublicKey:
-		algorithm, bits = "RSA", public.N.BitLen()
+		algorithm, bits = publicKeyAlgorithmRSA, public.N.BitLen()
 	case *ecdsa.PublicKey:
 		algorithm, bits, curve = "ECDSA", public.Curve.Params().BitSize, public.Curve.Params().Name
 	case ed25519.PublicKey:
@@ -59,10 +64,17 @@ func scriggoPublicKeyInfo(encoded string) (map[string]any, error) {
 	default:
 		return nil, errors.New("public key algorithm must be RSA, ECDSA, or Ed25519")
 	}
+	encodedPEM, err := encodePublicKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"algorithm": algorithm, "bits": bits, "curve": curve, "pem": encodedPEM}, nil
+}
+
+func encodePublicKey(key any) (string, error) {
 	canonical, err := x509.MarshalPKIXPublicKey(key)
 	if err != nil {
-		return nil, fmt.Errorf("encode public key: %w", err)
+		return "", fmt.Errorf("encode public key: %w", err)
 	}
-	encodedPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: canonical}))
-	return map[string]any{"algorithm": algorithm, "bits": bits, "curve": curve, "pem": encodedPEM}, nil
+	return string(pem.EncodeToMemory(&pem.Block{Type: publicKeyPEMType, Bytes: canonical})), nil
 }

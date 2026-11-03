@@ -104,3 +104,8 @@ var MetricsServerYAML []byte
 //
 //go:embed conformance-values.yaml
 var ConformanceValuesYAML []byte
+
+// JWKSServerYAML serves rotating public keys over HTTPS for authentication tests.
+//
+//go:embed jwks-server.yaml
+var JWKSServerYAML []byte

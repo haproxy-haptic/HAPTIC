@@ -42,6 +42,15 @@ ingressClass:
 
 # Use local development image
 controller:
+  extraEnv:
+    - {name: SSL_CERT_FILE, value: /jwks-ca/ca.crt}
+  extraVolumes:
+    - name: jwks-ca
+      secret:
+        secretName: jwks-server-tls
+        items: [{key: ca.crt, path: ca.crt}]
+  extraVolumeMounts:
+    - {name: jwks-ca, mountPath: /jwks-ca, readOnly: true}
   image:
     repository: haptic
     tag: dev
@@ -170,6 +179,9 @@ controller:
 
     templatingSettings:
       extraContext:
+        jwt:
+          allowedJWKSURLs: {test: "https://jwks-server.haptic.svc/keys.json"}
+          refreshInterval: 1s
         diagnostics:
           routingHeaders:
             enabled: true  # Enable introspection headers for development

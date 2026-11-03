@@ -1,0 +1,32 @@
+templateSnippets:
+  util-jwks:
+    template: |-
+      {%- macro ReadJWKS(url string, alg string, settings any, result map[string]any) -%}
+        {%%
+          var allowed = false
+          for _, candidate := range to_str_map(settings | dig("allowedJWKSURLs") | fallback(map[string]any{})) {
+            if candidate == url { allowed = true }
+          }
+          if !allowed {
+            fail("JWKS URL " + url + " is not allowed. Add it to controller.config.templatingSettings.extraContext.jwt.allowedJWKSURLs.")
+          }
+          if !regex_search(url, "^https://[^/?#@[:space:]]+([/?][^#[:space:]]*)?$") {
+            fail("JWKS URL must use HTTPS without credentials or a fragment. Correct jwt-jwks-url.")
+          }
+          var interval = dig_string(settings, "5m", "refreshInterval")
+          var duration, durationErr = parseDuration(interval)
+          if durationErr != nil || duration <= 0 {
+            fail("jwt.refreshInterval must be a positive duration. Set it to 5m or another refresh interval.")
+          }
+          var content, fetchErr = http.Fetch(url, map[string]any{"interval": interval})
+          if fetchErr != nil { fail("JWKS URL " + url + " could not be read. Check the endpoint and fetch settings.") }
+          var keys = map[string]string{}
+          if content != "" {
+            var parsed, parseErr = jwks_public_keys(content, alg)
+            if parseErr != nil { fail("JWKS URL " + url + " is invalid. Supply public signing keys with unique kid values and valid RSA or EC parameters.") }
+            keys = parsed
+          }
+          result["keys"] = keys
+          result["found"] = len(keys) > 0
+        %%}
+      {%- end macro -%}

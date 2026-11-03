@@ -1,0 +1,208 @@
+validationTests:
+  test-haptic-jwks-overlap:
+    extraContext:
+      jwt:
+        allowedJWKSURLs: {issuer: "https://issuer.example.com/keys"}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwks
+            annotations:
+              haproxy-haptic.org/jwt-jwks-url: "https://issuer.example.com/keys"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwks.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    httpResources:
+      - url: https://issuer.example.com/keys
+        content: '{"keys":[{"kty":"RSA","kid":"old","n":"u6RhujxV_1Hn5vayn06Zno8bwCH8WSoNJLdZXbHaPG3WhbpyXgUvMH-55udbTepqYwu9yNiH4smAUl4RljsFVoUQ6VpE-N7vbj3aY1GKZuy0xkS35f5KqoUTj-krctEDU-JJrgje7TvQdJQOrFWInyUtsajQvktMv5UJErk2nVd0e4Ir_SYd8cKNxwDz68H3W9ggmfKJoWwljPblQ2B9ZUgC5Feejdi_SavAYCOpjsHceFo4AyYwnOT8j0GUO1vRM63SLPgGRNmrT4HQokKR_KdZkD5CXvDtPIgTlA9oGnWueHBNpZPuJjbmey7b2E_pZdawJrV7wSnG_QPJJ12XwQ","e":"AQAB","use":"sig","alg":"RS256"},{"kty":"RSA","kid":"new","n":"u6RhujxV_1Hn5vayn06Zno8bwCH8WSoNJLdZXbHaPG3WhbpyXgUvMH-55udbTepqYwu9yNiH4smAUl4RljsFVoUQ6VpE-N7vbj3aY1GKZuy0xkS35f5KqoUTj-krctEDU-JJrgje7TvQdJQOrFWInyUtsajQvktMv5UJErk2nVd0e4Ir_SYd8cKNxwDz68H3W9ggmfKJoWwljPblQ2B9ZUgC5Feejdi_SavAYCOpjsHceFo4AyYwnOT8j0GUO1vRM63SLPgGRNmrT4HQokKR_KdZkD5CXvDtPIgTlA9oGnWueHBNpZPuJjbmey7b2E_pZdawJrV7wSnG_QPJJ12XwQ","e":"AQAB","use":"sig","alg":"RS256"}]}'
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: map:haptic-jwt-routes.map, pattern: 'default/jwks RS256 [0-9a-f]+ jwks'}
+      - {type: contains, target: map:haptic-jwks.map, pattern: '[0-9a-f]+\.6f6c64 haptic-jwks-[0-9a-f]+\.pem'}
+      - {type: contains, target: map:haptic-jwks.map, pattern: '[0-9a-f]+\.6e6577 haptic-jwks-[0-9a-f]+\.pem'}
+      - {type: contains, target: haproxy.cfg, pattern: 'jwt_verify\(RS256,"[^" ]*haptic-jwks-[0-9a-f]+\.pem"\)'}
+      - {type: contains, target: haproxy.cfg, pattern: 'deny deny_status 401 if .*jwt_state.*jwks.*jwt_selected_key.*found'}
+  test-haptic-jwks-pending:
+    extraContext:
+      jwt:
+        allowedJWKSURLs: {issuer: "https://issuer.example.com/keys"}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwks
+            annotations:
+              haproxy-haptic.org/jwt-jwks-url: "https://issuer.example.com/keys"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwks.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    httpResources:
+      - url: https://issuer.example.com/keys
+        pending: true
+        content: ''
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: map:haptic-jwt-routes.map, pattern: 'default/jwks RS256 _ missing'}
+      - {type: not_contains, target: map:haptic-jwks.map, pattern: 'haptic-jwks-'}
+  test-haptic-jwks-empty:
+    extraContext:
+      jwt:
+        allowedJWKSURLs: {issuer: "https://issuer.example.com/keys"}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwks
+            annotations:
+              haproxy-haptic.org/jwt-jwks-url: "https://issuer.example.com/keys"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwks.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    httpResources:
+      - url: https://issuer.example.com/keys
+        content: '{"keys":[]}'
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: map:haptic-jwt-routes.map, pattern: 'default/jwks RS256 _ missing'}
+      - {type: not_contains, target: map:haptic-jwks.map, pattern: 'haptic-jwks-'}
+  test-haptic-jwks-unavailable:
+    extraContext:
+      jwt:
+        allowedJWKSURLs: {issuer: "https://issuer.example.com/keys"}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwks
+            annotations:
+              haproxy-haptic.org/jwt-jwks-url: "https://issuer.example.com/keys"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwks.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    httpResources:
+      - url: https://issuer.example.com/keys
+        content: ''
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: map:haptic-jwt-routes.map, pattern: 'default/jwks RS256 _ missing'}
+      - {type: not_contains, target: map:haptic-jwks.map, pattern: 'haptic-jwks-'}
+  test-haptic-jwks-malformed:
+    extraContext:
+      jwt:
+        allowedJWKSURLs: {issuer: "https://issuer.example.com/keys"}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwks
+            annotations:
+              haproxy-haptic.org/jwt-jwks-url: "https://issuer.example.com/keys"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwks.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    httpResources:
+      - url: https://issuer.example.com/keys
+        content: '{"keys":[null]}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'JWKS URL .* is invalid'}
+  test-haptic-jwks-duplicate:
+    extraContext:
+      jwt:
+        allowedJWKSURLs: {issuer: "https://issuer.example.com/keys"}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwks
+            annotations:
+              haproxy-haptic.org/jwt-jwks-url: "https://issuer.example.com/keys"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwks.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    httpResources:
+      - url: https://issuer.example.com/keys
+        content: '{"keys": [{"kty": "RSA", "kid": "old", "n": "u6RhujxV_1Hn5vayn06Zno8bwCH8WSoNJLdZXbHaPG3WhbpyXgUvMH-55udbTepqYwu9yNiH4smAUl4RljsFVoUQ6VpE-N7vbj3aY1GKZuy0xkS35f5KqoUTj-krctEDU-JJrgje7TvQdJQOrFWInyUtsajQvktMv5UJErk2nVd0e4Ir_SYd8cKNxwDz68H3W9ggmfKJoWwljPblQ2B9ZUgC5Feejdi_SavAYCOpjsHceFo4AyYwnOT8j0GUO1vRM63SLPgGRNmrT4HQokKR_KdZkD5CXvDtPIgTlA9oGnWueHBNpZPuJjbmey7b2E_pZdawJrV7wSnG_QPJJ12XwQ", "e": "AQAB", "use": "sig", "alg": "RS256"}, {"kty": "RSA", "kid": "old", "n": "u6RhujxV_1Hn5vayn06Zno8bwCH8WSoNJLdZXbHaPG3WhbpyXgUvMH-55udbTepqYwu9yNiH4smAUl4RljsFVoUQ6VpE-N7vbj3aY1GKZuy0xkS35f5KqoUTj-krctEDU-JJrgje7TvQdJQOrFWInyUtsajQvktMv5UJErk2nVd0e4Ir_SYd8cKNxwDz68H3W9ggmfKJoWwljPblQ2B9ZUgC5Feejdi_SavAYCOpjsHceFo4AyYwnOT8j0GUO1vRM63SLPgGRNmrT4HQokKR_KdZkD5CXvDtPIgTlA9oGnWueHBNpZPuJjbmey7b2E_pZdawJrV7wSnG_QPJJ12XwQ", "e": "AQAB", "use": "sig", "alg": "RS256"}]}'
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'JWKS URL .* is invalid'}
+  test-haptic-jwks-unapproved:
+    extraContext:
+      jwt:
+        allowedJWKSURLs: {}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwks
+            annotations:
+              haproxy-haptic.org/jwt-jwks-url: "https://issuer.example.com/keys"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwks.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'JWKS URL .* is not allowed'}
+  test-haptic-jwks-conflicting-sources:
+    extraContext:
+      jwt:
+        allowedJWKSURLs: {issuer: "https://issuer.example.com/keys"}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwks
+            annotations:
+              haproxy-haptic.org/jwt-secret: keys
+              haproxy-haptic.org/jwt-jwks-url: "https://issuer.example.com/keys"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwks.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'sets both jwt-secret and jwt-jwks-url'}

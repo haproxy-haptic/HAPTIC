@@ -1222,6 +1222,11 @@ controller:
             host: {enabled: true, expression: "%[req.hdr(host),lower,url_enc]"}
             requestId: {enabled: true, expression: "%ID"}
 
+        jwt:
+          # Public HTTPS endpoints that JWT routes may fetch, keyed by an operator-chosen name.
+          allowedJWKSURLs: {}  # @schema skipProperties; additionalProperties: {type: string}
+          refreshInterval: 5m
+
         # OIDC sign-in (haproxy-haptic.org/sso-auth). Each Ingress names a
         # provider Secret in its own namespace; the SPOA hub fetches that
         # provider's discovery document, keys and tokens from the HAProxy pods.

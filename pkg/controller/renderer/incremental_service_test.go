@@ -208,6 +208,12 @@ type incrementalHTTPTestFixture struct {
 
 func newIncrementalHTTPTestFixture(t *testing.T) *incrementalHTTPTestFixture {
 	t.Helper()
+	return newIncrementalHTTPTestFixtureWithTemplate(t, `{{ item | dig_string("", "metadata", "name") }}={{ http.Fetch(item | dig_string("", "spec", "url"), map[string]any{"critical": true}) }}
+`)
+}
+
+func newIncrementalHTTPTestFixtureWithTemplate(t *testing.T, template string) *incrementalHTTPTestFixture {
+	t.Helper()
 	fixture := &incrementalHTTPTestFixture{}
 	fixture.bodyA.Store("first")
 	fixture.bodyB.Store("stable")
@@ -243,8 +249,7 @@ func newIncrementalHTTPTestFixture(t *testing.T) *incrementalHTTPTestFixture {
 				Incremental: &config.IncrementalTemplate{
 					Source: "routes",
 				},
-				Template: `{{ item | dig_string("", "metadata", "name") }}={{ http.Fetch(item | dig_string("", "spec", "url"), map[string]any{"critical": true}) }}
-`,
+				Template: template,
 			},
 		},
 		HAProxyConfig: config.HAProxyConfig{Template: `{{ render "routes" }}`},
