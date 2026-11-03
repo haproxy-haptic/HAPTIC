@@ -480,7 +480,6 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/jwt-algorithm` | JWT signature algorithm (default `RS256`); asymmetric only (`RS`/`ES`/`PS` `256`/`384`/`512`) — symmetric `HS*` is rejected so no shared secret is inlined. |
 | `haproxy-haptic.org/jwt-audience` | Required `aud` string or exact member of an `aud` string array. Missing, empty, or non-string audiences return `401`. Identifiers starting with `[` are rejected because HAProxy can't distinguish them from array claims. |
 | `haproxy-haptic.org/jwt-forward-claims` | Comma-separated `<claim>:<header>` pairs forwarded upstream after verification; each header is stripped from the client request first (anti-spoof). |
-
 | `haproxy-haptic.org/jwt-issuer` | Required `iss` claim value (exact match). |
 | `haproxy-haptic.org/jwt-allowed-groups` | Comma-separated permitted group names. A verified token must contain an exact match in its group string or string array; otherwise the route returns `403`. |
 | `haproxy-haptic.org/jwt-groups-claim` | Top-level group claim name, default `groups`. Requires `jwt-allowed-groups`. |
