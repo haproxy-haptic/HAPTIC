@@ -31,6 +31,7 @@ templateSnippets:
       {%- import "util-gateway-route-effective-hosts-incremental" for GatewayRouteEffectiveHosts -%}
       {%- import "util-publish-resource-metadata" for PublishResourceMetadata -%}
       {%- import "util-host-key" for MapKeyForHost -%}
+      {%- import "util-hostname-intersect-gateway" for HostnameSinglePairMatch -%}
       {%- macro GatewayResourceMetadata(route any, kind string) -%}
         {%%
           for index, rule := range toSlice(dig(route, "spec", "rules")) {
@@ -45,10 +46,7 @@ templateSnippets:
             var hosts = []any{}
             for scopedHost := range effectiveHosts {
               var host = strings_splitn(scopedHost, ":", 2)[0]
-              var matches = host == "" || host == resourceHost
-              if hasPrefix(host, "*.") && hasSuffix(resourceHost, host[1:]) {
-                matches = !strings_contains(trimSuffix(resourceHost, host[1:]), ".")
-              }
+              var matches = host == "" || HostnameSinglePairMatch(host, resourceHost) == "true"
               if matches { hosts = append(hosts, MapKeyForHost(scopedHost)) }
             }
             if len(hosts) > 0 { PublishResourceMetadata(tostring(record["id"]), hosts, metadata) }

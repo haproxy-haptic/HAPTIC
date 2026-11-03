@@ -4247,7 +4247,7 @@ validationTests:
 
   test-gateway-policy-jwt-resource-metadata:
     requires: [httproutes, grpcroutes, routepolicies]
-    fixtures:
+    fixtures: &jwt-gateway-metadata-fixtures
       <<: *authentication-fixtures
       configmaps:
         - apiVersion: v1
@@ -4270,3 +4270,31 @@ validationTests:
       - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: '(?m)^same-name\.example\.com:18846\|same-name\.example\.com\|/\.well-known/oauth-protected-resource/jwt '}
       - {type: contains, target: map:jwt-resource-metadata-challenge.map, pattern: '(?m)^gateway/h_default_same-name_1\|same-name\.example\.com Bearer%20resource_metadata'}
       - {type: contains, target: haproxy.cfg, pattern: 'deny deny_status 503 .*gw-policy-errors.map.* !\{ var\(txn.jwt_metadata_body\) -m found \}'}
+
+  test-gateway-policy-jwt-resource-metadata-wildcard:
+    requires: [httproutes, grpcroutes, routepolicies]
+    fixtures:
+      <<: *jwt-gateway-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource":"https://deep.same.example.com/jwt"}'
+      grpcroutes: []
+      httproutes:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: HTTPRoute
+          metadata: {namespace: default, name: wildcard}
+          spec:
+            parentRefs: [{name: policy-gateway}]
+            hostnames: ['*.example.com']
+            rules:
+              - matches: [{path: {type: PathPrefix, value: /jwt}}]
+                backendRefs: [{name: echo, port: 80}]
+                filters:
+                  - type: ExtensionRef
+                    extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: jwt}
+    assertions:
+      - {type: haproxy_valid}
+      - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: 'deep\.same\.example\.com\|/\.well-known/oauth-protected-resource/jwt '}

@@ -76,6 +76,7 @@ templateSnippets:
       {%- import "util-policy-authentication" for PolicyAuthentication -%}
       {%- import "util-policy-rate-limit" for PolicyRateLimit -%}
       {%- import "util-policy-cache" for PolicyCache -%}
+      {%- import "util-hostname-intersect-gateway" for HostnameSinglePairMatch -%}
       {%- macro GatewayPolicyRecord(route any, kind string, rule any, index int, result map[string]any) -%}
         {%%
           GatewayPolicyReference(route, rule, result)
@@ -137,8 +138,7 @@ templateSnippets:
                   var matched = false
                   for _, value := range routeHosts {
                     var host = tostring(value)
-                    if host == resourceHost { matched = true }
-                    if hasPrefix(host, "*.") && hasSuffix(resourceHost, host[1:]) && !strings_contains(trimSuffix(resourceHost, host[1:]), ".") { matched = true }
+                    if HostnameSinglePairMatch(host, resourceHost) == "true" { matched = true }
                   }
                   if !matched { result["error"] = "JWT metadata resource host is not served by this route. Set resource to a URL on a route hostname." }
                 }

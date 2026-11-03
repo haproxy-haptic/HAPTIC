@@ -301,6 +301,7 @@ test-tlsroute-weighted-terminate-listener
 test-tlsroute-wildcard-listener-exact-route
 test-gateway-policy-authentication
 test-gateway-policy-jwt-resource-metadata
+test-gateway-policy-jwt-resource-metadata-wildcard
 test-gateway-policy-grpc-cache-errors
 test-gateway-policy-invalid-dependencies
 test-gateway-policy-mutable-credentials
