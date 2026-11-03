@@ -96,6 +96,12 @@ func (s *HTTPStore) finalizePending(
 		entry.ValidationState = StateRejected
 	}
 
+	if !promote {
+		// Discarded validators must not hide the next validation attempt behind a 304.
+		entry.ETag = ""
+		entry.LastModified = ""
+	}
+
 	entry.PendingContent = ""
 	entry.PendingChecksum = ""
 	entry.PendingRevision = 0

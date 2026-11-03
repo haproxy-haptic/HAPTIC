@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Rejected HTTP refreshes clear their conditional-request validators so unchanged content can be validated again after a transient configuration failure.
+
 - Admission accepts valid new HTTP inputs when a template handles fetch errors; the renderer now completes its required full rerender before reporting a template error.
 
 ### Helm chart
