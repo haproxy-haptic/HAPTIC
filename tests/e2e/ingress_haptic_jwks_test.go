@@ -23,12 +23,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/e2e-framework/klient"
+	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
 
 	"github.com/haproxy-haptic/HAPTIC/tests/e2e/httpclient"
 )
@@ -93,4 +95,25 @@ func updateJWKSFixture(ctx context.Context, t *testing.T, client klient.Client, 
 	require.NoError(t, client.Resources().Get(ctx, "jwks-server", ControllerNamespace, config))
 	config.Data["keys.json"] = string(encoded)
 	require.NoError(t, client.Resources(ControllerNamespace).Update(ctx, config))
+	refreshJWKSFixturePods(ctx, t, client, config.ResourceVersion)
+	forward := ForwardService(t, "jwks-server", 443)
+	httpclient.ForForwarded(t, 0, forward.HTTPSPort).HTTPS("jwks-server.haptic.svc", "/keys.json").ExpectMatching(t, "issuer serves updated JWKS", func(response *httpclient.Response) bool {
+		return response.Status == http.StatusOK && strings.TrimSpace(string(response.Body)) == string(encoded)
+	})
+}
+
+func refreshJWKSFixturePods(ctx context.Context, t *testing.T, client klient.Client, revision string) {
+	t.Helper()
+	var pods corev1.PodList
+	require.NoError(t, client.Resources(ControllerNamespace).List(ctx, &pods, resources.WithLabelSelector("app=jwks-server")))
+	require.NotEmpty(t, pods.Items)
+	for index := range pods.Items {
+		pod := &pods.Items[index]
+		if pod.Annotations == nil {
+			pod.Annotations = map[string]string{}
+		}
+		// Annotation updates refresh projected volumes: kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/#mounted-configmaps-are-updated-automatically.
+		pod.Annotations["e2e.haproxy-haptic.org/jwks-revision"] = revision
+		require.NoError(t, client.Resources(ControllerNamespace).Update(ctx, pod))
+	}
 }
