@@ -66,8 +66,17 @@ templateSnippets:
       {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.haptic_jwt_nbf) -m found } { var(txn.haptic_jwt_nbf),sub(txn.haptic_jwt_now) -m int gt 0 }`) }}
       http-request set-var(txn.denied_by) str(jwt_issuer) if { var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(8,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.iss'),strcmp(txn.jwt_iss) -m int 0 }
       {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(8,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.iss'),strcmp(txn.jwt_iss) -m int 0 }`) }}
-      http-request set-var(txn.denied_by) str(jwt_audience) if { var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(9,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.aud'),strcmp(txn.jwt_aud) -m int 0 }
-      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(9,' ') -m str true } !{ http_auth_bearer,jwt_payload_query('$.aud'),strcmp(txn.jwt_aud) -m int 0 }`) }}
+      {%- if incremental_value_count("haptic-jwt-routes", "audiences") > 0 %}
+      {%- var audiences, ae = pathResolver.GetPath("haptic-jwt-audiences.map", "map") %}
+      {%- if ae != nil %}{{ fail(tostring(ae)) }}{%- end %}
+      http-request set-var(txn.jwt_aud_value) http_auth_bearer,jwt_payload_query('$.aud','int') if { var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(9,' ') -m str true }
+      http-request set-var(txn.jwt_aud_hex) var(txn.jwt_aud),hex,lower if { var(txn.jwt_aud_value) -m found }
+      http-request set-var(txn.jwt_aud_match) bool(true) if { var(txn.jwt_aud_value),hex,lower,strcmp(txn.jwt_aud_hex) -m int 0 }
+      http-request set-var(txn.jwt_aud_lookup) var(txn.jwt_aud_hex),concat(.,txn.jwt_aud_value) if { var(txn.jwt_aud_value) -m found } { http_auth_bearer,jwt_payload_query('$.aud[0]') -m found }
+      http-request set-var(txn.jwt_aud_match) bool(true) if { var(txn.jwt_aud_lookup),map_reg({{ audiences }}) -m str 1 }
+      http-request set-var(txn.denied_by) str(jwt_audience) if { var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(9,' ') -m str true } !{ var(txn.jwt_aud_match) -m bool }
+      {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.jwt_cfg),field(9,' ') -m str true } !{ var(txn.jwt_aud_match) -m bool }`) }}
+      {%- end %}
       {%- for _, cl := range sort_strings(reqs) %}
       http-request set-var(txn.denied_by) str(jwt_required_claim) if { var(txn.jwt_state) -m str ok } { var(txn.jwt_req) -m sub ,{{ cl }}, } !{ http_auth_bearer,jwt_payload_query('$.{{ cl }}') -m found }
       {{- Refusal(`deny deny_status 401`, `{ var(txn.jwt_state) -m str ok } { var(txn.jwt_req) -m sub ,` + tostring(cl) + `, } !{ http_auth_bearer,jwt_payload_query('$.` + tostring(cl) + `') -m found }`) }}

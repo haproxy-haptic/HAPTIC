@@ -52,6 +52,9 @@ templateSnippets:
             for _, field := range []string{"issuer", "audience"} {
               var value = dig_string(jwt, "", field)
               if value == "" { continue }
+              if field == "audience" && hasPrefix(value, "[") {
+                reject("JWT audience is ambiguous. Use an identifier that does not start with [.")
+              }
               if ConfigInjectionKind(value, "mapkey") != "" || regex_search(value, "[\"{}\\\\]") {
                 reject("JWT " + field + " contains unsafe characters. Remove whitespace, control characters, quotes, braces, and backslashes.")
               }

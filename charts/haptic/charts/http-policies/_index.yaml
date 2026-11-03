@@ -105,6 +105,13 @@ watchedResources:
     indexBy: ["metadata.namespace", "metadata.name"]
 
 maps:
+  haptic-jwt-audiences.map:
+    template: |-
+      {%- for _, value := range incremental_values("haptic-jwt-routes", "audiences") -%}
+        {%- var audience = tostring(value) -%}
+        {%- var pattern = json_string_array_pattern(audience) -%}
+      {{ "\n" }}^{{ hex(audience) }}\.{{ pattern[1:] }} 1
+      {%- end -%}
   haptic-api-key-routes.map:
     template: |
       {{ on_own_lines(render_glob "map-haptic-api-key-routes-*") -}}
