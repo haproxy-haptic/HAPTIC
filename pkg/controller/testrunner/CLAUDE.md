@@ -71,6 +71,7 @@ This package implements a pure test runner component that executes embedded vali
 
 - **Assertions** render with `AssertionExtraContext`: `templatingSettings.testExtraContext` < `_global` < the test's own `extraContext`. The deployment's `extraContext` never reaches them, like live resources never reach a fixture store.
 - **`assertDeploymentRenders`** renders the same fixtures with `DeploymentExtraContext` (`extraContext` < `_global` < the test's) and checks validity only: the render succeeds, and `haproxy -c` passes where the test asserts `haproxy_valid` and the bytes differ from the first render. Any render error fails it, `fail()` included: in a reconcile render a `fail()` stops the whole config. Skipped when the two contexts are equal, when the first render failed, and for `rendering_error` tests.
+- **`ValidateResources`** uses the deployment context and a fresh isolated HTTP fetcher. It makes real requests with production fetch semantics, rejects critical fetch failures, and schedules no refresh timers. Validation tests and `RenderWithoutFixtures` retain fixture-only HTTP access.
 
 The runner retains one sealed plan-token authority per immutable engine, matching production. Each render still creates its own registry, declarations, and output.
 

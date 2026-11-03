@@ -58,6 +58,12 @@ type HTTPStoreWrapper struct {
 	renderFailure  error
 }
 
+// NewIsolatedHTTPStoreWrapper fetches into a render-local cache without refresh timers.
+func NewIsolatedHTTPStoreWrapper(ctx context.Context, logger *slog.Logger) *HTTPStoreWrapper {
+	overlay := httpstore.NewAcceptedHTTPOverlay(httpstore.New(logger, 0))
+	return NewHTTPStoreWrapper(ctx, nil, logger, overlay, SourceModeReadOnly)
+}
+
 // NewHTTPStoreWrapper creates a new HTTPStoreWrapper.
 func NewHTTPStoreWrapper(
 	ctx context.Context,

@@ -39,6 +39,7 @@ import (
 	"sync"
 	"time"
 
+	controllerhttpstore "github.com/haproxy-haptic/HAPTIC/pkg/controller/httpstore"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/rendercontext"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/renderer"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
@@ -624,10 +625,13 @@ func (r *Runner) ValidateResources(ctx context.Context, resources map[string][]a
 	if err != nil {
 		return RenderOutput{}, AssertionResult{}, err
 	}
-	httpStore := NewFixtureHTTPStoreWrapper(CreateHTTPStoreFromFixtures(nil, r.logger), r.logger)
+	httpStore := controllerhttpstore.NewIsolatedHTTPStoreWrapper(ctx, r.logger)
 	rendered, err := r.renderWithStores(ctx, r.engineTemplate, storeMap, r.validationPaths,
 		httpStore, nil, nil, r.config.TemplatingSettings.ExtraContext)
 	if err != nil {
+		return rendered, AssertionResult{}, err
+	}
+	if err := httpStore.RenderFailure(); err != nil {
 		return rendered, AssertionResult{}, err
 	}
 	valid := r.assertHAProxyValid(ctx, rendered.HAProxyConfig, rendered.AuxiliaryFiles,

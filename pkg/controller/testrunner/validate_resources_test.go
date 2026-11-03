@@ -16,10 +16,14 @@ package testrunner
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -113,4 +117,101 @@ func TestRunner_ValidateResources(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, templating.RenderErrorMessage(err), "broken ingress")
 	})
+}
+
+type resourceHTTPTestCase struct {
+	name        string
+	status      int
+	critical    bool
+	ignoreError bool
+	body        string
+	wantError   bool
+	wantValid   bool
+}
+
+func TestRunnerValidateResourcesHTTP(t *testing.T) {
+	for _, tc := range []resourceHTTPTestCase{
+		{name: "accepted content", status: 200, body: "live-content", wantValid: true},
+		{name: "non-critical outage", status: 503, body: "unavailable", wantValid: true},
+		{name: "critical outage", status: 503, critical: true, body: "unavailable", wantError: true},
+		{name: "ignored critical outage", status: 503, critical: true, ignoreError: true, body: "unavailable", wantError: true},
+		{name: "invalid fetched configuration", status: 200, body: "reject-this-config"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { validateResourcesHTTPCase(t, tc) })
+	}
+}
+
+func validateResourcesHTTPCase(t *testing.T, tc resourceHTTPTestCase) {
+	t.Helper()
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests.Add(1)
+		assert.Equal(t, "Bearer preflight-test", req.Header.Get("Authorization"))
+		w.WriteHeader(tc.status)
+		_, _ = fmt.Fprint(w, tc.body)
+	}))
+	t.Cleanup(server.Close)
+	template := `{%% var content, fetchErr = http.Fetch(%q, map[string]any{"critical": %t, "timeout": "1s"}, map[string]any{"type": "bearer", "token": "preflight-test"}) %%}
+{%% if fetchErr != nil && %t %%}{{ fail(tostring(fetchErr)) }}{%% end %%}
+global
+  # fetched={{ content }}
+`
+	template = fmt.Sprintf(template, server.URL, tc.critical, !tc.ignoreError)
+	fixtureAssertion := v1alpha1.ValidationAssertion{Type: "contains", Target: "rendering_error", Pattern: "no fixture defined for URL"}
+	if tc.ignoreError {
+		fixtureAssertion = v1alpha1.ValidationAssertion{Type: "contains", Target: "haproxy.cfg", Pattern: "global"}
+	}
+	spec := &v1alpha1.HAProxyTemplateConfigSpec{
+		TemplatingSettings: v1alpha1.TemplatingSettings{Engine: "scriggo"},
+		HAProxyConfig:      v1alpha1.HAProxyConfig{Template: template},
+		ValidationTests: map[string]v1alpha1.ValidationTest{
+			"requires-fixture": {Assertions: []v1alpha1.ValidationAssertion{fixtureAssertion}},
+		},
+	}
+	cfg, err := conversion.ConvertSpec(spec)
+	require.NoError(t, err)
+	engine, err := templating.New(map[string]string{"haproxy.cfg": template}, &templating.Options{
+		EntryPoints: []string{"haproxy.cfg"}, Declarations: typebootstrap.BuildEngineDeclarations(&typebootstrap.Result{}),
+	})
+	require.NoError(t, err)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	directory := t.TempDir()
+	paths := &dataplane.ValidationPaths{
+		MapsDir: filepath.Join(directory, "maps"), SSLCertsDir: filepath.Join(directory, "ssl"),
+		GeneralStorageDir: filepath.Join(directory, "general"), ConfigFile: filepath.Join(directory, "haproxy.cfg"),
+	}
+	t.Cleanup(dataplanetest.InstallFakeHAProxy(dataplanetest.WithCheck(func(workDir string, _ []string) ([]byte, error) {
+		content, readErr := os.ReadFile(filepath.Join(workDir, "haproxy.cfg"))
+		if readErr != nil {
+			return nil, readErr
+		}
+		if strings.Contains(string(content), "reject-this-config") {
+			return []byte("[ALERT] invalid fetched configuration\n"), errors.New("exit status 1")
+		}
+		return nil, nil
+	})))
+	runner := New(cfg, engine, paths, &Options{Logger: logger, Workers: 1})
+	results, err := runner.RunTests(t.Context(), "requires-fixture")
+	require.NoError(t, err)
+	require.Zero(t, results.FailedTests, "%+v", results)
+	require.Zero(t, requests.Load(), "validation tests must not fetch over the network")
+	for range 2 {
+		rendered, valid, renderErr := runner.ValidateResources(t.Context(), nil)
+		if tc.wantError {
+			require.Error(t, renderErr)
+			assert.NotContains(t, renderErr.Error(), "no fixture defined")
+			continue
+		}
+		require.NoError(t, renderErr)
+		assert.Equal(t, tc.wantValid, valid.Passed, valid.Error)
+		if tc.status == 200 {
+			assert.Contains(t, rendered.HAProxyConfig, tc.body)
+		} else {
+			assert.NotContains(t, rendered.HAProxyConfig, tc.body)
+		}
+	}
+	assert.Positive(t, requests.Load(), "resource validation must fetch real content")
+	if tc.status == http.StatusOK {
+		assert.Equal(t, int64(2), requests.Load(), "each resource render must fetch fresh content")
+	}
 }
