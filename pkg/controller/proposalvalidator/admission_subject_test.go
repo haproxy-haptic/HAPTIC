@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ktypes "k8s.io/apimachinery/pkg/types"
 
@@ -67,4 +68,48 @@ func TestAdmissionSubjectOpts(t *testing.T) {
 		})
 		assert.Nil(t, opts)
 	})
+}
+
+type pendingHTTPSubjectOverlay struct{ stores.HTTPContentOverlay }
+
+func (pendingHTTPSubjectOverlay) IsEmpty() bool { return false }
+func (pendingHTTPSubjectOverlay) PendingURLs() []string {
+	return []string{"https://keys.example.com/jwks"}
+}
+
+func TestHTTPProposalIdentifiesChangedContentAndPreservesValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name, template string
+		valid          bool
+		rejectOutput   bool
+	}{
+		{"unrelated rejected resource remains closed", `{% if len(admissionSubject) == 0 %}{{ fail("unattributed proposal") }}{% end %}{% if len(admissionSubject["httpURLs"].([]string)) != 1 %}{{ fail("missing URL") }}{% end %}global
+    maxconn 2000
+defaults
+    mode http
+    timeout connect 5s
+    timeout client 30s
+    timeout server 30s
+frontend closed
+    bind 127.0.0.1:8080
+    http-request deny deny_status 503
+`, true, false},
+		{"invalid fetched content still rejected", `{{ fail("invalid fetched content") }}`, false, false},
+		{"invalid output still rejected", `global`, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			instance := createTestPipeline(t, tc.template)
+			if tc.rejectOutput {
+				instance = createTestPipelineWithOutputValidator(t, tc.template, &cancelingRejectingOutputValidator{})
+			}
+			service := NewService(&ServiceConfig{Pipeline: instance, BaseStoreProvider: stores.NewRealStoreProvider(map[string]stores.Store{})})
+			result, err := service.validateProposal(t.Context(), nil, pendingHTTPSubjectOverlay{})
+			if !tc.valid && !tc.rejectOutput {
+				require.ErrorContains(t, err, "invalid fetched content")
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.valid, result.Valid)
+		})
+	}
 }

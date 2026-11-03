@@ -101,9 +101,13 @@ func (c *Service) validateProposal(ctx context.Context, overlays map[string]*sto
 
 	ctx, cancel := context.WithTimeout(ctx, validation.DefaultValidationTimeout)
 	defer cancel()
-	opts, err := c.withCurrentFilesSnapshot(admissionSubjectOpts(overlays))
-	if err != nil {
-		return proposalFailure(renderPhase, err), err
+	opts := admissionSubjectOpts(overlays)
+	if len(overlays) == 0 && httpOverlay != nil && !httpOverlay.IsEmpty() {
+		opts = append(opts, rendercontext.WithAdmissionHTTPURLs(httpOverlay.PendingURLs()))
+	}
+	opts, snapshotErr := c.withCurrentFilesSnapshot(opts)
+	if snapshotErr != nil {
+		return proposalFailure(renderPhase, snapshotErr), snapshotErr
 	}
 	_, result, err = c.pipeline.ExecuteWithResult(ctx, overlayProvider, rendercontext.RenderModeAdmission, opts...)
 	if err != nil {

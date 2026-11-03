@@ -14,7 +14,7 @@ isolated-input fallback must produce valid output; it never uses that exception.
 `ObservedStoreProvider` keeps admission snapshots in the reconciliation revision
 family. `AdmissionStoreProvider` preserves all observed changes except exact
 rejected revisions; `AcceptedStoreProvider` supplies validated inputs for HTTP
-content proposals.
+content proposals. HTTP-only proposals expose their pending URLs in `admissionSubject.httpURLs`; Kubernetes object identities remain absent. Every proposal still runs the complete render and output validation pipeline.
 
 Cancellation and unavailable published files reject admission. Neither can use the unchanged-invalid exception. `CurrentFilesProvider` supplies one snapshot per decision, shared by the proposed and baseline renders.
 
