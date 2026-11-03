@@ -23,7 +23,7 @@ All templates have access to the following top-level variables:
 | `http` | object | HTTP fetcher for `http.Fetch("https://example.com/...")` — see [Watching Resources — HTTP Resources](./watching-resources.md#http-resources) for the auto-registration and refresh mechanism |
 | `extraContext` | map | The full `templatingSettings.extraContext` map. Read a key with `extraContext.key` or `extraContext["key"]` — see [Custom Template Variables](./templating.md#custom-template-variables). |
 | `renderMode` | string | `"admission"` for a proposed resource change; `"reconcile"` for live state, config loading, and `haptic validate`. See [admission checks](#limit-a-check-to-the-admitted-resource). |
-| `admissionSubject` | map | Identifies the watched resource under admission review. Empty outside single-resource admission. See [admission checks](#limit-a-check-to-the-admitted-resource). |
+| `admissionSubject` | map | Identifies watched-resource or HTTP content changes under admission review. See [admission checks](#limit-a-check-to-the-admitted-resource). |
 
 ### Check HAProxy features
 
@@ -77,7 +77,7 @@ blocking the render.
 `admissionSubject | dig("stores", alias) | fallback(false)`. The `store` field
 is set only when exactly one alias is affected.
 
-The map is empty during reconciliation, configuration proposals, and bulk overlays.
+HTTP-only proposals contain `httpURLs`, a list of the pending content URLs, without a Kubernetes resource identity. The map is empty during reconciliation, configuration proposals, and bulk Kubernetes overlays.
 Both `admissionSubject` and `renderMode` are controller-set variables;
 `extraContext` can't override them.
 
