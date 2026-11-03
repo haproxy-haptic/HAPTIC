@@ -300,6 +300,7 @@ test-tlsroute-weighted-invalid-ref-share-rejected
 test-tlsroute-weighted-terminate-listener
 test-tlsroute-wildcard-listener-exact-route
 test-gateway-policy-ambiguous-audience
+test-gateway-policy-ambiguous-audience-nonempty
 test-gateway-policy-authentication
 test-gateway-policy-jwt-custom-groups
 test-gateway-policy-jwt-groups

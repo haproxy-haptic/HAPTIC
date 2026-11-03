@@ -159,6 +159,29 @@ validationTests:
     assertions:
       - {type: contains, target: rendering_error, pattern: 'ambiguous jwt-audience'}
 
+  test-haptic-jwt-ambiguous-audience-nonempty:
+    description: Reject an audience identifier indistinguishable from a numeric array.
+    fixtures:
+      secrets: [*jwt-public-key]
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: jwt-array-name
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-audience: '[1]'
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: jwt-array-name.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'ambiguous jwt-audience'}
+
   test-haptic-jwt-annotations-without-secret-fail-closed:
     description: >-
       jwt-issuer and friends are inert without jwt-secret, so a route configured
