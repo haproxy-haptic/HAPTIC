@@ -4298,3 +4298,65 @@ validationTests:
     assertions:
       - {type: haproxy_valid}
       - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: 'deep\.same\.example\.com\|/\.well-known/oauth-protected-resource/jwt '}
+
+  test-gateway-policy-ambiguous-audience:
+    description: Reject a policy audience indistinguishable from an empty array.
+    requires: [httproutes, grpcroutes, routepolicies]
+    extraContext: {renderMode: admission}
+    fixtures:
+      <<: *authentication-fixtures
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: api}
+        spec:
+          authentication:
+            apiKey: *id001
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: jwt}
+        spec:
+          authentication:
+            jwt:
+              <<: *id002
+              audience: '[]'
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: ssl-passthrough}
+        spec:
+          authentication:
+            apiKey: *id001
+            jwt: *id002
+    assertions:
+    - {type: contains, target: rendering_error, pattern: 'JWT audience is ambiguous'}
+
+  test-gateway-policy-ambiguous-audience-nonempty:
+    description: Reject a policy audience indistinguishable from a numeric array.
+    requires: [httproutes, grpcroutes, routepolicies]
+    extraContext: {renderMode: admission}
+    fixtures:
+      <<: *authentication-fixtures
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: api}
+        spec:
+          authentication:
+            apiKey: *id001
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: jwt}
+        spec:
+          authentication:
+            jwt:
+              <<: *id002
+              audience: '[1]'
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: ssl-passthrough}
+        spec:
+          authentication:
+            apiKey: *id001
+            jwt: *id002
+    assertions:
+    - {type: contains, target: rendering_error, pattern: 'JWT audience is ambiguous'}

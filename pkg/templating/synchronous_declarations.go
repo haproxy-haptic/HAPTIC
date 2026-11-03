@@ -83,6 +83,7 @@ var synchronousDeclarationNames = [...]string{
 	builtinSHA256,
 	builtinPublicKeyInfo,
 	builtinParseURL,
+	builtinJSONArrayPattern,
 	builtinJWKSPublicKeys,
 	builtinParseJSON,
 	builtinParseYAML,

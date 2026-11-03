@@ -136,6 +136,7 @@ Every entry below is callable in two equivalent styles: as a plain function (`fn
 | `append(slice, item)` | Go's builtin, type-preserving; `append(dst, src...)` spreads a slice of the **same** type. Widening into `[]any` is a compile error — box per element in a loop. A slice reached through `any` is asserted at the boundary | `append(gf["hosts"].([]any), h)` |
 | `dig_string(obj, default, keys...)` | `dig` + `fallback` + `tostring` in one call, for annotation and metadata lookups | <code>ing &#124; dig_string("", "metadata", "annotations", key)</code> |
 | `join_key(sep, parts...)` | Join any values into one composite key string | `join_key("_", ns, name, port)` |
+| `json_string_array_pattern(value)` | Anchored regular expression matching a JSON string array containing exactly `value`; accepts JSON escapes and rejects mixed-type arrays | `{{ json_string_array_pattern("api") }}` |
 | `make_guid(parts...)` | Build a value for HAProxy's `guid` directive from parts joined by `:`, auto-truncating with a hash suffix past its 127-character limit | `guid {{ make_guid("be", beKey) }}` |
 | `selectattr(items, attr[, op, value])` | Jinja2-style attribute filter. `op` is `eq`, `ne` or `in`; omitted, it keeps items whose `attr` is truthy. `attr` is one literal key — a dotted path matches nothing, so prefer `filter` with a closure | `selectattr(rules, "host", "ne", "")` |
 

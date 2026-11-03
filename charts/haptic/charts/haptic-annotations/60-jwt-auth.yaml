@@ -85,6 +85,7 @@ templateSnippets:
           {%- var audRaw = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/jwt-audience") -%}
           {%- if audRaw != "" -%}
             {%- var audV = ValidateConfigValue(audRaw, "haproxy-haptic.org/jwt-audience", key, false) -%}
+            {%- if hasPrefix(audV, "[") -%}{{ fail("Ingress " + key + " has ambiguous jwt-audience. Use an identifier that does not start with [.") }}{%- end -%}
             {%- if regex_search(audV, "[\"{}\\\\]") -%}{{ fail("Invalid value for annotation 'haproxy-haptic.org/jwt-audience' on Ingress '" + key + "': must not contain '\"', '{', '}' or '\\'.") }}{%- end -%}
             {%- result["aud"] = audV -%}
             {%- result["audSet"] = true -%}
@@ -186,6 +187,7 @@ templateSnippets:
           {%- var pair = tostring(route["alg"]) + "|" + tostring(route["keyFile"]) -%}
           {{- shared.Publish("keys", pair, pair) -}}
         {%- end -%}
+        {%- if route["audSet"] == true -%}{{- shared.Publish("audiences", tostring(route["aud"]), route["aud"]) -}}{%- end -%}
         {%- for _, cl := range route["req"].([]string) -%}{{- shared.Publish("req", cl, cl) -}}{%- end -%}
         {%- for _, f := range route["fwd"].([]string) -%}
           {{- shared.Publish("fwd", f, f) -}}

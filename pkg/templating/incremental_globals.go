@@ -88,6 +88,7 @@ var incrementalDeclarationNames = [...]string{
 	builtinSHA256,
 	builtinPublicKeyInfo,
 	builtinParseURL,
+	builtinJSONArrayPattern,
 	builtinJWKSPublicKeys,
 	builtinParseJSON,
 	builtinParseYAML,

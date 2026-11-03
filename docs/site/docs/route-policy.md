@@ -41,7 +41,7 @@ RSA keys require at least 2048 bits. ECDSA curves must match the selected algori
 | `secretRef.name` | Required | Public-key Secret |
 | `algorithm` | `RS256` | `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`, `ES256`, `ES384`, or `ES512` |
 | `issuer` | Unset | Required `iss` value when configured |
-| `audience` | Unset | Required `aud` value when configured |
+| `audience` | Unset | Required `aud` string or exact member of an `aud` string array; identifiers starting with `[` aren't supported |
 | `resourceMetadata` | Unset | `{configMapRef: {name, key}, path}` serves a same-namespace ConfigMap as public OAuth metadata and adds a Bearer discovery challenge to JWT `401` responses. The key defaults to `metadata.json`; the path defaults to the resource-path discovery URL. |
 | `requiredClaims` | `[]` | Claims that must be present; use `[exp, sub]` for expiring tokens with a consumer identity |
 | `forwardClaims` | `[]` | List of `{claim, header}` entries copied into request headers after verification |

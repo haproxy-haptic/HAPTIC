@@ -121,6 +121,13 @@ func newGatewayPolicyAuthScenario(ctx context.Context, t *testing.T, client klie
 	token := signRS256(t, key, map[string]any{"alg": "RS256", "typ": "JWT"}, map[string]any{
 		"sub": "jwt-consumer", "exp": time.Now().Add(time.Hour).Unix(), "iss": "policy-test", "aud": "api",
 	})
+	for _, audience := range []any{"api", []string{"other", "api"}, []string{"api", "last"}} {
+		arrayToken := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{
+			"sub": "jwt-consumer", "exp": time.Now().Add(time.Hour).Unix(), "iss": "policy-test", "aud": audience,
+		})
+		httpclient.ForForwarded(t, 0, forward.HTTPSPort).HTTPS(host, "/").
+			WithHeader("Authorization", "Bearer "+arrayToken).WithHeader("X-API-Key", "old-key").ExpectOK(t)
+	}
 	checkGatewayPolicySharedIngressKey(ctx, t, client, namespace, backend, token)
 	return &gatewayPolicyAuthScenario{client: client, namespace: namespace, host: host, grpcHost: grpcHost, token: token,
 		httpsPort: forward.HTTPSPort, requests: httpclient.ForForwarded(t, 0, forward.HTTPSPort), policy: policy}

@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `json_string_array_pattern(value)` produces a regular expression for exact membership in a JSON string array.
+
 - Templates can decode JSON with `parse_json` and parse URL components with `parse_url`.
 
 - Templates can convert JSON Web Key Sets to PEM public keys with `jwks_public_keys`.
@@ -31,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JWT routes can serve OAuth protected-resource metadata from a ConfigMap and advertise it with a Bearer challenge ([#611](https://github.com/haproxy-haptic/HAPTIC/issues/611)).
 
 - `haproxy-haptic.org/jwt-jwks-url` refreshes public signing keys from an approved HTTPS JWKS endpoint and selects the token's `kid`, supporting overlapping keys during rotation ([#608](https://github.com/haproxy-haptic/HAPTIC/issues/608)).
+
+#### Fixed
+
+- JWT audience validation accepts an exact member of a string-array `aud` claim for Ingress annotations and route policies, and rejects non-string values ([#609](https://github.com/haproxy-haptic/HAPTIC/issues/609)).
 
 ## [0.10.0] - 2026-11-02
 
