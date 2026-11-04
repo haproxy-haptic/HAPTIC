@@ -159,7 +159,16 @@ const echoServerImage = "ealen/echo-server@sha256:ec8a6e95890df937a1eb5fafca033a
 // Cleaned up automatically when the test namespace is deleted in t.Cleanup.
 func NewEchoServerBackend(ctx context.Context, t *testing.T, client klient.Client, namespace string) BackendRef {
 	t.Helper()
-	if err := applyEchoServerBackend(ctx, client, namespace); err != nil {
+	return NewEchoServerBackendWithResources(ctx, t, client, namespace, corev1.ResourceRequirements{})
+}
+
+// NewEchoServerBackendWithResources applies container resources to the per-test backend.
+func NewEchoServerBackendWithResources(ctx context.Context, t *testing.T, client klient.Client, namespace string, requirements corev1.ResourceRequirements) BackendRef {
+	t.Helper()
+	mutate := func(deployment *appsv1.Deployment) {
+		deployment.Spec.Template.Spec.Containers[0].Resources = requirements
+	}
+	if err := applyNamedEchoServerBackend(ctx, client, namespace, EchoServerBackend, 1, mutate); err != nil {
 		t.Fatalf("%v", err)
 	}
 	if err := waitForServiceEndpointReady(ctx, client, namespace, EchoServerBackend.Service); err != nil {
