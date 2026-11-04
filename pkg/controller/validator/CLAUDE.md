@@ -39,12 +39,12 @@ ConfigValidatedEvent  or  ConfigInvalidEvent  or  ConfigValidationInconclusiveEv
 
 ## Validators
 
-`BaseValidator` decodes each request and publishes its response. The handler receives the lifecycle context, typed config, and version, and returns a `Verdict`. A verdict is `Inconclusive` only when the handler could not judge the config — a transient `SchemaAcquisitionError` (deadline, transport, apiserver 5xx/429) — never for a defect in the config; classify by error type, not message text. A panic produces a rejection through the same response path. Startup and live validation share `validationTestsVerdict`; each caller supplies its existing timeout message and keeps its own execution budget.
+`BaseValidator` decodes each request and publishes its response. The handler receives the lifecycle context, typed config, and version, and returns a `Verdict`. A verdict is `Inconclusive` for a transient `SchemaAcquisitionError` (deadline, transport, apiserver 5xx/429) or a test run that times out without assertion failures; config defects remain conclusive. Classify by error type or structured test result, not message text. A panic produces a rejection through the same response path. Startup and live validation share `validationTestsVerdict`; startup still rejects every non-valid result, while live validation retries inconclusive results. Each caller keeps its own execution budget.
 
 - **BasicValidator**: Structural validation (required fields, types)
 - **TemplateValidator**: Template syntax validation. Calls `helpers.ExtractTemplatesFromConfig`, which walks `spec.haproxyConfig`, `spec.templateSnippets`, `spec.maps`, `spec.files`, and `spec.sslCertificates` (there is no flat `spec.templates` field), then compiles them with `templating.NewScriggoWithDeclarations`.
 - **JSONPathValidator**: JSONPath expression validation (evaluates each `indexBy` expression)
-- **ValidationTestsValidator**: Runs the embedded validation tests and rejects incomplete runs.
+- **ValidationTestsValidator**: Runs the embedded validation tests; incomplete runs without assertion failures are inconclusive.
 
 ## Resources
 

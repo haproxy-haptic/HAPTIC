@@ -39,7 +39,7 @@ go jp.Start(ctx)
 
 - `ConfigValidationResponse` — one per validator, per request
 
-A response with `Inconclusive` set reports that the validator couldn't judge the config (schemas transiently unavailable); it is never `Valid`.
+A response with `Inconclusive` set reports that the validator couldn't judge the config: schemas are transiently unavailable, or the test run timed out without an assertion failure. It is never `Valid`. Live validation retries the candidate with capped backoff and keeps the last good config active until the full suite passes. Assertion failures remain conclusive rejections.
 
 `ConfigValidatedEvent`, `ConfigInvalidEvent`, and `ConfigValidationInconclusiveEvent` are published by the orchestrator (`configchange.ConfigChangeHandler`) after collecting all four responses, not by these validators directly.
 

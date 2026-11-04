@@ -127,11 +127,6 @@ func SuiteValidationEnvelope(testCount int) time.Duration {
 type ValidationTestsValidator struct {
 	*BaseValidator
 	bootstrap TypeBootstrapper
-	// budgetFor returns the test-execution budget for a suite of the given
-	// size. Defaults to SuiteRunBudget (a 25s floor scaled by suite size, so a
-	// large all-passing suite isn't rejected on a contended node — issue #77);
-	// overridable in tests to exercise the fail-closed-on-timeout path without
-	// waiting a real budget.
 	budgetFor func(testCount int) time.Duration
 }
 
@@ -173,9 +168,12 @@ func (v *ValidationTestsValidator) Validate(ctx context.Context, cfg *coreconfig
 		return Verdict{Errors: []string{context.Cause(ctx).Error()}}
 	}
 	verdict := validationTestsVerdict(result, err, fmt.Sprintf(
-		"validationTests did not complete within %s — config rejected to avoid accepting a partially-validated config", budget))
+		"validationTests did not complete within %s", budget))
 	duration := time.Since(start)
 	switch {
+	case result.Incomplete && verdict.Inconclusive:
+		v.Logger().Warn("ValidationTests did not complete in time",
+			"version", version, "run_budget", budget, "duration_ms", duration.Milliseconds())
 	case verdict.Inconclusive:
 		v.Logger().Warn("ValidationTests could not run yet",
 			"version", version, "error", err)
@@ -239,7 +237,7 @@ func validationTestsVerdict(result configtest.Result, err error, incompleteMessa
 	case err != nil:
 		return verdictFromError(err)
 	case result.Incomplete:
-		return Verdict{Errors: []string{incompleteMessage}}
+		return Verdict{Errors: []string{incompleteMessage}, Inconclusive: len(result.Failures) == 0}
 	case result.Passed:
 		return Verdict{Valid: true}
 	default:
