@@ -21,6 +21,8 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
@@ -182,6 +184,13 @@ func assessVectorWatchdogRecovery(ctx context.Context, t *testing.T, cfg *envcon
 	return exerciseVectorChildRecovery(ctx, t, pod, host, availabilityPath)
 }
 
+func vectorProbeResources() corev1.ResourceRequirements {
+	// Reserve CPU for probes that run during configuration validation (#629).
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+	}
+}
+
 func prepareVectorRecoveryRoute(ctx context.Context, t *testing.T, cfg *envconf.Config, pod, availabilityPath string) string {
 	t.Helper()
 	client, err := cfg.NewClient()
@@ -190,7 +199,7 @@ func prepareVectorRecoveryRoute(ctx context.Context, t *testing.T, cfg *envconf.
 	}
 	ns := NamespaceForTest(ctx, t, client)
 	DumpLogsOnFailure(t, ns)
-	backend := NewEchoServerBackend(ctx, t, client, ns)
+	backend := NewEchoServerBackendWithResources(ctx, t, client, ns, vectorProbeResources())
 	host := fmt.Sprintf("vector-child-restart-%d.localdev.me", time.Now().UnixNano())
 	NewIngress(ctx, t, client, ns, &IngressSpec{
 		Name:           "echo-vector-child-restart",
@@ -330,7 +339,7 @@ func assessVectorSocketLog(ctx context.Context, t *testing.T, cfg *envconf.Confi
 	}
 	ns := NamespaceForTest(ctx, t, client)
 	DumpLogsOnFailure(t, ns)
-	backend := NewEchoServerBackend(ctx, t, client, ns)
+	backend := NewEchoServerBackendWithResources(ctx, t, client, ns, vectorProbeResources())
 	host := "vector-socket-log.localdev.me"
 	NewIngress(ctx, t, client, ns, &IngressSpec{
 		Name:           "echo-vector-log",
