@@ -73,12 +73,9 @@ func runValidationTestsValidatorWithTimeout(t *testing.T, cfg *coreconfig.Config
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	bus := busevents.NewEventBus(16)
 	responses := bus.Subscribe("test-collector", 4)
-	bus.Start()
-
 	v := NewValidationTestsValidator(bus, logger, stubTypeBootstrapper)
+	bus.Start()
 	if runTimeout > 0 {
-		// Fixed override bypassing the suite-size scaling, so the
-		// fail-closed-on-timeout path is exercisable with a tiny budget.
 		v.budgetFor = func(int) time.Duration { return runTimeout }
 	}
 	v.HandleRequest(events.NewConfigValidationRequest(cfg, "v-test"))
@@ -116,6 +113,9 @@ func TestValidationTestsValidator_FailingTestsRejected(t *testing.T) {
 	if resp.Valid {
 		t.Fatal("expected config with a failing validationTest to be rejected")
 	}
+	if resp.Inconclusive {
+		t.Fatal("an assertion failure must remain a definitive rejection")
+	}
 	if len(resp.Errors) == 0 {
 		t.Fatal("expected at least one error describing the failing test")
 	}
@@ -126,12 +126,12 @@ func TestValidationTestsValidator_FailingTestsRejected(t *testing.T) {
 }
 
 func TestValidationTestsValidator_TimeoutFailsClosed(t *testing.T) {
-	// A 1ns run budget guarantees the run is cut short before tests complete.
-	// RunTests reports no error and "0 failures" in that case, so the validator
-	// must NOT mistake an incomplete run for a pass — it must reject (fail-closed).
 	resp := runValidationTestsValidatorWithTimeout(t, configWithValidationTest("frontend http"), time.Nanosecond)
 	if resp.Valid {
-		t.Fatal("expected a timed-out (incomplete) validationTests run to be REJECTED, not accepted")
+		t.Fatal("an incomplete validationTests run must not pass")
+	}
+	if !resp.Inconclusive {
+		t.Fatal("an incomplete suite without assertion failures must be retryable")
 	}
 	if len(resp.Errors) == 0 || !strings.Contains(strings.Join(resp.Errors, "\n"), "did not complete") {
 		t.Fatalf("expected a 'did not complete' rejection reason, got: %v", resp.Errors)

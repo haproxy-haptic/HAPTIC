@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Live config changes retry timed-out validation tests without accepting a partial suite or replacing the last good config ([#631](https://github.com/haproxy-haptic/HAPTIC/issues/631)).
+
 - Preflight resource checks fetch HTTP inputs, including JWKS URLs, and preserve non-critical fetch failure behavior ([#619](https://github.com/haproxy-haptic/HAPTIC/issues/619)).
 
 - Resource updates no longer report a valid configuration as failed when they replace an active render's snapshot.

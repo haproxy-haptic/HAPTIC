@@ -16,12 +16,25 @@ package validator
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	coreconfig "github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 )
+
+func TestValidateConfigSyncRejectsIncompleteValidationTests(t *testing.T) {
+	cfg := configWithValidationTest("frontend http")
+	cfg.WatchedResources = map[string]coreconfig.WatchedResource{
+		"records": {APIVersion: "example.com/v1", Resources: "records", IndexBy: []string{"metadata.name"}},
+	}
+
+	failures := ValidateConfigSync(t.Context(), cfg, stubTypeBootstrapper, time.Nanosecond, testLogger())
+	require.Len(t, failures, 1)
+	require.Contains(t, failures, ValidatorNameValidationTests)
+	assert.Contains(t, failures[ValidatorNameValidationTests][0], "did not complete")
+}
 
 func TestValidateConfigSyncRejectsMalformedNewlyUnstrippedTemplateWithoutValidationTests(t *testing.T) {
 	cfg := &coreconfig.Config{

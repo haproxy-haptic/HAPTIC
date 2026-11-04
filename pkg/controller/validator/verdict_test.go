@@ -19,18 +19,20 @@ import (
 	coreconfig "github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 )
 
-func TestValidationTestsVerdictRejectsIncompleteAndUnexplainedFailures(t *testing.T) {
+func TestValidationTestsVerdict(t *testing.T) {
 	for _, tt := range []struct {
-		name     string
-		result   configtest.Result
-		err      error
-		valid    bool
-		failures []string
+		name         string
+		result       configtest.Result
+		err          error
+		valid        bool
+		inconclusive bool
+		failures     []string
 	}{
 		{name: "passed", result: configtest.Result{Passed: true}, valid: true},
 		{name: "zero result"},
 		{name: "failure", result: configtest.Result{Failures: []string{"assertion failed"}}, failures: []string{"assertion failed"}},
-		{name: "incomplete pass", result: configtest.Result{Passed: true, Incomplete: true}, failures: []string{"suite deadline"}},
+		{name: "incomplete", result: configtest.Result{Incomplete: true}, failures: []string{"suite deadline"}, inconclusive: true},
+		{name: "incomplete pass", result: configtest.Result{Passed: true, Incomplete: true}, failures: []string{"suite deadline"}, inconclusive: true},
 		{name: "incomplete failure", result: configtest.Result{Incomplete: true, Failures: []string{"partial failure"}}, failures: []string{"suite deadline"}},
 		{name: "error overrides pass", result: configtest.Result{Passed: true}, err: errors.New("schema unavailable"), failures: []string{"schema unavailable"}},
 	} {
@@ -38,7 +40,7 @@ func TestValidationTestsVerdictRejectsIncompleteAndUnexplainedFailures(t *testin
 			verdict := validationTestsVerdict(tt.result, tt.err, "suite deadline")
 			assert.Equal(t, tt.valid, verdict.Valid)
 			assert.Equal(t, tt.failures, verdict.Errors)
-			assert.False(t, verdict.Inconclusive)
+			assert.Equal(t, tt.inconclusive, verdict.Inconclusive)
 		})
 	}
 }

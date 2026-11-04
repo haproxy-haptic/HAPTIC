@@ -159,9 +159,9 @@ func jwtDenialAssertions(malformedReason string) []SimpleIngressAssertion {
 				if test.authorization != "" {
 					request = request.WithHeader("Authorization", test.authorization)
 				}
-				request.ExpectStatus(t, http.StatusUnauthorized)
+				response := request.ExpectStatus(t, http.StatusUnauthorized)
 				record := findAccessLogRecordWhere(t.Context(), t, started, path, func(record map[string]any) bool {
-					return record["path"] == path && record["host"] == host
+					return record["path"] == path && record["host"] == host && record["status"] == float64(response.Status)
 				})
 				if got := recordString(t, record, "denied_by"); got != test.reason {
 					t.Fatalf("JWT denial reason = %q, want %q", got, test.reason)
