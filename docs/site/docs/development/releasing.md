@@ -200,7 +200,7 @@ After the PR is merged, CI automatically:
 The dispatched release workflow:
 
 1. **Verify and sign the prepared SPOA image** (`spoa-hub:<version>`) without rebuilding it, then attach its software bill of materials (SBOM)
-2. **Build controller binaries and images** for linux/amd64, linux/arm64, and linux/arm/v7, including every supported HAProxy series and the Varnish image
+2. **Build controller binaries and images** for every supported HAProxy series on linux/amd64, linux/arm64, and linux/arm/v7. Varnish images target linux/amd64 and linux/arm64.
 3. **Create the GitHub release** with binary archives, signed SHA256 checksums, and release notes from `CHANGELOG.md`; mark alpha, beta, and release candidates as pre-releases
 4. **Sign the controller and Varnish images** and attach their SBOM attestations
 5. **Require native amd64 and arm64 SPOA smoke tests**, which run alongside the controller build
