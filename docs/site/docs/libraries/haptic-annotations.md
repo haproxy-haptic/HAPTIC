@@ -668,6 +668,8 @@ data:
 
 The `resource` must be an HTTPS URL on an Ingress host, without credentials, a query, or a fragment. HAPTIC serves the document at `https://mcp.example.com/.well-known/oauth-protected-resource/mcp`, and includes that URL in `WWW-Authenticate: Bearer resource_metadata="…"` on JWT authentication failures. To use the root discovery path, set `haproxy-haptic.org/jwt-resource-metadata-path: /.well-known/oauth-protected-resource`.
 
+On JWT `401` responses, the challenge includes `error="invalid_token"` for rejected Bearer tokens. It omits the error code when no Bearer token was supplied.
+
 The discovery endpoint accepts unauthenticated `GET` and `HEAD` requests and returns JSON directly from HAProxy. It takes precedence over application routing and authentication at that exact host and path; TLS client-certificate and server-name checks still apply. Other methods return `405`. Documents are limited to 8 KiB; each URL-encoded map line, including its host and path key, must also fit within 16382 bytes. Responses return `Cache-Control: no-store`. ConfigMap edits update the response; conflicting documents at one endpoint are rejected. A missing or empty ConfigMap removes discovery and returns `503` for that Ingress; other routes keep updating. Restoring the document restores discovery and JWT authentication.
 
 The challenge accompanies JWT `401` responses, including custom error pages. It doesn't accompany authorization `403` responses, unavailable-key `503` responses, or backend-generated errors. See [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html) for client discovery and resource-identifier checks.

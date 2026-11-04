@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Fixed
 
+- JWT discovery challenges include `error="invalid_token"` for rejected tokens and omit it when no Bearer token is supplied ([#627](https://github.com/haproxy-haptic/HAPTIC/issues/627)).
+
 - An unavailable OTLP collector no longer blocks access logs or request metrics in the Vector sidecar ([#622](https://github.com/haproxy-haptic/HAPTIC/issues/622)).
 
 - JWT requests without a Bearer token log `denied_by=jwt_missing` separately from invalid tokens ([#623](https://github.com/haproxy-haptic/HAPTIC/issues/623)).
