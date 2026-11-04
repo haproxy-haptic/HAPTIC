@@ -55,7 +55,7 @@ func TestHapticJWKSRotation(t *testing.T) {
 			client = c
 			updateJWKSFixture(ctx, t, client, map[string]*rsa.PrivateKey{"old": old})
 		},
-		Assess: []SimpleIngressAssertion{{
+		Assess: append([]SimpleIngressAssertion{{
 			Name: "key rotation updates verification without changing the route",
 			Check: func(t *testing.T, host string) {
 				t.Helper()
@@ -79,7 +79,7 @@ func TestHapticJWKSRotation(t *testing.T) {
 				updateJWKSFixture(t.Context(), t, client, map[string]*rsa.PrivateKey{"new": fresh})
 				check(newToken, http.StatusOK)
 			},
-		}},
+		}}, jwtDenialAssertions("jwt_signature")...),
 	})
 }
 

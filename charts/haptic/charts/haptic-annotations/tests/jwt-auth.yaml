@@ -65,6 +65,13 @@ validationTests:
       - type: match_order
         target: haproxy.cfg
         patterns:
+          - 'deny deny_status 503 if .*jwt_state.*missing nosecret'
+          - 'set-var\(txn\.denied_by\) str\(jwt_missing\).*jwt_state.*ok jwks.*http_auth_bearer -m len gt 0'
+          - 'deny deny_status 401 if .*jwt_state.*ok jwks.*http_auth_bearer -m len gt 0'
+          - 'set-var\(txn\.haptic_jwt_alg\)'
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
           - 'http-request deny deny_status 401 if \{ var\(txn\.jwt_state\) -m str ok \} \{ var\(txn\.jwt_alg\) -m str RS256 \} \{ var\(txn\.jwt_key\) -m str haptic-jwt-default_jwt-keys\.pem \} !\{ http_auth_bearer,jwt_verify\('
           - 'http-request deny deny_status 401 if \{ var\(txn\.jwt_state\) -m str ok \} \{ var\(txn\.haptic_jwt_nbf\) -m found \}'
           - 'http-request set-var\(txn\.haptic_consumer\) http_auth_bearer,jwt_payload_query\(''\$\.sub''\)'
