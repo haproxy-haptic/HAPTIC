@@ -13,7 +13,6 @@ import (
 	"encoding/pem"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -53,7 +52,10 @@ func testGatewayJWTMetadata(ctx context.Context, t *testing.T, client klient.Cli
 	require.NoError(t, client.Resources(namespace).Create(ctx, document))
 	for _, discovery := range []bool{false, true} {
 		name := "ordinary"
-		jwt := map[string]any{"secretRef": map[string]any{"name": "jwt"}, "allowedGroups": []any{"admins"}}
+		jwt := map[string]any{
+			"secretRef": map[string]any{"name": "jwt"}, "allowedGroups": []any{"admins"},
+			"issuer": "https://login.example.com", "audience": "mcp",
+		}
 		if discovery {
 			name = "discovery"
 			jwt["resourceMetadata"] = map[string]any{"configMapRef": map[string]any{"name": "oauth"}}
@@ -80,6 +82,9 @@ func testGatewayJWTMetadata(ctx context.Context, t *testing.T, client klient.Cli
 	secondary := httpclient.ForForwarded(t, 0, otherPort.HTTPSPort)
 	challenge := `Bearer resource_metadata="https://` + host + path + `"`
 	primary.HTTPS(host, "/mcp").ExpectHeader(t, "WWW-Authenticate", challenge)
+	assertJWTMetadataChallenges(t, key, challenge, func() *httpclient.Request {
+		return primary.HTTPS(host, "/mcp")
+	})
 	primary.HTTPS(host, path).ExpectMatching(t, "Gateway public metadata", func(response *httpclient.Response) bool {
 		return response.Status == http.StatusOK && string(response.Body) == body
 	})
@@ -98,9 +103,9 @@ func testGatewayJWTMetadata(ctx context.Context, t *testing.T, client klient.Cli
 
 func assertJWTMetadataGroups(t *testing.T, requests *httpclient.Client, key *rsa.PrivateKey, host string) {
 	t.Helper()
-	wrongGroup := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{"groups": []string{"guests"}, "exp": time.Now().Add(time.Hour).Unix()})
-	response := requests.HTTPS(host, "/mcp").WithHeader("Authorization", "Bearer "+wrongGroup).ExpectStatus(t, http.StatusForbidden)
+	wrongGroup := jwtMetadataBearer(t, key, map[string]any{"groups": []string{"guests"}})
+	response := requests.HTTPS(host, "/mcp").WithHeader("Authorization", wrongGroup).ExpectStatus(t, http.StatusForbidden)
 	require.Empty(t, response.Header.Get("WWW-Authenticate"))
-	allowed := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{"groups": []string{"admins"}, "exp": time.Now().Add(time.Hour).Unix()})
-	requests.HTTPS(host, "/mcp").WithHeader("Authorization", "Bearer "+allowed).ExpectEchoPath(t, "/mcp")
+	allowed := jwtMetadataBearer(t, key, nil)
+	requests.HTTPS(host, "/mcp").WithHeader("Authorization", allowed).ExpectEchoPath(t, "/mcp")
 }

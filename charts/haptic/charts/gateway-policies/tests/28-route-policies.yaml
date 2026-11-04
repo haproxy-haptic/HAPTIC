@@ -4271,6 +4271,7 @@ validationTests:
       - {type: haproxy_valid}
       - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: '(?m)^same-name\.example\.com:18846\|same-name\.example\.com\|/\.well-known/oauth-protected-resource/jwt '}
       - {type: contains, target: map:jwt-resource-metadata-challenge.map, pattern: '(?m)^gateway/h_default_same-name_1\|same-name\.example\.com Bearer%20resource_metadata'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-after-response set-header WWW-Authenticate .*error=\\"invalid_token\\".*status 401.*!\{ var\(txn.denied_by\) -m str jwt_missing \}'}
       - {type: contains, target: haproxy.cfg, pattern: 'deny deny_status 503 .*gw-policy-errors.map.* !\{ var\(txn.jwt_metadata_body\) -m found \}'}
 
   test-gateway-policy-jwt-resource-metadata-wildcard:

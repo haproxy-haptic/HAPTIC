@@ -299,6 +299,7 @@ validationTests:
       - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: 'authorization_servers%22%3a%5b%22https%3a%2f%2flogin\.example\.com'}
       - {type: contains, target: map:jwt-resource-metadata-challenge.map, pattern: '(?m)^default/mcp\|mcp\.example\.com Bearer%20resource_metadata%3d%22https%3a%2f%2fmcp\.example\.com%2f\.well-known%2foauth-protected-resource%2fmcp%22$'}
       - {type: contains, target: haproxy.cfg, pattern: 'http-after-response set-header WWW-Authenticate .*status 401.*jwt_'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-after-response set-header WWW-Authenticate .*error=\\"invalid_token\\".*status 401.*!\{ var\(txn.denied_by\) -m str jwt_missing \}'}
       - type: match_order
         target: haproxy.cfg
         patterns:

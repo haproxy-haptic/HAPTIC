@@ -43,6 +43,8 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 	metadataPath := "/.well-known/oauth-protected-resource/mcp"
 	annotations := map[string]string{
 		"haproxy-haptic.org/jwt-secret":                      "jwt-keys",
+		"haproxy-haptic.org/jwt-issuer":                      "https://login.example.com",
+		"haproxy-haptic.org/jwt-audience":                    "mcp",
 		"haproxy-haptic.org/jwt-allowed-groups":              "admins",
 		"haproxy-haptic.org/jwt-resource-metadata-configmap": "oauth:document.json",
 		"haproxy-haptic.org/error-pages":                     "refusal",
@@ -54,8 +56,8 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	public := pem.EncodeToMemory(&pem.Block{Type: "RSA PUBLIC KEY", Bytes: x509.MarshalPKCS1PublicKey(&key.PublicKey)})
-	token := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{"sub": "alice", "groups": []string{"admins"}, "exp": time.Now().Add(time.Hour).Unix()})
-	wrongGroup := signRS256(t, key, map[string]any{"alg": "RS256"}, map[string]any{"sub": "alice", "groups": []string{"guests"}, "exp": time.Now().Add(time.Hour).Unix()})
+	token := jwtMetadataBearer(t, key, nil)
+	wrongGroup := jwtMetadataBearer(t, key, map[string]any{"groups": []string{"guests"}})
 	var client klient.Client
 	var document *corev1.ConfigMap
 	body := `{"resource":"https://` + host + `/mcp","authorization_servers":["https://login.example.com"],"display_name":"%[req.hdr(secret)]","extension":"` + strings.Repeat("/", 5200) + `"}`
@@ -77,10 +79,11 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 			t.Helper()
 			requests := httpclient.New(t)
 			challenge := `Bearer resource_metadata="https://` + host + metadataPath + `"`
-			for _, authorization := range []string{"", "Bearer invalid"} {
-				response := requests.GET(host, "/mcp").WithHeader("Authorization", authorization).ExpectMatching(t, "JWT challenge with custom refusal", func(response *httpclient.Response) bool {
-					return response.Status == http.StatusUnauthorized && response.Header.Get("WWW-Authenticate") == challenge && string(response.Body) == "Sign in to continue"
-				})
+			responses := assertJWTMetadataChallenges(t, key, challenge, func() *httpclient.Request {
+				return requests.GET(host, "/mcp")
+			})
+			for _, response := range responses {
+				require.Equal(t, "Sign in to continue", string(response.Body))
 				require.Equal(t, "text/plain", response.Header.Get("Content-Type"))
 			}
 			for _, request := range []*httpclient.Request{requests.GET(host, metadataPath), requests.HTTPS(host, metadataPath), requests.GET(host, metadataPath).WithHostHeader(host + ":443")} {
@@ -92,14 +95,14 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 				require.Equal(t, "no-store", response.Header.Get("Cache-Control"))
 				require.Empty(t, response.Header.Get("WWW-Authenticate"))
 			}
-			response := requests.GET(host, "/mcp").WithHeader("Authorization", "Bearer "+wrongGroup).ExpectStatus(t, http.StatusForbidden)
+			response := requests.GET(host, "/mcp").WithHeader("Authorization", wrongGroup).ExpectStatus(t, http.StatusForbidden)
 			require.Empty(t, response.Header.Get("WWW-Authenticate"))
 			response = requests.GET(host, metadataPath).WithMethod(http.MethodHead).ExpectOK(t)
 			require.Empty(t, response.Body)
 			response = requests.GET(host, metadataPath).WithMethod(http.MethodPost).ExpectStatus(t, http.StatusMethodNotAllowed)
 			require.Equal(t, "GET, HEAD", response.Header.Get("Allow"))
 			requests.GET("other-"+host, metadataPath).ExpectStatus(t, http.StatusNotFound)
-			requests.GET(host, "/mcp").WithHeader("Authorization", "Bearer "+token).ExpectEchoPath(t, "/mcp")
+			requests.GET(host, "/mcp").WithHeader("Authorization", token).ExpectEchoPath(t, "/mcp")
 			require.NoError(t, client.Resources(document.Namespace).Get(t.Context(), document.Name, document.Namespace, document))
 			updated := `{"resource":"https://` + host + `/mcp","authorization_servers":["https://new.example.com"],"revision":9007199254740993}`
 			document.Data["document.json"] = updated
@@ -109,7 +112,7 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 			})
 			requests.GET(host, "/mcp").ExpectHeader(t, "WWW-Authenticate", challenge)
 			require.NoError(t, client.Resources(document.Namespace).Delete(t.Context(), document))
-			response = requests.GET(host, "/mcp").WithHeader("Authorization", "Bearer "+token).ExpectStatus(t, http.StatusServiceUnavailable)
+			response = requests.GET(host, "/mcp").WithHeader("Authorization", token).ExpectStatus(t, http.StatusServiceUnavailable)
 			require.Empty(t, response.Header.Get("WWW-Authenticate"))
 			requests.GET(host, metadataPath).ExpectStatus(t, http.StatusNotFound)
 			ingress := &networkingv1.Ingress{}
@@ -127,7 +130,54 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 			requests.GET(host, metadataPath).ExpectMatching(t, "restored ConfigMap republishes metadata", func(response *httpclient.Response) bool {
 				return response.Status == http.StatusOK && string(response.Body) == updated
 			})
-			requests.GET(host, "/mcp").WithHeader("Authorization", "Bearer "+token).ExpectEchoPath(t, "/mcp")
+			requests.GET(host, "/mcp").WithHeader("Authorization", token).ExpectEchoPath(t, "/mcp")
 		}}},
 	})
+}
+
+func jwtMetadataBearer(t *testing.T, key *rsa.PrivateKey, overrides map[string]any) string {
+	t.Helper()
+	claims := map[string]any{
+		"sub": "alice", "iss": "https://login.example.com", "aud": "mcp",
+		"groups": []string{"admins"}, "exp": time.Now().Add(time.Hour).Unix(),
+	}
+	for field, value := range overrides {
+		claims[field] = value
+	}
+	return "Bearer " + signRS256(t, key, map[string]any{"alg": "RS256"}, claims)
+}
+
+func assertJWTMetadataChallenges(t *testing.T, key *rsa.PrivateKey, challenge string, newRequest func() *httpclient.Request) []*httpclient.Response {
+	t.Helper()
+	cases := []struct {
+		name, authorization string
+		invalid             bool
+	}{
+		{"missing token", "", false},
+		{"empty Bearer", "Bearer ", false},
+		{"unsupported scheme", "Basic dXNlcjpwYXNz", false},
+		{"malformed token", "Bearer abc.def.ghi", true},
+		{"bad signature", "Bearer eyJhbGciOiJSUzI1NiJ9.e30.AAAA", true},
+		{"expired token", jwtMetadataBearer(t, key, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}), true},
+		{"future token", jwtMetadataBearer(t, key, map[string]any{"nbf": time.Now().Add(time.Hour).Unix()}), true},
+		{"wrong issuer", jwtMetadataBearer(t, key, map[string]any{"iss": "https://other.example.com"}), true},
+		{"wrong audience", jwtMetadataBearer(t, key, map[string]any{"aud": "other"}), true},
+	}
+	responses := make([]*httpclient.Response, 0, len(cases))
+	for _, tc := range cases {
+		expected := challenge
+		if tc.invalid {
+			expected += `, error="invalid_token"`
+		}
+		request := newRequest().WithMethod(http.MethodPost)
+		if tc.authorization != "" {
+			request = request.WithHeader("Authorization", tc.authorization)
+		}
+		response := request.ExpectMatching(t, tc.name+" challenge", func(response *httpclient.Response) bool {
+			return response.Status == http.StatusUnauthorized && response.Header.Get("WWW-Authenticate") == expected
+		})
+		require.Len(t, response.Header.Values("WWW-Authenticate"), 1)
+		responses = append(responses, response)
+	}
+	return responses
 }
