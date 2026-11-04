@@ -9,6 +9,10 @@ name: Publish website
         description: Successful canonical CI run for this publication
         required: true
         type: string
+      diagnostic_site_run:
+        description: Read-only browser diagnostic for an existing Pages artifact; disables publication
+        default: ''
+        type: string
       version:
         description: dev or an existing published release version
         default: dev
@@ -17,16 +21,16 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: pages-publication
+  group: ${{ inputs.diagnostic_site_run && github.run_id || 'pages-publication' }}
   cancel-in-progress: false
 jobs:
   build:
     if: >-
-      github.event_name != 'workflow_run' ||
+      !inputs.diagnostic_site_run && (github.event_name != 'workflow_run' ||
       (github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main')
+       github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     outputs:
@@ -143,3 +147,38 @@ jobs:
           node scripts/visual-qa/node_modules/playwright/cli.js install --with-deps chromium firefox
       - name: Verify live content and every playground version
         run: make test-github-pages-browser PAGES_OUTPUT="$RUNNER_TEMP/public"
+  diagnose:
+    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_site_run != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      options: --init --shm-size 1g
+    env:
+      PAGES_BROWSERS: chromium,firefox
+      PAGES_URL: https://haproxy-haptic.org
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/pages-artifact
+          run-id: ${{ inputs.diagnostic_site_run }}
+          github-token: ${{ github.token }}
+      - name: Restore deployed files and pinned browser package
+        run: |
+          mkdir "$RUNNER_TEMP/public"
+          tar -xf "$RUNNER_TEMP/pages-artifact/artifact.tar" -C "$RUNNER_TEMP/public"
+          npm ci --prefix scripts/visual-qa
+      - name: Observe the unchanged full browser harness
+        run: |
+          npm exec --yes --package=node@22.23.4 -- node --import ./.github/scripts/diagnose-pages-browser.mjs scripts/tests/test_github_pages_browser.mjs "$RUNNER_TEMP/public"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: browser-diagnostic
+          path: browser-diagnostic*
+          retention-days: 3
+          if-no-files-found: error
