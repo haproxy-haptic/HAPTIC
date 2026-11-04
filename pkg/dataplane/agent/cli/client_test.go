@@ -185,10 +185,61 @@ func TestInventoryReadsTheCAListing(t *testing.T) {
 	client, model := newClient(t)
 	model.With(func(m *haproxytest.Model) { m.CAFiles["ssl/ca.crt"] = "" })
 
-	inventory, err := client.Inventory(3)
+	worker, err := client.Info()
+	require.NoError(t, err)
+	inventory, err := client.Inventory(worker, 3)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"ssl/ca.crt"}, inventory.CAFiles)
 	assert.Equal(t, uint64(3), inventory.Generation)
+}
+
+func TestInventoryCannotSpanWorkers(t *testing.T) {
+	client, model := newClient(t)
+	model.With(func(m *haproxytest.Model) {
+		m.Maps["maps/current.map"] = nil
+		m.Reject = func(command string) (string, bool) {
+			if command == "show map" {
+				m.Pid++
+				m.Reject = nil
+			}
+			return "", false
+		}
+	})
+	worker, err := client.Info()
+	require.NoError(t, err)
+	_, err = client.Inventory(worker, 0)
+	require.Error(t, err)
+}
+
+func TestInventoryRejectsListingRefusals(t *testing.T) {
+	for _, command := range []string{"show map", "show ssl cert", "show ssl ca-file", "show ssl crl-file", "show ssl crt-list"} {
+		t.Run(command, func(t *testing.T) {
+			client, model := newClient(t)
+			model.With(func(m *haproxytest.Model) {
+				m.Reject = func(got string) (string, bool) {
+					return "inventory unavailable", got == command
+				}
+			})
+			worker, err := client.Info()
+			require.NoError(t, err)
+			_, err = client.Inventory(worker, 0)
+			require.ErrorIs(t, err, cli.ErrRejected)
+		})
+	}
+}
+
+func TestInventoryKeepsAFullCertificateListing(t *testing.T) {
+	client, model := newClient(t)
+	model.With(func(m *haproxytest.Model) {
+		for i := range api.MaxInventoryEntries {
+			m.Certs[fmt.Sprintf("ssl/%04d-%s.pem", i, strings.Repeat("x", 128))] = ""
+		}
+	})
+	worker, err := client.Info()
+	require.NoError(t, err)
+	inventory, err := client.Inventory(worker, 0)
+	require.NoError(t, err)
+	assert.Len(t, inventory.Certs, api.MaxInventoryEntries)
 }
 
 func TestExecuteRepeatsMapDelUntilTheKeyIsGone(t *testing.T) {
@@ -291,7 +342,9 @@ func TestInventoryListsWhatTheWorkerLoaded(t *testing.T) {
 	_, err := client.Execute(compileAll(t, ops, files))
 	require.NoError(t, err)
 
-	inventory, err := client.Inventory(7)
+	worker, err := client.Info()
+	require.NoError(t, err)
+	inventory, err := client.Inventory(worker, 7)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(7), inventory.Generation)
 	assert.Equal(t, []string{"maps/host.map"}, inventory.Maps)

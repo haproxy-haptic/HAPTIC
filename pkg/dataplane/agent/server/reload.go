@@ -119,8 +119,12 @@ func (s *Server) awaitNewWorker() (api.HAProxyInfo, error) {
 	for {
 		info, err := s.runtime.Info()
 		if err == nil && !info.SameWorker(previous) {
-			s.adoptWorker(info)
-			return info, nil
+			if err = s.adoptWorker(info); err == nil {
+				return info, nil
+			}
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return previous, err
 		}
 		if time.Now().After(deadline) {
 			return previous, errors.New("the new worker did not answer show info after the reload")

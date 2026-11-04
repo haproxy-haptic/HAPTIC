@@ -195,6 +195,9 @@ restarts underneath. Every one of those re-reads it. A decision made against a
 stale inventory composes a create for something that exists, HAProxy refuses it,
 and the pod reloads for a change that was reload-free.
 
+Keep each inventory read on one identified worker connection and require complete
+replies. A failed read must leave worker adoption pending.
+
 ### Assuming a listing format
 
 HAProxy's `show` output differs per command: `show map` wraps the path in

@@ -26,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -110,7 +111,28 @@ func WaitForE2EEnvironmentReady(ctx context.Context, client klient.Client) error
 	// gatewayclasses CRD is served, surviving install-order races). Test
 	// fixtures reference it by name the moment they create Gateways, so
 	// block until the first render+apply cycle has produced it.
-	return waitForGatewayClass(ctx, client, cfg)
+	if err := waitForGatewayClass(ctx, client, cfg); err != nil {
+		return err
+	}
+	return waitForHTTPRouteAdmission(ctx, client)
+}
+
+func waitForHTTPRouteAdmission(ctx context.Context, client klient.Client) error {
+	dyn, err := dynamic.NewForConfig(client.RESTConfig())
+	if err != nil {
+		return fmt.Errorf("build dynamic client: %w", err)
+	}
+	route := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "gateway.networking.k8s.io/v1", "kind": "HTTPRoute",
+		"metadata": map[string]any{"name": "e2e-admission-readiness", "namespace": SharedFixturesNamespace},
+		"spec":     map[string]any{},
+	}}
+	api := dyn.Resource(httpRouteGVR).Namespace(SharedFixturesNamespace)
+	return testutil.WaitForConditionWithDescription(ctx, testutil.FastWaitConfig(),
+		"apiserver can reach HTTPRoute admission", func(ctx context.Context) (bool, error) {
+			_, err := api.Create(ctx, route, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+			return err == nil, err
+		})
 }
 
 // waitForGatewayClass blocks until the chart's GatewayClass exists. It is

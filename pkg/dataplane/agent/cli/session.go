@@ -93,6 +93,10 @@ func (s *workerSession) close() {
 }
 
 func (s *workerSession) execute(command string) (string, error) {
+	return s.executeWithin(command, maxSessionReplyBytes)
+}
+
+func (s *workerSession) executeWithin(command string, maxReplyBytes int) (string, error) {
 	if err := s.ctx.Err(); err != nil {
 		return "", err
 	}
@@ -103,7 +107,7 @@ func (s *workerSession) execute(command string) (string, error) {
 		return "", err
 	}
 	var out bytes.Buffer
-	for out.Len() < maxSessionReplyBytes {
+	for out.Len() < maxReplyBytes {
 		b, err := s.reader.ReadByte()
 		if err != nil {
 			return "", fmt.Errorf("incomplete worker reply: %w", err)
@@ -113,5 +117,5 @@ func (s *workerSession) execute(command string) (string, error) {
 			return strings.TrimSpace(strings.TrimSuffix(out.String(), workerPrompt)), nil
 		}
 	}
-	return "", fmt.Errorf("worker reply exceeds %d bytes", maxSessionReplyBytes)
+	return "", fmt.Errorf("worker reply exceeds %d bytes", maxReplyBytes)
 }

@@ -206,20 +206,19 @@ func (s *Server) workerOpsBaselineMatches(expectedID, expectedProof string) bool
 
 // adoptWorker records the worker the agent is now talking to and refreshes the
 // inventory, which only a reload or a foreign worker can change.
-func (s *Server) adoptWorker(info api.HAProxyInfo) {
-	inventory, err := s.runtime.Inventory(0)
+func (s *Server) adoptWorker(info api.HAProxyInfo) error {
+	inventory, err := s.runtime.Inventory(info, 0)
 	if err != nil {
-		s.logger.Warn("could not refresh the runtime inventory", "error", err)
+		return fmt.Errorf("refresh worker inventory: %w", err)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.worker = info
 	s.deferrals.SetWorker(info)
 	s.state.ExpectedWorker = info
-	if err == nil {
-		inventory.Generation = s.inventory.Generation + 1
-		s.inventory = inventory
-	}
+	inventory.Generation = s.inventory.Generation + 1
+	s.inventory = inventory
+	return nil
 }
 
 // foldCreated records the runtime stores a completed batch created. Without
@@ -275,8 +274,10 @@ func (s *Server) checkWorker() error {
 		"expected_pid", expected.WorkerPID, "observed_pid", info.WorkerPID,
 		"expected_start_unix_micros", expected.WorkerStartTimeUnixMicros,
 		"observed_start_unix_micros", info.WorkerStartTimeUnixMicros)
-	s.adoptWorker(info)
 	s.invalidateBaseline()
+	if err := s.adoptWorker(info); err != nil {
+		return err
+	}
 	return errors.New("the HAProxy worker was replaced; its runtime baseline is unknown")
 }
 

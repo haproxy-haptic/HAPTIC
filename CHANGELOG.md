@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- HAProxy reloads keep runtime inventories consistent with the serving worker, preventing stale map updates during WAF policy rotation ([#635](https://github.com/haproxy-haptic/HAPTIC/issues/635)).
 - Live config changes retry timed-out validation tests and keep the last good config active until the full suite passes ([#631](https://github.com/haproxy-haptic/HAPTIC/issues/631)).
 - Preflight resource checks fetch HTTP inputs, including JWKS URLs, and preserve non-critical fetch failure behavior ([#619](https://github.com/haproxy-haptic/HAPTIC/issues/619)).
 - HTTP input refreshes can withdraw signing keys when unrelated routing inputs are invalid, and retry unchanged content after transient validation failures.
