@@ -16,6 +16,8 @@ for path in /proc/stat /proc/net/netstat /proc/net/snmp /proc/pressure/cpu /proc
   echo "$path"
   cat "$path"
 done
+echo POD_LOG_DIRECTORIES
+ls /var/log/pods
 find /sys/fs/cgroup -maxdepth 6 -name cpu.stat | while IFS= read -r path; do
   echo "$path"
   cat "$path"

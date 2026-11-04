@@ -23,6 +23,7 @@ jobs:
       PILOT_VARNISH_IMAGE: ghcr.io/haproxy-haptic/haptic-ci@sha256:2cb9e813ede03e1e272695d1b6ca2be6c50dacc75fdee69485989f4d7a6e97bb
       HAPROXY_VERSION: '3.0'
       E2E_SHARD_INDEX: '4'
+      CI629_CANDIDATE_SHA: '202466e86d58703bc9b5a449c0b19367341e78e8'
       HAPTIC_E2E_PROFILE: ''
       HAPTIC_E2E_GWAPI_CHANNEL: standard
       KIND_NODE_IMAGE: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
@@ -87,27 +88,13 @@ jobs:
 
           '
       if: fromJSON(env.CI_SUITE).runner == 'ubuntu-24.04-arm'
-    - name: Capture scheduling and TCP counters
-      run: 'mkdir -p .pilot
-
-        go run ./.github/scripts/vector-stall-diagnostic > .pilot/scheduling-capture.log 2>&1 &
-
-        echo "$!" > .pilot/scheduling-capture.pid
-
-        '
-    - name: Run native ARM suite
-      if: fromJSON(env.CI_SUITE).runner == 'ubuntu-24.04-arm' && fromJSON(env.CI_SUITE).suite != 'upgrade' && fromJSON(env.CI_SUITE).suite
-        != 'gitops'
-      run: bash .github/scripts/run-arm-pilot.sh
-    - name: Stop diagnostic sampler
-      if: always()
-      run: "touch .pilot/test-finished\nif [[ -f .pilot/scheduling-capture.pid ]]; then\n  kill \"$(cat .pilot/scheduling-capture.pid)\"\
-        \ 2>/dev/null || true\nfi\n"
+    - name: Compare original and CPU-reserved Vector backends
+      run: go run ./.github/scripts/vector-stall-compare
     - name: Retain verification evidence
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
-        name: ci629-vector-stall-diagnostic
+        name: ci629-vector-stall-comparison
         path: '.pilot/
 
           debug-logs/'
