@@ -360,7 +360,7 @@ func (s *Server) probeHAProxy() error {
 	if _, err := s.runtime.ShowProc(); err != nil {
 		return err
 	}
-	inventory, err := s.runtime.Inventory(1)
+	inventory, err := s.runtime.Inventory(info, 1)
 	if err != nil {
 		return err
 	}

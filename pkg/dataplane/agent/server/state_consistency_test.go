@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/cli"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/haproxytest"
 )
 
@@ -115,8 +116,29 @@ func newWorkerObservationServer(t *testing.T) (*haproxytest.HAProxy, *Server) {
 	require.NoError(t, err)
 	worker, err := agent.runtime.Info()
 	require.NoError(t, err)
-	agent.adoptWorker(worker)
+	require.NoError(t, agent.adoptWorker(worker))
 	return model, agent
+}
+
+func TestWorkerAdoptionRequiresItsInventory(t *testing.T) {
+	model, agent := newWorkerObservationServer(t)
+	previous := agent.workerIdentity()
+	model.With(func(m *haproxytest.Model) {
+		m.Pid++
+		m.Maps["maps/current.map"] = nil
+		m.Reject = func(command string) (string, bool) {
+			return "inventory unavailable", command == "show map"
+		}
+	})
+	worker, err := agent.runtime.Info()
+	require.NoError(t, err)
+	require.ErrorIs(t, agent.adoptWorker(worker), cli.ErrRejected)
+	assert.Equal(t, previous, agent.workerIdentity())
+	assert.Empty(t, agent.inventory.Maps)
+	model.With(func(m *haproxytest.Model) { m.Reject = nil })
+	require.NoError(t, agent.adoptWorker(worker))
+	assert.Equal(t, worker, agent.workerIdentity())
+	assert.Equal(t, []string{"maps/current.map"}, agent.inventory.Maps)
 }
 
 func TestApplyCommitPreservesConcurrentWorkerInvalidation(t *testing.T) {

@@ -53,6 +53,7 @@ type Config struct {
 
 // Client is the agent's runtime plumbing.
 type Client struct {
+	ctx      context.Context
 	cfg      Config
 	worker   *runtime.SingleRuntime
 	masterRT *runtime.SingleRuntime
@@ -82,7 +83,7 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 	master := sync.OnceValues(func() (runtime.Runtime, error) {
 		return runtime.New(ctx, options.MasterSocket(cfg.MasterSocket), options.DoNotCheckRuntimeOnInit)
 	})
-	return &Client{cfg: cfg, worker: worker, masterRT: masterRT, master: master, logger: cfg.Logger}, nil
+	return &Client{ctx: ctx, cfg: cfg, worker: worker, masterRT: masterRT, master: master, logger: cfg.Logger}, nil
 }
 
 // Info reads the worker's process ID and microsecond-resolution start time.

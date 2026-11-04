@@ -26,16 +26,34 @@ import (
 // refusal to read it, not a statement about what the worker holds.
 var ErrTooManyEntries = errors.New("runtime listing exceeds the entry limit")
 
-// Inventory reads what the running worker has loaded. The controller needs it
-// to know whether a certificate or map it wants to touch at runtime exists at
-// all; a path that is not in here is structural.
-func (c *Client) Inventory(generation uint64) (api.Inventory, error) {
-	maps, mapsErr := c.list("show map", parenthesised)
-	certs, certsErr := c.list("show ssl cert", storeName)
-	cas, casErr := c.list("show ssl ca-file", storeName)
-	crls, crlsErr := c.list("show ssl crl-file", storeName)
-	lists, listsErr := c.list("show ssl crt-list", storeName)
-	if err := errors.Join(mapsErr, certsErr, casErr, crlsErr, listsErr); err != nil {
+const maxInventoryReplyBytes = 4 << 20
+
+// Inventory pins every listing to the expected worker so a reload cannot mix
+// its inventory with an outgoing worker's.
+func (c *Client) Inventory(worker api.HAProxyInfo, generation uint64) (api.Inventory, error) {
+	session, err := c.openWorker(c.ctx, worker)
+	if err != nil {
+		return api.Inventory{}, fmt.Errorf("identify inventory worker: %w", err)
+	}
+	defer session.close()
+	maps, err := session.list("show map", parenthesised)
+	if err != nil {
+		return api.Inventory{}, err
+	}
+	certs, err := session.list("show ssl cert", storeName)
+	if err != nil {
+		return api.Inventory{}, err
+	}
+	cas, err := session.list("show ssl ca-file", storeName)
+	if err != nil {
+		return api.Inventory{}, err
+	}
+	crls, err := session.list("show ssl crl-file", storeName)
+	if err != nil {
+		return api.Inventory{}, err
+	}
+	lists, err := session.list("show ssl crt-list", storeName)
+	if err != nil {
 		return api.Inventory{}, err
 	}
 	return api.Inventory{
@@ -101,10 +119,13 @@ func (c *Client) ServerNames(backend string) (map[string]struct{}, error) {
 	return names, nil
 }
 
-func (c *Client) list(command string, extract func(string) string) ([]string, error) {
-	raw, err := c.Raw(command)
+func (s *workerSession) list(command string, extract func(string) string) ([]string, error) {
+	raw, err := s.executeWithin(command, maxInventoryReplyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", command, err)
+	}
+	if prefix := severityPrefix.FindStringSubmatch(strings.TrimSpace(raw)); len(prefix) > 1 && prefix[1] <= "3" {
+		return nil, fmt.Errorf("%s: %w: %s", command, ErrRejected, raw)
 	}
 	var out []string
 	for i, line := range dataLines(raw) {
