@@ -12,6 +12,8 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/ja
 // Pages answers 5xx for a short while after a deployment. The local server does so once per path, so the retries stay tested.
 const playgrounds = Object.keys(receipt.engines).sort().map(engine => '/' + engine.replace(/playground\.wasm$/, ''));
 const unavailableOnce = new Set(['/shared/pages-transport.json', playgrounds[0] + 'starter.resources.yaml', playgrounds.at(-1)]);
+const stalledOnce = new Set();
+const stalledTransfers = new Map();
 const attempts = 3;
 const pause = () => new Promise(resolve => setTimeout(resolve, 10000));
 async function fetchPublished(url, options) {
@@ -39,6 +41,14 @@ const server = createServer(async (request, response) => {
     if (!path.startsWith(root + sep)) { response.writeHead(403).end(); return; }
     if ((await stat(path)).isDirectory()) path = resolve(path, 'index.html');
     response.setHeader('Content-Type', types[extname(path)] || 'application/octet-stream');
+    if (stalledOnce.delete(request.url)) {
+      const bytes = await readFile(path);
+      response.setHeader('Content-Length', bytes.length);
+      response.write(bytes.subarray(0, 65536));
+      response.on('close', () => { stalledTransfers.get(request.url).aborted = true; });
+      return;
+    }
+    if (stalledTransfers.has(request.url)) stalledTransfers.get(request.url).retried = true;
     response.end(await readFile(path));
   } catch {
     response.writeHead(404).end();
@@ -55,7 +65,8 @@ try {
   assert.deepEqual(await publishedReceipt.json(), receipt, 'Published site differs from its verified artifact');
   const identities = Object.keys(receipt.published_files).filter(path => path.endsWith('/release-identity.json'));
   for (const path of ['index.html', 'docs/dev/index.html', 'docs/latest/index.html',
-    'docs/versions.json', 'playground/versions.json', ...identities]) {
+    'docs/versions.json', 'playground/versions.json', 'playground/index.html',
+    'shared/playground-wasm-loader.mjs', ...identities]) {
     const expected = receipt.published_files[path];
     assert.ok(expected, `Missing publication evidence for ${path}`);
     const response = await fetchPublished(`${base}/${path}`, { cache: 'no-store' });
@@ -80,15 +91,29 @@ try {
           const page = await context.newPage();
           const errors = [];
           const requests = [];
+          const pending = new Set();
+          const failures = [];
           const unavailable = [];
           page.on('pageerror', error => errors.push(error.message));
-          context.on('request', request => requests.push(request.url()));
+          context.on('request', request => { requests.push(request.url()); pending.add(request); });
+          context.on('requestfinished', request => pending.delete(request));
+          context.on('requestfailed', request => {
+            failures.push({ url: request.url(), failure: request.failure() });
+            pending.delete(request);
+          });
           context.on('response', response => response.status() >= 500 && unavailable.push(`${response.status()} ${response.url()}`));
           const start = performance.now();
           const response = await page.goto(`${base}/playground/${version}/?preset=starter`);
           const settled = response.status() < 500 && await page.waitForFunction(() => window.hapticPlayground?.stats()?.haproxyCfg
-            || document.querySelector('#chip')?.textContent === 'error', null, { timeout: 30000 })
-            .then(() => true, error => { if (!unavailable.length) throw error; return false; });
+            || document.querySelector('#chip')?.classList.contains('err'), null, { timeout: 30000 })
+            .then(() => true, async error => {
+              console.error(JSON.stringify({ browser: name, version, error: error.message, failures, unavailable,
+                pending: [...pending].map(request => ({ url: request.url(), timing: request.timing() })),
+                state: await page.evaluate(() => ({ chip: document.querySelector('#chip')?.textContent,
+                  error: document.querySelector('#bm')?.textContent })) }));
+              if (!unavailable.length) throw error;
+              return false;
+            });
           if (unavailable.length && attempt < attempts) {
             console.log(JSON.stringify({ browser: name, version, unavailable, attempt, result: 'retrying' }));
             await context.close();
@@ -102,6 +127,9 @@ try {
           assert.equal(result.error, undefined);
           assert.deepEqual(errors, []);
           assert.ok(requests.includes(`${base}/${engine}.br`), `${version}: Brotli engine was not requested`);
+          const transport = receipt.published_files['shared/playground-wasm-loader.mjs'].sha256.slice(0, 16);
+          assert.ok(requests.includes(`${base}/shared/playground-wasm-loader.mjs?revision=${transport}`),
+            `${version}: verified transport revision was not requested`);
           assert.ok(!requests.some(url => new URL(url).pathname.endsWith('/playground.wasm')));
           assert.ok(requests.every(url => url.startsWith(base + '/')), `${version}: external runtime request`);
           console.log(JSON.stringify({ browser: name, version, sha256: receipt.engines[engine].sha256,
@@ -111,9 +139,31 @@ try {
         }
       }
       const page = await browser.newPage();
+      const catalog = JSON.parse(await readFile(resolve(root, 'playground/versions.json'), 'utf8'));
+      await gotoPublished(page, `${base}/playground/?preserved=1#preserved`);
+      await page.waitForURL(`${base}/playground/${catalog.current}/?preserved=1#preserved`);
+      console.log(JSON.stringify({ browser: name, case: 'current-playground-redirect', version: catalog.current, result: 'redirected' }));
       await gotoPublished(page, `${base}/playground/dev/?preset=starter`);
       const engine = 'playground/dev/playground.wasm';
       const expected = { compressed: receipt.published_files[engine + '.br'], decoded: receipt.engines[engine] };
+      if (server.listening) {
+        const stalled = `/${engine}.br?stall=${name}`;
+        stalledOnce.add(stalled);
+        stalledTransfers.set(stalled, { aborted: false, retried: false });
+        await page.evaluate(({ stalled, expected, base }) => {
+          window.stalledDownload = null;
+          import(`${base}/shared/playground-wasm-loader.mjs`)
+            .then(({ fetchBrotliWasm }) => fetchBrotliWasm(`${base}${stalled}`, expected, () => {}))
+            .then(bytes => { window.stalledDownload = { size: bytes.byteLength }; },
+              error => { window.stalledDownload = { error: error.message }; });
+        }, { stalled, expected, base });
+        await page.waitForFunction(() => window.stalledDownload !== null, null, { timeout: 30000 });
+        assert.deepEqual(await page.evaluate(() => window.stalledDownload), { size: expected.decoded.size });
+        const recovery = stalledTransfers.get(stalled);
+        assert.ok(recovery.aborted && recovery.retried, `${name}: stalled engine was not cancelled and restarted`);
+        assert.equal(stalledOnce.size, 0);
+        console.log(JSON.stringify({ browser: name, case: 'stalled-engine-download', result: 'recovered' }));
+      }
       const decoderMemory = await page.evaluate(async ({ engine, expected, base }) => {
         const native = globalThis.DecompressionStream;
         try {

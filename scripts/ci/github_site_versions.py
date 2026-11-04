@@ -175,6 +175,7 @@ def catalogs(site):
         else:
             data = {"versions": [{"version": version, "stable": version != "dev" and "-" not in version}
                                   for version in available], "current": current}
+            (root / "index.html").write_text(redirect_page(current + "/"))
         (root / "versions.json").write_text(json.dumps(data, indent=2) + "\n")
 
 

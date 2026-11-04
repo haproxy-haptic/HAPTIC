@@ -1,6 +1,7 @@
 {
   "name": "haptic-pages-assets",
   "private": true,
+  "type": "module",
   "dependencies": {
     "brotli-dec-wasm": "2.3.2"
   }

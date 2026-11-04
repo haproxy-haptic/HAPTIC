@@ -446,7 +446,7 @@ test-e2e-helpers: ## Test e2e client and cluster helpers without creating a clus
 
 .PHONY: test-playground-web
 test-playground-web: ## Test playground asset loading and generated scripts
-	node --test cmd/playground/web/*.test.mjs
+	node --test cmd/playground/web/*.test.mjs scripts/pages/*.test.mjs
 
 PLAYGROUND_TEST_BUNDLE ?= $(CURDIR)/build/playground-test
 

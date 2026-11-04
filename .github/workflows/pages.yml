@@ -31,6 +31,8 @@ jobs:
     timeout-minutes: 25
     outputs:
       sha: ${{ steps.source.outputs.sha }}
+      tooling_sha: ${{ steps.tooling.outputs.sha }}
+      tooling_run: ${{ steps.tooling.outputs.run }}
     env:
       GH_TOKEN: ${{ github.token }}
       VERIFICATION_RUN: ${{ inputs.verification_run || github.event.workflow_run.id }}
@@ -39,17 +41,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.workflow_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - id: tooling
+        name: Require canonical verification for the exact publication tooling
+        run: python3 .github/scripts/verify-website-tooling.py
       - id: source
         run: python3 .github/scripts/verify-publication-source.py --run "$VERIFICATION_RUN" --resolve
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.source.outputs.sha }}
+          path: content
           fetch-depth: 0
           persist-credentials: false
-      - name: Require canonical verification for this exact source
-        run: python3 .github/scripts/verify-publication-source.py --run "$VERIFICATION_RUN" --allow-prose
+      - name: Require canonical verification for this exact content source
+        working-directory: content
+        run: |
+          python3 "$GITHUB_WORKSPACE/.github/scripts/verify-publication-source.py" --run "$VERIFICATION_RUN" --allow-prose
+          cp "$GITHUB_WORKSPACE/.publication/verified-tooling.json" .publication/
       - name: Install packaging and browser tools
         run: |
           sudo apt-get update -qq
@@ -57,13 +67,20 @@ jobs:
           npm ci --prefix scripts/visual-qa
           node scripts/visual-qa/node_modules/playwright/cli.js install --with-deps chromium firefox
       - name: Reuse verified builds and restore all archived releases
-        run: make build-github-website PAGES_OUTPUT="$RUNNER_TEMP/public" WEBSITE_VERSION="$WEBSITE_VERSION"
+        run: python3 -m scripts.ci.github_site_publication build --source content --output "$RUNNER_TEMP/public" --version "$WEBSITE_VERSION"
       - name: Verify every engine and legacy redirect before publication
         run: make test-github-pages-browser PAGES_OUTPUT="$RUNNER_TEMP/public"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: website-publication
-          path: .publication/
+          path: content/.publication/
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: website-tooling
+          path: .publication/verified-tooling.json
           include-hidden-files: true
           retention-days: 7
           if-no-files-found: error
@@ -81,24 +98,31 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.build.outputs.tooling_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
           ref: ${{ needs.build.outputs.sha }}
+          path: content
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: website-publication
-          path: .publication/
+          path: content/.publication/
       - name: Recheck CI and retain the browser-verified version archive
         env:
           GH_TOKEN: ${{ github.token }}
           VERIFICATION_RUN: ${{ inputs.verification_run || github.event.workflow_run.id }}
         run: |
-          python3 .github/scripts/verify-publication-source.py --run "$VERIFICATION_RUN" --allow-prose
-          make retain-github-website
+          python3 .github/scripts/verify-website-tooling.py --run "${{ needs.build.outputs.tooling_run }}" --expected content/.publication/verified-tooling.json
+          (cd content && python3 "$GITHUB_WORKSPACE/.github/scripts/verify-publication-source.py" --run "$VERIFICATION_RUN" --allow-prose)
+          python3 -m scripts.ci.github_site_publication retain --source content
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: website-retention
-          path: .publication/pages/retained.json
+          path: content/.publication/pages/retained.json
           include-hidden-files: true
           retention-days: 7
           if-no-files-found: error
@@ -124,17 +148,25 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
+      GH_TOKEN: ${{ github.token }}
       PAGES_BROWSERS: chromium,firefox
       PAGES_URL: ${{ needs.deploy.outputs.url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.build.outputs.sha }}
+          ref: ${{ needs.build.outputs.tooling_sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: github-pages
           path: ${{ runner.temp }}/pages-artifact
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: website-tooling
+          path: tooling-evidence/
+      - name: Recheck the exact tooling receipt before live verification
+        run: python3 .github/scripts/verify-website-tooling.py --run "${{ needs.build.outputs.tooling_run }}" --expected tooling-evidence/verified-tooling.json
       - name: Restore the exact deployed files and browser tools
         run: |
           mkdir "$RUNNER_TEMP/public"

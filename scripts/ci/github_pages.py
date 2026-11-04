@@ -52,9 +52,10 @@ def worker_transport(source, expected):
     matches = list(re.finditer(r"async function fetchWasmWithProgress\(\) \{.*?\n\}", source, re.S))
     if len(matches) != 1 or hashlib.sha256(matches[0][0].encode()).hexdigest() != FETCH_HASH:
         raise ValueError("Unknown playground worker download function; review its transport before publishing")
+    revision = record(ASSETS / "playground-wasm-loader.mjs")["sha256"][:16]
     replacement = (
         "async function fetchWasmWithProgress() {\n"
-        "  const { fetchBrotliWasm } = await import('../../shared/playground-wasm-loader.mjs');\n"
+        f"  const {{ fetchBrotliWasm }} = await import('../../shared/playground-wasm-loader.mjs?revision={revision}');\n"
         "  return fetchBrotliWasm(new URL('./playground.wasm.br', self.location.href),\n"
         f"    {json.dumps(expected, separators=(',', ':'))}, event => postMessage(event));\n"
         "}"
@@ -67,9 +68,9 @@ def redirect_page(destination):
     script_target = json.dumps(destination).replace("<", "\\u003c")
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<noscript><meta http-equiv="refresh" content="0;url={target}"></noscript>'
-            f'<link rel="canonical" href="{target}"><title>Documentation moved</title>'
+            f'<link rel="canonical" href="{target}"><title>Page moved</title>'
             f'<script>location.replace({script_target}+location.search+location.hash)</script>'
-            f'</head><body><a href="{target}">Open documentation</a></body></html>\n')
+            f'</head><body><a href="{target}">Open page</a></body></html>\n')
 
 
 def materialize_redirects(root):

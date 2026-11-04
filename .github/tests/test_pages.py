@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -46,6 +47,21 @@ class PagesTests(unittest.TestCase):
         receipt = json.loads((self.output / "shared/pages-transport.json").read_text())
         self.assertEqual(receipt["engines"]["playground/dev/playground.wasm"], before["playground/dev/playground.wasm"])
         self.assertIn("?transport=", (self.output / "playground/dev/index.html").read_text())
+
+    def test_changed_transport_invalidates_worker_and_page_caches_without_changing_engines(self):
+        prepare(self.source, self.output)
+        assets = self.root / "assets"
+        shutil.copytree(ROOT / "scripts/pages", assets)
+        loader = assets / "playground-wasm-loader.mjs"
+        loader.write_text(loader.read_text() + "\n")
+        updated = self.root / "updated"
+        with patch("scripts.ci.github_pages.ASSETS", assets):
+            prepare(self.source, updated)
+        for name in ("index.html", "playground.worker.js"):
+            self.assertNotEqual((self.output / "playground/dev" / name).read_bytes(),
+                                (updated / "playground/dev" / name).read_bytes())
+        self.assertEqual((self.output / "playground/dev/playground.wasm.br").read_bytes(),
+                         (updated / "playground/dev/playground.wasm.br").read_bytes())
 
     def test_corrupt_brotli_and_unknown_worker_leave_no_output(self):
         self.engine = b"wrong decoded content"

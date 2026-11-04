@@ -113,10 +113,12 @@ def retain(api, repository, receipt, evidence):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("build", "retain"))
+    parser.add_argument("--source", type=Path, default=Path("."))
     parser.add_argument("--version", default="dev")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--evidence", type=Path, default=Path(".publication/pages"))
     args = parser.parse_args()
+    os.chdir(args.source.resolve(strict=True))
     receipt = json.loads(Path(".publication/verified-source.json").read_text())
     repository = os.environ["GITHUB_REPOSITORY"]
     client = GitHub(os.environ["GH_TOKEN"])

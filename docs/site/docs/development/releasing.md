@@ -367,6 +367,12 @@ its final release exists. Links into `/docs/0.3.0-alpha.1/` and
 The 0.1.0 entry links to its original, separate controller and Helm chart docs.
 The playground menu only includes releases with a published playground bundle.
 
+The website verifies its publication tools and content against separate canonical
+CI receipts. This lets a publisher fix transport or redirects for an existing
+release while preserving its tag, engine, and archived content. Both receipts
+must remain unchanged through retention and live verification. See
+[ADR-0040](https://github.com/haproxy-haptic/HAPTIC/blob/main/docs/adr/0040-website-tooling-and-content.md).
+
 ## Pre-release vs final release
 
 ### Pre-releases

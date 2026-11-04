@@ -1,8 +1,10 @@
 import base64
 import copy
+import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,6 +15,7 @@ import urllib.error
 import yaml
 
 from scripts.ci import github_site_state as storage
+from scripts.ci import github_site_publication as publication
 from scripts.ci.github_site_inputs import check_artifact, download_inputs
 from scripts.ci.github_site_publication import publication_source, require_no_rewind, retain
 from scripts.ci.github_pages import record
@@ -226,6 +229,24 @@ class WebsiteArtifactTests(unittest.TestCase):
 
 
 class WebsiteWorkflowTests(unittest.TestCase):
+    def test_publisher_reads_frozen_content_receipt_from_its_separate_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary, contextlib.chdir(temporary):
+            source = Path("content").resolve()
+            evidence = source / ".publication"
+            evidence.mkdir(parents=True)
+            receipt = {"sha": "frozen-content"}
+            (evidence / "verified-source.json").write_text(json.dumps(receipt))
+            Path(".publication").mkdir()
+            Path(".publication/verified-source.json").write_text(json.dumps({"sha": "tooling"}))
+            def built(api, repository, actual, version, output, saved):
+                self.assertEqual(Path.cwd(), source)
+                self.assertEqual(actual, receipt)
+            with patch.object(publication, "build", side_effect=built) as build, \
+                    patch.dict(os.environ, {"GITHUB_REPOSITORY": REPOSITORY, "GH_TOKEN": "test"}), \
+                    patch("sys.argv", ["publisher", "build", "--source", str(source), "--output", "/output"]):
+                publication.main()
+            build.assert_called_once()
+
     def test_publication_follows_successful_main_ci_and_archives_before_deploying(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/pages.yml").read_text())
         jobs = workflow["jobs"]
@@ -237,6 +258,17 @@ class WebsiteWorkflowTests(unittest.TestCase):
         self.assertFalse(workflow["concurrency"]["cancel-in-progress"])
         self.assertEqual(jobs["deploy"]["environment"]["name"], "github-pages")
         self.assertNotIn("workflow_call", workflow["on"])
+        build_steps = jobs["build"]["steps"]
+        self.assertEqual(build_steps[0]["with"]["ref"], "${{ github.workflow_sha }}")
+        self.assertIn("verify-website-tooling.py", build_steps[1]["run"])
+        content = next(step for step in build_steps if step.get("with", {}).get("path") == "content")
+        self.assertEqual(content["with"]["ref"], "${{ steps.source.outputs.sha }}")
+        for job in ("retain", "verify"):
+            self.assertEqual(jobs[job]["steps"][0]["with"]["ref"], "${{ needs.build.outputs.tooling_sha }}")
+            check = next(step["run"] for step in jobs[job]["steps"]
+                         if "verify-website-tooling.py" in step.get("run", ""))
+            self.assertIn("--expected", check)
+            self.assertIn("needs.build.outputs.tooling_run", check)
         release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
         website = release["jobs"]["website"]
         self.assertEqual(website["needs"], ["source", "chart", "conformance"])
