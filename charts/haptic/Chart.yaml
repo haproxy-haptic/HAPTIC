@@ -5,8 +5,8 @@ type: application
 # The oldest Kubernetes release still maintained upstream. Never below 1.33: the
 # HAProxy pod's helpers are native sidecars, which outlive HAProxy while it drains.
 kubeVersion: ">=1.35.0-0"
-version: 0.10.0
-appVersion: "0.10.0"
+version: 0.11.0
+appVersion: "0.11.0"
 # Template libraries are packaged as conditional subcharts so a release only
 # carries the source of the libraries it enables — disabled subcharts are
 # pruned from the Helm release Secret, keeping it under the 1 MiB limit. The
@@ -86,7 +86,7 @@ annotations:
   # Document all component images (Artifact Hub standard)
   artifacthub.io/images: |
     - name: controller
-      image: ghcr.io/haproxy-haptic/haptic:0.10.0-haproxy3.4
+      image: ghcr.io/haproxy-haptic/haptic:0.11.0-haproxy3.4
       platforms:
         - linux/amd64
         - linux/arm64
@@ -97,12 +97,12 @@ annotations:
         - linux/amd64
         - linux/arm64
     - name: spoa-hub
-      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.10.0
+      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.11.0
       platforms:
         - linux/amd64
         - linux/arm64
     - name: varnish
-      image: ghcr.io/haproxy-haptic/haptic/varnish:0.10.0
+      image: ghcr.io/haproxy-haptic/haptic/varnish:0.11.0
       platforms:
         - linux/amd64
         - linux/arm64
@@ -113,29 +113,31 @@ annotations:
   # Release highlights; full notes are in the root CHANGELOG.md.
   artifacthub.io/changes: |
     - kind: added
-      description: haproxy-haptic.org/sso-auth signs users in with OpenID Connect through the SPOA hub
+      description: JWT signing keys refresh from approved HTTPS JWKS endpoints and support overlapping keys during rotation
     - kind: added
-      description: Custom error pages per Ingress and operator-wide for HAProxy's 401, 403, 413, 429 and 5xx responses
+      description: JWT routes can require group claim membership
     - kind: added
-      description: Gateway API v1.7.0 support
+      description: JWT routes serve OAuth protected-resource metadata and advertise it with Bearer challenges
     - kind: added
-      description: Governance rules select resources by label and pick a default by a resource value
-    - kind: added
-      description: require-sni-host-match answers 421 when an HTTPS request's Host differs from its SNI
-    - kind: changed
-      description: The CRDs moved to the haptic-crds subchart, out of the Helm release Secret
-    - kind: changed
-      description: The controller requests 500m CPU so its startup validation finishes on a busy node
+      description: Templates can decode JSON, parse URLs, convert JWKS to PEM, and match JSON string-array members
     - kind: fixed
-      description: Maps that read a resource directly or over HTTP no longer keep stale content after a reused render
-    - kind: security
-      description: Plain HTTP to an Ingress that requires a client certificate is redirected to HTTPS
-  artifacthub.io/containsSecurityUpdates: "true"
+      description: Live config changes retry timed-out validation tests while keeping the last good configuration active
+    - kind: fixed
+      description: An unavailable OTLP collector no longer blocks access logs or request metrics
+    - kind: fixed
+      description: HTTP input refreshes can withdraw signing keys despite unrelated invalid routes and retry after transient failures
+    - kind: fixed
+      description: Preflight fetches real HTTP inputs and preserves template-handled fetch failures
+    - kind: fixed
+      description: JWT audience validation accepts exact string-array members and missing Bearer tokens have a distinct denial reason
+    - kind: fixed
+      description: Validation tests respect Helm name overrides and aliased chart dependencies
+  artifacthub.io/containsSecurityUpdates: "false"
 
   # Links
   artifacthub.io/links: |
     - name: Documentation
-      url: https://haproxy-haptic.org/docs/0.10.0/
+      url: https://haproxy-haptic.org/docs/0.11.0/
     - name: Issue Tracker
       url: https://github.com/haproxy-haptic/HAPTIC/issues
 

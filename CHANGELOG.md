@@ -10,48 +10,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-04
+
 ### Added
 
-- `json_string_array_pattern(value)` produces a regular expression for exact membership in a JSON string array.
-
 - Templates can decode JSON with `parse_json` and parse URL components with `parse_url`.
-
 - Templates can convert JSON Web Key Sets to PEM public keys with `jwks_public_keys`.
+- `json_string_array_pattern` produces a regular expression for exact membership in JSON string arrays.
 
 ### Fixed
 
-- Live config changes retry timed-out validation tests without accepting a partial suite or replacing the last good config ([#631](https://github.com/haproxy-haptic/HAPTIC/issues/631)).
-
+- Live config changes retry timed-out validation tests and keep the last good config active until the full suite passes ([#631](https://github.com/haproxy-haptic/HAPTIC/issues/631)).
 - Preflight resource checks fetch HTTP inputs, including JWKS URLs, and preserve non-critical fetch failure behavior ([#619](https://github.com/haproxy-haptic/HAPTIC/issues/619)).
-
-- Resource updates no longer report a valid configuration as failed when they replace an active render's snapshot.
-
-- HTTP content refreshes identify their proposed URLs so unrelated invalid routing inputs cannot block signing-key withdrawal.
-
-- Rejected HTTP refreshes clear their conditional-request validators so unchanged content can be validated again after a transient configuration failure.
-
-- Admission accepts valid new HTTP inputs when a template handles fetch errors; the renderer now completes its required full rerender before reporting a template error.
+- HTTP input refreshes can withdraw signing keys when unrelated routing inputs are invalid, and retry unchanged content after transient validation failures.
+- Admission accepts new HTTP inputs when templates handle fetch errors; rendering checks the full configuration before reporting a template error.
+- Replacing an active render with a newer resource snapshot no longer reports a configuration failure.
 
 ### Helm chart
 
 #### Added
 
-- JWT routes can serve OAuth protected-resource metadata from a ConfigMap and advertise it with a Bearer challenge ([#611](https://github.com/haproxy-haptic/HAPTIC/issues/611)).
+- `haproxy-haptic.org/jwt-jwks-url` refreshes signing keys from an approved HTTPS JWKS endpoint and selects the token's `kid`, supporting overlapping keys during rotation ([#608](https://github.com/haproxy-haptic/HAPTIC/issues/608)).
 - JWT routes can require group membership through `jwt-allowed-groups` and `jwt-groups-claim`, or route-policy `allowedGroups` and `groupsClaim`; verified tokens without a permitted group receive `403` ([#610](https://github.com/haproxy-haptic/HAPTIC/issues/610)).
-
-- `haproxy-haptic.org/jwt-jwks-url` refreshes public signing keys from an approved HTTPS JWKS endpoint and selects the token's `kid`, supporting overlapping keys during rotation ([#608](https://github.com/haproxy-haptic/HAPTIC/issues/608)).
+- JWT routes can serve OAuth protected-resource metadata from a ConfigMap and advertise it with Bearer challenges that distinguish missing and invalid tokens ([#611](https://github.com/haproxy-haptic/HAPTIC/issues/611)).
 
 #### Fixed
 
-- JWT discovery challenges include `error="invalid_token"` for rejected tokens and omit it when no Bearer token is supplied ([#627](https://github.com/haproxy-haptic/HAPTIC/issues/627)).
-
 - An unavailable OTLP collector no longer blocks access logs or request metrics in the Vector sidecar ([#622](https://github.com/haproxy-haptic/HAPTIC/issues/622)).
-
 - JWT requests without a Bearer token log `denied_by=jwt_missing` separately from invalid tokens ([#623](https://github.com/haproxy-haptic/HAPTIC/issues/623)).
-
-- Validation tests use the deployed resource names and selectors when `nameOverride` or `fullnameOverride` is set, including aliased chart dependencies ([#618](https://github.com/haproxy-haptic/HAPTIC/issues/618)).
-
-- JWT audience validation accepts an exact member of a string-array `aud` claim for Ingress annotations and route policies, and rejects non-string values ([#609](https://github.com/haproxy-haptic/HAPTIC/issues/609)).
+- JWT audience validation accepts an exact member of a string-array `aud` claim and rejects non-string values ([#609](https://github.com/haproxy-haptic/HAPTIC/issues/609)).
+- Validation tests use the deployed resource names and selectors with `nameOverride`, `fullnameOverride`, and aliased chart dependencies ([#618](https://github.com/haproxy-haptic/HAPTIC/issues/618)).
 
 ## [0.10.0] - 2026-11-02
 
