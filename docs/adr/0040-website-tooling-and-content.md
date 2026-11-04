@@ -34,6 +34,10 @@ The browser still checks every version, both engines, rendered configuration and
 maps, compressed and decoded checksums, corruption rejection, decoder memory,
 and redirects within the existing deadlines. Add the playground entry redirect.
 
+Firefox can omit the load event for an empty HTTP 503 response. Observe main-page
+5xx responses alongside the original full-load navigation so the existing bounded
+retry can handle them. Successful pages still require full load within 30 seconds.
+
 Cancel an engine transfer after five seconds without network progress and restart
 it at most twice. Progress resets the idle deadline; a slow active transfer can
 continue. Each attempt starts with an empty buffer. Size or checksum violations

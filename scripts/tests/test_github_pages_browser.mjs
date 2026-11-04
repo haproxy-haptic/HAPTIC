@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import * as playwright from '../visual-qa/node_modules/playwright/index.mjs';
+import { navigate } from '../pages/browser-navigation.mjs';
 
 const root = resolve(process.argv[2]);
 const receipt = JSON.parse(await readFile(resolve(root, 'shared/pages-transport.json'), 'utf8'));
@@ -26,7 +27,7 @@ async function fetchPublished(url, options) {
 }
 async function gotoPublished(page, url) {
   for (let attempt = 1; ; attempt++) {
-    const response = await page.goto(url);
+    const response = await navigate(page, url);
     if (!response || response.status() < 500 || attempt === attempts) return response;
     console.log(JSON.stringify({ url, status: response.status(), attempt, result: 'retrying' }));
     await pause();
@@ -102,15 +103,19 @@ try {
             pending.delete(request);
           });
           context.on('response', response => response.status() >= 500 && unavailable.push(`${response.status()} ${response.url()}`));
+          const diagnose = async error => {
+            console.error(JSON.stringify({ browser: name, version, error: error.message, failures, unavailable,
+              pending: [...pending].map(request => ({ url: request.url(), timing: request.timing() })),
+              state: await page.evaluate(() => ({ chip: document.querySelector('#chip')?.textContent,
+                error: document.querySelector('#bm')?.textContent })) }));
+          };
           const start = performance.now();
-          const response = await page.goto(`${base}/playground/${version}/?preset=starter`);
+          const response = await navigate(page, `${base}/playground/${version}/?preset=starter`)
+            .catch(async error => { await diagnose(error); throw error; });
           const settled = response.status() < 500 && await page.waitForFunction(() => window.hapticPlayground?.stats()?.haproxyCfg
             || document.querySelector('#chip')?.classList.contains('err'), null, { timeout: 30000 })
             .then(() => true, async error => {
-              console.error(JSON.stringify({ browser: name, version, error: error.message, failures, unavailable,
-                pending: [...pending].map(request => ({ url: request.url(), timing: request.timing() })),
-                state: await page.evaluate(() => ({ chip: document.querySelector('#chip')?.textContent,
-                  error: document.querySelector('#bm')?.textContent })) }));
+              await diagnose(error);
               if (!unavailable.length) throw error;
               return false;
             });
