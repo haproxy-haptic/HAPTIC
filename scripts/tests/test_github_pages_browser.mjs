@@ -107,7 +107,7 @@ try {
             console.error(JSON.stringify({ browser: name, version, error: error.message, failures, unavailable,
               pending: [...pending].map(request => ({ url: request.url(), timing: request.timing() })),
               state: await page.evaluate(() => ({ chip: document.querySelector('#chip')?.textContent,
-                error: document.querySelector('#bm')?.textContent })) }));
+                error: document.querySelector('#bm')?.textContent })).catch(() => null) }));
           };
           const start = performance.now();
           const response = await navigate(page, `${base}/playground/${version}/?preset=starter`)
