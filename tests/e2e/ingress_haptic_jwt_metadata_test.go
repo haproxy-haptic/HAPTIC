@@ -131,6 +131,7 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 				return response.Status == http.StatusOK && string(response.Body) == updated
 			})
 			requests.GET(host, "/mcp").WithHeader("Authorization", token).ExpectEchoPath(t, "/mcp")
+			require.NoError(t, client.Resources(document.Namespace).Delete(t.Context(), ingress))
 		}}},
 	})
 }
