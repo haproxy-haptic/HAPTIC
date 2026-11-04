@@ -1,0 +1,116 @@
+name: Issue 629 Vector stall diagnostic
+'on':
+  push:
+    branches:
+    - ci/629-vector-diagnostic
+permissions:
+  contents: read
+concurrency:
+  group: issue-629-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    name: Vector stall diagnostic (not merge verification)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    env:
+      PILOT_GOGC: '300'
+      PILOT_CAPTURE_NETWORK: '1'
+      PILOT_GOMAXPROCS: '2'
+      HAPTIC_E2E_CONTROLLER_STARTUP: parallel
+      PILOT_CAPTURE_PROFILES: '0'
+      PILOT_SOURCE_SHA: ${{ github.sha }}
+      PILOT_VARNISH_IMAGE: ghcr.io/haproxy-haptic/haptic-ci@sha256:2cb9e813ede03e1e272695d1b6ca2be6c50dacc75fdee69485989f4d7a6e97bb
+      HAPROXY_VERSION: '3.0'
+      E2E_SHARD_INDEX: '4'
+      HAPTIC_E2E_PROFILE: ''
+      HAPTIC_E2E_GWAPI_CHANNEL: standard
+      KIND_NODE_IMAGE: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+      HAPTIC_E2E_EXTRA_SET: controller.resources.requests.cpu=600m;controller.resources.limits.cpu=4;controller.resources.limits.memory=4Gi
+      PILOT_SUITE: ''
+      PILOT_CI_IMAGE: ghcr.io/haproxy-haptic/haptic-ci@sha256:b27b3629fe0597aa0e7f9222e02f3b95ca4edcbb7af12877fd7d34a833b9d3ad
+      BASELINE_CHART_VERSION: ''
+      GITOPS_PROVIDER: ''
+      GITOPS_CERTIFICATES: ''
+      SHARD_ID: '4'
+      SHARD_COUNT: '4'
+      E2E_SHARD_TOTAL: '4'
+      SHARD_INDEX: '4'
+      PILOT_STARTUP_ONLY: '0'
+      CONFORMANCE_PARALLEL: '4'
+      SCALE_SEED_WORKERS: '4'
+      E2E_SHARD_WEIGHTS: .github/e2e-shard-weights.json
+      PILOT_GO_CACHE_DIR: ''
+      PILOT_STARTUP_PROFILE: '0'
+      PILOT_VALIDATION_TMPFS: '1'
+      PILOT_NATIVE_BUILD: '1'
+      CI_SUITE: '{"name":"e2e-hp3.0-4","runner":"ubuntu-24.04-arm","kind":"arm","haproxy":"3.0","shard":"4","baseline":"","certificates":"","provider":"","index":"","profile":"","channel":"","node":"","settings":"","suite":"","image":"","startup":""}'
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Restore SPOA plugin downloads
+      if: fromJSON(env.CI_SUITE).runner == 'ubuntu-24.04-arm' || contains(fromJSON('["defaults", "plain"]'), fromJSON(env.CI_SUITE).suite)
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .cache/spoa-plugins
+        key: spoa-plugins-${{ hashFiles('versions-spoa.env', 'scripts/prep-spoa-plugins.sh') }}
+        restore-keys: spoa-plugins-
+    - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      if: fromJSON(env.CI_SUITE).suite == 'snapshot' || fromJSON(env.CI_SUITE).suite == 'spoa'
+      with:
+        image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+        platforms: arm64,arm
+        cache-image: false
+    - name: Select native compiler cache
+      if: fromJSON(env.CI_SUITE).runner == 'ubuntu-24.04-arm'
+      run: 'mkdir -p .pilot
+
+        printf ''%s\n'' host-cache > .pilot/compiler-cache-variant
+
+        '
+    - name: Install pinned native tools
+      run: bash .github/scripts/install-arm-pilot-tools.sh
+      if: fromJSON(env.CI_SUITE).runner == 'ubuntu-24.04-arm'
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: ${{ env.HAPTIC_NATIVE_GO_VERSION }}
+        cache: true
+        cache-dependency-path: 'go.mod
+
+          go.sum
+
+          cmd/haptic/default.pgo
+
+          .pilot/compiler-cache-variant
+
+          '
+      if: fromJSON(env.CI_SUITE).runner == 'ubuntu-24.04-arm'
+    - name: Capture scheduling and TCP counters
+      run: 'mkdir -p .pilot
+
+        go run ./.github/scripts/vector-stall-diagnostic > .pilot/scheduling-capture.log 2>&1 &
+
+        echo "$!" > .pilot/scheduling-capture.pid
+
+        '
+    - name: Run native ARM suite
+      if: fromJSON(env.CI_SUITE).runner == 'ubuntu-24.04-arm' && fromJSON(env.CI_SUITE).suite != 'upgrade' && fromJSON(env.CI_SUITE).suite
+        != 'gitops'
+      run: bash .github/scripts/run-arm-pilot.sh
+    - name: Stop diagnostic sampler
+      if: always()
+      run: "touch .pilot/test-finished\nif [[ -f .pilot/scheduling-capture.pid ]]; then\n  kill \"$(cat .pilot/scheduling-capture.pid)\"\
+        \ 2>/dev/null || true\nfi\n"
+    - name: Retain verification evidence
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ci629-vector-stall-diagnostic
+        path: '.pilot/
+
+          debug-logs/'
+        include-hidden-files: true
+        retention-days: 3
+        if-no-files-found: error
