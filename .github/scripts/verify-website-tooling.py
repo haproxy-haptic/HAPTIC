@@ -52,7 +52,7 @@ def main():
     output.parent.mkdir(exist_ok=True)
     output.write_text(json.dumps(receipt, indent=2) + "\n")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
-        stream.write(f"sha={sha}\nrun={receipt['run_id']}\n")
+        stream.write(f"run={receipt['run_id']}\n")
     print(f"Website tooling verified {len(receipt['jobs'])} jobs for {sha} ({tree})")
 
 

@@ -16,18 +16,26 @@ from . import github_site_state as storage
 from .github_site_versions import assemble, payload, version_key
 
 
-def publication_source(receipt, repository, version):
-    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+def source_file(path, sha=None):
+    if sha is None:
+        return Path(path).read_bytes()
+    return subprocess.check_output(["git", "show", f"{sha}:{path}"])
+
+
+def publication_source(receipt, repository, version, source_sha=None):
+    if source_sha is not None and not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise ValueError("Website content source must be a full commit SHA")
+    sha = source_sha or subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    tree = subprocess.check_output(["git", "rev-parse", f"{sha}^{{tree}}"], text=True).strip()
     if receipt["sha"] != sha or receipt["tree"] != tree or receipt["repository"] != repository:
-        raise ValueError("Website publisher checkout differs from the verified source")
+        raise ValueError("Website content differs from its CI receipt. Verify the selected content commit.")
     if version == "dev":
         if receipt["branch"] != "main":
             raise ValueError("Development website publications require verified main")
     else:
         version_key(version)
         tag_sha = subprocess.check_output(["git", "rev-parse", "refs/tags/v" + version + "^{commit}"], text=True).strip()
-        if receipt["profile"] != "full" or Path("VERSION").read_text().strip() != version or tag_sha != sha:
+        if receipt["profile"] != "full" or source_file("VERSION", source_sha).decode().strip() != version or tag_sha != sha:
             raise ValueError("Released website requires the matching verified release tag and version")
 
 
@@ -40,13 +48,13 @@ def require_no_rewind(api, repository, published_commit, sha):
         raise ValueError("First development publication would rewind the published development site")
 
 
-def build(api, repository, receipt, version, output, evidence):
-    publication_source(receipt, repository, version)
+def build(api, repository, receipt, version, output, evidence, source_sha=None):
+    publication_source(receipt, repository, version, source_sha)
     if version != "dev":
         release = api.get(f"repos/{repository}/releases/tags/v{version}")
         if release["draft"] or release["tag_name"] != "v" + version:
             raise ValueError("Release website requires its published GitHub release")
-    baseline = json.loads(Path(".github/pages-baseline.json").read_text())
+    baseline = json.loads(source_file(".github/pages-baseline.json", source_sha))
     state_head, state = storage.read(api, repository, baseline)
     evidence.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="website-publication-") as temporary:
@@ -89,12 +97,12 @@ def build(api, repository, receipt, version, output, evidence):
         print(json.dumps({"assembly": result, "packaging": packaged}, indent=2))
 
 
-def retain(api, repository, receipt, evidence):
+def retain(api, repository, receipt, evidence, source_sha=None):
     request = json.loads((evidence / "request.json").read_text())
     entry = request["entry"]
     if entry["provenance"]["source"] != receipt:
         raise ValueError("Website source verification changed before retention")
-    publication_source(receipt, repository, entry["provenance"]["version"])
+    publication_source(receipt, repository, entry["provenance"]["version"], source_sha)
     current_head, state = storage.read(api, repository, request["state"]["baseline"])
     if current_head != request["expected_state_head"]:
         raise ValueError("Website catalog changed after browser verification; rebuild the publication")
@@ -113,21 +121,20 @@ def retain(api, repository, receipt, evidence):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("build", "retain"))
-    parser.add_argument("--source", type=Path, default=Path("."))
+    parser.add_argument("--source-sha")
     parser.add_argument("--version", default="dev")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--evidence", type=Path, default=Path(".publication/pages"))
     args = parser.parse_args()
-    os.chdir(args.source.resolve(strict=True))
     receipt = json.loads(Path(".publication/verified-source.json").read_text())
     repository = os.environ["GITHUB_REPOSITORY"]
     client = GitHub(os.environ["GH_TOKEN"])
     if args.command == "build":
         if args.output is None:
             parser.error("build requires --output")
-        build(client, repository, receipt, args.version, args.output, args.evidence)
+        build(client, repository, receipt, args.version, args.output, args.evidence, args.source_sha)
     else:
-        retain(client, repository, receipt, args.evidence)
+        retain(client, repository, receipt, args.evidence, args.source_sha)
 
 
 if __name__ == "__main__":

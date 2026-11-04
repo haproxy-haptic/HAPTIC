@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -15,11 +16,24 @@ from scripts.ci.github_evidence import (
 )
 
 
+def source_identity(sha=None):
+    if sha is None:
+        sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        manifest = Path(".github/ci-verification.json").read_bytes()
+    else:
+        if not re.fullmatch(r"[0-9a-f]{40}", sha):
+            raise ValueError("Publication source must be a full commit SHA")
+        manifest = subprocess.check_output(["git", "show", f"{sha}:.github/ci-verification.json"])
+    tree = subprocess.check_output(["git", "rev-parse", f"{sha}^{{tree}}"], text=True).strip()
+    return sha, tree, manifest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", required=True, type=int)
     parser.add_argument("--resolve", action="store_true")
     parser.add_argument("--allow-prose", action="store_true")
+    parser.add_argument("--source-sha")
     args = parser.parse_args()
     repository = os.environ["GITHUB_REPOSITORY"]
     root = f"repos/{repository}/actions/runs/{args.run}"
@@ -31,9 +45,7 @@ def main():
         return
     client = GitHub(os.environ["GH_TOKEN"])
     jobs, artifact, content = load_evidence(client, repository, run)
-    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
-    manifest = Path(".github/ci-verification.json").read_bytes()
+    sha, tree, manifest = source_identity(args.source_sha)
     arguments = dict(repository=repository, sha=sha, tree=tree, manifest=manifest)
     receipt = check_evidence(run, jobs, artifact, content, **arguments,
                              allow_prose=args.allow_prose, comparison=publication_changes)

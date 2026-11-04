@@ -22,8 +22,11 @@ Pin tooling to the workflow commit. Require that exact commit's complete canonic
 main push CI receipt before building, retaining, or verifying a publication. Recheck
 the same receipt before retention and live verification; changed attempts fail.
 
-Check out content separately and retain its existing canonical source, tree,
-manifest, artifact, and release-tag checks. Store both receipts in publication
+Verify content's canonical source, tree, manifest, and artifacts directly from Git
+objects. Read its version and publication baseline from those same objects; never
+check out its code. Every Actions checkout uses the workflow commit directly, so
+content cannot supply executable tooling or dependency installation paths. Retain
+the existing release-tag checks. Store both receipts in publication
 evidence. Version archives and their provenance remain immutable. Assembly and
 shared transport use the verified tooling without rebuilding released engines.
 
