@@ -385,6 +385,11 @@ files:
         otlp_traces:
           type: http
           inputs: [spans]
+          {# Collector outages must not backpressure access logs or request metrics (#622). #}
+          buffer:
+            type: memory
+            max_events: 500
+            when_full: drop_newest
           uri: "{{ otlpEndpoint }}"
           method: post
           encoding:
@@ -966,6 +971,7 @@ validationTests:
       - type: haproxy_valid
       - {type: contains, target: file:vector.yaml, pattern: '(?m)^\s+spans:'}
       - {type: contains, target: file:vector.yaml, pattern: 'uri: "http://tempo:4318/v1/traces"'}
+      - {type: contains, target: file:vector.yaml, pattern: '(?s)otlp_traces:\s+type: http\s+inputs: \[spans\]\s+buffer:\s+type: memory\s+max_events: 500\s+when_full: drop_newest'}
       - type: contains
         target: file:vector.yaml
         pattern: '"key":"service\.namespace","value":\{"stringValue":"[^"]+"\}'

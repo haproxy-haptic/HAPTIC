@@ -23,6 +23,11 @@ Raw access records have no syslog prefix; `ts` carries the timestamp. If you
 collect HAProxy's stdout directly, allow for non-JSON startup, health-check, and
 process messages alongside the access records.
 
+OpenTelemetry Protocol (OTLP) trace export uses a separate, bounded memory buffer.
+When the buffer holds 500 spans, Vector drops new spans so access logs and
+request metrics keep flowing. Monitor `vector_buffer_discarded_events_total{component_id="otlp_traces"}`
+for trace loss during collector outages or congestion.
+
 Add the settings below to your [Helm values file](../deploying-with-helm.md#change-settings)
 and apply them with `helm upgrade`.
 
