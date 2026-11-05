@@ -9,27 +9,55 @@ async function verify(bytes, expected) {
   }
 }
 
-async function download(url, expected, progress) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Playground engine: HTTP ${response.status}. Reload this page.`);
-  const bytes = new Uint8Array(expected.size);
-  const reader = response.body.getReader();
-  let offset = 0;
+class StalledDownload extends Error {}
+
+async function transfer(url, expected, progress) {
+  const controller = new AbortController();
+  let timer;
+  let reader;
+  const resetIdleDeadline = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(), 5000);
+  };
+  resetIdleDeadline();
   try {
+    progress({ type: 'progress', loaded: 0, total: expected.size });
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Playground engine: HTTP ${response.status}. Reload this page.`);
+    resetIdleDeadline();
+    const bytes = new Uint8Array(expected.size);
+    reader = response.body.getReader();
+    let offset = 0;
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       if (offset + value.length > bytes.length) throw new Error('Playground download exceeds its recorded size.');
       bytes.set(value, offset);
       offset += value.length;
+      if (value.length) resetIdleDeadline();
       progress({ type: 'progress', loaded: offset, total: bytes.length });
     }
+    if (offset !== bytes.length) throw new Error('Playground download is incomplete. Reload this page.');
+    return bytes;
+  } catch (error) {
+    if (controller.signal.aborted) throw new StalledDownload('Playground engine download stalled. Reload this page.');
+    throw error;
   } finally {
-    await reader.cancel();
+    clearTimeout(timer);
+    await reader?.cancel().catch(() => {});
   }
-  if (offset !== bytes.length) throw new Error('Playground download is incomplete. Reload this page.');
-  await verify(bytes, expected);
-  return bytes;
+}
+
+async function download(url, expected, progress) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const bytes = await transfer(url, expected, progress);
+      await verify(bytes, expected);
+      return bytes;
+    } catch (error) {
+      if (!(error instanceof StalledDownload) || attempt === 3) throw error;
+    }
+  }
 }
 
 async function decodeWithWasm(bytes, size) {

@@ -1,8 +1,10 @@
 import base64
 import copy
+import contextlib
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,6 +15,7 @@ import urllib.error
 import yaml
 
 from scripts.ci import github_site_state as storage
+from scripts.ci import github_site_publication as publication
 from scripts.ci.github_site_inputs import check_artifact, download_inputs
 from scripts.ci.github_site_publication import publication_source, require_no_rewind, retain
 from scripts.ci.github_pages import record
@@ -226,6 +229,28 @@ class WebsiteArtifactTests(unittest.TestCase):
 
 
 class WebsiteWorkflowTests(unittest.TestCase):
+    def test_publisher_keeps_tooling_directory_and_forwards_the_frozen_content_identity(self):
+        with tempfile.TemporaryDirectory() as temporary, contextlib.chdir(temporary):
+            receipt = {"sha": "a" * 40}
+            Path(".publication").mkdir()
+            Path(".publication/verified-source.json").write_text(json.dumps(receipt))
+            def built(api, repository, actual, version, output, saved, source_sha):
+                self.assertEqual(Path.cwd(), Path(temporary))
+                self.assertEqual(actual, receipt)
+                self.assertEqual(source_sha, receipt["sha"])
+            with patch.object(publication, "build", side_effect=built) as build, \
+                    patch.dict(os.environ, {"GITHUB_REPOSITORY": REPOSITORY, "GH_TOKEN": "test"}), \
+                    patch("sys.argv", ["publisher", "build", "--source-sha", receipt["sha"], "--output", "/output"]):
+                publication.main()
+            build.assert_called_once()
+
+    def test_released_content_reads_version_from_its_git_object_without_a_checkout(self):
+        sha = "a" * 40
+        receipt = {"sha": sha, "tree": "b" * 40, "repository": REPOSITORY, "profile": "full"}
+        with patch.object(publication.subprocess, "check_output", side_effect=["b" * 40, sha, b"1.0.0\n"]), \
+                patch.object(Path, "read_bytes", side_effect=AssertionError("Must not read tooling VERSION")):
+            publication_source(receipt, REPOSITORY, "1.0.0", sha)
+
     def test_publication_follows_successful_main_ci_and_archives_before_deploying(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/pages.yml").read_text())
         jobs = workflow["jobs"]
@@ -237,6 +262,20 @@ class WebsiteWorkflowTests(unittest.TestCase):
         self.assertFalse(workflow["concurrency"]["cancel-in-progress"])
         self.assertEqual(jobs["deploy"]["environment"]["name"], "github-pages")
         self.assertNotIn("workflow_call", workflow["on"])
+        build_steps = jobs["build"]["steps"]
+        self.assertEqual(build_steps[0]["with"]["ref"], "${{ github.workflow_sha }}")
+        self.assertIn("verify-website-tooling.py", build_steps[1]["run"])
+        content = next(step for step in build_steps if "--source-sha" in step.get("run", ""))
+        self.assertEqual(content["env"]["CONTENT_SHA"], "${{ steps.source.outputs.sha }}")
+        for job in ("build", "retain", "verify"):
+            checkouts = [step for step in jobs[job]["steps"] if step.get("uses", "").startswith("actions/checkout@")]
+            self.assertEqual(len(checkouts), 1)
+            self.assertEqual(checkouts[0]["with"]["ref"], "${{ github.workflow_sha }}")
+        for job in ("retain", "verify"):
+            check = next(step["run"] for step in jobs[job]["steps"]
+                         if "verify-website-tooling.py" in step.get("run", ""))
+            self.assertIn("--expected", check)
+            self.assertIn("needs.build.outputs.tooling_run", check)
         release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
         website = release["jobs"]["website"]
         self.assertEqual(website["needs"], ["source", "chart", "conformance"])

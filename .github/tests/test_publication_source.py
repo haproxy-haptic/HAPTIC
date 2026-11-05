@@ -16,6 +16,20 @@ SPEC.loader.exec_module(SOURCE)
 
 
 class PublicationSourceTests(unittest.TestCase):
+    def test_frozen_source_identity_reads_git_objects_without_touching_working_files(self):
+        sha = "a" * 40
+        manifest = b'{"required_jobs":["frozen"]}'
+        with patch.object(SOURCE.subprocess, "check_output", side_effect=[manifest, "tree\n"]), \
+                patch.object(Path, "read_bytes", side_effect=AssertionError("Must not read working manifest")):
+            self.assertEqual(SOURCE.source_identity(sha), (sha, "tree", manifest))
+
+    def test_frozen_source_rejects_refs_paths_and_options_before_running_git(self):
+        with patch.object(SOURCE.subprocess, "check_output") as git:
+            for sha in ("main", "--help", "a" * 39, "a" * 40 + ":path"):
+                with self.subTest(sha=sha), self.assertRaisesRegex(ValueError, "full commit SHA"):
+                    SOURCE.source_identity(sha)
+            git.assert_not_called()
+
     def setUp(self):
         self.run = {"id": 42, "head_sha": "sha", "run_attempt": 2, "repository": {"full_name": "owner/repo"},
                     "head_repository": {"full_name": "owner/repo"}, "path": ".github/workflows/ci.yml",

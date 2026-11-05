@@ -87,6 +87,8 @@ class SiteVersionsTests(unittest.TestCase):
                 self.assertTrue((output / f"playground/{version}/index.html").is_file())
             catalog = json.loads((output / "playground/versions.json").read_text())
             self.assertEqual(catalog["current"], "1.1.0")
+            self.assertIn('location.replace("1.1.0/"+location.search+location.hash)',
+                          (output / "playground/index.html").read_text())
             docs = json.loads((output / "docs/versions.json").read_text())
             self.assertEqual([v["version"] for v in docs if v["aliases"]], ["1.1.0"])
             self.assertEqual((output / "index.html").read_text(), "baseline landing")
@@ -137,6 +139,7 @@ class SiteVersionsTests(unittest.TestCase):
         assemble(self.baseline, [self.build_payload("1.1.0")], output)
         self.assertEqual((output / "docs/latest/index.html").read_text(), "newer docs")
         self.assertEqual(json.loads((output / "playground/versions.json").read_text())["current"], "2.0.0")
+        self.assertIn('location.replace("2.0.0/"', (output / "playground/index.html").read_text())
 
     def test_stable_is_preferred_to_newer_prerelease_without_deleting_it(self):
         self.write(self.baseline / "docs/2.0.0-rc.1/index.html", "prerelease docs")
