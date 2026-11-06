@@ -271,6 +271,9 @@ func newSSLDefaultCertificateFixtureWithRoot(
 		"ssl/library.yaml": {
 			"util-ssl-default-certificate-bindings",
 			"util-ssl-default-ecdsa-certificate-bindings",
+			"util-ssl-certificate-hosts",
+			"util-ssl-additional-certificate-bindings",
+			"ssl-additional-certificate-publications",
 			sslDefaultCertificateComponent,
 			sslDefaultECDSACertificateComponent,
 			"features-050-ssl-initialization",

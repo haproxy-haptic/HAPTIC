@@ -52,6 +52,7 @@ func (s *Session) ReleaseNamespaceSecrets(ctx context.Context) error {
 		{"install", s.installReleaseNamespaceSecrets},
 		{"service account permissions", s.requireReleaseNamespaceSecretRBAC},
 		{"TLS from the release namespace", r.requireReleaseNamespaceTLS},
+		{"additional SNI certificates and renewal", r.requireAdditionalCertificates},
 		{"references outside the release namespace", s.requireForeignSecretsRejected},
 		{"a reference that bypassed admission", r.requireForeignSecretWithheld},
 	} {
@@ -81,7 +82,8 @@ func (s *Session) installReleaseNamespaceSecrets(ctx context.Context) error {
 		return err
 	}
 	args := []string{helmInstall, s.Release, filepath.Join(s.Root, "charts", chartName), helmCreateNamespace, "--timeout=10m",
-		"--set", secretModeSetting + "=true"}
+		"--set", secretModeSetting + "=true",
+		"--set-json", additionalCertificatesSetting + `={"central-explicit":{"hosts":["*.new.scoped.test"]},"central-annotated":{}}`}
 	if _, err := s.Helm(ctx, append(args, s.ImageValues()...)...); err != nil {
 		return err
 	}

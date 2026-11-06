@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Playground downloads recover from stalled transfers, and the entry page opens the current stable release.
 
+### Helm chart
+
+#### Added
+
+- Serve additional TLS Secrets from the controller namespace by SNI through `controller.config.templatingSettings.extraContext.tls.additionalCertificates` ([#640](https://github.com/haproxy-haptic/HAPTIC/issues/640)).
+
+#### Fixed
+
+- Disabling the SPOA hub removes mirror and shared rate-limit dispatch directives, keeping active HTTPS frontends valid.
+
 ## [0.11.0] - 2026-11-04
 
 ### Added

@@ -294,6 +294,23 @@ FULL_RC=0
 "$CONTROLLER_BIN" validate --file "$TEMP_CONFIG" "${SCHEMA_DIR_ARGS[@]}" "$@" || FULL_RC=$?
 
 if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
+    ADDITIONAL_TLS_CONFIG=$(mktemp /tmp/haptic-additional-tls-XXXXXX.yaml)
+    echo -e "${YELLOW}Validating additional controller-namespace certificates...${NC}" >&2
+    if ! helm template "$CHART_DIR" --namespace default $HAPROXY_VERSION_ARG \
+        --set controller.rbac.releaseNamespaceSecretsOnly=true \
+        --set-json 'controller.config.templatingSettings.extraContext.tls.additionalCertificates={"shared-tls":{"hosts":["*.example.com","example.com"]},"pending-certificate":{}}' \
+        | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
+        > "$ADDITIONAL_TLS_CONFIG"; then
+        rm -f "$ADDITIONAL_TLS_CONFIG"
+        exit 1
+    fi
+    if ! "$CONTROLLER_BIN" validate --file "$ADDITIONAL_TLS_CONFIG" "${SCHEMA_DIR_ARGS[@]}" "$@"; then
+        FULL_RC=1
+    fi
+    rm -f "$ADDITIONAL_TLS_CONFIG"
+fi
+
+if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     INGRESS_CONFIG=$(mktemp /tmp/haptic-ingress-without-hub-XXXXXX.yaml)
     echo -e "${YELLOW}Validating Ingress with Gateway API and SPOA hub disabled...${NC}" >&2
     if ! helm template "$CHART_DIR" --namespace default $HAPROXY_VERSION_ARG \
@@ -516,6 +533,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
         --test test-gateway-policy-waf-invalid \
         --test test-gateway-policy-waf-catalogs \
         --test test-gateway-policy-waf-baseline \
+        --test test-spoa-hub-disabled \
         --test test-haptic-rate-limit-shared-ip \
         --test test-haptic-rate-limit-shared-error-page \
         --test test-haptic-rate-limit-shared-ip-allowlist \

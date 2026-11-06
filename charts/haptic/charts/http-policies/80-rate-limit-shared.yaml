@@ -3,7 +3,7 @@ templateSnippets:
     template: |
       {%- import "util-spoa-rate-limit-dispatch" for DispatchSharedRateLimit %}
       {%- var messages = toStringSlice(extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{})) %}
-      {%- if messages contains "check-ratelimit" %}
+      {%- if (render "util-spoa-hub-enabled") == "true" && messages contains "check-ratelimit" %}
       {{ "\n" }}# haptic/shared-rate-limit consumer
       {{- DispatchSharedRateLimit("consumer", "", tostring(extraContext | dig("rateLimit", "shared", "failClosed") | fallback(false)) == "true") }}
       {%- end %}

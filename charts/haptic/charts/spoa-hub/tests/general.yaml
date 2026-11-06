@@ -24,11 +24,25 @@ validationTests:
   test-spoa-hub-disabled:
     description: "With extraContext.spoaHub.enabled=false (or missing), the library must not emit the `backend spoa-hub` block, the SPOE filter, or any spoe.conf reference."
     extraContext: {spoaHub: {enabled: false}}
-    fixtures: {}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {name: disabled-hub-route, namespace: default}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: disabled-hub.example.com
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend: {service: {name: echo, port: {number: 80}}}
     assertions:
       - type: haproxy_valid
       - {type: not_contains, target: haproxy.cfg, pattern: "backend spoa-hub"}
       - {type: not_contains, target: haproxy.cfg, pattern: "filter spoe engine spoa-hub"}
+      - {type: not_contains, target: haproxy.cfg, pattern: "send-spoe-group spoa-hub-"}
 
   test-spoa-hub-blocks-absent-without-routes:
     description: "With the WAF and external-auth messages enabled but no route carrying a WAF or auth-url annotation, the SPOE filters are declared and the dispatch blocks that read the (empty) maps are not emitted."

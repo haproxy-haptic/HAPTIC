@@ -789,6 +789,21 @@
                     "tls": {
                       "type": "object",
                       "properties": {
+                        "additionalCertificates": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "hosts": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
                         "ciphers": {
                           "type": "string"
                         },
