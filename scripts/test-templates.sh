@@ -533,6 +533,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
         --test test-gateway-policy-waf-invalid \
         --test test-gateway-policy-waf-catalogs \
         --test test-gateway-policy-waf-baseline \
+        --test test-spoa-hub-disabled \
         --test test-haptic-rate-limit-shared-ip \
         --test test-haptic-rate-limit-shared-error-page \
         --test test-haptic-rate-limit-shared-ip-allowlist \

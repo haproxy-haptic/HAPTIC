@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Fixed
 
-- Disabling the SPOA hub also removes the mirror dispatch directive, keeping active HTTPS frontends valid.
+- Disabling the SPOA hub removes mirror and shared rate-limit dispatch directives, keeping active HTTPS frontends valid.
 
 ## [0.11.0] - 2026-11-04
 

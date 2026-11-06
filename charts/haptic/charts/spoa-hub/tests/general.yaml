@@ -42,7 +42,7 @@ validationTests:
       - type: haproxy_valid
       - {type: not_contains, target: haproxy.cfg, pattern: "backend spoa-hub"}
       - {type: not_contains, target: haproxy.cfg, pattern: "filter spoe engine spoa-hub"}
-      - {type: not_contains, target: haproxy.cfg, pattern: "send-spoe-group spoa-hub-mirror"}
+      - {type: not_contains, target: haproxy.cfg, pattern: "send-spoe-group spoa-hub-"}
 
   test-spoa-hub-blocks-absent-without-routes:
     description: "With the WAF and external-auth messages enabled but no route carrying a WAF or auth-url annotation, the SPOE filters are declared and the dispatch blocks that read the (empty) maps are not emitted."
