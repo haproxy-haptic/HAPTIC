@@ -24,7 +24,8 @@ import (
 
 // TestHapticSSLRedirect covers haproxy-haptic.org/redirect-scheme: https:
 // plain HTTP gets the configured status and the same URL on https://, and the
-// HTTPS request it points at is served instead of redirected again.
+// HTTPS request it points at is served instead of redirected again. The
+// explicit default port must not break that loop guard.
 func TestHapticSSLRedirect(t *testing.T) {
 	t.Parallel()
 	RunSimpleIngressTest(t, &SimpleIngressTest{
@@ -33,6 +34,7 @@ func TestHapticSSLRedirect(t *testing.T) {
 		TLSSecretName: "tls",
 		Annotations: map[string]string{
 			"haproxy-haptic.org/redirect-scheme": "https",
+			"haproxy-haptic.org/redirect-port":   "443",
 			"haproxy-haptic.org/redirect-code":   "301",
 		},
 		Assess: []SimpleIngressAssertion{

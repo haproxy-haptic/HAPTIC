@@ -323,7 +323,7 @@ Header/cookie/weight-based canary routing and request mirroring via the SPOA hub
 
 Redirects (reload-free maps), HSTS, SSL passthrough, a default backend, and raw section injection.
 
-The `redirect-*` annotations describe one redirect target for the Ingress's routes. Each one names a part of the URL to change; every part you don't set is taken from the request. Setting `redirect-scheme`, `redirect-host`, `redirect-port`, `redirect-path`, `redirect-path-prefix`, or `redirect-query: drop` enables the redirect. A request that is already at the target isn't redirected, so `redirect-scheme: https` only redirects plain HTTP.
+The `redirect-*` annotations describe one redirect target for the Ingress's routes. Each one names a part of the URL to change; every part you don't set is taken from the request. Setting `redirect-scheme`, `redirect-host`, `redirect-port`, `redirect-path`, `redirect-path-prefix`, or `redirect-query: drop` enables the redirect. A request already at the target isn't redirected, so `redirect-scheme: https` only redirects plain HTTP.
 
 ```yaml
 annotations:

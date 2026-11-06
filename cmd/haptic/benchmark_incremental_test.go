@@ -1581,7 +1581,7 @@ func TestBundledChartHapticActivationStaysExactAcrossScaleAndGovernance(t *testi
 	cfg, setup, logger, cleanup := bundledChartSetup(t)
 	t.Cleanup(cleanup)
 	gatedComponents := bundledHapticActivationComponents(t, cfg)
-	require.Len(t, gatedComponents, 106)
+	require.Len(t, gatedComponents, 104)
 	require.Contains(t, gatedComponents, "jwt-resource-metadata-ingress")
 	require.Contains(t, gatedComponents, "map-haptic-jwks-858-haptic")
 	require.Contains(t, gatedComponents, "haptic-jwks-source-publications")

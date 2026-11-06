@@ -195,6 +195,9 @@ validationTests:
       - type: contains
         target: haproxy.cfg
         pattern: "http-request set-var-fmt\\(txn.rdr_port\\) \"%\\[var\\(txn.rdr_req_port\\)\\]\" if \\{ var\\(txn.rdr_port\\) -m str = \\}"
+      - type: contains
+        target: haproxy.cfg
+        pattern: "http-request unset-var\\(txn.rdr_port\\) if \\{ var\\(txn.rdr_port\\) -m str :443 \\} \\{ var\\(txn.rdr_scheme\\) -m str https \\} \\|\\| \\{ var\\(txn.rdr_port\\) -m str :80 \\} \\{ var\\(txn.rdr_scheme\\) -m str http \\}"
 
   test-haptic-redirect-path-prefix:
     description: >-
@@ -222,11 +225,11 @@ validationTests:
       - type: haproxy_valid
       - type: equals
         target: map:route-redirect-prefix.map
-        expected: "default/moved-docs/docs/v1/ 8|%2fdocs%2fv2\ndefault/moved-docs/docs/ 5|%2fdocs%2fv2\n"
+        expected: "default/moved-docs|/docs/v1/ 8|%2fdocs%2fv2\ndefault/moved-docs|/docs/ 5|%2fdocs%2fv2\n"
       - {type: equals, target: map:route-redirect.map, expected: "default/moved-docs ||%3d||keep|302\n"}
       - type: contains
         target: haproxy.cfg
-        pattern: "http-request set-var\\(txn.rdr_pfx\\) var\\(txn.resource_key\\),concat\\(,txn.path,/\\),map_beg\\(\\S*route-redirect-prefix\\.map\\) if"
+        pattern: "http-request set-var\\(txn.rdr_pfx\\) var\\(txn.resource_key\\),concat\\(\\|,txn.path,/\\),map_beg\\(\\S*route-redirect-prefix\\.map\\) if"
       - type: contains
         target: haproxy.cfg
         pattern: "http-request set-var-fmt\\(txn.rdr_path\\) \"%\\[var\\(txn.rdr_pfx\\),field\\(2,\\|\\),url_dec\\(1\\)\\]%\\[path,bytes\\(txn.rdr_plen\\)\\]\""

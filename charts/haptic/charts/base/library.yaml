@@ -1992,7 +1992,7 @@ templateSnippets:
         (omit) or "=" (the request's).
 
         pathPrefix replaces whichever of the route's `prefixes` the request path
-        matched, segment-wise: route-redirect-prefix.map maps `<route><prefix>/`
+        matched, segment-wise: route-redirect-prefix.map maps `<route>|<prefix>/`
         to `<prefix length>|<replacement>`, longest prefix first for map_beg.
       #}
       {%- import "util-register-map" for RegisterMap -%}
@@ -2011,7 +2011,7 @@ templateSnippets:
             for _, prefix := range toSlice(e | dig("prefixes")) {
               var trimmed = trimSuffix(tostring(prefix), "/")
               prefixRows = append(prefixRows, map[string]any{
-                "key": route + trimmed + "/",
+                "key": route + "|" + trimmed + "/",
                 "value": tostring(len(trimmed)) + "|" + queryEscape(trimSuffix(pathPrefix, "/")),
               })
             }
@@ -2399,6 +2399,8 @@ templateSnippets:
       http-request set-var(txn.rdr_req_scheme) str(https) if {{ found }} { ssl_fc }
       http-request set-var(txn.rdr_req_scheme) str(http) if {{ found }} !{ ssl_fc }
       http-request set-var-fmt(txn.rdr_req_port) ":%[req.hdr(host),field(2,:)]" if {{ found }} { req.hdr(host) -m sub : }
+      {#- A default port is dropped on both sides: clients omit it from Host, so ":443" would never compare equal. #}
+      http-request unset-var(txn.rdr_req_port) if { var(txn.rdr_req_port) -m str :443 } { var(txn.rdr_req_scheme) -m str https } || { var(txn.rdr_req_port) -m str :80 } { var(txn.rdr_req_scheme) -m str http }
       http-request set-var-fmt(txn.rdr_current) "%[var(txn.rdr_req_scheme)]://%[var(txn.host)]%[var(txn.rdr_req_port)]%[path]" if {{ found }}
       http-request set-var-fmt(txn.rdr_current) "%[var(txn.rdr_current)]?%[query]" if {{ found }} { query -m found }
       http-request set-var(txn.rdr_scheme) var(txn.rdr),field(1,|) if {{ found }}
@@ -2412,11 +2414,12 @@ templateSnippets:
       http-request set-var(txn.rdr_path) path if { var(txn.rdr_path) -m len 0 }
       {%- if prefixed %}
       {%- var pm, _ = pathResolver.GetPath("route-redirect-prefix.map", "map") %}
-      http-request set-var(txn.rdr_pfx) var(txn.resource_key),concat(,txn.path,/),map_beg({{ pm }}) if {{ found }}
+      http-request set-var(txn.rdr_pfx) var(txn.resource_key),concat(|,txn.path,/),map_beg({{ pm }}) if {{ found }}
       http-request set-var(txn.rdr_plen) var(txn.rdr_pfx),field(1,|),add(0) if { var(txn.rdr_pfx) -m found }
       http-request set-var-fmt(txn.rdr_path) "%[var(txn.rdr_pfx),field(2,|),url_dec(1)]%[path,bytes(txn.rdr_plen)]" if { var(txn.rdr_pfx) -m found }
       http-request set-var(txn.rdr_path) str(/) if { var(txn.rdr_pfx) -m found } { var(txn.rdr_path) -m len 0 }
       {%- end %}
+      http-request unset-var(txn.rdr_port) if { var(txn.rdr_port) -m str :443 } { var(txn.rdr_scheme) -m str https } || { var(txn.rdr_port) -m str :80 } { var(txn.rdr_scheme) -m str http }
       http-request set-var-fmt(txn.rdr_location) "%[var(txn.rdr_scheme)]://%[var(txn.rdr_host)]%[var(txn.rdr_port)]%[var(txn.rdr_path)]" if {{ found }}
       http-request set-var-fmt(txn.rdr_location) "%[var(txn.rdr_location)]?%[query]" if { var(txn.rdr),field(5,|) -m str keep } { query -m found }
       {%- for _, code := range keys(codes) %}
