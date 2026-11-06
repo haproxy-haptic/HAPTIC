@@ -581,7 +581,7 @@ templateSnippets:
     template: |
       {%- var messagesAny = extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}) %}
       {%- var messages = toStringSlice(messagesAny) %}
-      {%- if messages contains "mirror" %}
+      {%- if (render "util-spoa-hub-enabled") == "true" && messages contains "mirror" %}
       # spoa-hub/mirror: dispatch every appended target from one NOTIFY
       http-request send-spoe-group spoa-hub-mirror mirror-group if { var(txn.gw_mirror_targets) -m found }
       {%- end %}

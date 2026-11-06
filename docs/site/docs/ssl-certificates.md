@@ -364,6 +364,47 @@ For a **single-algorithm** default, leave `ecdsaSecretName` empty (the default) 
 !!! note "Gateway-owned default"
     If a Gateway HTTPS listener with no `hostname` claims the default slot, that listener owns the default certificate — give *it* two `certificateRefs` for a dual default there. `ecdsaSecretName` applies to the chart's `defaultSSLCertificate`, not to a Gateway-owned default.
 
+## Additional certificates in the controller namespace
+
+Use `controller.config.templatingSettings.extraContext.tls.additionalCertificates`
+to serve multiple TLS Secrets from the controller's namespace. HAProxy selects
+these certificates by Server Name Indication (SNI). Application Ingresses can
+use them without referencing a Secret in `spec.tls`, including when
+`controller.rbac.releaseNamespaceSecretsOnly` is enabled.
+
+Key the map by Secret name. Set `hosts` to the DNS names or wildcard names that
+the certificate covers. An empty entry reads the comma-separated names from
+the Secret's `cert-manager.io/alt-names` annotation:
+
+```yaml
+controller:
+  rbac:
+    releaseNamespaceSecretsOnly: true
+  config:
+    templatingSettings:
+      extraContext:
+        tls:
+          additionalCertificates:
+            old-wildcard-tls: {}  # Names from cert-manager.io/alt-names.
+            new-wildcard-tls:
+              hosts:
+                - "*.new.example"
+                - "new.example"
+```
+
+Create these Secrets in the namespace where you install HAPTIC. Explicit
+`hosts` take precedence over the annotation. The chart keeps the designated
+default certificate first; these entries add SNI matches without replacing it.
+
+A missing Secret is skipped until it appears, so certificate issuance can finish
+after installation. A present Secret with missing certificate data or invalid
+names fails validation and blocks installation or the candidate update. An
+existing fleet keeps its last validated configuration. A Secret without an
+explicit nonempty `hosts` list must have `cert-manager.io/alt-names`.
+
+Adding or removing a certificate reloads HAProxy. Renewing an existing certificate
+uses a runtime certificate update when no other change requires a reload.
+
 ## TLS session resumption
 
 TLS session resumption reduces handshake work when a client reconnects. A session

@@ -1127,6 +1127,10 @@ controller:
               regex: '^\$(2[aby]|5|6|y)\$[./0-9A-Za-z$=]+$'
               errorMessage: "Replace it with a bcrypt, SHA-256/SHA-512 crypt or yescrypt hash, for example from htpasswd -nB <user>"
         tls:
+          # TLS Secrets in the controller namespace, keyed by Secret name.
+          # Set hosts explicitly, or use cert-manager.io/alt-names from the Secret.
+          # Missing Secrets wait for issuance; the default certificate stays first.
+          additionalCertificates: {}  # @schema additionalProperties: {type: object, additionalProperties: false, properties: {hosts: {type: array, items: {type: string}}}}
           hsts:
             # Global HSTS is opt-in; per-Ingress hsts annotations still win.
             enabled: false

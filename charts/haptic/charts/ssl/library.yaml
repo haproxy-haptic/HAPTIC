@@ -40,6 +40,7 @@ templatingSettings:
   extraContext:
     # HSTS is a global default; a per-Ingress hsts annotation overrides it for its hosts.
     tls:
+      additionalCertificates: {}
       hsts:
         enabled: false
         maxAge: "31536000"          # one year
@@ -420,6 +421,91 @@ templateSnippets:
       effects: [publishValue]
     template: '{{- "" -}}'
 
+  util-ssl-certificate-hosts:
+    template: |-
+      {%- var CertificateHosts = func(value any, setting string) []any {
+        var hosts, valid = value.([]any)
+        if !valid { fail(setting + " must be a list of DNS names. Set hosts to the certificate's names.") }
+        var seen = map[string]bool{}
+        for _, rawHost := range hosts {
+          var host, valid = rawHost.(string)
+          if !valid { fail(setting + " contains a non-string host. Use DNS names or wildcard DNS names.") }
+          host = toLower(trimSpace(host))
+          if len(host) > 253 || !regex_search(host, `^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`) {
+            fail(setting + " contains invalid host '" + host + "'. Use DNS names or wildcard DNS names.")
+          }
+          for _, label := range split(host, ".") {
+            if len(label) > 63 { fail(setting + " contains a DNS label longer than 63 characters. Shorten the host name.") }
+          }
+          seen[host] = true
+        }
+        var result = []any{}
+        for _, host := range keys(seen) { result = append(result, host) }
+        return result
+      } -%}
+
+  util-ssl-additional-certificate-bindings:
+    template: |-
+      {%- import "util-ssl-certificate-hosts" for CertificateHosts -%}
+      {%- var configured = extraContext | dig("tls", "additionalCertificates") -%}
+      {%- if configured == nil -%}{%- configured = map[string]any{} -%}{%- end -%}
+      {%- var certificates, valid = configured.(map[string]any) -%}
+      {%- if !valid -%}{{ fail("tls.additionalCertificates must be a map keyed by Secret name. Give each certificate its own entry.") }}{%- end -%}
+      {%- var selected = map[string]any{} -%}
+      {%- for _, name := range keys(certificates) -%}
+        {%- if len(name) > 253 || !regex_search(name, `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`) -%}
+          {{- fail("tls.additionalCertificates key '" + name + "' is not a Secret name. Use the Secret's Kubernetes name.") -}}
+        {%- end -%}
+        {%- var entry, valid = certificates[name].(map[string]any) -%}
+        {%- if !valid -%}{{ fail("tls.additionalCertificates." + name + " must be an object. Set hosts or use an empty object for cert-manager names.") }}{%- end -%}
+        {%- for _, field := range keys(entry) -%}
+          {%- if field != "hosts" -%}{{ fail("Unknown tls.additionalCertificates." + name + "." + field + ". Use hosts to set the certificate's names.") }}{%- end -%}
+        {%- end -%}
+        {%- var hosts = dig(entry, "hosts") -%}
+        {%- if hosts == nil -%}{%- hosts = []any{} -%}{%- end -%}
+        {%- selected[name] = CertificateHosts(hosts, "tls.additionalCertificates." + name + ".hosts") -%}
+      {%- end -%}
+      {%- if len(selected) == 0 -%}
+        {{- toJSON(map[string]any{}) -}}
+      {%- else -%}
+        {{- toJSON(map[string]any{"secrets": map[string]any{
+          "namespace": extraContext | dig_string("haptic", "controllerNamespace"),
+          "certificates": selected,
+        }}) -}}
+      {%- end -%}
+
+  ssl-additional-certificate-publications:
+    requires: [secrets]
+    incremental:
+      bindingsTemplate: '{{- render "util-ssl-additional-certificate-bindings" -}}'
+      group: ssl-additional-certificates
+      effects: [publishValue]
+    template: |-
+      {%- import "util-ssl-certificate-hosts" for CertificateHosts -%}
+      {%- var namespace = dig_string(item, "", "metadata", "namespace") -%}
+      {%- var name = dig_string(item, "", "metadata", "name") -%}
+      {%- var certificates = dig(props, "certificates").(map[string]any) -%}
+      {%- var configured, selected = certificates[name] -%}
+      {%- if namespace == props["namespace"] && selected -%}
+        {%- var hosts = configured.([]any) -%}
+        {%- if len(hosts) == 0 -%}
+          {%- var names = dig_string(item, "", "metadata", "annotations", "cert-manager.io/alt-names") -%}
+          {%- if trimSpace(names) == "" -%}
+            {{- fail("TLS Secret " + namespace + "/" + name + " has no certificate names. Set tls.additionalCertificates." + name + ".hosts or cert-manager.io/alt-names.") -}}
+          {%- end -%}
+          {%- hosts = CertificateHosts(toSlice(split(names, ",")), "TLS Secret " + namespace + "/" + name + " cert-manager.io/alt-names") -%}
+        {%- end -%}
+        {%- var certificate = dig(item, "data", "tls.crt") -%}
+        {%- var key = dig(item, "data", "tls.key") -%}
+        {%- if certificate == nil || key == nil || tostring(certificate) == "" || tostring(key) == "" -%}
+          {{- fail("TLS Secret " + namespace + "/" + name + " is missing tls.crt or tls.key. Supply both certificate and private key.") -}}
+        {%- end -%}
+        {{- shared.Publish("certificates", namespace + "/" + name, map[string]any{
+          "namespace": namespace, "name": name, "hosts": hosts,
+          "pem": (tostring(certificate) | b64decode()) + "\n" + (tostring(key) | b64decode()),
+        }) -}}
+      {%- end -%}
+
   features-150-ssl-crtlist:
     requires: [secrets]
     template: |
@@ -454,6 +540,18 @@ templateSnippets:
         } -%}
       {%- end -%}
       {%- var tlsCerts []any = coalesce(gf["tlsCertificates"], []any{}) -%}
+      {{- render "ssl-additional-certificate-publications" -}}
+      {%- for _, published := range incremental_values("ssl-additional-certificates", "certificates") -%}
+        {%- var certificate = published.(map[string]any) -%}
+        {%- var namespace = tostring(certificate["namespace"]) -%}
+        {%- var name = tostring(certificate["name"]) -%}
+        {%- var path, err = fileRegistry.Register("cert", namespace + "_" + name + ".pem", tostring(certificate["pem"])) -%}
+        {%- if err != nil -%}{{ fail("failed to register additional TLS certificate: " + tostring(err)) }}{%- end -%}
+        {%- tlsCerts = append(tlsCerts, map[string]any{
+          "secret_namespace": namespace, "secret_name": name,
+          "sanitized_filename": basename(path), "sni_patterns": certificate["hosts"],
+        }) -%}
+      {%- end -%}
 
       {%- var defaultCertFilename = "default.pem" -%}
       {%- var gatewayDefaultCandidates = []any{} -%}
@@ -906,6 +1004,217 @@ validationTests:
           data:
             tls.crt: *test_tls_crt
             tls.key: *test_tls_key
+
+  test-ssl-additional-certificates-explicit:
+    extraContext:
+      controllerNamespace: haptic
+      tls:
+        additionalCertificates:
+          __replace__: true
+          z-tls: {hosts: ["*.new.example", "new.example"]}
+          a-tls: {hosts: ["OLD.EXAMPLE", "old.example"]}
+    fixtures:
+      <<: *fixturesTlsTriggerDefaultSsl
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata:
+            name: z-tls
+            namespace: haptic
+            annotations: {cert-manager.io/alt-names: "invalid.example !*"}
+          data: {tls.crt: *test_tls_crt, tls.key: *test_tls_key}
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: a-tls, namespace: haptic}
+          data: {tls.crt: *test_tls_crt_rsa, tls.key: *test_tls_key_rsa}
+    assertions:
+      - {type: haproxy_valid}
+      - type: contains
+        target: crt-list:certificate-list.txt
+        pattern: '^default\.pem \[ocsp-update on\] !\*\nhaptic_a-tls\.pem \[ocsp-update on\] old\.example\nhaptic_z-tls\.pem \[ocsp-update on\] \*\.new\.example new\.example\n$'
+
+  test-ssl-additional-certificates-annotation:
+    extraContext:
+      controllerNamespace: haptic
+      tls: {additionalCertificates: {__replace__: true, annotated: {}}}
+    fixtures:
+      <<: *fixturesTlsTriggerDefaultSsl
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata:
+            name: annotated
+            namespace: haptic
+            annotations: {cert-manager.io/alt-names: "new.example, *.new.example,NEW.EXAMPLE"}
+          data: {tls.crt: *test_tls_crt, tls.key: *test_tls_key}
+    assertions:
+      - {type: haproxy_valid}
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: 'haptic_annotated\.pem \[ocsp-update on\] \*\.new\.example new\.example\n'}
+
+  test-ssl-additional-certificates-client-verification:
+    _helm_skip_test: '{{ not .Values.controller.templateLibraries.hapticAnnotations.enabled }}'
+    extraContext:
+      controllerNamespace: haptic
+      tls: {additionalCertificates: {__replace__: true, central-mtls: {hosts: ["*.new.example"]}}}
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: central-mtls, namespace: haptic}
+          data: {tls.crt: *test_tls_crt, tls.key: *test_tls_key}
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: central-client-ca, namespace: haptic}
+          data: {ca.crt: *test_tls_crt}
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: central-mtls-route
+            namespace: haptic
+            annotations:
+              haproxy-haptic.org/auth-tls-secret: central-client-ca
+              haproxy-haptic.org/auth-tls-verify-client: "on"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: secure.new.example
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend: {service: {name: trigger-svc, port: {number: 80}}}
+    assertions:
+      - {type: haproxy_valid}
+      - type: contains
+        target: crt-list:certificate-list.txt
+        pattern: 'haptic_central-mtls\.pem \[ocsp-update on ca-file [^ ]+ verify required\] secure\.new\.example'
+      - type: contains
+        target: crt-list:certificate-list.txt
+        pattern: 'haptic_central-mtls\.pem \[ocsp-update on\] \*\.new\.example'
+
+  test-ssl-additional-certificates-missing:
+    extraContext:
+      controllerNamespace: haptic
+      tls: {additionalCertificates: {__replace__: true, pending: {}}}
+    fixtures: *fixturesTlsTriggerDefaultSsl
+    assertions:
+      - {type: haproxy_valid}
+      - {type: not_contains, target: "crt-list:certificate-list.txt", pattern: pending}
+
+  test-ssl-additional-certificates-without-listeners:
+    extraContext:
+      controllerNamespace: haptic
+      tls: {additionalCertificates: {__replace__: true, available: {hosts: [new.example]}}}
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: available, namespace: haptic}
+          data: {tls.crt: *test_tls_crt, tls.key: *test_tls_key}
+    assertions:
+      - {type: haproxy_valid}
+      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^frontend https$'}
+      - {type: contains, target: crt-list:certificate-list.txt, pattern: 'haptic_available\.pem \[ocsp-update on\] new\.example'}
+
+  test-ssl-additional-certificates-foreign-namespace:
+    extraContext:
+      controllerNamespace: haptic
+      tls: {additionalCertificates: {__replace__: true, foreign: {hosts: [new.example]}}}
+    fixtures:
+      <<: *fixturesTlsTriggerDefaultSsl
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: foreign, namespace: other}
+          data: {tls.crt: invalid, tls.key: invalid}
+    assertions:
+      - {type: haproxy_valid}
+      - {type: not_contains, target: "crt-list:certificate-list.txt", pattern: foreign}
+
+  test-ssl-additional-certificates-missing-key:
+    extraContext:
+      controllerNamespace: haptic
+      tls: {additionalCertificates: {__replace__: true, broken: {hosts: [new.example]}}}
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: broken, namespace: haptic}
+          data: {tls.crt: *test_tls_crt}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "TLS Secret haptic/broken is missing tls.crt or tls.key"}
+
+  test-ssl-additional-certificates-missing-names:
+    extraContext:
+      controllerNamespace: haptic
+      tls: {additionalCertificates: {__replace__: true, unnamed: {}}}
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: unnamed, namespace: haptic}
+          data: {tls.crt: *test_tls_crt, tls.key: *test_tls_key}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "TLS Secret haptic/unnamed has no certificate names"}
+
+  test-ssl-additional-certificates-invalid-host:
+    extraContext:
+      tls: {additionalCertificates: {__replace__: true, invalid-host: {hosts: ["new.example !*"]}}}
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "contains invalid host"}
+
+  test-ssl-additional-certificates-reject-fallback-host:
+    extraContext:
+      tls: {additionalCertificates: {__replace__: true, catchall: {hosts: ["*"]}}}
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "contains invalid host"}
+
+  test-ssl-additional-certificates-invalid-annotation:
+    extraContext:
+      controllerNamespace: haptic
+      tls: {additionalCertificates: {__replace__: true, invalid-annotation: {}}}
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata:
+            name: invalid-annotation
+            namespace: haptic
+            annotations: {cert-manager.io/alt-names: "new.example !*"}
+          data: {tls.crt: *test_tls_crt, tls.key: *test_tls_key}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "contains invalid host"}
+
+  test-ssl-additional-certificates-unknown-field:
+    extraContext:
+      tls: {additionalCertificates: {__replace__: true, typo: {host: new.example}}}
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "Unknown tls.additionalCertificates.typo.host"}
+
+  test-ssl-additional-certificates-invalid-secret-name:
+    extraContext:
+      tls: {additionalCertificates: {__replace__: true, "other/secret": {}}}
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "is not a Secret name"}
+
+  test-ssl-additional-certificates-invalid-entry:
+    extraContext:
+      tls: {additionalCertificates: {__replace__: true, wrong: false}}
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "must be an object"}
+
+  test-ssl-additional-certificates-invalid-host-list:
+    extraContext:
+      tls: {additionalCertificates: {__replace__: true, wrong: {hosts: example.com}}}
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "must be a list of DNS names"}
 
   test-ssl-certificate-loading:
     description: Verify default SSL certificate is loaded correctly
