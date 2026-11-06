@@ -11,11 +11,11 @@ _fx:
 validationTests:
 
   # Regression guards for the renderMode-aware rejection of a misconfigured
-  # routing annotation (WebhookRejectOrWarn). A bad https-redirect-code is
-  # denied at the admission webhook but only warned-and-skipped on a live
-  # reconcile, so one already-present bad Ingress can't brick the fleet.
+  # routing annotation (WebhookRejectOrWarn). A bad redirect-code is denied at
+  # the admission webhook but only warned-and-skipped on a live reconcile, so
+  # one already-present bad Ingress can't brick the fleet.
   test-haptic-invalid-redirect-code-admission-rejected:
-    description: Under the admission webhook, an invalid https-redirect-code value is rejected.
+    description: Under the admission webhook, an invalid redirect-code value is rejected.
     extraContext: {renderMode: admission}
     fixtures:
       ingresses:
@@ -25,22 +25,20 @@ validationTests:
             namespace: default
             name: bad-redir
             annotations:
-              haproxy-haptic.org/https-redirect: "true"
-              haproxy-haptic.org/https-redirect-code: "999"
+              haproxy-haptic.org/redirect-scheme: https
+              haproxy-haptic.org/redirect-code: "999"
           spec:
             ingressClassName: haptic
             rules:
               - host: bad-redir.example.com
-                http:
-                  paths:
-                    - { path: /, pathType: Prefix, backend: { service: { name: app, port: { number: 80 } } } }
+                http: *httpRoot
     assertions:
       - type: contains
         target: rendering_error
-        pattern: "Invalid value '999' for annotation 'haproxy-haptic.org/https-redirect-code'"
+        pattern: "Invalid value '999' for annotation 'haproxy-haptic.org/redirect-code'"
 
   test-haptic-invalid-redirect-code-reconcile-warns:
-    description: On a live reconcile, an invalid https-redirect-code warns (Event) and the render still succeeds instead of failing.
+    description: On a live reconcile, an invalid redirect-code warns (Event), skips the redirect, and the render still succeeds.
     extraContext: {renderMode: reconcile}
     fixtures:
       ingresses:
@@ -50,15 +48,13 @@ validationTests:
             namespace: default
             name: bad-redir
             annotations:
-              haproxy-haptic.org/https-redirect: "true"
-              haproxy-haptic.org/https-redirect-code: "999"
+              haproxy-haptic.org/redirect-scheme: https
+              haproxy-haptic.org/redirect-code: "999"
           spec:
             ingressClassName: haptic
             rules:
               - host: bad-redir.example.com
-                http:
-                  paths:
-                    - { path: /, pathType: Prefix, backend: { service: { name: app, port: { number: 80 } } } }
+                http: *httpRoot
     assertions:
       - type: haproxy_valid
       - type: contains
@@ -66,43 +62,91 @@ validationTests:
         pattern: "Warning InvalidAnnotationValue networking.k8s.io/v1 Ingress default/bad-redir:"
       - type: contains
         target: events
-        pattern: "Invalid value '999' for annotation 'haproxy-haptic.org/https-redirect-code'"
+        pattern: "Invalid value '999' for annotation 'haproxy-haptic.org/redirect-code'"
+      - {type: not_contains, target: haproxy.cfg, pattern: "# base/route-redirect"}
 
-  test-haptic-ssl-redirect:
-    description: haproxy-haptic.org/https-redirect registers the host in the shared ssl-redirect map (reload-free) with the requested code
+  test-haptic-redirect-invalid-values-admission-rejected:
+    description: Under the admission webhook, each malformed redirect-* value is rejected and named.
+    extraContext: {renderMode: admission}
     fixtures:
       ingresses:
         - apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
             namespace: default
-            name: redir-ingress
+            name: bad-path
             annotations:
-              haproxy-haptic.org/https-redirect: "true"
-              haproxy-haptic.org/https-redirect-code: "301"
+              haproxy-haptic.org/redirect-path: "/x?injected=1"
           spec:
             ingressClassName: haptic
             rules:
-              - host: secure.example.com
+              - host: bad-path.example.com
                 http: *httpRoot
     assertions:
-      - type: haproxy_valid
-      - {type: contains, target: map:ssl-redirect-301.map, pattern: "secure\\.example\\.com"}
       - type: contains
-        target: haproxy.cfg
-        pattern: "http-request redirect scheme https code 301 if !\\{ ssl_fc \\}"
+        target: rendering_error
+        pattern: "Invalid value '/x\\?injected=1' for annotation 'haproxy-haptic.org/redirect-path'"
 
-  test-haptic-redirects:
-    description: haproxy-haptic.org permanent- and temporary-redirect register host→URL in the shared redirect-loc maps with their default codes
+  test-haptic-redirect-code-without-target-admission-rejected:
+    description: Under the admission webhook, a redirect-code with no redirect target is rejected because it would do nothing.
+    extraContext: {renderMode: admission}
     fixtures:
       ingresses:
         - apiVersion: networking.k8s.io/v1
           kind: Ingress
           metadata:
             namespace: default
-            name: perm-ingress
+            name: lone-code
             annotations:
-              haproxy-haptic.org/permanent-redirect: "https://new.example.com"
+              haproxy-haptic.org/redirect-code: "301"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: lone-code.example.com
+                http: *httpRoot
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "without a redirect target, so nothing is redirected"
+
+  test-haptic-removed-redirect-annotation-admission-rejected:
+    description: Under the admission webhook, a removed redirect annotation is rejected and names its replacement.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: old-redir
+            annotations:
+              haproxy-haptic.org/https-redirect: "true"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: old-redir.example.com
+                http: *httpRoot
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "sets 'haproxy-haptic.org/https-redirect', which was removed, so it has no effect. Use redirect-scheme: https instead."
+
+  test-haptic-redirect:
+    description: >-
+      haproxy-haptic.org/redirect-* publish one route-keyed target per Ingress: an
+      unset scheme, host or path is left empty for the request's, an unset port is
+      "=" (the request's) only when scheme and host are unset too, and one redirect
+      rule is emitted per code in use.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: alias
+            annotations:
+              haproxy-haptic.org/redirect-host: new.example.com
+              haproxy-haptic.org/redirect-code: "308"
           spec:
             ingressClassName: haptic
             rules:
@@ -112,22 +156,103 @@ validationTests:
           kind: Ingress
           metadata:
             namespace: default
-            name: temp-ingress
+            name: secure
             annotations:
-              haproxy-haptic.org/temporary-redirect: "https://sale.example.com"
+              haproxy-haptic.org/redirect-scheme: https
+              haproxy-haptic.org/redirect-port: "8443"
           spec:
             ingressClassName: haptic
             rules:
-              - host: promo.example.com
+              - host: secure.example.com
+                http: *httpRoot
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: moved
+            annotations:
+              haproxy-haptic.org/redirect-path: /relocated
+              haproxy-haptic.org/redirect-query: drop
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: moved.example.com
                 http: *httpRoot
     assertions:
       - type: haproxy_valid
+      - type: equals
+        target: map:route-redirect.map
+        expected: "default/alias |new.example.com|||keep|308\ndefault/moved ||%3d|%2frelocated|drop|302\ndefault/secure https||%3a8443||keep|302\n"
       - type: contains
-        target: map:redirect-loc-301.map
-        pattern: "old\\.example\\.com https%3a%2f%2fnew\\.example\\.com"
+        target: haproxy.cfg
+        pattern: "http-request set-var\\(txn.rdr\\) var\\(txn.resource_key\\),map\\(\\S*route-redirect\\.map\\) if"
       - type: contains
-        target: map:redirect-loc-302.map
-        pattern: "promo\\.example\\.com https%3a%2f%2fsale\\.example\\.com"
+        target: haproxy.cfg
+        pattern: "http-request redirect location %\\[var\\(txn.rdr_location\\)\\] code 302 if \\{ var\\(txn.rdr\\),field\\(6,\\|\\) -m str 302 \\} !\\{ var\\(txn.rdr_location\\),strcmp\\(txn.rdr_current\\) eq 0 \\}"
+      - type: contains
+        target: haproxy.cfg
+        pattern: "http-request redirect location %\\[var\\(txn.rdr_location\\)\\] code 308 if"
+      - type: contains
+        target: haproxy.cfg
+        pattern: "http-request set-var-fmt\\(txn.rdr_port\\) \"%\\[var\\(txn.rdr_req_port\\)\\]\" if \\{ var\\(txn.rdr_port\\) -m str = \\}"
+
+  test-haptic-redirect-path-prefix:
+    description: >-
+      redirect-path-prefix registers each of the Ingress's path prefixes with its
+      length and the replacement, longest first, and emits the map_beg lookup that
+      replaces the matched prefix.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: moved-docs
+            annotations:
+              haproxy-haptic.org/redirect-path-prefix: /docs/v2/
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: docs.example.com
+                http:
+                  paths:
+                    - {path: /docs, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+                    - {path: /docs/v1/, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - type: haproxy_valid
+      - type: equals
+        target: map:route-redirect-prefix.map
+        expected: "default/moved-docs/docs/v1/ 8|%2fdocs%2fv2\ndefault/moved-docs/docs/ 5|%2fdocs%2fv2\n"
+      - {type: equals, target: map:route-redirect.map, expected: "default/moved-docs ||%3d||keep|302\n"}
+      - type: contains
+        target: haproxy.cfg
+        pattern: "http-request set-var\\(txn.rdr_pfx\\) var\\(txn.resource_key\\),concat\\(,txn.path,/\\),map_beg\\(\\S*route-redirect-prefix\\.map\\) if"
+      - type: contains
+        target: haproxy.cfg
+        pattern: "http-request set-var-fmt\\(txn.rdr_path\\) \"%\\[var\\(txn.rdr_pfx\\),field\\(2,\\|\\),url_dec\\(1\\)\\]%\\[path,bytes\\(txn.rdr_plen\\)\\]\""
+
+  test-haptic-redirect-path-and-prefix-admission-rejected:
+    description: Under the admission webhook, setting both redirect-path and redirect-path-prefix is rejected as ambiguous.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: both-paths
+            annotations:
+              haproxy-haptic.org/redirect-path: /a
+              haproxy-haptic.org/redirect-path-prefix: /b
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: both.example.com
+                http: *httpRoot
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "sets both haproxy-haptic.org/redirect-path and haproxy-haptic.org/redirect-path-prefix"
 
   test-haptic-hsts:
     description: haproxy-haptic.org/hsts registers the full Strict-Transport-Security value in hsts.map

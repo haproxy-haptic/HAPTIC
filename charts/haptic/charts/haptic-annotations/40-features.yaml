@@ -8,179 +8,28 @@
 # config-injection snippets emit directly into their sections.
 #
 # Sources adapted:
-#   https-redirect / redirects / root-redirect / hsts / ssl-passthrough / mTLS-style
+#   redirect-* ............... Gateway API HTTPRequestRedirectFilter
+#   root-redirect / hsts / ssl-passthrough / mTLS-style
 #     gf-registration ......... haproxy-ingress/40-features.yaml
-#   permanent/temporary split & apex-www .. nginx-ingress/{30,20}-*
-#   https-redirect-port ...... haproxytech/library.yaml
+#   apex-www ................. nginx-ingress/20-*
 #   default-backend-redirect . haproxy-ingress/30-frontend-filters.yaml
 #   default-backend .......... nginx-ingress/17-default-backend.yaml
 #   config-global/defaults/frontend .. haproxy-ingress/45-config-sections.yaml
 templateSnippets:
 
   # ==========================================================================
-  # SSL redirect — host registration into the shared gf["sslRedirectHosts"].
-  # ssl.yaml builds ssl-redirect-<code>.map and emits the shared scheme-redirect
-  # rule, so adding/removing a redirected host is a map-only, reload-free update.
+  # Redirect — one route-scoped target per Ingress, published into
+  # gf["routeRedirects"]. base.yaml builds route-redirect.map and emits the rule,
+  # so changing a redirect is a map-only, reload-free update.
   # ==========================================================================
-  features-105-haptic-https-redirect:
-    requires: [ingresses]
-    template: |-
-      {{- render "haptic-ssl-redirect-publications" -}}
-      {%- var gf = shared.Get("globalFeatures").(map[string]any) -%}
-      {%- for _, entry := range incremental_values("haptic-ssl-redirect-hosts", "hosts") -%}
-        {%- var redirects []any = coalesce(gf["sslRedirectHosts"], []any{}) -%}
-        {%- gf["sslRedirectHosts"] = append(redirects, entry) -%}
-      {%- end -%}
-
-  haptic-ssl-redirect-publications:
-    requires: [ingresses]
-    incremental:
-      source: ingresses
-      whenAnyPathExists:
-        - "metadata.annotations['haproxy-haptic.org/https-redirect']"
-        - "metadata.annotations['haproxy-haptic.org/https-redirect-code']"
-        - "metadata.annotations['haproxy-haptic.org/https-redirect-port']"
-      group: haptic-ssl-redirect-hosts
-      effects: [publishValue, recordEvent]
-    template: |-
-      {#
-        HAPTIC HTTPS redirect — host registration.
-
-        Annotations:
-          - haproxy-haptic.org/https-redirect: "true" enables the redirect
-          - haproxy-haptic.org/https-redirect-code: "301|302|303|307|308" (default 302)
-
-        Best-of-breed: takes the haproxy-ingress map-based registration (reload-free)
-        and adopts haproxytech's port-targeted-redirect coexistence — hosts that also set
-        haproxy-haptic.org/https-redirect-port are handled by the port-targeted
-        redirect (frontend-filters-800-haptic-https-redirect-port) and are NOT
-        registered here, so no double redirect fires. Unlike the vendor libraries the
-        native code is validated fail-loud rather than silently corrected.
-      #}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
-      {%- var ingress = resources.ingresses.GetSingle(
-        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
-      {%- if ingress != nil && ingress.Metadata.Annotations["haproxy-haptic.org/https-redirect"] == "true" -%}
-        {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
-        {%- if ingress.Metadata.Annotations["haproxy-haptic.org/https-redirect-port"] == "" -%}
-          {%- var code = ingress.Metadata.Annotations["haproxy-haptic.org/https-redirect-code"] -%}
-          {%- if code == "" -%}{%- code = "302" -%}{%- end -%}
-          {%- if code != "301" && code != "302" && code != "303" && code != "307" && code != "308" -%}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + code + "' for annotation 'haproxy-haptic.org/https-redirect-code' on Ingress '" + key + "'. Valid values: 301, 302, 303, 307, 308") -}}
-          {%- else -%}
-            {%- for ruleIndex, rule := range ingress.Spec.Rules -%}
-              {%- if rule.Host != "" -%}
-                {{- shared.Publish("hosts", key + "/" + tostring(ruleIndex), map[string]any{"host": toLower(rule.Host), "code": code}) -}}
-              {%- end -%}
-            {%- end -%}
-          {%- end %}
-        {%- end -%}
-      {%- end -%}
-
-  # ==========================================================================
-  # SSL redirect to an explicit HTTPS port (haproxytech-style). Single-vendor,
-  # so the per-code host→port maps are built and referenced here. The Host header
-  # is read (field(1,:) strips any existing port) but never set, so host routing
-  # is not corrupted. Map names are haptic-scoped to avoid colliding with the
-  # haproxytech library's ssl-redirect-port maps.
-  # ==========================================================================
-  features-900-haptic-https-redirect-port-publications:
-    requires: [ingresses]
-    incremental:
-      source: ingresses
-      whenAnyPathExists:
-        - "metadata.annotations['haproxy-haptic.org/https-redirect']"
-        - "metadata.annotations['haproxy-haptic.org/https-redirect-code']"
-        - "metadata.annotations['haproxy-haptic.org/https-redirect-port']"
-      group: haptic-https-redirect-port-hosts
-      effects: [publishValue, recordEvent]
-    template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
-      {%- var ingress = resources.ingresses.GetSingle(
-        dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
-      {%- if ingress != nil -%}
-        {%- var redirectPort = ingress.Metadata.Annotations["haproxy-haptic.org/https-redirect-port"] -%}
-        {%- if redirectPort != "" -%}
-          {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
-          {%- if toint(redirectPort) <= 0 -%}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + redirectPort + "' for annotation 'haproxy-haptic.org/https-redirect-port' on Ingress '" + key + "'. Must be a positive integer port.") -}}
-          {%- else if ingress.Metadata.Annotations["haproxy-haptic.org/https-redirect"] == "true" -%}
-            {%- var code = ingress.Metadata.Annotations["haproxy-haptic.org/https-redirect-code"] -%}
-            {%- if code == "" -%}{%- code = "302" -%}{%- end -%}
-            {%- if code != "301" && code != "302" && code != "303" && code != "307" && code != "308" -%}
-              {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + code + "' for annotation 'haproxy-haptic.org/https-redirect-code' on Ingress '" + key + "'. Valid values: 301, 302, 303, 307, 308") -}}
-            {%- else -%}
-              {{- shared.Publish("codes", key, map[string]any{"code": code}) -}}
-              {%- for ruleIndex, rule := range ingress.Spec.Rules -%}
-                {%- if rule.Host != "" -%}
-                  {{- shared.Publish("hosts", key + "/" + tostring(ruleIndex), map[string]any{
-                    "host": toLower(rule.Host), "code": code, "port": redirectPort,
-                  }) -}}
-                {%- end -%}
-              {%- end -%}
-            {%- end -%}
-          {%- end -%}
-        {%- end -%}
-      {%- end -%}
-
-  frontend-filters-800-haptic-https-redirect-port:
-    template: |
-      {#
-        HAPTIC HTTPS redirect to an explicit port.
-
-        Annotations:
-          - haproxy-haptic.org/https-redirect: "true" (or https-redirect-port implies intent)
-          - haproxy-haptic.org/https-redirect-port: explicit HTTPS port (positive integer)
-          - haproxy-haptic.org/https-redirect-code: "301|302|303|307|308" (default 302)
-
-        Rewrites the request to https on the explicit port, preserving the original
-        request URI. Adapted from haproxytech/frontend-filters-055.
-      #}
-      {%- var portByCode = map[string]map[string]string{} -%}
-      {%- var codeHosts = map[string][]any{} -%}
-      {%- var seen = map[string]bool{} -%}
-      {%- for _, entryAny := range incremental_values("haptic-https-redirect-port-hosts", "codes") %}
-        {%- var entry = entryAny.(map[string]any) %}
-        {%- var code = tostring(entry["code"]) %}
-        {%- if portByCode[code] == nil %}{%- portByCode[code] = map[string]string{} %}{%- end %}
-      {%- end %}
-      {%- for _, entryAny := range incremental_values("haptic-https-redirect-port-hosts", "hosts") %}
-        {%- var entry = entryAny.(map[string]any) %}
-        {%- var code = tostring(entry["code"]) %}
-        {%- var host = tostring(entry["host"]) %}
-        {%- if host != "" && !seen[host] %}
-          {%- seen[host] = true %}
-          {%- if portByCode[code] == nil %}{%- portByCode[code] = map[string]string{} %}{%- end %}
-          {%- portByCode[code][host] = tostring(entry["port"]) %}
-          {%- codeHosts[code] = append(coalesce(codeHosts[code], []any{}).([]any), host) %}
-        {%- end %}
-      {%- end %}
-      {%- for code, hostPort := range portByCode %}
-        {%- var sortedHosts = sort_strings(coalesce(codeHosts[code], []any{})) %}
-        {%- var lines = []string{} %}
-        {%- for _, h := range sortedHosts %}{%- lines = append(lines, tostring(h) + " " + hostPort[tostring(h)]) %}{%- end %}
-        {%- var mapContent = join(lines, "\n") + "\n" %}
-        {%- var _, mapErr = fileRegistry.Register("map", "haptic-ssl-redirect-port-" + code + ".map", mapContent) %}
-        {%- if mapErr != nil %}{{ fail("failed to register haptic ssl-redirect-port map: " + tostring(mapErr)) }}{%- end %}
-        {%- var m, _ = pathResolver.GetPath("haptic-ssl-redirect-port-" + code + ".map", "map") %}
-      # haptic/https-redirect-port (code {{ code }})
-      http-request redirect location https://%[hdr(host),field(1,:)]:%[var(txn.host),map({{ m }})]%[capture.req.uri] code {{ code }} if !{ ssl_fc } { var(txn.host),map({{ m }}) -m found }
-      {%- end %}
-
-  # ==========================================================================
-  # Permanent / temporary redirect — host registration into gf["redirectHosts"].
-  # base.yaml's frontend-filters-060-redirect-location emits the rule from
-  # redirect-loc-<code>.map, so changing a host redirect is a map-only,
-  # reload-free update. Adapted from nginx-ingress permanent/temporary split.
-  # ==========================================================================
-  features-135-haptic-redirects:
+  features-135-haptic-redirect:
     requires: [ingresses]
     template: |-
       {{- render "haptic-redirect-publications" -}}
       {%- var gf = shared.Get("globalFeatures").(map[string]any) -%}
-      {%- for _, entry := range incremental_values("haptic-redirect-hosts", "hosts") -%}
-        {%- var redirects []any = coalesce(gf["redirectHosts"], []any{}) -%}
-        {%- gf["redirectHosts"] = append(redirects, entry) -%}
+      {%- for _, entry := range incremental_values("haptic-redirects", "routes") -%}
+        {%- var redirects []any = coalesce(gf["routeRedirects"], []any{}) -%}
+        {%- gf["routeRedirects"] = append(redirects, entry) -%}
       {%- end -%}
 
   haptic-redirect-publications:
@@ -188,69 +37,128 @@ templateSnippets:
     incremental:
       source: ingresses
       whenAnyPathExists:
+        - "metadata.annotations['haproxy-haptic.org/redirect-scheme']"
+        - "metadata.annotations['haproxy-haptic.org/redirect-host']"
+        - "metadata.annotations['haproxy-haptic.org/redirect-port']"
+        - "metadata.annotations['haproxy-haptic.org/redirect-path']"
+        - "metadata.annotations['haproxy-haptic.org/redirect-path-prefix']"
+        - "metadata.annotations['haproxy-haptic.org/redirect-query']"
+        - "metadata.annotations['haproxy-haptic.org/redirect-code']"
+        - "metadata.annotations['haproxy-haptic.org/https-redirect']"
+        - "metadata.annotations['haproxy-haptic.org/https-redirect-code']"
+        - "metadata.annotations['haproxy-haptic.org/https-redirect-port']"
         - "metadata.annotations['haproxy-haptic.org/permanent-redirect']"
         - "metadata.annotations['haproxy-haptic.org/permanent-redirect-code']"
         - "metadata.annotations['haproxy-haptic.org/temporary-redirect']"
         - "metadata.annotations['haproxy-haptic.org/temporary-redirect-code']"
-      group: haptic-redirect-hosts
+      group: haptic-redirects
       effects: [publishValue, recordEvent]
     template: |-
       {#
-        HAPTIC host redirects — permanent (default 301) and temporary (default 302).
+        HAPTIC redirect. Each annotation names one part of the target; a part left
+        unset is taken from the request.
 
         Annotations:
-          - haproxy-haptic.org/permanent-redirect        (URL; enables the redirect)
-          - haproxy-haptic.org/permanent-redirect-code   (default 301)
-          - haproxy-haptic.org/temporary-redirect         (URL; enables the redirect)
-          - haproxy-haptic.org/temporary-redirect-code    (default 302)
+          - haproxy-haptic.org/redirect-scheme  ("http" | "https")
+          - haproxy-haptic.org/redirect-host    (hostname)
+          - haproxy-haptic.org/redirect-port    (1-65535; unset: the scheme's default,
+                                                or the request's when scheme and host
+                                                are unset too)
+          - haproxy-haptic.org/redirect-path    (replaces the whole path)
+          - haproxy-haptic.org/redirect-path-prefix (replaces the matched Ingress
+                                                path prefix, keeping the rest)
+          - haproxy-haptic.org/redirect-query   ("keep" | "drop", default "keep")
+          - haproxy-haptic.org/redirect-code    (301 | 302 | 303 | 307 | 308, default 302)
 
-        The two axes are independent; an Ingress may set either or both. URLs pass a
-        control-char config-injection guard before interpolation.
+        Any of scheme, host, port, path, path-prefix, or `query: drop` enables the
+        redirect. It
+        applies to the Ingress's own routes, and a redirect to the requested URL is
+        skipped, so `redirect-scheme: https` only fires on plain HTTP.
       #}
       {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
-        {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
-        {%- var valid = true -%}
-        {%- var permUrl = ingress.Metadata.Annotations["haproxy-haptic.org/permanent-redirect"] -%}
-        {%- if permUrl != "" -%}
-          {%- if regex_search(permUrl, "[[:cntrl:]]") -%}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Invalid value for annotation 'haproxy-haptic.org/permanent-redirect' on Ingress '" + key + "': must not contain control characters — config-injection guard.") -}}
-            {%- valid = false -%}
-          {%- else -%}
-            {%- var code = ingress.Metadata.Annotations["haproxy-haptic.org/permanent-redirect-code"] -%}
-            {%- if code == "" -%}{%- code = "301" -%}{%- end -%}
-            {%- if code != "301" && code != "302" && code != "303" && code != "307" && code != "308" -%}
-              {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + code + "' for annotation 'haproxy-haptic.org/permanent-redirect-code' on Ingress '" + key + "'. Valid values: 301, 302, 303, 307, 308") -}}
-              {%- valid = false -%}
-            {%- else -%}
-              {%- for ruleIndex, rule := range ingress.Spec.Rules -%}
-                {%- if rule.Host != "" -%}
-                  {{- shared.Publish("hosts", key + "/permanent/" + tostring(ruleIndex), map[string]any{"host": toLower(rule.Host), "location": permUrl, "code": code}) -}}
-                {%- end -%}
-              {%- end -%}
-            {%- end -%}
-          {%- end -%}
-        {%- end -%}
-        {%- var tempUrl = ingress.Metadata.Annotations["haproxy-haptic.org/temporary-redirect"] -%}
-        {%- if valid && tempUrl != "" -%}
-          {%- if regex_search(tempUrl, "[[:cntrl:]]") -%}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Invalid value for annotation 'haproxy-haptic.org/temporary-redirect' on Ingress '" + key + "': must not contain control characters — config-injection guard.") -}}
-          {%- else -%}
-            {%- var code = ingress.Metadata.Annotations["haproxy-haptic.org/temporary-redirect-code"] -%}
-            {%- if code == "" -%}{%- code = "302" -%}{%- end -%}
-            {%- if code != "301" && code != "302" && code != "303" && code != "307" && code != "308" -%}
-              {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + code + "' for annotation 'haproxy-haptic.org/temporary-redirect-code' on Ingress '" + key + "'. Valid values: 301, 302, 303, 307, 308") -}}
-            {%- else -%}
-              {%- for ruleIndex, rule := range ingress.Spec.Rules -%}
-                {%- if rule.Host != "" -%}
-                  {{- shared.Publish("hosts", key + "/temporary/" + tostring(ruleIndex), map[string]any{"host": toLower(rule.Host), "location": tempUrl, "code": code}) -}}
-                {%- end -%}
-              {%- end -%}
-            {%- end -%}
-          {%- end -%}
-        {%- end -%}
+      {%%
+        var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name
+        var a = ingress.Metadata.Annotations
+        var p = "haproxy-haptic.org/"
+        var replacements = map[string]string{
+          "https-redirect":           "redirect-scheme: https",
+          "https-redirect-code":      "redirect-code",
+          "https-redirect-port":      "redirect-scheme: https with redirect-port",
+          "permanent-redirect":       "the redirect-* annotations with redirect-code: 301",
+          "permanent-redirect-code":  "redirect-code",
+          "temporary-redirect":       "the redirect-* annotations with redirect-code: 302",
+          "temporary-redirect-code":  "redirect-code",
+        }
+        for _, removed := range keys(replacements) {
+          if a[p + removed] != "" {
+            _ = WebhookRejectOrWarn(ingress, "UnsupportedAnnotation", "Ingress " + key + " sets '" + p + removed + "', which was removed, so it has no effect. Use " + replacements[removed] + " instead.")
+          }
+        }
+        var scheme = a["haproxy-haptic.org/redirect-scheme"]
+        var host = toLower(a["haproxy-haptic.org/redirect-host"])
+        var port = a["haproxy-haptic.org/redirect-port"]
+        var path = a["haproxy-haptic.org/redirect-path"]
+        var pathPrefix = a["haproxy-haptic.org/redirect-path-prefix"]
+        var pathType = a["haproxy-haptic.org/path-type"]
+        var query = a["haproxy-haptic.org/redirect-query"]
+        var code = a["haproxy-haptic.org/redirect-code"]
+        var invalid = func(name string, value string, rule string) string {
+          return "Invalid value '" + value + "' for annotation '" + p + name + "' on Ingress '" + key + "'. " + rule
+        }
+        var pathPattern = "^/[^[:space:][:cntrl:]?#]*$"
+        var pathRule = "Must start with / and contain no whitespace, ? or #"
+        var problem = ""
+        if scheme != "" && scheme != "http" && scheme != "https" {
+          problem = invalid("redirect-scheme", scheme, "Valid values: http, https")
+        } else if host != "" && !regex_search(host, "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$") {
+          problem = invalid("redirect-host", host, "Must be a hostname such as new.example.com")
+        } else if port != "" && (!regex_search(port, "^[0-9]{1,5}$") || toint(port) < 1 || toint(port) > 65535) {
+          problem = invalid("redirect-port", port, "Must be a port from 1 to 65535")
+        } else if path != "" && !regex_search(path, pathPattern) {
+          problem = invalid("redirect-path", path, pathRule)
+        } else if pathPrefix != "" && !regex_search(pathPrefix, pathPattern) {
+          problem = invalid("redirect-path-prefix", pathPrefix, pathRule)
+        } else if pathPrefix != "" && path != "" {
+          problem = "Ingress " + key + " sets both " + p + "redirect-path and " + p + "redirect-path-prefix, so the redirect target is ambiguous. Remove one of them."
+        } else if pathPrefix != "" && (pathType == "regex" || pathType == "begin") {
+          problem = "Ingress " + key + " sets " + p + "redirect-path-prefix with " + p + "path-type: " + pathType + ", whose paths are not prefixes, so there is nothing to replace. Use redirect-path or a Prefix path."
+        } else if query != "" && query != "keep" && query != "drop" {
+          problem = invalid("redirect-query", query, "Valid values: keep, drop")
+        } else if code != "" && code != "301" && code != "302" && code != "303" && code != "307" && code != "308" {
+          problem = invalid("redirect-code", code, "Valid values: 301, 302, 303, 307, 308")
+        }
+        var enabled = scheme != "" || host != "" || port != "" || path != "" || pathPrefix != "" || query == "drop"
+        if problem == "" && !enabled && (code != "" || query != "") {
+          problem = "Ingress " + key + " sets " + p + "redirect-code or " + p + "redirect-query without a redirect target, so nothing is redirected. Add redirect-scheme, redirect-host, redirect-port, redirect-path, or redirect-path-prefix."
+        }
+        if problem != "" {
+          _ = WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", problem)
+        } else if enabled {
+          if query == "" {
+            query = "keep"
+          }
+          if code == "" {
+            code = "302"
+          }
+          var prefixes = []any{}
+          if pathPrefix != "" {
+            for _, rule := range ingress.Spec.Rules {
+              for _, ingressPath := range rule.Http.Paths {
+                if ingressPath.Path != "" {
+                  prefixes = append(prefixes, ingressPath.Path)
+                }
+              }
+            }
+          }
+          _ = shared.Publish("routes", key, map[string]any{
+            "route": key, "scheme": scheme, "host": host, "port": port, "path": path,
+            "pathPrefix": pathPrefix, "prefixes": prefixes, "query": query, "code": code,
+          })
+        }
+      %%}
       {%- end -%}
 
   # ==========================================================================

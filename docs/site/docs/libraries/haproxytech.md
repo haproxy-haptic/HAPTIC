@@ -363,7 +363,7 @@ spec:
 
 ### `haproxy.org/request-redirect`
 
-Redirect requests to a different host/port. Supports formats: `example.com`, `example.com:8888`, `https://example.com`, `http://example.com`.
+Redirects requests for the Ingress's paths to another host, keeping the request path and query. The value is `[http://|https://]host[:port]`, for example `example.com`, `example.com:8888`, or `https://example.com`. Without a scheme, the redirect uses `http://`, as upstream does.
 
 ```yaml
 annotations:

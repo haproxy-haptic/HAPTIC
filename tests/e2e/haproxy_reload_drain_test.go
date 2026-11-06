@@ -47,7 +47,6 @@ func TestHAProxyReloadDrainsHTTPConnections(t *testing.T) {
 			NewIngress(ctx, t, client, namespace, &IngressSpec{
 				Name: "echo", Host: host, BackendService: backend.Service, BackendPort: backend.Port,
 				TLSSecretName: secretName,
-				Annotations:   map[string]string{"haproxy-haptic.org/https-redirect": "false"},
 			})
 			httpclient.New(t).GET(host, "/").ExpectOK(t)
 			baseline := waitForQuietFleet(ctx, t, cs)

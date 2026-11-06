@@ -17,35 +17,42 @@
 package e2e
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/haproxy-haptic/HAPTIC/tests/e2e/httpclient"
 )
 
-// TestHapticSSLRedirect adapts the haproxy.org/ssl-redirect vendor test to
-// haptic's native prefix: haproxy-haptic.org/https-redirect makes HAProxy answer
-// plain HTTP requests with the configured redirect status and a https://
-// Location. Verifies the status code and the https:// scheme in Location.
+// TestHapticSSLRedirect covers haproxy-haptic.org/redirect-scheme: https:
+// plain HTTP gets the configured status and the same URL on https://, and the
+// HTTPS request it points at is served instead of redirected again.
 func TestHapticSSLRedirect(t *testing.T) {
 	t.Parallel()
 	RunSimpleIngressTest(t, &SimpleIngressTest{
-		Description: "Ingress: haptic ssl-redirect annotation",
-		Host:        "ingress-haptic-sslredirect.localdev.me",
+		Description:   "Ingress: haptic redirect-scheme https",
+		Host:          "ingress-haptic-sslredirect.localdev.me",
+		TLSSecretName: "tls",
 		Annotations: map[string]string{
-			"haproxy-haptic.org/https-redirect":      "true",
-			"haproxy-haptic.org/https-redirect-code": "301",
+			"haproxy-haptic.org/redirect-scheme": "https",
+			"haproxy-haptic.org/redirect-code":   "301",
 		},
-		Assess: []SimpleIngressAssertion{{
-			Name: "HTTP request returns 301 with https:// Location",
-			Check: func(t *testing.T, host string) {
-				t.Helper()
-				resp := httpclient.New(t).GET(host, "/").ExpectStatus(t, 301)
-				loc := resp.Header.Get("Location")
-				if !strings.HasPrefix(loc, "https://") {
-					t.Fatalf("expected https:// scheme in Location, got %q", loc)
-				}
+		Assess: []SimpleIngressAssertion{
+			{
+				Name: "HTTP request returns 301 to the same URL on https",
+				Check: func(t *testing.T, host string) {
+					t.Helper()
+					resp := httpclient.New(t).GET(host, "/some/path?q=1").ExpectStatus(t, 301)
+					if got, want := resp.Header.Get("Location"), "https://"+host+"/some/path?q=1"; got != want {
+						t.Fatalf("expected Location %q, got %q", want, got)
+					}
+				},
 			},
-		}},
+			{
+				Name: "HTTPS request is served, not redirected",
+				Check: func(t *testing.T, host string) {
+					t.Helper()
+					httpclient.New(t).HTTPS(host, "/some/path").ExpectOK(t)
+				},
+			},
+		},
 	})
 }

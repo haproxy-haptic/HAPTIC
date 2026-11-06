@@ -321,11 +321,28 @@ Header/cookie/weight-based canary routing and request mirroring via the SPOA hub
 
 ### Redirects, HSTS, passthrough, and config injection
 
-HTTP→HTTPS and host redirects (reload-free maps), HSTS, SSL passthrough, a default backend, and raw section injection.
+Redirects (reload-free maps), HSTS, SSL passthrough, a default backend, and raw section injection.
+
+The `redirect-*` annotations describe one redirect target for the Ingress's routes. Each one names a part of the URL to change; every part you don't set is taken from the request. Setting `redirect-scheme`, `redirect-host`, `redirect-port`, `redirect-path`, `redirect-path-prefix`, or `redirect-query: drop` enables the redirect. A request that is already at the target isn't redirected, so `redirect-scheme: https` only redirects plain HTTP.
+
+```yaml
+annotations:
+  # http(s)://old.example.com/login?state=abc → https://new.example.com/login?state=abc
+  haproxy-haptic.org/redirect-scheme: https
+  haproxy-haptic.org/redirect-host: new.example.com
+  haproxy-haptic.org/redirect-code: "308"
+```
 
 | Annotation | Behavior |
 |------------|----------|
 | `haproxy-haptic.org/root-redirect` | Redirects requests for the host root path (`/`) to the given sub-path. |
+| `haproxy-haptic.org/redirect-scheme` | Sets the redirect target scheme, `http` or `https`. Default: the request's scheme. |
+| `haproxy-haptic.org/redirect-host` | Sets the redirect target hostname. Default: the request's host. |
+| `haproxy-haptic.org/redirect-port` | Sets the redirect target port. Default: the request's port when `redirect-scheme` and `redirect-host` are unset too; otherwise none, so the scheme's standard port applies. |
+| `haproxy-haptic.org/redirect-path` | Replaces the whole request path in the redirect target. Default: the request's path. |
+| `haproxy-haptic.org/redirect-path-prefix` | Replaces the Ingress path prefix the request matched and keeps the rest of the path. On path `/old`, `/new` redirects `/old/a?q=1` to `/new/a?q=1`; on path `/`, `/app` redirects `/a` to `/app/a`. The target path must route to another Ingress, or the redirect repeats. Can't be combined with `redirect-path` or a `regex` or `begin` `path-type`. |
+| `haproxy-haptic.org/redirect-query` | `keep` (default) or `drop` the request's query string. |
+| `haproxy-haptic.org/redirect-code` | Sets the redirect status code: `301`, `302`, `303`, `307`, or `308` (default `302`). |
 | `haproxy-haptic.org/config-defaults` | Injects raw operator-authored directives verbatim into the `defaults` section. Rejected unless [`ingressPermissions.allowRawHAProxyConfig`](../operations/security.md#raw-configuration-annotations) is `true`. |
 | `haproxy-haptic.org/config-frontend` | Injects raw operator-authored directives into every frontend, before routing. Rejected unless [`ingressPermissions.allowRawHAProxyConfig`](../operations/security.md#raw-configuration-annotations) is `true`. |
 | `haproxy-haptic.org/config-global` | Injects raw operator-authored HAProxy directives verbatim into the `global` section. Rejected unless [`ingressPermissions.allowRawHAProxyConfig`](../operations/security.md#raw-configuration-annotations) is `true`. |
@@ -337,14 +354,7 @@ HTTP→HTTPS and host redirects (reload-free maps), HSTS, SSL passthrough, a def
 | `haproxy-haptic.org/hsts-include-subdomains` | Appends `includeSubDomains` to the `Strict-Transport-Security` header when set to `true`. |
 | `haproxy-haptic.org/hsts-max-age` | Sets the HSTS `max-age` in seconds (default: `controller.config.templatingSettings.extraContext.tls.hsts.maxAge`, `31536000`). |
 | `haproxy-haptic.org/hsts-preload` | Appends `preload` to the `Strict-Transport-Security` header when set to `true`. |
-| `haproxy-haptic.org/permanent-redirect` | Redirects the host to the given URL with a permanent status code (default `301`). |
-| `haproxy-haptic.org/permanent-redirect-code` | Sets the status code for `permanent-redirect` (default `301`). |
 | `haproxy-haptic.org/ssl-passthrough` | Passes TLS through to the backend without terminating it, routed by SNI on a dedicated TCP frontend. |
-| `haproxy-haptic.org/https-redirect` | Redirects plain HTTP requests for the host to HTTPS. Hosts that also set `https-redirect-port` are handled there instead, avoiding a double redirect. |
-| `haproxy-haptic.org/https-redirect-code` | Sets the HTTP-to-HTTPS redirect status code (`301`, `302`, `303`, `307`, or `308`; default `302`). |
-| `haproxy-haptic.org/https-redirect-port` | Redirects plain HTTP requests to HTTPS on an explicit port, preserving the request URI. |
-| `haproxy-haptic.org/temporary-redirect` | Redirects the host to the given URL with a temporary status code (default `302`). |
-| `haproxy-haptic.org/temporary-redirect-code` | Sets the status code for `temporary-redirect` (default `302`). |
 
 ### Authentication, mTLS, and WAF
 
@@ -646,6 +656,27 @@ Remove these annotations from existing manifests:
 | Annotation | Behavior |
 |------------|----------|
 | `haproxy-haptic.org/scale-server-slots` | No longer has any effect. HAPTIC manages server membership without reserved slots. Setting it emits a Warning Event; remove the annotation. |
+| `haproxy-haptic.org/https-redirect` | Replaced by `redirect-scheme: https`. |
+| `haproxy-haptic.org/https-redirect-code` | Replaced by `redirect-code`. |
+| `haproxy-haptic.org/https-redirect-port` | Replaced by `redirect-scheme: https` with `redirect-port`. |
+| `haproxy-haptic.org/permanent-redirect` | Replaced by the `redirect-*` annotations with `redirect-code: "301"`. |
+| `haproxy-haptic.org/permanent-redirect-code` | Replaced by `redirect-code`. |
+| `haproxy-haptic.org/temporary-redirect` | Replaced by the `redirect-*` annotations; `redirect-code` defaults to `302`. |
+| `haproxy-haptic.org/temporary-redirect-code` | Replaced by `redirect-code`. |
+
+Admission rejects the removed redirect annotations. On an Ingress that already has one, it has no effect and emits an `UnsupportedAnnotation` Warning Event. `permanent-redirect` and `temporary-redirect` redirected to a fixed URL and dropped the request path and query. To keep that behavior, set every part of the URL:
+
+```yaml
+annotations:
+  # Before: haproxy-haptic.org/permanent-redirect: https://example.com/relocated
+  haproxy-haptic.org/redirect-scheme: https
+  haproxy-haptic.org/redirect-host: example.com
+  haproxy-haptic.org/redirect-path: /relocated
+  haproxy-haptic.org/redirect-query: drop
+  haproxy-haptic.org/redirect-code: "301"
+```
+
+The old annotations applied to every request for the Ingress's hosts. The `redirect-*` annotations apply only to requests routed to the Ingress's own paths.
 
 ### OAuth protected-resource discovery
 

@@ -19,10 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Added
 
 - Serve additional TLS Secrets from the controller namespace by SNI through `controller.config.templatingSettings.extraContext.tls.additionalCertificates` ([#640](https://github.com/haproxy-haptic/HAPTIC/issues/640)).
+- `haproxy-haptic.org/redirect-scheme`, `-host`, `-port`, `-path`, `-path-prefix`, `-query`, and `-code` redirect an Ingress's routes to a target built from the request, so a host alias keeps the path and query ([#643](https://github.com/haproxy-haptic/HAPTIC/issues/643)).
+
+#### Changed
+
+- **BREAKING:** `haproxy-haptic.org/https-redirect`, `https-redirect-code`, `https-redirect-port`, `permanent-redirect`, `permanent-redirect-code`, `temporary-redirect`, and `temporary-redirect-code` are removed in favor of `redirect-*`; admission rejects them. See [Removed annotations](https://haproxy-haptic.org/docs/latest/libraries/haptic-annotations/#removed-annotations) for the migration.
 
 #### Fixed
 
 - Disabling the SPOA hub removes mirror and shared rate-limit dispatch directives, keeping active HTTPS frontends valid.
+- `haproxy.org/request-redirect` keeps the request path and query, adds `http://` to a bare host, and applies only to the Ingress's routes, as upstream does.
 
 ## [0.11.0] - 2026-11-04
 
