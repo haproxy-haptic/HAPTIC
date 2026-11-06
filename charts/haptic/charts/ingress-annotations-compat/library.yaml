@@ -1737,10 +1737,16 @@ templateSnippets:
             "nginx":          {"limit-rps", "limit-rpm", "limit-connections", "limit-whitelist", "limit-rate", "limit-rate-after"},
           }},
           {"name": "HTTPS redirect", "families": map[string][]string{
-            "haptic":         {"https-redirect", "https-redirect-code", "https-redirect-port"},
+            "haptic":         {"redirect-scheme", "redirect-port"},
             "haproxyIngress": {"ssl-redirect", "ssl-redirect-code"},
             "haproxytech":    {"ssl-redirect", "ssl-redirect-code", "ssl-redirect-port"},
             "nginx":          {"ssl-redirect", "force-ssl-redirect"},
+          }},
+          {"name": "URL redirect", "families": map[string][]string{
+            "haptic":         {"redirect-scheme", "redirect-host", "redirect-port", "redirect-path", "redirect-path-prefix", "redirect-query", "redirect-code"},
+            "haproxyIngress": {"redirect-to", "redirect-to-code"},
+            "haproxytech":    {"request-redirect", "request-redirect-code"},
+            "nginx":          {"permanent-redirect", "permanent-redirect-code", "temporal-redirect", "temporal-redirect-code"},
           }},
           {"name": "backend protocol", "families": map[string][]string{
             "haptic":         {"backend-protocol"},
@@ -2026,6 +2032,36 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: "haproxy-haptic.org/cors-enable"}
       - {type: contains, target: rendering_error, pattern: "nginx.ingress.kubernetes.io/enable-cors"}
       - {type: contains, target: rendering_error, pattern: "rejected even when the values agree"}
+
+  test-annotation-family-conflict-url-redirect-rejected:
+    _helm_skip_test: '{{ if not .Values.controller.templateLibraries.ingressAnnotationsCompat.enabled }}true{{ end }}'
+    description: >-
+      Under the admission webhook, one Ingress redirecting through both
+      haproxy-haptic.org/redirect-host and haproxy.org/request-redirect is
+      rejected, because only one redirect target can apply.
+    extraContext:
+      renderMode: admission
+      admissionSubject: { store: ingresses, namespace: default, name: mixed-redirect }
+      annotationLibraries: *annotationlibrariesHapticNginx2
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: mixed-redirect
+            annotations:
+              haproxy-haptic.org/redirect-host: new.example.com
+              haproxy.org/request-redirect: other.example.com
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: mixed-redirect.example.com
+                http: *httpRoot
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "configures the URL redirect feature through annotations from multiple families"
 
   test-annotation-family-conflict-different-features-allowed:
     _helm_skip_test: '{{ if not .Values.controller.templateLibraries.ingressAnnotationsCompat.enabled }}true{{ end }}'

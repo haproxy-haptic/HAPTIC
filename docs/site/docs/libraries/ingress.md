@@ -320,7 +320,7 @@ controller:
 | `ingressDefaultSSLRedirect` | `false` | Redirect every HTTPS-served Ingress host from HTTP to HTTPS. Opt-in. |
 | `ingressDefaultSSLRedirectCode` | `"308"` | HTTP status code for the redirect — one of `301`, `302`, `303`, `307`, `308`. |
 
-The global toggle redirects all HTTPS-served Ingress hosts at once. For per-host control, leave it off and use the native [`haproxy-haptic.org/https-redirect`](haptic-annotations.md#redirects-hsts-passthrough-and-config-injection)
+The global toggle redirects all HTTPS-served Ingress hosts at once. For per-Ingress control, leave it off and set the native [`haproxy-haptic.org/redirect-scheme: https`](haptic-annotations.md#redirects-hsts-passthrough-and-config-injection)
 annotation on selected Ingresses.
 
 ### Backend generation

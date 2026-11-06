@@ -276,13 +276,13 @@ templateSnippets:
 
   features-130-haproxytech-request-redirect:
     template: |
-      {# base.yaml's frontend-filters-060-redirect-location emits the rule from redirect-loc-<code>.map,
-          so a redirect change is a reload-free map update. No first_seen gate — features-170 dedups hosts. #}
+      {# base.yaml's frontend-filters-058-route-redirect emits the rule from route-redirect.map,
+          so a redirect change is a reload-free map update. #}
       {%- var gf = shared.Get("globalFeatures").(map[string]any) -%}
       {{- render "haproxytech-request-redirect-publications" -}}
-      {%- for _, entry := range incremental_values("haproxytech-request-redirect-hosts", "hosts") -%}
-        {%- var rh []any = coalesce(gf["redirectHosts"], []any{}) -%}
-        {%- gf["redirectHosts"] = append(rh, entry) -%}
+      {%- for _, entry := range incremental_values("haproxytech-request-redirect-routes", "routes") -%}
+        {%- var redirects []any = coalesce(gf["routeRedirects"], []any{}) -%}
+        {%- gf["routeRedirects"] = append(redirects, entry) -%}
       {%- end -%}
 
   haproxytech-request-redirect-publications:
@@ -290,7 +290,7 @@ templateSnippets:
     incremental:
       source: ingresses
       whenAnyPathExists: ["metadata.annotations['haproxy.org/request-redirect']"]
-      group: haproxytech-request-redirect-hosts
+      group: haproxytech-request-redirect-routes
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
@@ -311,12 +311,21 @@ templateSnippets:
             {%- if !codeValid -%}
               {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + code + "' for annotation 'haproxy.org/request-redirect-code' on Ingress '" + key + "'. Valid values: 301, 302, 303, 307, 308") -}}
             {%- else -%}
-              {%- for ruleIndex, rule := range ingress.Spec.Rules -%}
-                {%- if rule.Host != "" -%}
-                  {{- shared.Publish("hosts", key + "/" + tostring(ruleIndex), map[string]any{
-                    "host": toLower(rule.Host), "location": target, "code": code,
-                  }) -}}
-                {%- end -%}
+              {#- Upstream: `[http(s)://]host[:port]`, http unless stated; the request URI is kept. -#}
+              {%- var scheme = "http" -%}
+              {%- var hostPort = target -%}
+              {%- if hasPrefix(target, "https://") -%}{%- scheme = "https" -%}{%- hostPort = target[8:] -%}
+              {%- else if hasPrefix(target, "http://") -%}{%- hostPort = target[7:] -%}{%- end -%}
+              {%- var parts = split(toLower(hostPort), ":") -%}
+              {%- var port = "" -%}
+              {%- if len(parts) == 2 -%}{%- port = parts[1] -%}{%- end -%}
+              {%- if len(parts) > 2 || !regex_search(parts[0], "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$") || (len(parts) == 2 && !regex_search(parts[1], "^[0-9]{1,5}$")) -%}
+                {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + target + "' for annotation 'haproxy.org/request-redirect' on Ingress '" + key + "'. Must be [http://|https://]host[:port], such as https://new.example.com") -}}
+              {%- else -%}
+                {{- shared.Publish("routes", key, map[string]any{
+                  "route": key, "scheme": scheme, "host": parts[0], "port": port,
+                  "path": "", "query": "keep", "code": code,
+                }) -}}
               {%- end -%}
             {%- end -%}
           {%- end -%}
@@ -2113,6 +2122,71 @@ validationTests:
       - {type: contains, target: "map:ing-ac-routes.map", pattern: '(?m)^default/ac-wl haproxytech:allow$'}
       - {type: contains, target: "map:ing-ac-allow.map", pattern: '(?m)^172\.16\.0\.0/12\|default/ac-wl 1$'}
 
+  test-haproxytech-request-redirect:
+    description: >-
+      haproxy.org/request-redirect redirects the Ingress's routes to the named host,
+      keeping the request path and query; a bare host gets http://, as upstream does.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: request-redirect-bare
+            annotations:
+              haproxy.org/request-redirect: "new.example.com:8888"
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: old.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: request-redirect-https
+            annotations:
+              haproxy.org/request-redirect: "https://secure.example.com"
+              haproxy.org/request-redirect-code: "301"
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: legacy.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - type: haproxy_valid
+      - type: equals
+        target: map:route-redirect.map
+        expected: "default/request-redirect-bare http|new.example.com|%3a8888||keep|302\ndefault/request-redirect-https https|secure.example.com|||keep|301\n"
+
+  test-haproxytech-request-redirect-invalid-admission-rejected:
+    description: Under the admission webhook, a request-redirect value that isn't [scheme://]host[:port] is rejected.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: request-redirect-path
+            annotations:
+              haproxy.org/request-redirect: "https://new.example.com/app"
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: old.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "Invalid value 'https://new.example.com/app' for annotation 'haproxy.org/request-redirect'"
+
   test-haproxytech-ssl-redirect-port:
     description: >-
       haproxy.org/ssl-redirect-port redirects to https on the explicit port instead of
@@ -2808,7 +2882,7 @@ _migrationCoverage:
         note: Redirects to HTTPS on an explicit port, preserving the request URI, via a reload-free map.
       haproxy.org/request-redirect:
         status: supported
-        note: Host-scoped redirect to a URL via a reload-free map.
+        note: Redirects the Ingress's routes to the given host, keeping the request path and query, via a reload-free map.
       haproxy.org/request-redirect-code:
         status: different
         note: Default 302; an invalid code fails the render.

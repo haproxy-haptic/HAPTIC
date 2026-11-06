@@ -3,8 +3,9 @@
 # haptic-annotations is a best-of-breed SUPERSET of the three vendor
 # libraries — one clean haproxy-haptic.org/* annotation per capability,
 # adopting whichever vendor's semantics is best. Every key is `supported`
-# or `different` (works but diverges, see note), except one `dropped` key
-# that is inert and only warns (scale-server-slots, removed by ADR-0011). This
+# or `different` (works but diverges, see note), except the `dropped` keys
+# that are inert and only warn (scale-server-slots, removed by ADR-0011, and the
+# redirect annotations replaced by redirect-*). This
 # block is pinned against the annotation keys the fragments actually read
 # by scripts/check-migration-coverage.sh, and documented on the library's
 # page by scripts/check-annotation-{docs,status}.sh.
@@ -53,6 +54,27 @@ _migrationCoverage:
       haproxy-haptic.org/error-pages:
         status: supported
         note: "ConfigMap pages: 401/403/413/429 → a route-scoped `http-request deny|return … file|lf-file` before each frontend refusal with that status; 500/502/503/504 → `http-error` in the backend profile."
+      haproxy-haptic.org/redirect-code:
+        status: supported
+        note: "Redirect status code (301, 302, 303, 307, or 308; default 302)."
+      haproxy-haptic.org/redirect-host:
+        status: supported
+        note: "Redirect target host; unset keeps the request's host."
+      haproxy-haptic.org/redirect-path:
+        status: supported
+        note: "Replaces the whole request path in the redirect target; unset keeps it."
+      haproxy-haptic.org/redirect-path-prefix:
+        status: supported
+        note: "Replaces the matched Ingress path prefix in the redirect target and keeps the rest of the path."
+      haproxy-haptic.org/redirect-port:
+        status: supported
+        note: "Redirect target port; unset omits it, or keeps the request's when scheme and host are unset too."
+      haproxy-haptic.org/redirect-query:
+        status: supported
+        note: "keep (default) or drop the request query string."
+      haproxy-haptic.org/redirect-scheme:
+        status: supported
+        note: "Redirect target scheme, http or https; unset keeps the request's. A redirect to the requested URL is skipped, so https never loops."
       haproxy-haptic.org/root-redirect:
         status: supported
         note: "Redirects requests for the host root path (`/`) to the given sub-path."
@@ -375,11 +397,11 @@ _migrationCoverage:
         status: supported
         note: "regex|exact|prefix|begin honored only for pathType ImplementationSpecific; selects path-regex/path-exact/path-prefix(trailing-slash normalised)/path-prefix-exact map"
       haproxy-haptic.org/permanent-redirect:
-        status: supported
-        note: "URL registered into gf[\"redirectHosts\"] with code (default 301); base emits from redirect-loc-<code>.map. Control-char guarded."
+        status: dropped
+        note: "Removed; use the redirect-* annotations with redirect-code: 301. Setting it emits an UnsupportedAnnotation Warning Event and admission rejects it."
       haproxy-haptic.org/permanent-redirect-code:
-        status: supported
-        note: "Permanent redirect code (default 301); validated fail-loud."
+        status: dropped
+        note: "Removed; use redirect-code. Setting it emits an UnsupportedAnnotation Warning Event and admission rejects it."
       haproxy-haptic.org/pod-maxconn:
         status: supported
         note: "Cluster budget divided by count of Ready HAProxy pods, quantized up to a power of two; result set on serverOpts.maxconn for BackendServersResult to emit as per-server maxconn."
@@ -558,20 +580,20 @@ _migrationCoverage:
         status: supported
         note: "Incremental per-Ingress SNI publication with winner-conditioned backends; ssl.yaml builds the SNI TCP frontend."
       haproxy-haptic.org/https-redirect:
-        status: supported
-        note: "Redirects plain HTTP requests for the host to HTTPS. Hosts that also set `https-redirect-port` are handled there instead, avoiding a double redirect."
+        status: dropped
+        note: "Removed; use redirect-scheme: https. Setting it emits an UnsupportedAnnotation Warning Event and admission rejects it."
       haproxy-haptic.org/https-redirect-code:
-        status: supported
-        note: "Sets the HTTP-to-HTTPS redirect status code (`301`, `302`, `303`, `307`, or `308`; default `302`)."
+        status: dropped
+        note: "Removed; use redirect-code. Setting it emits an UnsupportedAnnotation Warning Event and admission rejects it."
       haproxy-haptic.org/https-redirect-port:
-        status: supported
-        note: "Redirects plain HTTP requests to HTTPS on an explicit port, preserving the request URI."
+        status: dropped
+        note: "Removed; use redirect-scheme: https with redirect-port. Setting it emits an UnsupportedAnnotation Warning Event and admission rejects it."
       haproxy-haptic.org/temporary-redirect:
-        status: supported
-        note: "Redirects the host to the given URL with a temporary status code (default `302`)."
+        status: dropped
+        note: "Removed; use the redirect-* annotations with redirect-code: 302. Setting it emits an UnsupportedAnnotation Warning Event and admission rejects it."
       haproxy-haptic.org/temporary-redirect-code:
-        status: supported
-        note: "Sets the status code for `temporary-redirect` (default `302`)."
+        status: dropped
+        note: "Removed; use redirect-code. Setting it emits an UnsupportedAnnotation Warning Event and admission rejects it."
       haproxy-haptic.org/timeout-check:
         status: supported
         note: "Emits `timeout check <x>`; guarded."

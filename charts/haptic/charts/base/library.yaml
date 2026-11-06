@@ -1979,6 +1979,76 @@ templateSnippets:
         {{- HostKeyedMapFile(byCode[code], "location", "redirect-loc-" + code + ".map") -}}
       {%- end -%}
 
+  features-172-route-redirect-map:
+    template: |
+      {#
+        Builds route-redirect.map (route key → target) from gf["routeRedirects"]
+        entries {route, scheme, host, port, path, query, code[, pathPrefix,
+        prefixes]}; the rule is frontend-filters-058-route-redirect. An empty
+        scheme, host or path is taken from the request. An empty port is taken from
+        the request only when scheme and host are empty too; otherwise it is
+        omitted, i.e. the scheme's default. First writer wins per route. Value:
+        scheme|host|port|path|query|code, each URL-encoded, with port ":<n>", ""
+        (omit) or "=" (the request's).
+
+        pathPrefix replaces whichever of the route's `prefixes` the request path
+        matched, segment-wise: route-redirect-prefix.map maps `<route>|<prefix>/`
+        to `<prefix length>|<replacement>`, longest prefix first for map_beg.
+      #}
+      {%- import "util-register-map" for RegisterMap -%}
+      {%%
+        var gf = shared.Get("globalFeatures")
+        var entries []any = coalesce(gf["routeRedirects"], []any{})
+        var routes = entries |
+          reject(e => dig_string(e, "", "route") == "") |
+          unique_by("route")
+        var values = map[string]string{}
+        var prefixRows = []map[string]any{}
+        for _, e := range routes {
+          var route = dig_string(e, "", "route")
+          var pathPrefix = dig_string(e, "", "pathPrefix")
+          if pathPrefix != "" {
+            for _, prefix := range toSlice(e | dig("prefixes")) {
+              var trimmed = trimSuffix(tostring(prefix), "/")
+              prefixRows = append(prefixRows, map[string]any{
+                "key": route + "|" + trimmed + "/",
+                "value": tostring(len(trimmed)) + "|" + queryEscape(trimSuffix(pathPrefix, "/")),
+              })
+            }
+          }
+          var scheme = dig_string(e, "", "scheme")
+          var host = dig_string(e, "", "host")
+          var port = dig_string(e, "", "port")
+          if port != "" {
+            port = ":" + port
+          } else if scheme == "" && host == "" {
+            port = "="
+          }
+          values[route] = join([]string{
+            queryEscape(scheme), queryEscape(host), queryEscape(port),
+            queryEscape(dig_string(e, "", "path")), dig_string(e, "keep", "query"), dig_string(e, "", "code"),
+          }, "|")
+        }
+        var lines []string
+        for _, route := range keys(values) {
+          lines = append(lines, route + " " + values[route])
+        }
+        if len(lines) > 0 {
+          var _ = RegisterMap("route-redirect.map", lines, map[string]any{"ordered": false})
+        }
+        if len(entries | filter(e => dig_string(e, "", "pathPrefix") != "")) > 0 {
+          var sorted, sortErr = sort_by(prefixRows | unique_by("key"), []string{"$.key | length:desc", "$.key"})
+          if sortErr != nil {
+            fail("failed to sort route-redirect-prefix.map: " + tostring(sortErr))
+          }
+          var prefixLines []string
+          for _, row := range sorted {
+            prefixLines = append(prefixLines, tostring(row["key"]) + " " + tostring(row["value"]))
+          }
+          var _ = RegisterMap("route-redirect-prefix.map", prefixLines, map[string]any{})
+        }
+      %%}
+
   util-haproxy-duration:
     template: |-
       {#
@@ -2303,6 +2373,59 @@ templateSnippets:
       {%- if len(hstsHosts) > 0 -%}
         {{- HostKeyedMapFile(hstsHosts, "value", "hsts.map") -}}
       {%- end -%}
+
+  frontend-filters-058-route-redirect:
+    template: |
+      {#
+        Per-route redirect driven by route-redirect.map (features-172), keyed on
+        txn.resource_key. Builds the target from the map fields and the request, and
+        skips the redirect when the target is the URL being requested, so an
+        `https` scheme redirect never loops on the HTTPS frontend. `code` must be a
+        literal, hence one redirect rule per code in use.
+      #}
+      {%- var gf = shared.Get("globalFeatures") -%}
+      {%- var entries []any = coalesce(gf["routeRedirects"], []any{}) -%}
+      {%- if len(entries) > 0 %}
+      {%- var m, _ = pathResolver.GetPath("route-redirect.map", "map") %}
+      {%- var codes = map[string]bool{} %}
+      {%- var prefixed = false %}
+      {%- for _, e := range entries %}
+        {%- codes[dig_string(e, "", "code")] = true %}
+        {%- if dig_string(e, "", "pathPrefix") != "" %}{%- prefixed = true %}{%- end %}
+      {%- end %}
+      {%- var found = "{ var(txn.rdr) -m found }" %}
+      # base/route-redirect
+      http-request set-var(txn.rdr) var(txn.resource_key),map({{ m }}) if { var(txn.resource_key),map({{ m }}) -m found }
+      http-request set-var(txn.rdr_req_scheme) str(https) if {{ found }} { ssl_fc }
+      http-request set-var(txn.rdr_req_scheme) str(http) if {{ found }} !{ ssl_fc }
+      http-request set-var-fmt(txn.rdr_req_port) ":%[req.hdr(host),field(2,:)]" if {{ found }} { req.hdr(host) -m sub : }
+      {#- A default port is dropped on both sides: clients omit it from Host, so ":443" would never compare equal. #}
+      http-request unset-var(txn.rdr_req_port) if { var(txn.rdr_req_port) -m str :443 } { var(txn.rdr_req_scheme) -m str https } || { var(txn.rdr_req_port) -m str :80 } { var(txn.rdr_req_scheme) -m str http }
+      http-request set-var-fmt(txn.rdr_current) "%[var(txn.rdr_req_scheme)]://%[var(txn.host)]%[var(txn.rdr_req_port)]%[path]" if {{ found }}
+      http-request set-var-fmt(txn.rdr_current) "%[var(txn.rdr_current)]?%[query]" if {{ found }} { query -m found }
+      http-request set-var(txn.rdr_scheme) var(txn.rdr),field(1,|) if {{ found }}
+      http-request set-var(txn.rdr_scheme) var(txn.rdr_req_scheme) if { var(txn.rdr_scheme) -m len 0 }
+      http-request set-var(txn.rdr_host) var(txn.rdr),field(2,|),url_dec(1) if {{ found }}
+      http-request set-var(txn.rdr_host) var(txn.host) if { var(txn.rdr_host) -m len 0 }
+      http-request set-var(txn.rdr_port) var(txn.rdr),field(3,|),url_dec(1) if {{ found }}
+      {#- set-var-fmt: set-var from an unset var is a no-op and would leave the "=" marker in Location. #}
+      http-request set-var-fmt(txn.rdr_port) "%[var(txn.rdr_req_port)]" if { var(txn.rdr_port) -m str = }
+      http-request set-var(txn.rdr_path) var(txn.rdr),field(4,|),url_dec(1) if {{ found }}
+      http-request set-var(txn.rdr_path) path if { var(txn.rdr_path) -m len 0 }
+      {%- if prefixed %}
+      {%- var pm, _ = pathResolver.GetPath("route-redirect-prefix.map", "map") %}
+      http-request set-var(txn.rdr_pfx) var(txn.resource_key),concat(|,txn.path,/),map_beg({{ pm }}) if {{ found }}
+      http-request set-var(txn.rdr_plen) var(txn.rdr_pfx),field(1,|),add(0) if { var(txn.rdr_pfx) -m found }
+      http-request set-var-fmt(txn.rdr_path) "%[var(txn.rdr_pfx),field(2,|),url_dec(1)]%[path,bytes(txn.rdr_plen)]" if { var(txn.rdr_pfx) -m found }
+      http-request set-var(txn.rdr_path) str(/) if { var(txn.rdr_pfx) -m found } { var(txn.rdr_path) -m len 0 }
+      {%- end %}
+      http-request unset-var(txn.rdr_port) if { var(txn.rdr_port) -m str :443 } { var(txn.rdr_scheme) -m str https } || { var(txn.rdr_port) -m str :80 } { var(txn.rdr_scheme) -m str http }
+      http-request set-var-fmt(txn.rdr_location) "%[var(txn.rdr_scheme)]://%[var(txn.rdr_host)]%[var(txn.rdr_port)]%[var(txn.rdr_path)]" if {{ found }}
+      http-request set-var-fmt(txn.rdr_location) "%[var(txn.rdr_location)]?%[query]" if { var(txn.rdr),field(5,|) -m str keep } { query -m found }
+      {%- for _, code := range keys(codes) %}
+      http-request redirect location %[var(txn.rdr_location)] code {{ code }} if { var(txn.rdr),field(6,|) -m str {{ code }} } !{ var(txn.rdr_location),strcmp(txn.rdr_current) eq 0 }
+      {%- end %}
+      {%- end %}
 
   frontend-filters-060-redirect-location:
     template: |
