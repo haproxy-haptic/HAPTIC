@@ -325,6 +325,7 @@ validationTests:
       - {type: contains, target: map:jwt-resource-metadata-challenge.map, pattern: '(?m)%2foauth-protected-resource%22$'}
 
   test-haptic-jwt-resource-metadata-without-jwt:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       ingresses:
@@ -338,6 +339,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'enables JWT metadata without JWT verification'}
 
   test-haptic-jwt-resource-metadata-non-object:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -350,6 +352,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'not a JSON object'}
 
   test-haptic-jwt-resource-metadata-null:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -362,6 +365,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'not a JSON object'}
 
   test-haptic-jwt-resource-metadata-malformed:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -374,6 +378,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'not a JSON object'}
 
   test-haptic-jwt-resource-metadata-http:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -386,6 +391,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'invalid resource URL'}
 
   test-haptic-jwt-resource-metadata-query:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -398,6 +404,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'invalid resource URL'}
 
   test-haptic-jwt-resource-metadata-fragment:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -410,6 +417,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'invalid resource URL'}
 
   test-haptic-jwt-resource-metadata-credentials:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -422,6 +430,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'invalid resource URL'}
 
   test-haptic-jwt-resource-metadata-wrong-host:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -434,6 +443,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'does not serve the metadata resource host'}
 
   test-haptic-jwt-resource-metadata-issuer:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -446,6 +456,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'invalid authorization server'}
 
   test-haptic-jwt-resource-metadata-bearer-method:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -458,6 +469,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'Authorization header'}
 
   test-haptic-jwt-resource-metadata-scope-type:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -469,7 +481,111 @@ validationTests:
     assertions:
       - {type: contains, target: rendering_error, pattern: 'non-empty strings'}
 
+  test-haptic-jwt-resource-metadata-wrong-host-reconcile-denies-route:
+    description: >-
+      A ConfigMap whose resource names a host the Ingress doesn't serve denies only that
+      route with 503 and a Warning Event; the configuration still renders for every
+      other route.
+    extraContext: {renderMode: reconcile}
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "https://other.example.com/mcp"}'
+      ingresses:
+        - *jwt-metadata-ingress
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: web}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: web.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - type: haproxy_valid
+      - {type: equals, target: map:jwt-resource-metadata-unavailable.map, expected: "default/mcp unavailable\n"}
+      - {type: contains, target: events, pattern: "Warning JWTMetadataInvalid networking.k8s.io/v1 Ingress default/mcp:"}
+      - {type: contains, target: events, pattern: "does not serve the metadata resource host other.example.com. Set resource to a URL on an Ingress host. Requests return 503."}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 503 if \{ var\(txn.policy_id\),map\(\S*jwt-resource-metadata-unavailable\.map\) -m found \}'}
+
+  test-haptic-jwt-resource-metadata-wrong-host-other-ingress-admitted:
+    description: >-
+      Admission of an unrelated Ingress succeeds while another Ingress's metadata
+      ConfigMap names a host it doesn't serve; only that other route is denied.
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: web}}
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: oauth-metadata}
+          data:
+            metadata.json: '{"resource": "https://other.example.com/mcp"}'
+      ingresses:
+        - *jwt-metadata-ingress
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: web}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: web.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}
+    assertions:
+      - type: haproxy_valid
+      - {type: equals, target: map:jwt-resource-metadata-unavailable.map, expected: "default/mcp unavailable\n"}
+
+  test-haptic-jwt-resource-metadata-conflict-reconcile-denies-routes:
+    description: >-
+      Two routes publishing different documents at one discovery endpoint are both
+      denied with 503 and a Warning Event instead of failing the render.
+    extraContext: {renderMode: reconcile}
+    fixtures:
+      <<: *jwt-metadata-fixtures
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: first-metadata}
+          data:
+            metadata.json: '{"resource":"https://mcp.example.com/first"}'
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: {namespace: default, name: second-metadata}
+          data:
+            metadata.json: '{"resource":"https://mcp.example.com/second"}'
+      ingresses:
+        - <<: *jwt-metadata-ingress
+          metadata:
+            namespace: default
+            name: first
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-resource-metadata-configmap: first-metadata
+              haproxy-haptic.org/jwt-resource-metadata-path: /.well-known/oauth-protected-resource
+        - <<: *jwt-metadata-ingress
+          metadata:
+            namespace: default
+            name: second
+            annotations:
+              haproxy-haptic.org/jwt-secret: jwt-keys
+              haproxy-haptic.org/jwt-resource-metadata-configmap: second-metadata
+              haproxy-haptic.org/jwt-resource-metadata-path: /.well-known/oauth-protected-resource
+    assertions:
+      - type: haproxy_valid
+      - {type: equals, target: map:jwt-resource-metadata-unavailable.map, expected: "default/first unavailable\ndefault/second unavailable\n"}
+      - {type: contains, target: events, pattern: "Warning JWTMetadataInvalid networking.k8s.io/v1 Ingress default/first:.*documents conflict"}
+      - {type: contains, target: events, pattern: "Warning JWTMetadataInvalid networking.k8s.io/v1 Ingress default/second:.*documents conflict"}
+
   test-haptic-jwt-resource-metadata-conflict:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: second}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:
@@ -504,6 +620,7 @@ validationTests:
       - {type: contains, target: rendering_error, pattern: 'metadata documents conflict'}
 
   test-haptic-jwt-resource-metadata-invalid-path:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: invalid-path}}
     fixtures:
       <<: *jwt-metadata-fixtures
       ingresses:
@@ -729,6 +846,7 @@ validationTests:
       - {type: contains, target: map:jwt-resource-metadata-body.map, pattern: 'extension%22%3a%22%2f'}
 
   test-haptic-jwt-resource-metadata-map-line-16383:
+    extraContext: {renderMode: admission, admissionSubject: {store: ingresses, namespace: default, name: mcp}}
     fixtures:
       <<: *jwt-metadata-fixtures
       configmaps:

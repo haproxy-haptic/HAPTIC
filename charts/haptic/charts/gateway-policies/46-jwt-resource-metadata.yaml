@@ -49,7 +49,12 @@ templateSnippets:
               var matches = host == "" || HostnameSinglePairMatch(host, resourceHost) == "true"
               if matches { hosts = append(hosts, MapKeyForHost(scopedHost)) }
             }
-            if len(hosts) > 0 { PublishResourceMetadata(tostring(record["id"]), hosts, metadata) }
+            if len(hosts) > 0 {
+              PublishResourceMetadata(tostring(record["id"]), hosts, metadata, map[string]any{
+                "store": toLower(kind) + "s", "namespace": dig_string(route, "", "metadata", "namespace"),
+                "name": dig_string(route, "", "metadata", "name"), "resource": route,
+              })
+            }
           }
         %%}
       {%- end macro -%}
