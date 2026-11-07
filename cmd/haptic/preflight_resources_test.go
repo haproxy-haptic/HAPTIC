@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"log/slog"
@@ -132,6 +133,13 @@ func TestBundledChartPreflightResources(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "refused app.example.com")
 	})
+}
+
+func TestReportRenderWarningsListsOnlyWarnings(t *testing.T) {
+	var out bytes.Buffer
+	reportRenderWarnings(&out, "Normal Synced v1 ConfigMap demo/a: ok\n"+
+		"Warning JWTMetadataInvalid networking.k8s.io/v1 Ingress demo/mcp: denied\n")
+	assert.Equal(t, "⚠ Warning JWTMetadataInvalid networking.k8s.io/v1 Ingress demo/mcp: denied\n", out.String())
 }
 
 func TestKindOfFromDiscovery(t *testing.T) {

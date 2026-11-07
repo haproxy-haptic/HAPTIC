@@ -119,7 +119,7 @@ func checkPreflightResources(ctx context.Context, configFile string, schemas sch
 		HAProxyVersion:     setup.HAProxyVersion,
 		TypedResourceTypes: setup.TypedResourceTypes,
 	})
-	_, valid, err := runner.ValidateResources(ctx, resources)
+	rendered, valid, err := runner.ValidateResources(ctx, resources)
 	if err != nil {
 		return fmt.Errorf("the configuration doesn't render against these resources, so the controller would stop "+
 			"reconciling: %s", templating.RenderErrorMessage(err))
@@ -129,7 +129,17 @@ func checkPreflightResources(ctx context.Context, configFile string, schemas sch
 			"controller would keep its last valid one: %s", valid.Error)
 	}
 	fmt.Fprintln(os.Stderr, "✓ HAProxy accepts the configuration rendered from these resources")
+	reportRenderWarnings(os.Stderr, rendered.Events)
 	return nil
+}
+
+// reportRenderWarnings lists a render's Warning Events; they don't fail preflight, since the config still loads.
+func reportRenderWarnings(w io.Writer, events string) {
+	for _, line := range strings.Split(events, "\n") {
+		if strings.HasPrefix(line, "Warning ") {
+			fmt.Fprintln(w, "⚠ "+line)
+		}
+	}
 }
 
 // watchedSelections resolves each watched resource's kind through the schema

@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `haptic preflight --resources` lists the Warning Events its render records.
+
 ### Fixed
 
 - Playground downloads recover from stalled transfers, and the entry page opens the current stable release.
@@ -28,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Fixed
 
 - Disabling the SPOA hub removes mirror and shared rate-limit dispatch directives, keeping active HTTPS frontends valid.
+- A JWT metadata ConfigMap that is invalid, names a host the Ingress doesn't serve, or conflicts with another document returns `503` for that Ingress with a `JWTMetadataInvalid` Warning Event, instead of stopping the configuration from rendering and failing admission of unrelated Ingresses ([#644](https://github.com/haproxy-haptic/HAPTIC/issues/644)).
 - `haproxy.org/request-redirect` keeps the request path and query, adds `http://` to a bare host, and applies only to the Ingress's routes, as upstream does.
 
 ## [0.11.0] - 2026-11-04

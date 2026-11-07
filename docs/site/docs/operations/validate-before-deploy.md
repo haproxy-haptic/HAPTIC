@@ -93,6 +93,7 @@ apply. The render uses your values' `extraContext`, as the controller does.
 - `--resources` reads every `.yaml` and `.yml` file under each path, including `kind: List` documents. Include everything the configuration reads, such as the default TLS certificate Secret and ConfigMaps your annotations name; a missing one fails the render the way it would in the cluster.
 - `--resources-from-cluster` needs `list` access to every watched resource, Secrets included, like the controller's own ServiceAccount.
 - HTTP inputs are fetched with the template's authentication and fetch options. Each resource render uses a fresh HTTP cache. A failed non-critical fetch returns empty content; a failed critical fetch fails the check.
+- Preflight lists each Warning Event the render records, prefixed with `⚠`. These don't fail the check, because the controller still loads the configuration, but each one names a resource that loses a feature or answers an error until you fix it.
 
 ### Schemas
 

@@ -78,12 +78,13 @@ templateSnippets:
 
   util-publish-resource-metadata:
     template: |-
-      {%- macro PublishResourceMetadata(routeID string, hostKeys []any, metadata map[string]any) -%}
+      {#- subject is {store, namespace, name, resource} of the route's own object, for admission and Events. -#}
+      {%- macro PublishResourceMetadata(routeID string, hostKeys []any, metadata map[string]any, subject map[string]any) -%}
         {%- var endpoints = []any{} -%}
         {%- for _, host := range hostKeys -%}
           {%- endpoints = append(endpoints, tostring(host) + "|" + tostring(metadata["authority"]) + "|" + tostring(metadata["metadataPath"])) -%}
         {%- end -%}
-        {{- shared.Publish("records", routeID, map[string]any{"routeID": routeID, "authority": metadata["authority"], "endpoints": endpoints, "body": metadata["body"], "url": metadata["url"]}) -}}
+        {{- shared.Publish("records", routeID, map[string]any{"routeID": routeID, "authority": metadata["authority"], "endpoints": endpoints, "body": metadata["body"], "url": metadata["url"], "subject": subject}) -}}
       {%- end macro -%}
 
   features-855-jwt-resource-metadata:
@@ -92,30 +93,69 @@ templateSnippets:
       {{- render_glob "jwt-resource-metadata-*" -}}
       {%- if incremental_value_count("jwt-resource-metadata", "records") > 0 -%}
         {%%
-          var bodies = map[string]string{}
-          var challenges = map[string]string{}
+          // A route whose document can't be served is denied with 503 instead of failing the render,
+          // so one ConfigMap edit can't stop every other route from reconciling.
+          var records = []map[string]any{}
+          var bodiesByEndpoint = map[string]map[string]bool{}
           for _, value := range incremental_values("jwt-resource-metadata", "records") {
             var record = value.(map[string]any)
-            var body = tostring(record["body"])
+            records = append(records, record)
             for _, endpoint := range toStringSlice(record["endpoints"]) {
-              var previous, exists = bodies[endpoint]
-              if exists && previous != body { fail("Protected-resource metadata documents conflict at " + endpoint + ". Use one document per discovery endpoint.") }
-              bodies[endpoint] = body
+              if bodiesByEndpoint[endpoint] == nil { bodiesByEndpoint[endpoint] = map[string]bool{} }
+              bodiesByEndpoint[endpoint][tostring(record["body"])] = true
             }
-            challenges[tostring(record["routeID"]) + "|" + tostring(record["authority"])] = "Bearer resource_metadata=\"" + tostring(record["url"]) + "\""
+          }
+          var challengeFor = func(record map[string]any) string {
+            return "Bearer resource_metadata=\"" + tostring(record["url"]) + "\""
           }
           // HAProxy reserves newline and NUL bytes in its 16 KiB map reader: haproxy/haproxy#3537.
+          var problemFor = func(record map[string]any) string {
+            var routeID = tostring(record["routeID"])
+            for _, endpoint := range toStringSlice(record["endpoints"]) {
+              if len(bodiesByEndpoint[endpoint]) > 1 {
+                return "Protected-resource metadata documents conflict at " + endpoint + ". Use one document per discovery endpoint."
+              }
+              if len(endpoint + " " + queryEscape(tostring(record["body"]))) > 16382 {
+                return "Protected-resource metadata at " + endpoint + " exceeds the encoded map line limit. Reduce the JSON document or resource URL."
+              }
+            }
+            if len(routeID + "|" + tostring(record["authority"]) + " " + queryEscape(challengeFor(record))) > 16382 {
+              return "Protected-resource metadata challenge for " + routeID + " exceeds the encoded map line limit. Shorten the resource URL."
+            }
+            return ""
+          }
+          var bodies = map[string]string{}
+          var challenges = map[string]string{}
+          var denied = []any{}
+          for _, record := range records {
+            var routeID = tostring(record["routeID"])
+            var problem = problemFor(record)
+            if problem != "" {
+              var subject = record["subject"].(map[string]any)
+              var store = tostring(subject["store"])
+              var admitting = renderMode == "admission" &&
+                (dig_string(admissionSubject, "", "store") == store || dig(admissionSubject, "stores", store) == true) &&
+                dig_string(admissionSubject, "", "namespace") == tostring(subject["namespace"]) &&
+                dig_string(admissionSubject, "", "name") == tostring(subject["name"])
+              if admitting { fail(problem) }
+              recordEvent(subject["resource"], "JWTMetadataInvalid", problem + " Requests for " + routeID + " return 503.")
+              denied = append(denied, routeID)
+              continue
+            }
+            for _, endpoint := range toStringSlice(record["endpoints"]) {
+              bodies[endpoint] = tostring(record["body"])
+            }
+            challenges[routeID + "|" + tostring(record["authority"])] = challengeFor(record)
+          }
+          var gf = shared.Get("globalFeatures").(map[string]any)
+          gf["jwtMetadataDeniedRoutes"] = denied
           var bodyLines = []any{}
           for key, body := range bodies {
-            var line = key + " " + queryEscape(body)
-            if len(line) > 16382 { fail("Protected-resource metadata at " + key + " exceeds the encoded map line limit. Reduce the JSON document or resource URL.") }
-            bodyLines = append(bodyLines, line)
+            bodyLines = append(bodyLines, key + " " + queryEscape(body))
           }
           var challengeLines = []any{}
           for key, challenge := range challenges {
-            var line = key + " " + queryEscape(challenge)
-            if len(line) > 16382 { fail("Protected-resource metadata challenge at " + key + " exceeds the encoded map line limit. Shorten the resource URL.") }
-            challengeLines = append(challengeLines, line)
+            challengeLines = append(challengeLines, key + " " + queryEscape(challenge))
           }
           _ = RegisterMap("jwt-resource-metadata-body.map", sort_strings(bodyLines), map[string]any{"ordered": false})
           _ = RegisterMap("jwt-resource-metadata-challenge.map", sort_strings(challengeLines), map[string]any{"ordered": false})
@@ -125,9 +165,10 @@ templateSnippets:
   features-856-jwt-resource-metadata-unavailable:
     template: |-
       {%- import "util-register-map" for RegisterMap -%}
-      {%- if incremental_value_count("jwt-resource-metadata", "unavailable") > 0 -%}
+      {%- var routes = append(toSlice(incremental_values("jwt-resource-metadata", "unavailable")), toSlice(shared.Get("globalFeatures") | dig("jwtMetadataDeniedRoutes"))...) -%}
+      {%- if len(routes) > 0 -%}
         {%- var lines = []any{} -%}
-        {%- for _, route := range incremental_values("jwt-resource-metadata", "unavailable") -%}
+        {%- for _, route := range routes -%}
           {%- lines = append(lines, tostring(route) + " unavailable") -%}
         {%- end -%}
         {%- _ = RegisterMap("jwt-resource-metadata-unavailable.map", sort_strings(lines), map[string]any{"ordered": false}) -%}
@@ -135,7 +176,7 @@ templateSnippets:
 
   frontend-filters-058-jwt-resource-metadata-unavailable:
     template: |
-      {%- if incremental_value_count("jwt-resource-metadata", "unavailable") > 0 -%}
+      {%- if incremental_value_count("jwt-resource-metadata", "unavailable") > 0 || len(toSlice(shared.Get("globalFeatures") | dig("jwtMetadataDeniedRoutes"))) > 0 -%}
       {%- var unavailable, err = pathResolver.GetPath("jwt-resource-metadata-unavailable.map", "map") -%}
       {%- if err != nil -%}{{ fail(tostring(err)) }}{%- end %}
       http-request set-var(txn.denied_by) str(jwt_unavailable) if { var(txn.policy_id),map({{ unavailable }}) -m found }

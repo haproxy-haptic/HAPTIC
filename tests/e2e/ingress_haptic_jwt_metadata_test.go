@@ -111,16 +111,27 @@ func testHapticJWTMetadata(t *testing.T, name string, root bool) {
 				return response.Status == http.StatusOK && string(response.Body) == updated
 			})
 			requests.GET(host, "/mcp").ExpectHeader(t, "WWW-Authenticate", challenge)
-			require.NoError(t, client.Resources(document.Namespace).Delete(t.Context(), document))
-			response = requests.GET(host, "/mcp").WithHeader("Authorization", token).ExpectStatus(t, http.StatusServiceUnavailable)
-			require.Empty(t, response.Header.Get("WWW-Authenticate"))
-			requests.GET(host, metadataPath).ExpectStatus(t, http.StatusNotFound)
+			// A resource on a host the Ingress doesn't serve denies only this route; other Ingresses stay admissible (#644).
+			document.Data["document.json"] = `{"resource":"https://moved-` + host + `/mcp"}`
+			require.NoError(t, client.Resources(document.Namespace).Update(t.Context(), document))
+			requests.GET(host, "/mcp").WithHeader("Authorization", token).ExpectStatus(t, http.StatusServiceUnavailable)
 			ingress := &networkingv1.Ingress{}
 			require.NoError(t, client.Resources(document.Namespace).Get(t.Context(), "echo", document.Namespace, ingress))
 			backend := ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service
 			NewIngress(t.Context(), t, client, document.Namespace, &IngressSpec{
 				Name: "unrelated", Host: "other-" + host, Path: "/alive", BackendService: backend.Name, BackendPort: backend.Port.Number,
 			})
+			requests.GET("other-"+host, "/alive").ExpectEchoPath(t, "/alive")
+			require.NoError(t, client.Resources(document.Namespace).Get(t.Context(), document.Name, document.Namespace, document))
+			document.Data["document.json"] = updated
+			require.NoError(t, client.Resources(document.Namespace).Update(t.Context(), document))
+			requests.GET(host, metadataPath).ExpectMatching(t, "corrected ConfigMap republishes metadata", func(response *httpclient.Response) bool {
+				return response.Status == http.StatusOK && string(response.Body) == updated
+			})
+			require.NoError(t, client.Resources(document.Namespace).Delete(t.Context(), document))
+			response = requests.GET(host, "/mcp").WithHeader("Authorization", token).ExpectStatus(t, http.StatusServiceUnavailable)
+			require.Empty(t, response.Header.Get("WWW-Authenticate"))
+			requests.GET(host, metadataPath).ExpectStatus(t, http.StatusNotFound)
 			requests.GET("other-"+host, "/alive").ExpectEchoPath(t, "/alive")
 			document = &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "oauth", Namespace: document.Namespace}, Data: map[string]string{"document.json": ""}}
 			require.NoError(t, client.Resources(document.Namespace).Create(t.Context(), document))
