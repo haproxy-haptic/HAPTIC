@@ -127,6 +127,41 @@ validationTests:
     assertions:
       - {type: contains, target: rendering_error, pattern: "is not an HTTP token"}
 
+  test-haptic-response-remove-header-hostile-name-admission-rejected:
+    description: A response-remove-header entry outside the HTTP token or '<prefix>*' syntax is denied at admission.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: rdel-bad, annotations: {haproxy-haptic.org/response-remove-header: "x-amz-*, X|Bad"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: rdelbad.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "is not an HTTP token or '<prefix>\\*'"}
+
+  test-haptic-response-remove-header-hostile-name-reconcile-skips:
+    description: On reconcile a hostile response-remove-header entry warns and is skipped, while valid entries on the same Ingress still render.
+    extraContext: {renderMode: reconcile}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: rdel-mixed, annotations: {haproxy-haptic.org/response-remove-header: "Server, *, x-amz-*"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: rdelmixed.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: 'map:ing-reshdr.map', pattern: 'default_rdel-mixed_svc_echo_80\|del\|server 1'}
+      - {type: contains, target: 'map:ing-reshdr.map', pattern: 'default_rdel-mixed_svc_echo_80\|del-beg\|x-amz- 1'}
+      - {type: contains, target: events, pattern: "Warning InvalidAnnotation .* names header '\\*'"}
+
   test-haptic-request-set-header-hostile-name-reconcile-skips:
     description: On reconcile the hostile header NAME is skipped and never reaches ing-reqhdr.map, while a valid sibling still emits its entry.
     extraContext: {renderMode: reconcile}

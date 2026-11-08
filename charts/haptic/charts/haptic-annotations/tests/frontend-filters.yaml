@@ -150,6 +150,41 @@ validationTests:
       # Negative control: the lowercase spelling from the first ingress loses.
       - {type: not_contains, target: haproxy.cfg, pattern: 'set-header x-shared %'}
 
+  test-haptic-header-removal:
+    description: request-remove-header and response-remove-header remove headers by exact name and by prefix (trailing * -> -m beg), scoped to the Ingress's backend via ing-reqhdr.map / ing-reshdr.map.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: s3
+            annotations:
+              haproxy-haptic.org/request-remove-header: "X-Internal-Token, x-debug-*"
+              haproxy-haptic.org/response-remove-header: |-
+                Server, x-amz-request-id
+                x-amz-id-2
+                x-amz-*
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: files.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: 'map:ing-reqhdr.map', pattern: '(?m)^default_s3_svc_echo_80\|del\|x-internal-token 1$'}
+      - {type: contains, target: 'map:ing-reqhdr.map', pattern: '(?m)^default_s3_svc_echo_80\|del-beg\|x-debug- 1$'}
+      - {type: contains, target: 'map:ing-reshdr.map', pattern: '(?m)^default_s3_svc_echo_80\|del\|server 1$'}
+      - {type: contains, target: 'map:ing-reshdr.map', pattern: '(?m)^default_s3_svc_echo_80\|del\|x-amz-request-id 1$'}
+      - {type: contains, target: 'map:ing-reshdr.map', pattern: '(?m)^default_s3_svc_echo_80\|del\|x-amz-id-2 1$'}
+      - {type: contains, target: 'map:ing-reshdr.map', pattern: '(?m)^default_s3_svc_echo_80\|del-beg\|x-amz- 1$'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request del-header X-Internal-Token if \{ var\(txn\.backend_name\),concat\(\|del\|x-internal-token\),map\([^)]*ing-reqhdr\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request del-header x-debug- -m beg if \{ var\(txn\.backend_name\),concat\(\|del-beg\|x-debug-\),map\([^)]*ing-reqhdr\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-after-response del-header Server if \{ var\(txn\.backend_name\),concat\(\|del\|server\),map\([^)]*ing-reshdr\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-after-response del-header x-amz-request-id if \{ var\(txn\.backend_name\),concat\(\|del\|x-amz-request-id\),map\([^)]*ing-reshdr\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-after-response del-header x-amz-id-2 if \{ var\(txn\.backend_name\),concat\(\|del\|x-amz-id-2\),map\([^)]*ing-reshdr\.map\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-after-response del-header x-amz- -m beg if \{ var\(txn\.backend_name\),concat\(\|del-beg\|x-amz-\),map\([^)]*ing-reshdr\.map\) -m found \}'}
+
   test-haptic-cors:
     description: cors-enable emits the shared CORS macro output (http-after-response Allow-Origin + preflight 204)
     fixtures:

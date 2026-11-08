@@ -995,6 +995,52 @@ templateSnippets:
         contribute(respAnn, "ingRespHeaderMods")
       %%}
       {% end %}
+      {% macro PublishIngressHeaderRemovals(ingress *resources.ingresses.T, reqAnn string, respAnn string, rankPrefix string) %}
+      {%%
+        var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name
+        var seen = map[string]bool{}
+        var contribute = func(ann string, bucket string) {
+          if ann == "" {
+            return
+          }
+          var annVal = ingress.Metadata.Annotations[ann]
+          if annVal == "" {
+            return
+          }
+          for _, rec := range split(replace(annVal, "\n", ","), ",") {
+            var tok = trimSpace(rec)
+            if tok == "" {
+              continue
+            }
+            var op = "del"
+            var hn = tok
+            if hasSuffix(tok, "*") {
+              op = "del-beg"
+              hn = tok[:len(tok)-1]
+            }
+            if hn == "" || !regex_search(hn, "^[A-Za-z0-9!$&+.^_~-]+$") {
+              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' names header '" + tok + "', which is not an HTTP token or '<prefix>*'; the header is skipped. Use letters, digits and -._~!$&+^, optionally followed by a trailing '*'.")
+              continue
+            }
+            for _, rule := range ingress.Spec.Rules {
+              for _, path := range rule.Http.Paths {
+                var be = BackendNameIngress(ingress, path)
+                var lower = toLower(hn)
+                var identity = bucket + "\x00" + be + "\x00" + op + "\x00" + lower
+                if seen[identity] {
+                  continue
+                }
+                seen[identity] = true
+                _ = shared.PublishRanked(bucket, be + "|" + op + "|" + lower, rankPrefix + "/" + key,
+                  map[string]any{"backend": be, "op": op, "name": hn})
+              }
+            }
+          }
+        }
+        contribute(reqAnn, "ingReqHeaderMods")
+        contribute(respAnn, "ingRespHeaderMods")
+      %%}
+      {% end %}
 
   util-ingress-host-match-publication:
     template: |-
@@ -1032,12 +1078,13 @@ templateSnippets:
   # libraries append {backend, op, name, value} to gf["ingReqHeaderMods"] /
   # gf["ingRespHeaderMods"] in their features-* snippets; this builds
   # ing-reqhdr.map / ing-reshdr.map (key `<backend>|<op>|<name>`, value
-  # URL-encoded, `1` for del) once per render and emits one static set/add/del
-  # line per distinct header NAME, keyed on the resolved backend. Adding a route
-  # that reuses a header name is then a map entry, not a config line — the reload
-  # this machinery avoids. The maps are registered whenever ingresses exist, so
-  # the first header in the cluster is a map entry too, and the static lines read
-  # backend_name, so a backendRef-style per-backend override is a map entry.
+  # URL-encoded, `1` for del/del-beg) once per render and emits one static
+  # set/add/del/del-beg line per distinct header NAME, keyed on the resolved
+  # backend. Adding a route that reuses a header name is then a map entry, not a
+  # config line — the reload this machinery avoids. The maps are registered
+  # whenever ingresses exist, so the first header in the cluster is a map entry
+  # too, and the static lines read backend_name, so a backendRef-style per-backend
+  # override is a map entry.
   frontend-filters-263-ingress-headers:
     template: |
       {%- import "util-register-map" for RegisterMap -%}
@@ -1051,22 +1098,30 @@ templateSnippets:
           var gf = shared.Get("globalFeatures").(map[string]any)
           // Smallest spelling per lowercased name wins, so two ingresses spelling
           // one header differently share one static line and the choice does not
-          // depend on ingress order. `1` marks a del; set/add carry the value.
+          // depend on ingress order. `1` marks del/del-beg; set/add carry the value.
           var build = func(mods any, mapName string) map[string]any {
             var names = map[string]any{"set": map[string]string{}, "add": map[string]string{}, "del": map[string]string{}}
-            var entries = []string{"# <backend>|set|add|del|<header> -> URL-encoded value (1 for del)"}
+            var entries = []string{"# <backend>|set|add|del|del-beg|<header> -> URL-encoded value (1 for del/del-beg)"}
             for _, e := range toSlice(mods) {
               var be = tostring(dig(e, "backend"))
               var op = tostring(dig(e, "op"))
               var name = tostring(dig(e, "name"))
               var lower = toLower(name)
-              var m = names[op].(map[string]string)
-              var cur, seen = m[lower]
-              if !seen || name < cur {
-                m[lower] = name
+              var bucketOp = op
+              var displayKey = lower
+              var displayName = name
+              if op == "del-beg" {
+                bucketOp = "del"
+                displayKey = lower + "*"
+                displayName = name + "*"
               }
-              if op == "del" {
-                entries = append(entries, be + "|del|" + lower + " 1")
+              var m = names[bucketOp].(map[string]string)
+              var cur, seen = m[displayKey]
+              if !seen || displayName < cur {
+                m[displayKey] = displayName
+              }
+              if op == "del" || op == "del-beg" {
+                entries = append(entries, be + "|" + op + "|" + lower + " 1")
               } else {
                 entries = append(entries, be + "|" + op + "|" + lower + " " + queryEscape(tostring(dig(e, "value"))))
               }

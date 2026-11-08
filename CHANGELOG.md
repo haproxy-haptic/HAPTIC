@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Serve additional TLS Secrets from the controller namespace by SNI through `controller.config.templatingSettings.extraContext.tls.additionalCertificates` ([#640](https://github.com/haproxy-haptic/HAPTIC/issues/640)).
 - `haproxy-haptic.org/redirect-scheme`, `-host`, `-port`, `-path`, `-path-prefix`, `-query`, and `-code` redirect an Ingress's routes to a target built from the request, so a host alias keeps the path and query ([#643](https://github.com/haproxy-haptic/HAPTIC/issues/643)).
+- `haproxy-haptic.org/response-remove-header` and `haproxy-haptic.org/request-remove-header` remove response and request headers by exact name or `<prefix>*` family ([#648](https://github.com/haproxy-haptic/HAPTIC/issues/648)).
 
 #### Changed
 
