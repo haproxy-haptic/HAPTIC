@@ -130,9 +130,7 @@ func shouldKeepNamespace() bool {
 
 // BackendRef identifies a per-test backend (Deployment + Service) the
 // tests deploy as their HTTP upstream. Each test owns its own backend so
-// HAProxy reaches a real Endpoint when the controller renders it — the
-// chart's routing logic only emits server lines for Services with at
-// least one ready Endpoint, so ExternalName aliases don't work here.
+// HAProxy reaches an isolated pod in the test namespace.
 //
 // Backends are stateless and small (echo-server image), and they tear
 // down with the test namespace.

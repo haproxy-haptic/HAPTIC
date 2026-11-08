@@ -460,6 +460,7 @@ The `util-backend-servers` snippet resolves endpoints into server records:
 
 - One `server` per endpoint, named after its pod (`server <pod> <ip>:<port>`). Rolling updates add and remove servers through the Runtime API when supported.
 - Not-ready and terminating endpoints render as `disabled` servers (they take no traffic), so a readiness flip is a runtime `set server state` rather than a del+add.
+- For a Service with `spec.type: ExternalName` (which has no EndpointSlices), one `server` is emitted for `spec.externalName` with `resolvers dns init-addr last,libc,none` so HAProxy re-resolves the hostname at runtime against `/etc/resolv.conf`.
 - Per-server options (`maxconn`, SSL, weight, health-check params) via `serverOpts` / the server record's `extra`.
 
 The snippet holds only the `BackendServers` helper, so import it and call it — rendering the snippet emits nothing. It returns records, so pass the result to `Backend()` rather than showing it:

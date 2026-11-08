@@ -2642,3 +2642,38 @@ validationTests:
         target: events
         pattern: 'Warning InvalidPath networking\.k8s\.io/v1 Ingress tenant-a/attacker: .*whitespace or control characters'
         description: "the skipped Ingress gets an InvalidPath Warning naming it"
+
+  test-ingress-externalname-backend:
+    description: An ExternalName Service backend emits a server line resolved via HAProxy's dns resolvers section.
+    fixtures:
+      services:
+        - apiVersion: v1
+          kind: Service
+          metadata: {namespace: default, name: s3}
+          spec:
+            type: ExternalName
+            externalName: files.s3.example.net
+            ports:
+              - {name: https, port: 443}
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: s3}
+          spec:
+            ingressClassName: haproxy
+            rules:
+              - host: files.example.com
+                http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service: {name: s3, port: {number: 443}}
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^resolvers dns\n\s+parse-resolv-conf\n\s+accepted_payload_size 8192$'
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'server [^\n]*files\.s3\.example\.net:443[^\n]*resolvers dns init-addr last,libc,none'

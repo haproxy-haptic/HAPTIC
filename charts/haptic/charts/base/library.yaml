@@ -2603,6 +2603,14 @@ templateSnippets:
       peers localinstance
           peer local unix@{{ pathResolver.GetBaseDir() }}/peers.sock
 
+  global-top-060-resolvers:
+    template: |
+      {# Always-on DNS resolvers section reading /etc/resolv.conf so hostname-backed
+          servers (ExternalName Services, DNS ring targets) re-resolve at runtime. #}
+      {{ "\n" }}resolvers dns
+          parse-resolv-conf
+          accepted_payload_size 8192
+
   status-extra-100-prometheus-exporter:
     template: |
       {# The exclusion policy is applied HERE, not by the scraper, so every

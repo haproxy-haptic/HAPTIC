@@ -686,3 +686,30 @@ validationTests:
       - type: contains
         target: haproxy.cfg
         pattern: "set-var\\(txn\\.gw_rule_id\\) str\\(h_default_mixed-route_1\\)"
+
+  test-httproute-externalname-backend:
+    requires: [httproutes]
+    description: An HTTPRoute pointing at an ExternalName Service emits a server line with runtime DNS resolution.
+    fixtures:
+      services:
+        - apiVersion: v1
+          kind: Service
+          metadata: {name: s3, namespace: default}
+          spec:
+            type: ExternalName
+            externalName: files.s3.example.net
+      httproutes:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: HTTPRoute
+          metadata: {name: s3-route, namespace: default}
+          spec:
+            hostnames:
+              - files.example.com
+            rules:
+              - backendRefs:
+                  - {name: s3, port: 443}
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'server s3 files\.s3\.example\.net:443[^\n]*resolvers dns init-addr last,libc,none'

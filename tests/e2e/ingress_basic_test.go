@@ -17,7 +17,13 @@
 package e2e
 
 import (
+	"context"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/e2e-framework/pkg/envconf"
+	"sigs.k8s.io/e2e-framework/pkg/features"
 
 	"github.com/haproxy-haptic/HAPTIC/tests/e2e/httpclient"
 )
@@ -43,4 +49,58 @@ func TestIngressBasic(t *testing.T) {
 			},
 		}},
 	})
+}
+
+func TestIngressExternalNameBackend(t *testing.T) {
+	t.Parallel()
+	host := "ingress-externalname.localdev.me"
+
+	feature := features.New("Ingress: ExternalName Service backend").
+		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			client, err := cfg.NewClient()
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+			ns := NamespaceForTest(ctx, t, client)
+			DumpLogsOnFailure(t, ns)
+			echoBackend := NewEchoServerBackend(ctx, t, client, ns)
+
+			externalSvc := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "external-echo",
+					Namespace: ns,
+				},
+				Spec: corev1.ServiceSpec{
+					Type:         corev1.ServiceTypeExternalName,
+					ExternalName: echoBackend.Service + "." + ns + ".svc.cluster.local",
+					Ports: []corev1.ServicePort{{
+						Name: "http",
+						Port: echoBackend.Port,
+					}},
+				},
+			}
+			if err := client.Resources().Create(ctx, externalSvc); err != nil {
+				t.Fatalf("create ExternalName Service: %v", err)
+			}
+
+			NewIngress(ctx, t, client, ns, &IngressSpec{
+				Name:           "external-echo",
+				Host:           host,
+				Path:           "/",
+				BackendService: externalSvc.Name,
+				BackendPort:    echoBackend.Port,
+			})
+			return ctx
+		}).
+		Assess("ExternalName Service resolves and routes to upstream", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			resp := httpclient.New(t).GET(host, "/").ExpectOK(t)
+			if resp.Echo == nil {
+				t.Fatalf("expected echo-server JSON body, got %d bytes: %s", len(resp.Body), string(resp.Body))
+			}
+			return ctx
+		}).
+		Feature()
+	testEnv.Test(t, feature)
 }
