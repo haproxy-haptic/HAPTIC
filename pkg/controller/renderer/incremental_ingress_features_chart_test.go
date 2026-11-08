@@ -137,6 +137,34 @@ contribute("haproxy.org/request-set-header", "haproxy.org/response-set-header", 
 contribute("haproxy-ingress.github.io/headers", "", "|", ":")
 contribute("nginx.ingress.kubernetes.io/custom-request-headers", "nginx.ingress.kubernetes.io/custom-response-headers", "|", ":")
 contribute("haproxy-haptic.org/request-set-header", "haproxy-haptic.org/response-set-header", "\n", " ")
+for _, ingress := range resources.ingresses.List() {
+  var contributeRemovals = func(ann string, bucket string, marker string) {
+    var annVal = ingress.Metadata.Annotations[ann]
+    if annVal == "" { return }
+    for _, record := range split(replace(annVal, "\n", ","), ",") {
+      var tok = trimSpace(record)
+      if tok == "" { continue }
+      var op = "del"
+      var name = tok
+      if hasSuffix(tok, "*") {
+        op = "del-beg"
+        name = tok[:len(tok)-1]
+      }
+      if name == "" || !regex_search(name, "^[A-Za-z0-9!$&+.^_~-]+$") { continue }
+      for _, rule := range ingress.Spec.Rules {
+        for _, path := range rule.Http.Paths {
+          var backend = BackendNameIngress(ingress, path)
+          var identity = bucket + "\x00" + backend + "\x00" + op + "\x00" + toLower(name)
+          if headerSeen[identity] { continue }
+          headerSeen[identity] = true
+          legacyHeaders = append(legacyHeaders, marker + "|" + backend + "|" + op + "|" + name + "|\n")
+        }
+      }
+    }
+  }
+  contributeRemovals("haproxy-haptic.org/request-remove-header", "ingReqHeaderMods", "Q")
+  contributeRemovals("haproxy-haptic.org/response-remove-header", "ingRespHeaderMods", "P")
+}
 for _, line := range legacyHeaders { show line }
 %%}
 {{ "END-L\n" -}}
@@ -317,6 +345,16 @@ func TestIngressHeaderWinnerPromotionAndRemovalStayExact(t *testing.T) {
 	result = fixture.renderAndCommit(t)
 	requireIngressFeatureDifferential(t, result)
 	assert.NotContains(t, result.HAProxyConfig, "|X-Winner|")
+
+	annotations["haproxy-haptic.org/request-remove-header"] = "X-Internal, x-debug-*"
+	annotations["haproxy-haptic.org/response-remove-header"] = "Server\nx-amz-*"
+	fixture.updateIngress(t, ingressFeatureIngress("subject", "subject.example.com", annotations))
+	result = fixture.renderAndCommit(t)
+	requireIngressFeatureDifferential(t, result)
+	assert.Contains(t, result.HAProxyConfig, "|del|X-Internal|")
+	assert.Contains(t, result.HAProxyConfig, "|del-beg|x-debug-|")
+	assert.Contains(t, result.HAProxyConfig, "|del|Server|")
+	assert.Contains(t, result.HAProxyConfig, "|del-beg|x-amz-|")
 }
 
 func TestIngressFeatureFailedRendersAndAdmissionCannotPoisonCache(t *testing.T) {

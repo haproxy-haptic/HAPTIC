@@ -2155,9 +2155,10 @@ templateSnippets:
   util-header-modifier-rules:
     template: |-
       {#
-        HeaderModifierRules — one static set/add/del line per distinct header NAME,
-        driven by a map keyed `<key>|<op>|<lowercased name>`. Adding a route that
-        modifies an already-used header name is then a map entry, not a config line.
+        HeaderModifierRules — one static set/add/del/del-beg line per distinct
+        header NAME, driven by a map keyed `<key>|<op>|<lowercased name>`. Adding
+        a route that modifies an already-used header name is then a map entry,
+        not a config line.
 
         `keyExpr` is the sample expression that yields the key prefix; the macro
         appends `,concat(|<op>|<name>)` to it, so a caller needing more in the key
@@ -2165,7 +2166,9 @@ templateSnippets:
         `setNames`/`addNames`/`delNames` carry the spelling to emit, already
         deduplicated by lowercased name — the key always uses the lowercased form,
         because HTTP header names are case-insensitive and two routes spelling one
-        header differently must share one line.
+        header differently must share one line. A trailing `*` in `delNames`
+        selects prefix deletion through `del-beg`. Deletion stays after set/add
+        so removal wins when operations name the same header.
 
         Map values are URL-encoded (`url_dec(1)` here): the runtime CLI splits a
         value at the first space. Encoding also stops the value being re-read as a
@@ -2184,6 +2187,7 @@ templateSnippets:
       {%- var directive = "http-request" %}
       {%- if direction == "response" %}{% directive = "http-after-response" %}{% end %}
       {%- var emittable = func(n string) bool { return regex_search(n, "^[A-Za-z0-9!$&*+.^_~-]+$") } %}
+      {%- var emittablePrefix = func(n string) bool { return regex_search(n, "^[A-Za-z0-9!$&+.^_~-]+$") } %}
       {%- for _, name := range setNames %}
       {%- if !emittable(name) %}{% continue %}{% end %}
       {%- var k = keyExpr + ",concat(|set|" + toLower(name) + ")" %}
@@ -2195,8 +2199,14 @@ templateSnippets:
       {{ directive }} add-header {{ name }} %[{{ k }},map({{ mapPath }}),url_dec(1)] if { {{ k }},map({{ mapPath }}) -m found }
       {%- end %}
       {%- for _, name := range delNames %}
+      {%- if hasSuffix(name, "*") %}
+      {%- var prefix = name[:len(name)-1] %}
+      {%- if !emittablePrefix(prefix) %}{% continue %}{% end %}
+      {{ directive }} del-header {{ prefix }} -m beg if { {{ keyExpr }},concat(|del-beg|{{ toLower(prefix) }}),map({{ mapPath }}) -m found }
+      {%- else %}
       {%- if !emittable(name) %}{% continue %}{% end %}
       {{ directive }} del-header {{ name }} if { {{ keyExpr }},concat(|del|{{ toLower(name) }}),map({{ mapPath }}) -m found }
+      {%- end %}
       {%- end %}
       {% end macro %}
 

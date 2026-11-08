@@ -70,11 +70,12 @@ templateSnippets:
       {%- import "util-access-control-lane" for AccessControlLane -%}
       {{- AccessControlLane("haptic") -}}
 
-  # Reload-free: request-set-header and response-set-header (newline-separated
-  # "<name> <value>" records) become entries in ing-reqhdr.map / ing-reshdr.map
-  # (built by ingress.yaml frontend-filters-263-ingress-headers), keyed on the
-  # resolved backend. This scopes each header to the ingress's own backends
-  # rather than every request for the host — the wildcard/host-less
+  # Reload-free: request/response-set-header (newline-separated "<name> <value>"
+  # records) and request/response-remove-header (comma- or newline-separated
+  # "<name>" or "<prefix>*" entries) become entries in ing-reqhdr.map /
+  # ing-reshdr.map (built by ingress.yaml frontend-filters-263-ingress-headers),
+  # keyed on the resolved backend. This scopes each header to the ingress's own
+  # backends rather than every request for the host — the wildcard/host-less
   # HostMatchCondition gap goes with it.
   features-820-haptic-header-mods:
     template: '{{- "" -}}'
@@ -86,15 +87,19 @@ templateSnippets:
       whenAnyPathExists:
         - "metadata.annotations['haproxy-haptic.org/request-set-header']"
         - "metadata.annotations['haproxy-haptic.org/response-set-header']"
+        - "metadata.annotations['haproxy-haptic.org/request-remove-header']"
+        - "metadata.annotations['haproxy-haptic.org/response-remove-header']"
       group: ingress-header-mods
       effects: [publishValue, recordEvent]
     template: |-
-      {%- import "util-ingress-header-publish" for PublishIngressHeaderContributions -%}
+      {%- import "util-ingress-header-publish" for PublishIngressHeaderContributions, PublishIngressHeaderRemovals -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
         {{- PublishIngressHeaderContributions(ingress,
           "haproxy-haptic.org/request-set-header", "haproxy-haptic.org/response-set-header", "\n", " ", "0820-haptic") -}}
+        {{- PublishIngressHeaderRemovals(ingress,
+          "haproxy-haptic.org/request-remove-header", "haproxy-haptic.org/response-remove-header", "0820-haptic") -}}
       {%- end -%}
 
   ingress-cors-0830-haptic:

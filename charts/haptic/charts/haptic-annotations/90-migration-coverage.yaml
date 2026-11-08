@@ -495,6 +495,9 @@ _migrationCoverage:
       haproxy-haptic.org/request-schema-secret:
         status: supported
         note: "Enables JSON request-body validation via the api-gateway SPOA plugin using a Secret data key (`[ns/]name[:key]`, default key schema.json) whose value is already base64 encoded."
+      haproxy-haptic.org/request-remove-header:
+        status: supported
+        note: "comma- or newline-separated '<name>' or '<prefix>*' entries -> http-request del-header (with -m beg for '<prefix>*'), backend-scoped via ing-reqhdr.map; token-guarded"
       haproxy-haptic.org/request-set-header:
         status: supported
         note: "newline-separated '<name> <value>' lines -> http-request set-header, host-scoped; name (no-space) and value ValidateConfigValue-guarded"
@@ -519,6 +522,9 @@ _migrationCoverage:
       haproxy-haptic.org/require-sni-host-match:
         status: supported
         note: "\"true\" → `http-request return status 421` when the Host differs from the TLS SNI, per-route via haptic-sni-host-routes.map."
+      haproxy-haptic.org/response-remove-header:
+        status: supported
+        note: "comma- or newline-separated '<name>' or '<prefix>*' entries -> http-after-response del-header (with -m beg for '<prefix>*'), backend-scoped via ing-reshdr.map; token-guarded"
       haproxy-haptic.org/response-set-header:
         status: supported
         note: "newline-separated '<name> <value>' lines -> http-after-response set-header, host-scoped; guarded"

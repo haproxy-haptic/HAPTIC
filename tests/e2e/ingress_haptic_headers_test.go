@@ -30,11 +30,13 @@ import (
 //
 // Keys exercised (all host-scoped, applied by charts/haptic/charts/
 // haptic-annotations/30-frontend-filters.yaml and 26-rewrite-affinity.yaml):
-//   - haproxy-haptic.org/response-set-header  → http-after-response set-header
-//   - haproxy-haptic.org/request-set-header   → http-request set-header
-//   - haproxy-haptic.org/forwardfor           → X-Forwarded-For injection
-//   - haproxy-haptic.org/set-host             → upstream Host override (reqhdr map)
-//   - haproxy-haptic.org/x-forwarded-prefix   → X-Forwarded-Prefix (reqhdr map)
+//   - haproxy-haptic.org/response-set-header     → http-after-response set-header
+//   - haproxy-haptic.org/response-remove-header  → http-after-response del-header
+//   - haproxy-haptic.org/request-set-header      → http-request set-header
+//   - haproxy-haptic.org/request-remove-header   → http-request del-header
+//   - haproxy-haptic.org/forwardfor              → X-Forwarded-For injection
+//   - haproxy-haptic.org/set-host                → upstream Host override (reqhdr map)
+//   - haproxy-haptic.org/x-forwarded-prefix      → X-Forwarded-Prefix (reqhdr map)
 //
 // request/response-set-header take newline-delimited "<name> <value>" lines
 // (one header per line), matching the haptic fragment's split-on-"\n" parser.
@@ -45,9 +47,13 @@ func TestHapticHeaders(t *testing.T) {
 		Host:        "ingress-haptic-headers.localdev.me",
 		Annotations: map[string]string{
 			// Response headers injected on the way back to the client.
-			"haproxy-haptic.org/response-set-header": "X-Custom-Response custom-resp-value\nX-Frame-Options DENY",
+			"haproxy-haptic.org/response-set-header": "X-Custom-Response custom-resp-value\nX-Frame-Options DENY\nServer haptic-e2e\nX-Powered-By haptic-e2e",
+			// Response headers stripped by exact name and prefix.
+			"haproxy-haptic.org/response-remove-header": "Server, x-powered-*",
 			// Request headers injected on the way to the upstream.
 			"haproxy-haptic.org/request-set-header": "X-Custom-Request custom-req-value\nX-Request-ID req-12345",
+			// Request headers stripped before reaching the upstream.
+			"haproxy-haptic.org/request-remove-header": "X-Drop-Exact, x-drop-prefix-*",
 			// Overwrite X-Forwarded-For with the connection source.
 			"haproxy-haptic.org/forwardfor": "update",
 			// Override the Host header the upstream receives.
@@ -96,6 +102,35 @@ func TestHapticHeaders(t *testing.T) {
 				Check: func(t *testing.T, host string) {
 					t.Helper()
 					httpclient.New(t).GET(host, "/").ExpectEchoHeader(t, "X-Forwarded-Prefix", "/haptic-prefix")
+				},
+			},
+			{
+				Name: "response-remove-header strips exact Server and prefix x-powered-* headers",
+				Check: func(t *testing.T, host string) {
+					t.Helper()
+					httpclient.New(t).GET(host, "/").ExpectMatching(t,
+						"response omits removed Server and X-Powered-By headers",
+						func(resp *httpclient.Response) bool {
+							return resp.Status == 200 &&
+								resp.Header.Get("Server") == "" &&
+								resp.Header.Get("X-Powered-By") == ""
+						})
+				},
+			},
+			{
+				Name: "request-remove-header strips exact and prefix headers before upstream",
+				Check: func(t *testing.T, host string) {
+					t.Helper()
+					httpclient.New(t).GET(host, "/").
+						WithHeader("X-Drop-Exact", "drop-me").
+						WithHeader("X-Drop-Prefix-One", "drop-me-too").
+						ExpectMatching(t,
+							"upstream did not receive removed request headers",
+							func(resp *httpclient.Response) bool {
+								return resp.Echo != nil &&
+									resp.Echo.Headers["x-drop-exact"] == "" &&
+									resp.Echo.Headers["x-drop-prefix-one"] == ""
+							})
 				},
 			},
 			{
