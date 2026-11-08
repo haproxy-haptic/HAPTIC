@@ -175,6 +175,7 @@ test-httproute-crosspath-hostname-quoted-path
 test-httproute-crosspath-hostname-wildcard
 test-httproute-cross-route-conflicts
 test-httproute-duplicate-backend-different-ports
+test-httproute-externalname-backend
 test-httproute-grpcroute-precedence
 test-httproute-header-edge-cases
 test-httproute-header-exact

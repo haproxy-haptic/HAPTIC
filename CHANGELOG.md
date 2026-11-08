@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Disabling the SPOA hub removes mirror and shared rate-limit dispatch directives, keeping active HTTPS frontends valid.
 - A JWT metadata ConfigMap that is invalid, names a host the Ingress doesn't serve, or conflicts with another document returns `503` for that Ingress with a `JWTMetadataInvalid` Warning Event, instead of stopping the configuration from rendering and failing admission of unrelated Ingresses ([#644](https://github.com/haproxy-haptic/HAPTIC/issues/644)).
 - `haproxy.org/request-redirect` keeps the request path and query, adds `http://` to a bare host, and applies only to the Ingress's routes, as upstream does.
+- A Service of `type: ExternalName` referenced by an Ingress, Gateway route, or default backend now emits a `server` line for `spec.externalName` with runtime DNS resolution via `resolvers dns`, instead of rendering an empty backend that answers `503` ([#647](https://github.com/haproxy-haptic/HAPTIC/issues/647)).
 
 ## [0.11.0] - 2026-11-04
 

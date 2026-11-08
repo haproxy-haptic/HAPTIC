@@ -39,6 +39,7 @@ import (
 )
 
 const backendServersExpected = `[{"address":"10.0.0.1","comment":"Pod: pod-a","disabled":true,"guid":"srv:be-main:svc-pod-a","name":"svc-pod-a","port":8080,"weight":25},{"address":"10.0.0.2","comment":"Pod: pod-b","guid":"srv:be-main:svc-pod-b","name":"svc-pod-b","port":8080,"weight":25}]`
+const backendServersExternalNameExpected = `[{"address":"files.s3.example.net","comment":"ExternalName: files.s3.example.net","extra":[{"args":["dns"],"name":"resolvers"},{"args":["last,libc,none"],"name":"init-addr"}],"guid":"srv:be-main:svc-echo","name":"svc-echo","port":443,"weight":25}]`
 
 const backendServersTestTemplate = `{%- import "util-backend-servers" for BackendServers -%}
 {%- import "util-backend-servers-result" for BackendServersResult -%}
@@ -70,7 +71,9 @@ type backendServersService struct {
 }
 
 type backendServersServiceSpec struct {
-	Ports []backendServersServicePort `json:"ports"`
+	Type         string                      `json:"type"`
+	ExternalName string                      `json:"externalName"`
+	Ports        []backendServersServicePort `json:"ports"`
 }
 
 type backendServersServicePort struct {
@@ -123,37 +126,54 @@ func TestBackendServersResultPreservesLegacyBytesWithoutSharedMutation(t *testin
 	tests := map[string]struct {
 		port             int
 		portName         any
-		withService      bool
+		serviceResource  map[string]any
 		withEndpoint     bool
 		wantServers      string
+		wantPortName     string
 		wantDegraded     bool
 		wantLegacyMarker bool
 	}{
 		"numeric port": {
-			port: 80, withService: true, withEndpoint: true,
-			wantServers: backendServersExpected,
+			port: 80, serviceResource: backendServersServiceResource(), withEndpoint: true,
+			wantServers: backendServersExpected, wantPortName: "http",
 		},
 		"named port": {
-			portName: "http", withService: true, withEndpoint: true,
-			wantServers: backendServersExpected,
+			portName: "http", serviceResource: backendServersServiceResource(), withEndpoint: true,
+			wantServers: backendServersExpected, wantPortName: "http",
 		},
 		"named port resolves without Service": {
 			portName: "http", withEndpoint: true,
-			wantServers: backendServersExpected,
+			wantServers: backendServersExpected, wantPortName: "http",
 		},
 		"missing Service and endpoints is degraded": {
-			portName: "http", wantServers: "[]", wantDegraded: true, wantLegacyMarker: true,
+			portName: "http", wantServers: "[]", wantPortName: "http", wantDegraded: true, wantLegacyMarker: true,
+		},
+		"ExternalName Service with numeric port": {
+			port: 443, serviceResource: backendServersExternalNameServiceResource("files.s3.example.net", true),
+			wantServers: backendServersExternalNameExpected, wantPortName: "http",
+		},
+		"ExternalName Service with named port": {
+			portName: "http", serviceResource: backendServersExternalNameServiceResource("files.s3.example.net", true),
+			wantServers: backendServersExternalNameExpected, wantPortName: "http",
+		},
+		"ExternalName Service without spec.ports uses numeric port": {
+			port: 443, serviceResource: backendServersExternalNameServiceResource("files.s3.example.net", false),
+			wantServers: backendServersExternalNameExpected,
+		},
+		"ExternalName Service with invalid hostname is skipped": {
+			port: 443, serviceResource: backendServersExternalNameServiceResource("bad host\ninjected", true),
+			wantServers: "[]", wantPortName: "http",
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			observation := renderBackendServersChart(t, test.port, test.portName, test.withService, test.withEndpoint)
+			observation := renderBackendServersChart(t, test.port, test.portName, test.serviceResource, test.withEndpoint)
 
 			assert.Equal(t, test.wantServers, observation.pure)
 			assert.Equal(t, observation.pure, observation.legacy)
 			assert.Equal(t, test.wantDegraded, observation.degraded)
-			assert.Equal(t, "http", observation.portName)
+			assert.Equal(t, test.wantPortName, observation.portName)
 			assert.False(t, observation.markerBefore)
 			assert.Equal(t, test.wantLegacyMarker, observation.markerAfter)
 		})
@@ -164,14 +184,14 @@ func renderBackendServersChart(
 	t *testing.T,
 	port int,
 	portName any,
-	withService bool,
+	serviceResource map[string]any,
 	withEndpoint bool,
 ) backendServersObservation {
 	t.Helper()
 	servicesStore := k8sstore.NewMemoryStore(2)
 	endpointsStore := k8sstore.NewMemoryStore(2)
-	if withService {
-		require.NoError(t, servicesStore.Add(backendServersServiceResource(), []string{"default", "echo"}))
+	if serviceResource != nil {
+		require.NoError(t, servicesStore.Add(serviceResource, []string{"default", "echo"}))
 	}
 	if withEndpoint {
 		require.NoError(t, endpointsStore.Add(backendServersEndpointResource(), []string{"default", "echo"}))
@@ -260,6 +280,21 @@ func backendServersServiceResource() map[string]any {
 		"apiVersion": "v1", "kind": "Service",
 		"metadata": map[string]any{"namespace": "default", "name": "echo"},
 		"spec":     map[string]any{"ports": []any{map[string]any{"name": "http", "port": int64(80)}}},
+	}
+}
+
+func backendServersExternalNameServiceResource(externalName string, withPorts bool) map[string]any {
+	spec := map[string]any{
+		"type":         "ExternalName",
+		"externalName": externalName,
+	}
+	if withPorts {
+		spec["ports"] = []any{map[string]any{"name": "http", "port": int64(443)}}
+	}
+	return map[string]any{
+		"apiVersion": "v1", "kind": "Service",
+		"metadata": map[string]any{"namespace": "default", "name": "echo"},
+		"spec":     spec,
 	}
 }
 

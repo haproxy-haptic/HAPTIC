@@ -171,7 +171,7 @@ templateSnippets:
                   opts, nil, backendName, backendNamespace)
                 for _, server := range serverResult["servers"].([]any) {
                   var record = server.(map[string]any)
-                  if len(flags) > 0 { record["extra"] = FlagsToKeywordArgs(flags) }
+                  if len(flags) > 0 { record["extra"] = append(toSlice(record["extra"]), FlagsToKeywordArgs(flags)...) }
                   servers = append(servers, record)
                 }
               }
