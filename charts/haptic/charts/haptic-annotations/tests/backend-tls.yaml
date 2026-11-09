@@ -86,6 +86,47 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: "ssl-min-ver TLSv1\\.2"}
       - {type: contains, target: haproxy.cfg, pattern: "ssl-max-ver TLSv1\\.3"}
 
+  test-haptic-backend-system-ca:
+    description: The reserved backend-ca-secret value @system-ca verifies an ExternalName upstream against HAProxy's system CA store.
+    fixtures:
+      services:
+        - apiVersion: v1
+          kind: Service
+          metadata: {namespace: default, name: s3}
+          spec:
+            type: ExternalName
+            externalName: files.s3.example.net
+            ports:
+              - {name: https, port: 443}
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: assets
+            annotations:
+              haproxy-haptic.org/backend-protocol: https
+              haproxy-haptic.org/backend-sni: files.s3.example.net
+              haproxy-haptic.org/backend-verify: "true"
+              haproxy-haptic.org/backend-verify-host: files.s3.example.net
+              haproxy-haptic.org/backend-ca-secret: "@system-ca"
+              haproxy-haptic.org/set-host: files.s3.example.net
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: assets.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: s3, port: {number: 443}}}}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: "ssl verify required ca-file @system-ca"}
+      - {type: contains, target: haproxy.cfg, pattern: "sni str\\(files\\.s3\\.example\\.net\\)"}
+      - {type: contains, target: haproxy.cfg, pattern: "verifyhost files\\.s3\\.example\\.net"}
+      - {type: contains, target: haproxy.cfg, pattern: 'server [^\n]*files\.s3\.example\.net:443[^\n]*resolvers dns init-addr last,libc,none'}
+      - {type: contains, target: "map:reqhdr-host.map", pattern: '(?m)^default_assets_svc_s3_https files\.s3\.example\.net$'}
+      - {type: not_contains, target: "map:haptic-route-unavailable.map", pattern: 'default/assets'}
+
   test-haptic-backend-protocol-grpcs:
     description: backend-protocol grpcs enables TLS to the upstream and negotiates h2 (proto h2 + ssl).
     fixtures:

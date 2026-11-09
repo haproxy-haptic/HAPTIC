@@ -74,7 +74,7 @@ Speak TLS to the backend Service — protocol, verification, client certs, SNI, 
 
 | Annotation | Behavior |
 |------------|----------|
-| `haproxy-haptic.org/backend-ca-secret` | Loads the Secret's `ca.crt` as the backend `ca-file` and requires TLS verification; a missing Secret or key is skipped with a warning comment. |
+| `haproxy-haptic.org/backend-ca-secret` | Loads the Secret's `ca.crt` as the backend `ca-file` and requires TLS verification. Set the reserved value `@system-ca` to use HAProxy's system CA store instead. A missing Secret or key denies the route with `503` and records a Warning Event. |
 | `haproxy-haptic.org/backend-ciphers` | Sets the cipher list for TLS 1.2 and earlier via `ciphers` on a TLS-enabled backend. |
 | `haproxy-haptic.org/backend-ciphersuites` | Sets the cipher suites for TLS 1.3 via `ciphersuites` on a TLS-enabled backend. |
 | `haproxy-haptic.org/backend-crt-secret` | Presents the Secret's `tls.crt` and `tls.key` as a client certificate to the upstream via `crt`; a missing Secret is skipped with a warning. |
