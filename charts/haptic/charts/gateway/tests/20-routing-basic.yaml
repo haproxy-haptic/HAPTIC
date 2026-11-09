@@ -452,7 +452,8 @@ validationTests:
                 backendRefs:
                   - {name: web, port: 80}
     assertions:
-      - {type: contains, target: rendering_error, pattern: "Route regex path '/y\\)\\|\\(\\.\\*' \\(host 'esc\\.example\\.com'\\) closes a group it doesn't open; the route is not applied"}
+      - {type: contains, target: rendering_error, pattern: "Route regex path '/y\\)\\|\\(\\.\\*' \\(host 'esc\\.example\\.com'\\) closes a group it doesn't open; the route is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "the route is not applied"}
 
   test-httproute-regex-path-injection-reconcile-warns-and-skips:
     requires: [httproutes]

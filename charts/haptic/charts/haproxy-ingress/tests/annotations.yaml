@@ -596,7 +596,8 @@ validationTests:
                       pathType: ImplementationSpecific
                       backend: {service: {name: esc-service, port: {number: 80}}}
     assertions:
-      - {type: contains, target: rendering_error, pattern: "Ingress default/esc has regex path '/y\\)\\|\\(\\.\\*', which closes a group it doesn't open; the path is not routed"}
+      - {type: contains, target: rendering_error, pattern: "Ingress default/esc has regex path '/y\\)\\|\\(\\.\\*', which closes a group it doesn't open; the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "the path is not routed"}
 
   test-haproxy-ingress-path-type-regex:
     description: "HAProxy-Ingress path-type=regex annotation produces a path-regex.map row keyed by the literal regex pattern with a `BACKEND:<backend_name>` qualifier value. base."

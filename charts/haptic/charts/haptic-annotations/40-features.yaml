@@ -75,7 +75,7 @@ templateSnippets:
         applies to the Ingress's own routes, and a redirect to the requested URL is
         skipped, so `redirect-scheme: https` only fires on plain HTTP.
       #}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
@@ -94,7 +94,9 @@ templateSnippets:
         }
         for _, removed := range keys(replacements) {
           if a[p + removed] != "" {
-            _ = WebhookRejectOrWarn(ingress, "UnsupportedAnnotation", "Ingress " + key + " sets '" + p + removed + "', which was removed, so it has no effect. Use " + replacements[removed] + " instead.")
+            _ = WebhookRejectOrWarn(ingress, "UnsupportedAnnotation", WebhookOutcomeMessage(
+              "Ingress " + key + " sets '" + p + removed + "', which was removed",
+              "the Ingress is rejected", "the annotation has no effect", "Use " + replacements[removed] + " instead."))
           }
         }
         var scheme = a["haproxy-haptic.org/redirect-scheme"]
@@ -259,7 +261,7 @@ templateSnippets:
 
         The path passes a control-char config-injection guard before registration.
       #}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
@@ -293,7 +295,7 @@ templateSnippets:
       group: haptic-default-backend-redirect-hosts
       effects: [publishValue, recordEvent]
     template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}

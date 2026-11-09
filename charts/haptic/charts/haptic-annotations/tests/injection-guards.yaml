@@ -126,6 +126,8 @@ validationTests:
                 http: *httpRoot
     assertions:
       - {type: contains, target: rendering_error, pattern: "is not an HTTP token"}
+      - {type: contains, target: rendering_error, pattern: "the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "the header is skipped"}
 
   test-haptic-response-remove-header-hostile-name-admission-rejected:
     description: A response-remove-header entry outside the HTTP token or '<prefix>*' syntax is denied at admission.
@@ -189,6 +191,7 @@ validationTests:
       - type: haproxy_valid
       - {type: not_contains, target: 'map:ing-reqhdr.map', pattern: "[Xx]\\|[Bb]ad"}
       - {type: contains, target: 'map:ing-reqhdr.map', pattern: 'default_hn-ok_svc_echo_80\|set\|x-good goodval'}
+      - {type: contains, target: events, pattern: "the header is skipped"}
 
   # ---- HTTP framing and routing header guards ----
   test-haptic-request-remove-header-content-length-admission-rejected:
@@ -386,6 +389,8 @@ validationTests:
                 http: *httpRoot
     assertions:
       - {type: contains, target: rendering_error, pattern: "would split the frontend directive"}
+      - {type: contains, target: rendering_error, pattern: "the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "the response is not applied"}
 
   test-haptic-mock-response-content-type-control-char-reconcile-warns-and-skips:
     description: A control character in mock-response-content-type is skipped while a valid sibling mock-response still renders.
@@ -421,6 +426,7 @@ validationTests:
       - type: haproxy_valid
       - {type: contains, target: "map:haptic-return-body.map", pattern: '(?m)^default/mock-ok served$'}
       - {type: not_contains, target: haproxy.cfg, pattern: "mock-inj-marker"}
+      - {type: contains, target: events, pattern: "the response is not applied"}
 
   # ---- shared EmitAnnotationCORS macro ----
   test-haptic-cors-value-control-char-reconcile-warns-and-skips:
@@ -478,7 +484,8 @@ validationTests:
               - host: corsbad.example.com
                 http: *httpRoot
     assertions:
-      - {type: contains, target: rendering_error, pattern: "CORS is not applied"}
+      - {type: contains, target: rendering_error, pattern: "the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "CORS is not applied"}
 
   test-haptic-cors-value-percent-escaped:
     description: A CORS value with a log-format fetch lands URL-encoded in the expose map and is decoded only per request, so a tenant cannot read request-scoped state into the CORS response header.

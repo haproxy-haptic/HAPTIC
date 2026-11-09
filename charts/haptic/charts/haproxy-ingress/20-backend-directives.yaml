@@ -32,7 +32,7 @@ templateSnippets:
         Reference: https://haproxy-ingress.github.io/docs/configuration/keys/#timeout
       #}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name %}
         {%- var tConnect = ingress.Metadata.Annotations["haproxy-ingress.github.io/timeout-connect"] %}
@@ -48,25 +48,33 @@ templateSnippets:
         {%- end %}
         {%- if tConnect != "" %}
           {%- var injTC = ConfigInjectionKind(tConnect, "token") %}
-          {%- if injTC != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidTimeout", "Ingress " + key + " annotation 'haproxy-ingress.github.io/timeout-connect' contains " + injTC + "; the timeout is not applied. Remove whitespace, quotes and control characters.") -}}{%- else %}
+          {%- if injTC != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidTimeout", WebhookOutcomeMessage(
+            "Ingress " + key + " annotation 'haproxy-ingress.github.io/timeout-connect' contains " + injTC,
+            "the Ingress is rejected", "the timeout is not applied", "Remove whitespace, quotes and control characters.")) -}}{%- else %}
       timeout connect {{ tConnect }}
           {%- end %}
         {% end %}
         {%- if tQueue != "" %}
           {%- var injTQ = ConfigInjectionKind(tQueue, "token") %}
-          {%- if injTQ != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidTimeout", "Ingress " + key + " annotation 'haproxy-ingress.github.io/timeout-queue' contains " + injTQ + "; the timeout is not applied. Remove whitespace, quotes and control characters.") -}}{%- else %}
+          {%- if injTQ != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidTimeout", WebhookOutcomeMessage(
+            "Ingress " + key + " annotation 'haproxy-ingress.github.io/timeout-queue' contains " + injTQ,
+            "the Ingress is rejected", "the timeout is not applied", "Remove whitespace, quotes and control characters.")) -}}{%- else %}
       timeout queue {{ tQueue }}
           {%- end %}
         {% end %}
         {%- if tHttpReq != "" %}
           {%- var injTH = ConfigInjectionKind(tHttpReq, "token") %}
-          {%- if injTH != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidTimeout", "Ingress " + key + " annotation 'haproxy-ingress.github.io/timeout-http-request' contains " + injTH + "; the timeout is not applied. Remove whitespace, quotes and control characters.") -}}{%- else %}
+          {%- if injTH != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidTimeout", WebhookOutcomeMessage(
+            "Ingress " + key + " annotation 'haproxy-ingress.github.io/timeout-http-request' contains " + injTH,
+            "the Ingress is rejected", "the timeout is not applied", "Remove whitespace, quotes and control characters.")) -}}{%- else %}
       timeout http-request {{ tHttpReq }}
           {%- end %}
         {% end %}
         {%- if tKeepAlive != "" %}
           {%- var injTK = ConfigInjectionKind(tKeepAlive, "token") %}
-          {%- if injTK != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidTimeout", "Ingress " + key + " annotation 'haproxy-ingress.github.io/timeout-keep-alive' contains " + injTK + "; the timeout is not applied. Remove whitespace, quotes and control characters.") -}}{%- else %}
+          {%- if injTK != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidTimeout", WebhookOutcomeMessage(
+            "Ingress " + key + " annotation 'haproxy-ingress.github.io/timeout-keep-alive' contains " + injTK,
+            "the Ingress is rejected", "the timeout is not applied", "Remove whitespace, quotes and control characters.")) -}}{%- else %}
       timeout http-keep-alive {{ tKeepAlive }}
           {%- end %}
         {% end %}
@@ -173,7 +181,7 @@ templateSnippets:
         Reference: https://haproxy-ingress.github.io/docs/configuration/keys/#health-check
       #}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
@@ -189,13 +197,17 @@ templateSnippets:
         {%- end %}
         {%- if checkUri != "" %}
           {%- var injCU = ConfigInjectionKind(checkUri, "token") %}
-          {%- if injCU != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidHealthCheck", "Ingress " + key + " annotation 'haproxy-ingress.github.io/health-check-uri' contains " + injCU + "; the health check is not applied. Remove whitespace, quotes and control characters.") -}}{%- else %}
+          {%- if injCU != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidHealthCheck", WebhookOutcomeMessage(
+            "Ingress " + key + " annotation 'haproxy-ingress.github.io/health-check-uri' contains " + injCU,
+            "the Ingress is rejected", "the health check is not applied", "Remove whitespace, quotes and control characters.")) -}}{%- else %}
       option httpchk GET {{ checkUri }}
           {%- end %}
         {%- end %}
         {%- if checkInterval != "" %}
           {%- var injCI = ConfigInjectionKind(checkInterval, "token") %}
-          {%- if injCI != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidHealthCheck", "Ingress " + key + " annotation 'haproxy-ingress.github.io/backend-check-interval' contains " + injCI + "; the check interval is not applied. Remove whitespace, quotes and control characters.") -}}{%- else %}
+          {%- if injCI != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidHealthCheck", WebhookOutcomeMessage(
+            "Ingress " + key + " annotation 'haproxy-ingress.github.io/backend-check-interval' contains " + injCI,
+            "the Ingress is rejected", "the check interval is not applied", "Remove whitespace, quotes and control characters.")) -}}{%- else %}
           {%- serverOpts["flags"] = append(serverOpts | dig("flags") | toSlice(), "inter " + checkInterval) %}
           {%- end %}
         {%- end %}
@@ -456,7 +468,7 @@ templateSnippets:
           cookie <name> <strategy> [indirect] [nocache] [dynamic] [domain <domain>] [attr "SameSite=<value>"]
       #}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
@@ -524,7 +536,9 @@ templateSnippets:
             {%- end %}
             {%- cookieDir = cookieDir + " attr \"SameSite=" + sameSite + "\"" %}
           {%- end %}
-          {%- if cookieInj != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidSessionCookie", "Ingress " + key + " has a session-cookie annotation value containing " + cookieInj + "; session affinity is not applied. Remove control characters, quotes and '#' from session-cookie-name/-keywords/-domain.") -}}{%- else %}
+          {%- if cookieInj != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidSessionCookie", WebhookOutcomeMessage(
+            "Ingress " + key + " has a session-cookie annotation value containing " + cookieInj,
+            "the Ingress is rejected", "session affinity is not applied", "Remove control characters, quotes and '#' from session-cookie-name/-keywords/-domain.")) -}}{%- else %}
       # haproxy-ingress/session-affinity ({{ key }})
       {{ cookieDir }}
           {%- end %}
@@ -636,7 +650,7 @@ templateSnippets:
           http-request replace-path (.*) <translated-value>
       #}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
@@ -662,7 +676,9 @@ templateSnippets:
               on an actual \N backreference, not any backslash. -#}
           {%- if regex_search(rewrite, "\\\\[1-9]") %}
             {%- var injRw = ConfigInjectionKind(rewrite, "line") %}
-            {%- if injRw != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidRewriteTarget", "Ingress " + key + " annotation 'haproxy-ingress.github.io/rewrite-target' contains " + injRw + "; the rewrite is not applied. Remove control characters from the value.") -}}{%- else %}
+            {%- if injRw != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidRewriteTarget", WebhookOutcomeMessage(
+              "Ingress " + key + " annotation 'haproxy-ingress.github.io/rewrite-target' contains " + injRw,
+              "the Ingress is rejected", "the rewrite is not applied", "Remove control characters from the value.")) -}}{%- else %}
       # haproxy-ingress/rewrite-target ({{ key }})
       http-request replace-path (.*) {{ rewrite }}
             {%- end %}
@@ -733,7 +749,7 @@ templateSnippets:
         are runtime-safe options.
       #}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
@@ -752,7 +768,9 @@ templateSnippets:
           {%- if agentInj == "" && aInter != "" %}{%- agentInj = ConfigInjectionKind(aInter, "token") %}{%- end %}
           {%- if agentInj == "" && aSend != "" %}{%- agentInj = ConfigInjectionKind(aSendStripped, "token") %}{%- end %}
           {%- if agentInj != "" %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAgentCheck", "Ingress " + key + " has an agent-check annotation value containing " + agentInj + "; the agent check is not applied. Remove whitespace, quotes and control characters.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAgentCheck", WebhookOutcomeMessage(
+              "Ingress " + key + " has an agent-check annotation value containing " + agentInj,
+              "the Ingress is rejected", "the agent check is not applied", "Remove whitespace, quotes and control characters.")) -}}
           {%- else %}
             {#- One keyword per flag entry so the plan record carries each as a
                 structured KeywordArg (see FlagsToKeywordArgs). -#}

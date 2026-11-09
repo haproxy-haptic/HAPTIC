@@ -254,7 +254,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-host-key" for MapKeyForHost -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%%
         var ingress = item
         var id = dig_string(ingress, "", "metadata", "namespace") + "/" +
@@ -267,8 +267,9 @@ templateSnippets:
             if pathValue != "" && !rejected &&
               (regex_search(pathValue, "[[:cntrl:]]") || strings_contains(pathValue, " ")) {
               rejected = true
-              _ = WebhookRejectOrWarn(ingress, "InvalidPath", "Ingress '" + id +
-                "' has a path containing whitespace or control characters, which cannot be written to the routing map; the route is not applied. Remove spaces, tabs and newlines from spec.rules[].http.paths[].path.")
+              _ = WebhookRejectOrWarn(ingress, "InvalidPath", WebhookOutcomeMessage(
+                "Ingress '" + id + "' has a path containing whitespace or control characters, which cannot be written to the routing map",
+                "the Ingress is rejected", "the route is not applied", "Remove spaces, tabs and newlines from spec.rules[].http.paths[].path."))
             }
           }
         }
@@ -944,7 +945,7 @@ templateSnippets:
     template: |-
       {%- import "util-backend-name-ingress" for BackendNameIngress -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ProtectedHTTPHeader = func(name string, prefix bool, request bool) string {
         var lower = toLower(name)
         var protected = []string{"content-length", "transfer-encoding"}
@@ -982,7 +983,9 @@ templateSnippets:
               continue
             }
             if !regex_search(hn, "^[A-Za-z0-9!$&*+.^_~-]+$") {
-              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' names header '" + hn + "', which is not an HTTP token; the header is skipped. Use letters, digits and -._~!$&*+^.")
+              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+                "Annotation '" + ann + "' on Ingress '" + key + "' names header '" + hn + "', which is not an HTTP token",
+                "the Ingress is rejected", "the header is skipped", "Use letters, digits and -._~!$&*+^."))
               continue
             }
             var protected = ProtectedHTTPHeader(hn, false, bucket == "ingReqHeaderMods")
@@ -991,7 +994,9 @@ templateSnippets:
               continue
             }
             if ConfigInjectionKind(hv, "line") != "" {
-              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' has a value containing " + ConfigInjectionKind(hv, "line") + ", which would split the frontend directive; the header is not applied. Remove control characters from the value.")
+              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+                "Annotation '" + ann + "' on Ingress '" + key + "' has a value containing " + ConfigInjectionKind(hv, "line") + ", which would split the frontend directive",
+                "the Ingress is rejected", "the header is not applied", "Remove control characters from the value."))
               continue
             }
             for _, rule := range ingress.Spec.Rules {
@@ -1037,11 +1042,9 @@ templateSnippets:
               hn = tok[:len(tok)-1]
             }
             if hn == "" || !regex_search(hn, "^[A-Za-z0-9!$&+.^_~-]+$") {
-              var outcome = "the header is skipped"
-              if renderMode == "admission" {
-                outcome = "the Ingress is rejected"
-              }
-              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' names header '" + tok + "', which is not an HTTP token or '<prefix>*'; " + outcome + ". Use letters, digits and -._~!$&+^, optionally followed by a trailing '*'.")
+              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+                "Annotation '" + ann + "' on Ingress '" + key + "' names header '" + tok + "', which is not an HTTP token or '<prefix>*'",
+                "the Ingress is rejected", "the header is skipped", "Use letters, digits and -._~!$&+^, optionally followed by a trailing '*'."))
               continue
             }
             var protected = ProtectedHTTPHeader(hn, op == "del-beg", bucket == "ingReqHeaderMods")
@@ -2663,6 +2666,8 @@ validationTests:
       - type: contains
         target: rendering_error
         pattern: "has a path containing whitespace or control characters"
+      - {type: contains, target: rendering_error, pattern: "the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "the route is not applied"}
 
   test-ingress-path-injection-reconcile-warns-and-skips:
     description: On reconcile, a whitespace/newline path warns (Event) and the Ingress is skipped; the injected map line never appears while valid routes still render.

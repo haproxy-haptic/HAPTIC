@@ -67,7 +67,7 @@ templateSnippets:
       {%- import "util-host-key" for MapKeyForHost -%}
       {%- import "util-ingress-host-claims" for HostAliases, HostAliasProblem, HostClaimEmits, HostClaimConflict, HostAliasConflictMessage -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%%
         var annotation = "nginx.ingress.kubernetes.io/server-alias"
         var id = dig_string(item, "", "metadata", "namespace") + "/" + dig_string(item, "", "metadata", "name")
@@ -81,12 +81,16 @@ templateSnippets:
           for _, alias := range HostAliases(dig_string(item, "", "metadata", "annotations", annotation), "") {
             var aliasInj = ConfigInjectionKind(alias, "mapkey")
             if aliasInj != "" {
-              _ = WebhookRejectOrWarn(item, "InvalidAnnotationValue", "Ingress " + id + " annotation '" + annotation + "' value contains " + aliasInj + ", which would inject an entry into the host routing map; the alias is not applied. Remove whitespace and control characters from the value.")
+              _ = WebhookRejectOrWarn(item, "InvalidAnnotationValue", WebhookOutcomeMessage(
+                "Ingress " + id + " annotation '" + annotation + "' value contains " + aliasInj + ", which would inject an entry into the host routing map",
+                "the Ingress is rejected", "the alias is not applied", "Remove whitespace and control characters from the value."))
               continue
             }
             var problem = HostAliasProblem(alias)
             if problem != "" {
-              _ = WebhookRejectOrWarn(item, "InvalidAnnotationValue", "Ingress " + id + " annotation '" + annotation + "' alias '" + alias + "' " + problem + ", so it isn't routed. Use a hostname such as www.example.com or *.example.com.")
+              _ = WebhookRejectOrWarn(item, "InvalidAnnotationValue", WebhookOutcomeMessage(
+                "Ingress " + id + " annotation '" + annotation + "' alias '" + alias + "' " + problem,
+                "the Ingress is rejected", "the alias isn't routed", "Use a hostname such as www.example.com or *.example.com."))
               continue
             }
             var aliasKey = tostring(MapKeyForHost(toLower(alias)))

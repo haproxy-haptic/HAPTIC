@@ -42,7 +42,7 @@ templateSnippets:
       {%- import "util-host-key" for MapKeyForHost -%}
       {%- import "util-regex-map-key" for RegexGroupProblem, RegexMapKey -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {#- A whitespace path is skipped; features-900-ingress-path-candidates reports it. -#}
       {%- for _, ingress := range []*resources.ingresses.T{resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name"))} %}
@@ -54,7 +54,9 @@ templateSnippets:
           {%- if path.PathType == "ImplementationSpecific" && ConfigInjectionKind(path.Path, "mapkey") == "" %}
             {%- var problem = RegexGroupProblem(path.Path) %}
             {%- if problem != "" %}
-              {{- WebhookRejectOrWarn(ingress, "InvalidPath", "Ingress " + key + " has regex path '" + path.Path + "', which " + problem + "; the path is not routed. Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*.") -}}
+              {{- WebhookRejectOrWarn(ingress, "InvalidPath", WebhookOutcomeMessage(
+                "Ingress " + key + " has regex path '" + path.Path + "', which " + problem,
+                "the Ingress is rejected", "the path is not routed", "Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*.")) -}}
               {%- continue %}
             {%- end %}
       {{ RegexMapKey(MapKeyForHost(rule.Host), path.Path, "") }} BACKEND:{{ BackendNameIngress(ingress, path) }}
@@ -234,7 +236,7 @@ templateSnippets:
       {%- import "util-host-key" for MapKeyForHost -%}
       {%- import "util-ingress-host-claims" for HostAliases, HostAliasProblem, HostClaimEmits, HostClaimConflict, HostAliasConflictMessage -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%%
         var annotation = "haproxy-haptic.org/host-alias"
         var id = dig_string(item, "", "metadata", "namespace") + "/" + dig_string(item, "", "metadata", "name")
@@ -247,12 +249,16 @@ templateSnippets:
           for _, alias := range HostAliases(dig_string(item, "", "metadata", "annotations", annotation), " ") {
             var injection = ConfigInjectionKind(alias, "mapkey")
             if injection != "" {
-              _ = WebhookRejectOrWarn(item, "InvalidHostAlias", "Ingress " + id + " annotation '" + annotation + "' value contains " + injection + ", which would split the host map; the alias is not applied. Remove whitespace and control characters from the value.")
+              _ = WebhookRejectOrWarn(item, "InvalidHostAlias", WebhookOutcomeMessage(
+                "Ingress " + id + " annotation '" + annotation + "' value contains " + injection + ", which would split the host map",
+                "the Ingress is rejected", "the alias is not applied", "Remove whitespace and control characters from the value."))
               continue
             }
             var problem = HostAliasProblem(alias)
             if problem != "" {
-              _ = WebhookRejectOrWarn(item, "InvalidHostAlias", "Ingress " + id + " annotation '" + annotation + "' alias '" + alias + "' " + problem + ", so it isn't routed. Use a hostname such as www.example.com or *.example.com.")
+              _ = WebhookRejectOrWarn(item, "InvalidHostAlias", WebhookOutcomeMessage(
+                "Ingress " + id + " annotation '" + annotation + "' alias '" + alias + "' " + problem,
+                "the Ingress is rejected", "the alias isn't routed", "Use a hostname such as www.example.com or *.example.com."))
               continue
             }
             var aliasKey = tostring(MapKeyForHost(toLower(alias)))
@@ -297,7 +303,7 @@ templateSnippets:
       {%- import "util-ingress-host-claims" for HostAliasRegexKey, HostClaimEmits, HostClaimConflict, HostAliasConflictMessage -%}
       {%- import "util-regex-map-key" for RegexGroupProblem -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%%
         var annotation = "haproxy-haptic.org/host-alias-regex"
         var id = dig_string(item, "", "metadata", "namespace") + "/" + dig_string(item, "", "metadata", "name")
@@ -309,9 +315,13 @@ templateSnippets:
           var injection = ConfigInjectionKind(regex, "mapkey")
           var problem = RegexGroupProblem(regex)
           if injection != "" {
-            _ = WebhookRejectOrWarn(item, "InvalidHostAliasRegex", "Ingress " + id + " annotation '" + annotation + "' value contains " + injection + ", which would split the host-alias-regex map; the alias regex is not applied. Remove whitespace and control characters from the value.")
+            _ = WebhookRejectOrWarn(item, "InvalidHostAliasRegex", WebhookOutcomeMessage(
+              "Ingress " + id + " annotation '" + annotation + "' value contains " + injection + ", which would split the host-alias-regex map",
+              "the Ingress is rejected", "the alias regex is not applied", "Remove whitespace and control characters from the value."))
           } else if problem != "" {
-            _ = WebhookRejectOrWarn(item, "InvalidHostAliasRegex", "Ingress " + id + " annotation '" + annotation + "' regex '" + regex + "' " + problem + ", so it isn't routed. Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*.")
+            _ = WebhookRejectOrWarn(item, "InvalidHostAliasRegex", WebhookOutcomeMessage(
+              "Ingress " + id + " annotation '" + annotation + "' regex '" + regex + "' " + problem,
+              "the Ingress is rejected", "the alias regex isn't routed", "Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*."))
           } else {
             var key = HostAliasRegexKey(regex)
             var winner, found = shared.Select("ingress-host-claims", "regexes", key)

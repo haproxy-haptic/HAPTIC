@@ -162,7 +162,7 @@ templateSnippets:
       {%- import "util-host-key" for MapKeyForHost -%}
       {%- import "util-backend-name-gateway-rule" for BackendNameGatewayRule -%}
       {%- import "util-backend-ref-valid" for BackendRefValid -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- import "util-config-value-injection" for ConfigValueInjection -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
       {%- import "util-escape-logformat-value" for EscapeLogFormatValue -%}
@@ -254,7 +254,9 @@ templateSnippets:
               if matchInjection == "" { matchInjection = ConfigValueInjection(tostring(value)) }
             }
             if matchInjection != "" {
-              _ = WebhookRejectOrWarn(route, "InvalidMatch", routeKind + " " + namespace + "/" + name + " has a match value containing " + matchInjection + ", which would break out of its routing ACL; the route is not applied. Remove double quotes and control characters from the match value.")
+              _ = WebhookRejectOrWarn(route, "InvalidMatch", WebhookOutcomeMessage(
+                routeKind + " " + namespace + "/" + name + " has a match value containing " + matchInjection + ", which would break out of its routing ACL",
+                "the route is rejected", "the route is not applied", "Remove double quotes and control characters from the match value."))
             } else {
               var conditions = []string{"!{ var(txn.gw_rule_id) -m found }"}
               if (pathOnly || hostnamePrecedence) && routeKind == "HTTPRoute" {
@@ -416,7 +418,9 @@ templateSnippets:
             for _, value := range exposed { if injection == "" { injection = ConfigInjectionKind(value, "line") } }
             for _, value := range allowOrigins { if injection == "" { injection = ConfigInjectionKind(tostring(value), "dquote") } }
             if injection != "" {
-              _ = WebhookRejectOrWarn(route, "InvalidCORS", "HTTPRoute " + namespace + "/" + name + " has a CORS filter value containing " + injection + ", which would break out of the CORS response header directive; the CORS filter is not applied. Remove control characters and double quotes from allowMethods, allowHeaders, exposeHeaders and allowOrigins.")
+              _ = WebhookRejectOrWarn(route, "InvalidCORS", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " has a CORS filter value containing " + injection + ", which would break out of the CORS response header directive",
+                "the HTTPRoute is rejected", "the CORS filter is not applied", "Remove control characters and double quotes from allowMethods, allowHeaders, exposeHeaders and allowOrigins."))
               continue
             }
             var routeCondition = "{ var(txn.gw_rule_id) -m str \"" + routeID + "\" }"

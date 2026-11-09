@@ -183,7 +183,7 @@ templateSnippets:
     template: |-
       {%- import "util-haptic-jwt-route" for HapticJWTRoute -%}
       {%- import "util-publish-jwt-groups" for PublishJWTGroups -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var route = map[string]any{} -%}
       {{- HapticJWTRoute(item, route) -}}
       {%- if route["enabled"] == true -%}
@@ -192,7 +192,9 @@ templateSnippets:
         {%- var name = dig_string(item, "", "metadata", "name") -%}
         {%- var key = ns + "/" + name -%}
         {%- if tostring(route["intent"]) != "" -%}
-          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "JWTSecretMissing", "Ingress " + key + " sets 'haproxy-haptic.org/" + tostring(route["intent"]) + "' but no 'haproxy-haptic.org/jwt-secret'. Tokens cannot be verified without the key, so this route fails closed with 503. Set jwt-secret or jwt-jwks-url, or remove the other jwt-* annotations.") -}}
+          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "JWTSecretMissing", WebhookOutcomeMessage(
+            "Ingress " + key + " sets 'haproxy-haptic.org/" + tostring(route["intent"]) + "' but no 'haproxy-haptic.org/jwt-secret'. Tokens cannot be verified without the key",
+            "the Ingress is rejected", "this route fails closed with 503", "Set jwt-secret or jwt-jwks-url, or remove the other jwt-* annotations.")) -}}
         {%- else if tostring(route["state"]) == "missing" -%}
           {{- recordEvent(resources.ingresses.GetSingle(ns, name), "JWTSecretMissing", "Ingress " + key + " cannot use JWT keys from " + tostring(route["source"]) + ". Requests return 503. Make the configured key source available.") -}}
         {%- else if route["state"] == "jwks" -%}

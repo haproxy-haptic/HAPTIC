@@ -142,7 +142,7 @@ templateSnippets:
           # Now: port is the Service port number; portName is "" if the Service port is unnamed.
           # Pass both to BackendServers(svcName, 0, port, nil, portName, backendKey, ns).
       #}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {% macro ResolveServicePort(namespace string, serviceName string, portRef any, owner any) string %}
         {%%
           // Accept either a {number?, name?} dict (Ingress's ServiceBackendPort shape)
@@ -228,8 +228,8 @@ templateSnippets:
                 // Admission rejects the typo; a reconcile degrades this one
                 // route to the missing-Service shape (empty backend, 503)
                 // instead of aborting the whole render.
-                show WebhookRejectOrWarn(owner, "ServicePortNotFound",
-                  msg + ". The route serves 503 until the reference matches a Service port.")
+                show WebhookRejectOrWarn(owner, "ServicePortNotFound", WebhookOutcomeMessage(
+                  msg, "the owning resource is rejected", "the route serves 503 until the reference matches a Service port", ""))
                 unresolved = true
                 resolvedName = portName
               }

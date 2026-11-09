@@ -4,7 +4,7 @@ templateSnippets:
     template: |
       {%- import "util-host-key" for MapKeyForHost -%}
       {%- import "util-regex-map-key" for RegexGroupProblem, RegexMapKey -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- macro PublishGatewayRoutePaths(route any, routeKind string) -%}
       {%%
         var namespace = dig_string(route, "", "metadata", "namespace")
@@ -36,13 +36,17 @@ templateSnippets:
             continue
           }
           if regex_search(pathValue, "[[:cntrl:]]") || strings_contains(pathValue, " ") {
-            show WebhookRejectOrWarn(groupRoute, "InvalidPath", "Route path '" + pathValue + "' (host '" + hostname + "') contains whitespace or control characters, which cannot be written to the routing map; the route is not applied. Remove spaces, tabs and newlines from the HTTPRoute path value.")
+            show WebhookRejectOrWarn(groupRoute, "InvalidPath", WebhookOutcomeMessage(
+              "Route path '" + pathValue + "' (host '" + hostname + "') contains whitespace or control characters, which cannot be written to the routing map",
+              "the route is rejected", "the route is not applied", "Remove spaces, tabs and newlines from the HTTPRoute path value."))
             continue
           }
           if pathType == "RegularExpression" {
             var problem = RegexGroupProblem(pathValue)
             if problem != "" {
-              show WebhookRejectOrWarn(groupRoute, "InvalidPath", "Route regex path '" + pathValue + "' (host '" + hostname + "') " + problem + "; the route is not applied. Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*.")
+              show WebhookRejectOrWarn(groupRoute, "InvalidPath", WebhookOutcomeMessage(
+                "Route regex path '" + pathValue + "' (host '" + hostname + "') " + problem,
+                "the route is rejected", "the route is not applied", "Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*."))
               continue
             }
           }

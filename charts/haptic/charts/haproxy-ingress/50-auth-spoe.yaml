@@ -286,7 +286,7 @@ templateSnippets:
     template: |-
       {%- import "util-service-port-resolution" for ResolveServicePort -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- for _, ingress := range []*resources.ingresses.T{resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name"))} -%}
         {%- var oauth = ingress.Metadata.Annotations["haproxy-ingress.github.io/oauth"] -%}
@@ -300,7 +300,9 @@ templateSnippets:
           {%- var prefix = ingress.Metadata.Annotations["haproxy-ingress.github.io/oauth-uri-prefix"] -%}
           {%- if prefix == "" -%}{%- prefix = "/oauth2" -%}{%- end -%}
           {%- var prefixInj = ConfigInjectionKind(prefix, "line") -%}
-          {%- if prefixInj != "" -%}{{- WebhookRejectOrWarn(ingress, "InvalidOAuthPrefix", "Ingress " + ns + "/" + name + " annotation 'haproxy-ingress.github.io/oauth-uri-prefix' contains " + prefixInj + ", which would inject an entry into the auth-url map; the OAuth route is not applied. Remove control characters from the value.") -}}{%- continue -%}{%- end -%}
+          {%- if prefixInj != "" -%}{{- WebhookRejectOrWarn(ingress, "InvalidOAuthPrefix", WebhookOutcomeMessage(
+            "Ingress " + ns + "/" + name + " annotation 'haproxy-ingress.github.io/oauth-uri-prefix' contains " + prefixInj + ", which would inject an entry into the auth-url map",
+            "the Ingress is rejected", "the OAuth route is not applied", "Remove control characters from the value.")) -}}{%- continue -%}{%- end -%}
           {%- if len(prefix) > 1 && hasSuffix(prefix, "/") -%}{%- prefix = prefix[:len(prefix)-1] -%}{%- end -%}
           {%- var emitted = false -%}
           {%- for _, path := range ingress.Spec.Rules[*].Http.Paths -%}
@@ -325,7 +327,7 @@ templateSnippets:
       effects: [recordEvent]
     template: |-
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- for _, ingress := range []*resources.ingresses.T{resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name"))} -%}
         {%- var oauth = ingress.Metadata.Annotations["haproxy-ingress.github.io/oauth"] -%}
@@ -339,7 +341,9 @@ templateSnippets:
           {%- var prefix = ingress.Metadata.Annotations["haproxy-ingress.github.io/oauth-uri-prefix"] -%}
           {%- if prefix == "" -%}{%- prefix = "/oauth2" -%}{%- end -%}
           {%- var prefixInj = ConfigInjectionKind(prefix, "line") -%}
-          {%- if prefixInj != "" -%}{{- WebhookRejectOrWarn(ingress, "InvalidOAuthPrefix", "Ingress " + ns + "/" + name + " annotation 'haproxy-ingress.github.io/oauth-uri-prefix' contains " + prefixInj + ", which would inject an entry into the auth-signin map; the OAuth route is not applied. Remove control characters from the value.") -}}{%- continue -%}{%- end -%}
+          {%- if prefixInj != "" -%}{{- WebhookRejectOrWarn(ingress, "InvalidOAuthPrefix", WebhookOutcomeMessage(
+            "Ingress " + ns + "/" + name + " annotation 'haproxy-ingress.github.io/oauth-uri-prefix' contains " + prefixInj + ", which would inject an entry into the auth-signin map",
+            "the Ingress is rejected", "the OAuth route is not applied", "Remove control characters from the value.")) -}}{%- continue -%}{%- end -%}
           {%- if len(prefix) > 1 && hasSuffix(prefix, "/") -%}{%- prefix = prefix[:len(prefix)-1] -%}{%- end -%}
       {{ "\n" }}{{ ns }}/{{ name }} {{ prefix }}/start?rd=$escaped_request_uri
         {%- end -%}
@@ -397,7 +401,7 @@ templateSnippets:
       effects: [recordEvent]
     template: |-
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- for _, ingress := range []*resources.ingresses.T{resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name"))} -%}
         {%- var oauth = ingress.Metadata.Annotations["haproxy-ingress.github.io/oauth"] -%}
@@ -411,7 +415,9 @@ templateSnippets:
               (before ':'); the source part after ':' reaches the map verbatim, so a
               control char here would inject a map entry — guard the whole value. -#}
           {%- var headersInj = ConfigInjectionKind(headers, "line") -%}
-          {%- if headersInj != "" -%}{{- WebhookRejectOrWarn(ingress, "InvalidOAuthHeaders", "Ingress " + ingress.Metadata.Namespace + "/" + ingress.Metadata.Name + " annotation 'haproxy-ingress.github.io/oauth-headers' contains " + headersInj + ", which would inject an entry into the auth-extract-headers map; the OAuth headers are not applied. Remove control characters from the value.") -}}{%- continue -%}{%- end -%}
+          {%- if headersInj != "" -%}{{- WebhookRejectOrWarn(ingress, "InvalidOAuthHeaders", WebhookOutcomeMessage(
+            "Ingress " + ingress.Metadata.Namespace + "/" + ingress.Metadata.Name + " annotation 'haproxy-ingress.github.io/oauth-headers' contains " + headersInj + ", which would inject an entry into the auth-extract-headers map",
+            "the Ingress is rejected", "the OAuth headers are not applied", "Remove control characters from the value.")) -}}{%- continue -%}{%- end -%}
       {{ "\n" }}{{ ingress.Metadata.Namespace }}/{{ ingress.Metadata.Name }} {{ headers }}
         {%- end -%}
       {%- end -%}
@@ -840,7 +846,7 @@ templateSnippets:
 
   backend-directives-680-haproxy-ingress-auth:
     template: |
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- import "util-escape-dquote-value" for EscapeDquoteValue -%}
       {%- import "util-haproxy-ingress-basic-auth-route" for HaproxyIngressBasicAuthRoute -%}
       {#-
@@ -862,7 +868,9 @@ templateSnippets:
             {#- auth-realm is a double-quoted literal; EscapeDquoteValue neutralises
                 quotes/$, but a control character can't live in the string, so fail
                 closed (auth = security) rather than emit a splittable directive. -#}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAuthRealm", "Ingress " + key + " annotation 'haproxy-ingress.github.io/auth-realm' contains " + tostring(rw["realmInjection"]) + "; basic auth cannot be applied, so this route fails closed with 503. Remove control characters from the value.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAuthRealm", WebhookOutcomeMessage(
+              "Ingress " + key + " annotation 'haproxy-ingress.github.io/auth-realm' contains " + tostring(rw["realmInjection"]),
+              "the Ingress is rejected", "basic auth cannot be applied, so this route fails closed with 503", "Remove control characters from the value.")) -}}
       # WARNING haproxy-ingress/auth-realm: invalid value for {{ key }}; failing closed (503).
       http-request set-var(txn.denied_by) str(basic_auth_unavailable)
       http-request deny deny_status 503

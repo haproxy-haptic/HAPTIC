@@ -50,7 +50,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-gateway-listener-crtlist-name" for CrtlistName -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- import "util-gateway-listener-tls-options" for TLSOptionsSuffix, TLSOptionsInjection -%}
       {%%
         var namespace = dig_string(item, "", "metadata", "namespace")
@@ -77,7 +77,9 @@ templateSnippets:
             if !found { continue }
             var injection = TLSOptionsInjection(listener)
             if injection != "" {
-              _ = WebhookRejectOrWarn(gateway, "InvalidTLSOptions", "Gateway " + gatewayKey + "/" + listener.Name + " has a tls.options value containing " + injection + ", which would break out of the bind directive; the listener is not applied. Remove whitespace, quotes and control characters from TLS options.")
+              _ = WebhookRejectOrWarn(gateway, "InvalidTLSOptions", WebhookOutcomeMessage(
+                "Gateway " + gatewayKey + "/" + listener.Name + " has a tls.options value containing " + injection + ", which would break out of the bind directive",
+                "the Gateway is rejected", "the listener is not applied", "Remove whitespace, quotes and control characters from TLS options."))
               continue
             }
             var podPort = listenerPort

@@ -172,6 +172,13 @@ templateSnippets:
 
   util-webhook-reject-or-warn:
     template: |-
+      {%- var WebhookOutcomeMessage = func(problem string, admissionOutcome string, reconcileOutcome string, fix string) string {
+        var outcome = reconcileOutcome
+        if renderMode == "admission" { outcome = admissionOutcome }
+        var message = problem + "; " + outcome + "."
+        if fix != "" { message += " " + fix }
+        return message
+      } -%}
       {#
         CALLER CONTRACT: the warn path returns and the render CONTINUES, so the
         caller MUST skip the offending resource's own output right after calling

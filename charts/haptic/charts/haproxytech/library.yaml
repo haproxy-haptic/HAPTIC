@@ -122,7 +122,7 @@ templateSnippets:
       group: ingress-cors
       effects: [publishValue, recordEvent]
     template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
       {%- import "util-cors-publish" for PublishCORS -%}
       {%- var ingress = resources.ingresses.GetSingle(
@@ -146,7 +146,9 @@ templateSnippets:
         {%- if corsInj == "" -%}{%- corsInj = ConfigInjectionKind(headers, "line") -%}{%- end -%}
         {%- if corsInj == "" -%}{%- corsInj = ConfigInjectionKind(maxAge, "line") -%}{%- end -%}
         {%- if corsInj != "" -%}
-          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "A CORS annotation on Ingress '" + key + "' contains " + corsInj + ", which would split the frontend directive; CORS is not applied. Remove control characters from the value.") -}}
+          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+            "A CORS annotation on Ingress '" + key + "' contains " + corsInj + ", which would split the frontend directive",
+            "the Ingress is rejected", "CORS is not applied", "Remove control characters from the value.")) -}}
         {%- else if credentials && origin == "*" -%}
           {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "CORS configuration error on Ingress '" + key + "': cors-allow-credentials cannot be 'true' when cors-allow-origin is '*'. Specify an explicit origin.") -}}
         {%- else if strings_contains(origin, " ") -%}
@@ -246,7 +248,7 @@ templateSnippets:
       group: haproxytech-ssl-redirect-port-hosts
       effects: [publishValue, recordEvent]
     template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
@@ -293,7 +295,7 @@ templateSnippets:
       group: haproxytech-request-redirect-routes
       effects: [publishValue, recordEvent]
     template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
@@ -386,7 +388,7 @@ templateSnippets:
       {#- Capture slots are frontend-wide and positional: one (name, len) pair
           is published per header and the block emits each distinct pair once. -#}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil && ingress.Metadata.Annotations["haproxy.org/request-capture"] != "" -%}
@@ -397,14 +399,18 @@ templateSnippets:
             garbage (a newline, a second word) by returning 0, so this one check
             is both the sanity gate and the injection guard for the len operand. -#}
         {%- if toint(captureLen) <= 0 -%}
-          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + captureLen + "' for annotation 'haproxy.org/request-capture-len' on Ingress '" + key + "'. Must be a positive integer; request capture is skipped.") -}}
+          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+            "Invalid value '" + captureLen + "' for annotation 'haproxy.org/request-capture-len' on Ingress '" + key + "'. Must be a positive integer",
+            "the Ingress is rejected", "request capture is skipped", "")) -}}
         {%- else -%}
           {%- for _, line := range split(ingress.Metadata.Annotations["haproxy.org/request-capture"], "\n") -%}
             {%- var t = trimSpace(line) -%}
             {%- if t == "" -%}{%- continue -%}{%- end -%}
             {%- var capInj = ConfigInjectionKind(t, "token") -%}
             {%- if capInj != "" -%}
-              {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation 'haproxy.org/request-capture' on Ingress '" + key + "' names a header containing " + capInj + ", which would break the capture directive; that entry is skipped.") -}}
+              {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+                "Annotation 'haproxy.org/request-capture' on Ingress '" + key + "' names a header containing " + capInj + ", which would break the capture directive",
+                "the Ingress is rejected", "that entry is skipped", "")) -}}
             {%- else -%}
               {{- shared.Publish("any", "any", "any") -}}
               {{- shared.Publish("pair", t + " len " + captureLen, t + " len " + captureLen) -}}
@@ -538,7 +544,7 @@ templateSnippets:
   backend-directives-100-haproxytech-timeouts:
     template: |
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name %}
         {%- var emitted = false %}
@@ -552,7 +558,9 @@ templateSnippets:
           {%- if v != "" %}
             {%- var inj = ConfigInjectionKind(v, "token") %}
             {%- if inj != "" %}
-              {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value for annotation '" + ann + "' on Ingress '" + key + "': contains " + inj + ", which would split the backend directive; the timeout is skipped.") -}}
+              {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+                "Invalid value for annotation '" + ann + "' on Ingress '" + key + "': contains " + inj + ", which would split the backend directive",
+                "the Ingress is rejected", "the timeout is skipped", "")) -}}
             {%- else %}
               {%- if !emitted %}
       # haproxytech/backend-directives-haproxytech-timeouts
@@ -582,7 +590,7 @@ templateSnippets:
   backend-directives-150-haproxytech-load-balance:
     template: |
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
@@ -606,7 +614,9 @@ templateSnippets:
               exact algorithms can't carry one. -#}
           {%- var lbInj = ConfigInjectionKind(lb, "token") %}
           {%- if lbInj != "" %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value for annotation 'haproxy.org/load-balance' on Ingress '" + key + "': contains " + lbInj + ", which would split the backend directive; load-balancing is left at the default.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+              "Invalid value for annotation 'haproxy.org/load-balance' on Ingress '" + key + "': contains " + lbInj + ", which would split the backend directive",
+              "the Ingress is rejected", "load-balancing is left at the default", "")) -}}
           {%- else %}
           {#- Structured Backend() arg (profile), not a body line, so the macro
               adds `hash-type consistent` for a hash-family algorithm. -#}
@@ -636,7 +646,7 @@ templateSnippets:
   backend-directives-210-haproxytech-advanced-health-checks:
     template: |
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name %}
         {%- var checkHttp = ingress.Metadata.Annotations["haproxy.org/check-http"] %}
@@ -646,7 +656,9 @@ templateSnippets:
               control chars are rejected here. -#}
           {%- var httpInj = ConfigInjectionKind(checkHttp, "line") %}
           {%- if httpInj != "" %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Invalid value for annotation 'haproxy.org/check-http' on Ingress '" + key + "': contains " + httpInj + ", which would split the backend directive; the HTTP health check is skipped.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+              "Invalid value for annotation 'haproxy.org/check-http' on Ingress '" + key + "': contains " + httpInj + ", which would split the backend directive",
+              "the Ingress is rejected", "the HTTP health check is skipped", "")) -}}
           {%- else %}
       # haproxytech/backend-directives-haproxytech-advanced-health-checks
             {%- if strings_contains(checkHttp, " ") %}
@@ -660,7 +672,9 @@ templateSnippets:
         {%- if checkInterval != "" && (serverOpts | dig("checkDirective") | fallback("check") | tostring()) != "no-check" %}
           {%- var intInj = ConfigInjectionKind(checkInterval, "token") %}
           {%- if intInj != "" %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value for annotation 'haproxy.org/check-interval' on Ingress '" + key + "': contains " + intInj + ", which would split the server directive; the check interval is skipped.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+              "Invalid value for annotation 'haproxy.org/check-interval' on Ingress '" + key + "': contains " + intInj + ", which would split the server directive",
+              "the Ingress is rejected", "the check interval is skipped", "")) -}}
           {%- else %}
           {%- serverOpts["flags"] = append(serverOpts | dig("flags") | toSlice(), "inter " + checkInterval) %}
           {%- end %}
@@ -800,6 +814,7 @@ templateSnippets:
     template: |-
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
       {%- import "util-path-rewrite-shape" for PathRewriteShape -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage -%}
       {%- macro HaproxytechPathRewrite(ingress *resources.ingresses.T, result map[string]any) -%}
         {%- result["lane"] = "" -%}
         {%- var rewrite = ingress.Metadata.Annotations["haproxy.org/path-rewrite"] -%}
@@ -807,7 +822,9 @@ templateSnippets:
           {%- var inj = ConfigInjectionKind(rewrite, "line") -%}
           {%- if inj != "" -%}
             {%- result["lane"] = "invalid" -%}
-            {%- result["message"] = "Invalid value for annotation 'haproxy.org/path-rewrite' on Ingress '" + ingress.Metadata.Namespace + "/" + ingress.Metadata.Name + "': contains " + inj + ", which would split the backend directive; the path rewrite is skipped." -%}
+            {%- result["message"] = WebhookOutcomeMessage(
+              "Invalid value for annotation 'haproxy.org/path-rewrite' on Ingress '" + ingress.Metadata.Namespace + "/" + ingress.Metadata.Name + "': contains " + inj + ", which would split the backend directive",
+              "the Ingress is rejected", "the path rewrite is skipped", "") -%}
           {%- else -%}
             {{- PathRewriteShape(rewrite, result) -}}
           {%- end -%}
@@ -847,7 +864,7 @@ templateSnippets:
           double the backslashes). Prefix strips and the bare form ride the frontend
           map instead (frontend-filters-995-haproxytech-path-rewrite). -#}
       {%- import "util-haproxytech-path-rewrite" for HaproxytechPathRewrite -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var rw = map[string]any{} %}
         {{- HaproxytechPathRewrite(ingress, rw) -}}
@@ -862,14 +879,16 @@ templateSnippets:
   backend-directives-400-haproxytech-session-persistence:
     template: |
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name %}
         {%- var cookie = ingress.Metadata.Annotations["haproxy.org/cookie-persistence"] %}
         {%- if cookie != "" %}
           {%- var cookieInj = ConfigInjectionKind(cookie, "token") %}
           {%- if cookieInj != "" %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Invalid value for annotation 'haproxy.org/cookie-persistence' on Ingress '" + key + "': contains " + cookieInj + ", which would split the backend directive; session persistence is skipped.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+              "Invalid value for annotation 'haproxy.org/cookie-persistence' on Ingress '" + key + "': contains " + cookieInj + ", which would split the backend directive",
+              "the Ingress is rejected", "session persistence is skipped", "")) -}}
           {%- else %}
       # haproxytech/backend-directives-haproxytech-session-persistence
       cookie {{ cookie }} insert indirect nocache dynamic
@@ -880,7 +899,7 @@ templateSnippets:
   backend-directives-401-haproxytech-session-persistence-no-dynamic:
     template: |
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
@@ -893,7 +912,9 @@ templateSnippets:
         {%- if static != "" %}
           {%- var staticInj = ConfigInjectionKind(static, "token") %}
           {%- if staticInj != "" %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Invalid value for annotation 'haproxy.org/cookie-persistence-no-dynamic' on Ingress '" + key + "': contains " + staticInj + ", which would split the backend directive; session persistence is skipped.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+              "Invalid value for annotation 'haproxy.org/cookie-persistence-no-dynamic' on Ingress '" + key + "': contains " + staticInj + ", which would split the backend directive",
+              "the Ingress is rejected", "session persistence is skipped", "")) -}}
           {%- else %}
       # haproxytech/backend-directives-haproxytech-session-persistence-no-dynamic
       cookie {{ static }} insert indirect nocache
@@ -1096,7 +1117,7 @@ templateSnippets:
   backend-directives-900-haproxytech-advanced:
     template: |
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
@@ -1127,7 +1148,9 @@ templateSnippets:
         {%- if serverProto != "" %}
           {%- var protoInj = ConfigInjectionKind(serverProto, "token") %}
           {%- if protoInj != "" %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Invalid value for annotation 'haproxy.org/server-proto' on Ingress '" + key + "': contains " + protoInj + ", which would split the server directive; the upstream protocol is skipped.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+              "Invalid value for annotation 'haproxy.org/server-proto' on Ingress '" + key + "': contains " + protoInj + ", which would split the server directive",
+              "the Ingress is rejected", "the upstream protocol is skipped", "")) -}}
           {%- else %}
           {%- serverOpts["flags"] = append(serverOpts["flags"].([]any), "proto " + serverProto) %}
           {%- end %}

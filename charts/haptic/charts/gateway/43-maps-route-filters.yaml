@@ -43,7 +43,7 @@ templateSnippets:
   util-publish-gateway-route-filter-maps:
     requires: [grpcroutes, httproutes, referencegrants, services]
     template: |
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- import "util-gateway-external-auth" for GatewayExternalAuth -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
       {%- import "util-backend-name-gateway-rule" for BackendNameGatewayRule -%}
@@ -196,12 +196,16 @@ templateSnippets:
                 var headerName = dig_string(header, "", "name")
                 var headerValue = dig_string(header, "", "value")
                 if !nameOk(headerName) {
-                  _ = WebhookRejectOrWarn(route, "InvalidHeaderModifier", "Gateway route " + namespace + "/" + name + " modifies header '" + headerName + "', which is not an HTTP token; the header is not applied. Use letters, digits and -._~!$&*+^.")
+                  _ = WebhookRejectOrWarn(route, "InvalidHeaderModifier", WebhookOutcomeMessage(
+                    "Gateway route " + namespace + "/" + name + " modifies header '" + headerName + "', which is not an HTTP token",
+                    "the route is rejected", "the header is not applied", "Use letters, digits and -._~!$&*+^."))
                   continue
                 }
                 var injection = ConfigInjectionKind(headerValue, "line")
                 if injection != "" {
-                  _ = WebhookRejectOrWarn(route, "InvalidHeaderModifier", "Gateway route " + namespace + "/" + name + " sets header '" + headerName + "' to a value containing " + injection + ", which would inject a header break at request time; the header is not applied. Remove control characters from the value.")
+                  _ = WebhookRejectOrWarn(route, "InvalidHeaderModifier", WebhookOutcomeMessage(
+                    "Gateway route " + namespace + "/" + name + " sets header '" + headerName + "' to a value containing " + injection + ", which would inject a header break at request time",
+                    "the route is rejected", "the header is not applied", "Remove control characters from the value."))
                   continue
                 }
                 markAny()
@@ -213,7 +217,9 @@ templateSnippets:
             for _, headerAny := range toSlice(dig(mod, "remove")) {
               var headerName = tostring(headerAny)
               if !nameOk(headerName) {
-                _ = WebhookRejectOrWarn(route, "InvalidHeaderModifier", "Gateway route " + namespace + "/" + name + " removes header '" + headerName + "', which is not an HTTP token; the removal is not applied. Use letters, digits and -._~!$&*+^.")
+                _ = WebhookRejectOrWarn(route, "InvalidHeaderModifier", WebhookOutcomeMessage(
+                  "Gateway route " + namespace + "/" + name + " removes header '" + headerName + "', which is not an HTTP token",
+                  "the route is rejected", "the removal is not applied", "Use letters, digits and -._~!$&*+^."))
                 continue
               }
               markAny()
@@ -226,22 +232,30 @@ templateSnippets:
             if redirect == nil { return }
             var code = toint(dig(redirect, "statusCode") | fallback(302))
             if !redirectCodes[tostring(code)] {
-              _ = WebhookRejectOrWarn(route, "InvalidRedirect", "HTTPRoute " + namespace + "/" + name + " RequestRedirect statusCode is " + tostring(code) + "; the redirect is not applied. Use 301, 302, 303, 307 or 308.")
+              _ = WebhookRejectOrWarn(route, "InvalidRedirect", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " RequestRedirect statusCode is " + tostring(code),
+                "the HTTPRoute is rejected", "the redirect is not applied", "Use 301, 302, 303, 307 or 308."))
               return
             }
             var scheme = dig_string(redirect, "", "scheme")
             if scheme != "" && scheme != "http" && scheme != "https" {
-              _ = WebhookRejectOrWarn(route, "InvalidRedirect", "HTTPRoute " + namespace + "/" + name + " RequestRedirect scheme is '" + scheme + "'; the redirect is not applied. Use http or https.")
+              _ = WebhookRejectOrWarn(route, "InvalidRedirect", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " RequestRedirect scheme is '" + scheme + "'",
+                "the HTTPRoute is rejected", "the redirect is not applied", "Use http or https."))
               return
             }
             var host = dig_string(redirect, "", "hostname")
             if host != "" && !hostOk(host) {
-              _ = WebhookRejectOrWarn(route, "InvalidRedirect", "HTTPRoute " + namespace + "/" + name + " RequestRedirect hostname '" + host + "' is not a DNS name; the redirect is not applied. Use letters, digits, '-' and '.'.")
+              _ = WebhookRejectOrWarn(route, "InvalidRedirect", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " RequestRedirect hostname '" + host + "' is not a DNS name",
+                "the HTTPRoute is rejected", "the redirect is not applied", "Use letters, digits, '-' and '.'."))
               return
             }
             var port = dig_string(redirect, "", "port")
             if port != "" && (toint(port) < 1 || toint(port) > 65535) {
-              _ = WebhookRejectOrWarn(route, "InvalidRedirect", "HTTPRoute " + namespace + "/" + name + " RequestRedirect port " + port + " is outside 1-65535; the redirect is not applied.")
+              _ = WebhookRejectOrWarn(route, "InvalidRedirect", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " RequestRedirect port " + port + " is outside 1-65535",
+                "the HTTPRoute is rejected", "the redirect is not applied", ""))
               return
             }
             var portPart = ""
@@ -254,11 +268,15 @@ templateSnippets:
             }
             var pathSpec = pathFields(dig(redirect, "path"), representative)
             if dig_string(pathSpec, "", "bad") == "cntrl" {
-              _ = WebhookRejectOrWarn(route, "InvalidRedirect", "HTTPRoute " + namespace + "/" + name + " RequestRedirect path contains a control character, which would break the redirect target; the redirect is not applied.")
+              _ = WebhookRejectOrWarn(route, "InvalidRedirect", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " RequestRedirect path contains a control character, which would break the redirect target",
+                "the HTTPRoute is rejected", "the redirect is not applied", ""))
               return
             }
             if dig_string(pathSpec, "", "bad") == "regex" {
-              _ = WebhookRejectOrWarn(route, "InvalidRedirect", "HTTPRoute " + namespace + "/" + name + " uses RequestRedirect ReplacePrefixMatch on a RegularExpression path match, which has no prefix to replace; the redirect is not applied. Match on a PathPrefix, or use ReplaceFullPath.")
+              _ = WebhookRejectOrWarn(route, "InvalidRedirect", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " uses RequestRedirect ReplacePrefixMatch on a RegularExpression path match, which has no prefix to replace",
+                "the HTTPRoute is rejected", "the redirect is not applied", "Match on a PathPrefix, or use ReplaceFullPath."))
               return
             }
             publishLine("redirect", key + " " + tostring(code) + "|" + scheme + "|" +
@@ -269,16 +287,22 @@ templateSnippets:
             if rewrite == nil { return }
             var host = dig_string(rewrite, "", "hostname")
             if host != "" && !hostOk(host) {
-              _ = WebhookRejectOrWarn(route, "InvalidURLRewrite", "HTTPRoute " + namespace + "/" + name + " URLRewrite hostname '" + host + "' is not a DNS name; the rewrite is not applied. Use letters, digits, '-' and '.'.")
+              _ = WebhookRejectOrWarn(route, "InvalidURLRewrite", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " URLRewrite hostname '" + host + "' is not a DNS name",
+                "the HTTPRoute is rejected", "the rewrite is not applied", "Use letters, digits, '-' and '.'."))
               return
             }
             var pathSpec = pathFields(dig(rewrite, "path"), representative)
             if dig_string(pathSpec, "", "bad") == "cntrl" {
-              _ = WebhookRejectOrWarn(route, "InvalidURLRewrite", "HTTPRoute " + namespace + "/" + name + " URLRewrite path contains a control character, which would break the rewritten path; the rewrite is not applied.")
+              _ = WebhookRejectOrWarn(route, "InvalidURLRewrite", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " URLRewrite path contains a control character, which would break the rewritten path",
+                "the HTTPRoute is rejected", "the rewrite is not applied", ""))
               return
             }
             if dig_string(pathSpec, "", "bad") == "regex" {
-              _ = WebhookRejectOrWarn(route, "InvalidURLRewrite", "HTTPRoute " + namespace + "/" + name + " uses URLRewrite ReplacePrefixMatch on a RegularExpression path match, which has no prefix to replace; the rewrite is not applied. Match on a PathPrefix, or use ReplaceFullPath.")
+              _ = WebhookRejectOrWarn(route, "InvalidURLRewrite", WebhookOutcomeMessage(
+                "HTTPRoute " + namespace + "/" + name + " uses URLRewrite ReplacePrefixMatch on a RegularExpression path match, which has no prefix to replace",
+                "the HTTPRoute is rejected", "the rewrite is not applied", "Match on a PathPrefix, or use ReplaceFullPath."))
               return
             }
             publishLine("urlrewrite", key + " " + queryEscape(host) + "|" +
@@ -305,12 +329,16 @@ templateSnippets:
               if backendNamespace == "" { backendNamespace = namespace }
               var backendPort = toint(dig(backendRef, "port") | fallback(80))
               if backendPort < 1 || backendPort > 65535 {
-                _ = WebhookRejectOrWarn(route, "InvalidRequestMirror", "Gateway route " + namespace + "/" + name + " mirrors to port " + tostring(backendPort) + ", outside 1-65535; the mirror is not applied.")
+                _ = WebhookRejectOrWarn(route, "InvalidRequestMirror", WebhookOutcomeMessage(
+                  "Gateway route " + namespace + "/" + name + " mirrors to port " + tostring(backendPort) + ", outside 1-65535",
+                  "the route is rejected", "the mirror is not applied", ""))
                 continue
               }
               var target = backendName + "." + backendNamespace + ".svc.cluster.local"
               if !hostOk(target) {
-                _ = WebhookRejectOrWarn(route, "InvalidRequestMirror", "Gateway route " + namespace + "/" + name + " mirrors to '" + backendNamespace + "/" + backendName + "', which is not a DNS name; the mirror is not applied.")
+                _ = WebhookRejectOrWarn(route, "InvalidRequestMirror", WebhookOutcomeMessage(
+                  "Gateway route " + namespace + "/" + name + " mirrors to '" + backendNamespace + "/" + backendName + "', which is not a DNS name",
+                  "the route is rejected", "the mirror is not applied", ""))
                 continue
               }
               var scheme = "http"
@@ -335,7 +363,9 @@ templateSnippets:
                 }
               }
               if percentage < 0 || percentage > 100 {
-                _ = WebhookRejectOrWarn(route, "InvalidRequestMirror", "Gateway route " + namespace + "/" + name + " mirrors " + tostring(percentage) + "% of requests, outside 0-100; the mirror is not applied.")
+                _ = WebhookRejectOrWarn(route, "InvalidRequestMirror", WebhookOutcomeMessage(
+                  "Gateway route " + namespace + "/" + name + " mirrors " + tostring(percentage) + "% of requests, outside 0-100",
+                  "the route is rejected", "the mirror is not applied", ""))
                 continue
               }
               mirrorTargets = append(mirrorTargets, map[string]any{
@@ -406,12 +436,16 @@ templateSnippets:
           if timeout != "" {
             var duration, durationErr = parseDuration(timeout)
             if durationErr != nil {
-              _ = WebhookRejectOrWarn(route, "InvalidTimeout", "Gateway route " + namespace + "/" + name + " sets timeout '" + timeout + "', which is not a duration; the timeout is not applied. Use a value like 30s or 1m30s.")
+              _ = WebhookRejectOrWarn(route, "InvalidTimeout", WebhookOutcomeMessage(
+                "Gateway route " + namespace + "/" + name + " sets timeout '" + timeout + "', which is not a duration",
+                "the route is rejected", "the timeout is not applied", "Use a value like 30s or 1m30s."))
             } else if duration == 0 {
               // set-timeout server 0 inherits the default; see docs/site/docs/libraries/gateway.md#timeout-limits.
               publishLine("timeout", routeID + " 2147483647")
             } else if toint(duration.Milliseconds()) <= 0 {
-              _ = WebhookRejectOrWarn(route, "InvalidTimeout", "Gateway route " + namespace + "/" + name + " sets timeout '" + timeout + "', which is under a millisecond; the timeout is not applied.")
+              _ = WebhookRejectOrWarn(route, "InvalidTimeout", WebhookOutcomeMessage(
+                "Gateway route " + namespace + "/" + name + " sets timeout '" + timeout + "', which is under a millisecond",
+                "the route is rejected", "the timeout is not applied", ""))
             } else {
               publishLine("timeout", routeID + " " + tostring(toint(duration.Milliseconds())))
             }
@@ -433,8 +467,9 @@ templateSnippets:
           if sp := dig(rule, "sessionPersistence"); sp != nil {
             var persistenceErr = tostring(GatewaySessionPersistence(sp, "")["error"])
             if persistenceErr != "" {
-              _ = WebhookRejectOrWarn(route, "InvalidSessionPersistence", routeLabel + " rule " + ruleKey + ": " +
-                persistenceErr + ", so the rule gets no session persistence. Fix sessionPersistence.")
+              _ = WebhookRejectOrWarn(route, "InvalidSessionPersistence", WebhookOutcomeMessage(
+                routeLabel + " rule " + ruleKey + ": " + persistenceErr,
+                "the route is rejected", "the rule gets no session persistence", "Fix sessionPersistence."))
             }
           }
           for _, backendRef := range backendRefs {
@@ -464,7 +499,9 @@ templateSnippets:
               seenPaths[pathType + "\x00" + pathValue] = true
               var injection = ConfigInjectionKind(pathValue, "dquote")
               if injection != "" {
-                _ = WebhookRejectOrWarn(route, "InvalidPath", "HTTPRoute " + namespace + "/" + name + " has a path match containing " + injection + ", which cannot be written to the prefix-length rule; that match keeps the original path. Remove double quotes and control characters from the path.")
+                _ = WebhookRejectOrWarn(route, "InvalidPath", WebhookOutcomeMessage(
+                  "HTTPRoute " + namespace + "/" + name + " has a path match containing " + injection + ", which cannot be written to the prefix-length rule",
+                  "the HTTPRoute is rejected", "that match keeps the original path", "Remove double quotes and control characters from the path."))
                 continue
               }
               var condition = "{ path -m reg \"^" + sanitize_regex(pathValue) + "(/|\\$)\" }"

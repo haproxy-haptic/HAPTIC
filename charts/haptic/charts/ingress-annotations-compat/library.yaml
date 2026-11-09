@@ -29,7 +29,7 @@ templateSnippets:
 
   util-auth-validate-header-name:
     template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- macro ValidateAuthHeaderName(name string, annotation string, ns string, ingressName string) %}
         {%- if !regex_search(name, "^[A-Za-z0-9!#$&'*+.^_`|~-]+$") -%}
           {{- fail("Invalid HTTP header name '" + name + "' in annotation '" + annotation + "' on Ingress " + ns + "/" + ingressName + ". Header names must be RFC 7230 tokens (1*tchar): no whitespace, no special characters, no fetch syntax.") -}}
@@ -37,7 +37,9 @@ templateSnippets:
       {%- end %}
       {#- SPOE argument names can't carry '-': a capture of X_Api_Key would stand in for X-Api-Key on every Ingress forwarding it. Callers skip the header after this. -#}
       {%- macro RejectUnderscoreAuthHeader(ingress any, name string, annotation string, ns string, ingressName string) %}
-        {{- WebhookRejectOrWarn(ingress, "InvalidAuthHeader", "Ingress " + ns + "/" + ingressName + " annotation '" + annotation + "' lists header '" + name + "', which contains '_', so it isn't forwarded to the auth service. Use '" + replace(name, "_", "-") + "'.") -}}
+        {{- WebhookRejectOrWarn(ingress, "InvalidAuthHeader", WebhookOutcomeMessage(
+          "Ingress " + ns + "/" + ingressName + " annotation '" + annotation + "' lists header '" + name + "', which contains '_'",
+          "the Ingress is rejected", "the header isn't forwarded to the auth service", "Use '" + replace(name, "_", "-") + "'.")) -}}
       {%- end %}
 
   util-annotation-ssl-passthrough-component:
@@ -256,7 +258,7 @@ templateSnippets:
   # own publisher.
   util-ingress-annotation-cors-publish:
     template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
       {%- import "util-cors-publish" for PublishCORS -%}
       {%- macro IngressCORSPublish(ingress *resources.ingresses.T, prefix string, enabledAnn string, defaultMaxAge string, family string) -%}
@@ -277,7 +279,9 @@ templateSnippets:
             {%- if corsInj == "" -%}{%- corsInj = ConfigInjectionKind(cv, "line") -%}{%- end -%}
           {%- end -%}
           {%- if corsInj != "" -%}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Ingress " + key + " has a CORS annotation value containing " + corsInj + "; CORS is not applied. Remove control characters from the cors-allow-methods/-headers/-max-age/-expose-headers values.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+              "Ingress " + key + " has a CORS annotation value containing " + corsInj,
+              "the Ingress is rejected", "CORS is not applied", "Remove control characters from the cors-allow-methods/-headers/-max-age/-expose-headers values.")) -}}
             {%- return -%}
           {%- end -%}
           {%- var allowAny = false -%}
@@ -540,7 +544,7 @@ templateSnippets:
   util-cookie-rewrite-publish:
     template: |-
       {%- import "util-validate-config-value" for ValidateConfigValue -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- macro PublishCookieRewrite(ingress *resources.ingresses.T, domainAnnotation string, pathAnnotation string, family string) -%}
         {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
         {%- for _, kind := range []string{"Domain", "Path"} -%}
@@ -617,7 +621,7 @@ templateSnippets:
   util-location-rewrite-publish:
     template: |-
       {%- import "util-validate-config-value" for ValidateConfigValue -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- macro PublishLocationRewrite(ingress *resources.ingresses.T, fromAnn string, toAnn string, family string, strict bool) -%}
         {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
         {%- var from = ingress.Metadata.Annotations[fromAnn] -%}
@@ -629,7 +633,9 @@ templateSnippets:
             {%- if strict -%}
               {{- fail("Annotation '" + fromAnn + "' on Ingress '" + key + "' requires '" + toAnn + "'.") -}}
             {%- else -%}
-              {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Annotation '" + fromAnn + "' on Ingress '" + key + "' requires '" + toAnn + "'; the Location rewrite is skipped.") -}}
+              {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+                "Annotation '" + fromAnn + "' on Ingress '" + key + "' requires '" + toAnn + "'",
+                "the Ingress is rejected", "the Location rewrite is skipped", "")) -}}
             {%- end -%}
           {%- else -%}
             {%- var f = ValidateConfigValue(from, fromAnn, key, false) -%}
@@ -1019,7 +1025,7 @@ templateSnippets:
 
   util-byte-size:
     template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- macro ByteSize(value string, annotation string, key string) string -%}
         {%- if !regex_search(value, "^[0-9]+[kKmMgG]?$") -%}
           {{- fail("Invalid value '" + value + "' for annotation '" + annotation + "' on Ingress '" + key + "'. Expected a byte size like '100k', '1m'.") -}}
@@ -1054,7 +1060,9 @@ templateSnippets:
         {%- if regex_search(value, "^0+[kKmMgG]?$") -%}
           {{- "" -}}
         {%- else if !regex_search(value, "^[0-9]+[kKmMgG]?$") -%}
-          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + value + "' for annotation '" + annotation + "' on Ingress '" + key + "': the request body is not limited. Use a byte size like '10m', or '0' for unlimited.") -}}
+          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+            "Invalid value '" + value + "' for annotation '" + annotation + "' on Ingress '" + key + "'",
+            "the Ingress is rejected", "the request body is not limited", "Use a byte size like '10m', or '0' for unlimited.")) -}}
         {%- else -%}
           {%- var factor = 1 -%}
           {%- if hasSuffix(value, "k") || hasSuffix(value, "K") -%}{%- factor = 1024 -%}{%- end -%}
@@ -1064,7 +1072,9 @@ templateSnippets:
           {%- if factor > 1 -%}{%- digits = value[0:len(value)-1] -%}{%- end -%}
           {%- var n = toint(digits) -%}
           {%- if n > 4398046511104 / factor -%}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Invalid value '" + value + "' for annotation '" + annotation + "' on Ingress '" + key + "': it exceeds 4T, so the request body is not limited. Use a size of 4T or less.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+              "Invalid value '" + value + "' for annotation '" + annotation + "' on Ingress '" + key + "': it exceeds 4T",
+              "the Ingress is rejected", "the request body is not limited", "Use a size of 4T or less.")) -}}
           {%- else -%}
             {{- tostring(n * factor) -}}
           {%- end -%}

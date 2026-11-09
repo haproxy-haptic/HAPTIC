@@ -37,7 +37,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-backend-name-ingress" for BackendNameIngress -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
@@ -87,7 +87,9 @@ templateSnippets:
           }
         %%}
         {%- if bad != "" -%}
-          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Ingress " + key + " has custom-http-errors code '" + bad + "', which isn't a status between 400 and 599, so its error pages aren't served. Use a comma-separated list such as 404,503.") -}}
+          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+            "Ingress " + key + " has custom-http-errors code '" + bad + "', which isn't a status between 400 and 599",
+            "the Ingress is rejected", "its error pages aren't served", "Use a comma-separated list such as 404,503.")) -}}
         {%- else if len(codes) > 0 && baseURL == "" -%}
           {{- recordEvent(ingress, "CustomHTTPErrorsNoDefaultBackend", "Ingress " + key + " sets custom-http-errors but no default backend Service resolves, so upstream error responses reach clients unchanged. Set nginx.ingress.kubernetes.io/default-backend or extraContext.nginxDefaultBackendService.") -}}
         {%- else if len(codes) > 0 -%}

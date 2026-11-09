@@ -123,7 +123,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-haptic-api-key-route" for HapticApiKeyRoute -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var route = map[string]any{} -%}
       {{- HapticApiKeyRoute(item, route) -}}
       {%- if route["enabled"] == true -%}
@@ -132,7 +132,9 @@ templateSnippets:
         {%- var name = dig_string(item, "", "metadata", "name") -%}
         {%- var key = ns + "/" + name -%}
         {%- if tostring(route["intent"]) != "" -%}
-          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "ApiKeySecretMissing", "Ingress " + key + " sets 'haproxy-haptic.org/" + tostring(route["intent"]) + "' but no 'haproxy-haptic.org/api-key-secret'. Keys cannot be checked without it, so this route fails closed with 503. Set api-key-secret, or remove the other api-key-* annotations.") -}}
+          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "ApiKeySecretMissing", WebhookOutcomeMessage(
+            "Ingress " + key + " sets 'haproxy-haptic.org/" + tostring(route["intent"]) + "' but no 'haproxy-haptic.org/api-key-secret'. Keys cannot be checked without it",
+            "the Ingress is rejected", "this route fails closed with 503", "Set api-key-secret, or remove the other api-key-* annotations.")) -}}
         {%- else -%}
           {%- var fetchName = tostring(route["name"]) -%}
           {{- shared.Publish(tostring(route["source"]), fetchName, fetchName) -}}

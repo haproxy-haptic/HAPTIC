@@ -233,6 +233,8 @@ validationTests:
       - type: contains
         target: rendering_error
         pattern: "sets 'haproxy-haptic.org/backend-verify: on' but no"
+      - {type: contains, target: rendering_error, pattern: "the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "fails closed with 503"}
 
   test-haptic-backend-ca-secret-missing-fails-closed:
     description: >-
