@@ -245,6 +245,8 @@ Request/response header manipulation, capture, CORS, source-IP allow/deny, and u
 | `haproxy-haptic.org/response-set-header` | Sets response headers, one `<name> <value>` per line. Changing a value avoids a reload; the first use of a new header name requires one. |
 | `haproxy-haptic.org/src-ip-header` | Derives the client source IP from the named request header via `http-request set-src`, from a per-route map; the first route to name a new header reloads once. Naming `X-Forwarded-For` also keeps the client's `X-Forwarded-For` for the route, as `forwardfor: add` does, unless the route sets `forwardfor`. `X-Real-IP`, `X-Client-IP`, and `Client-IP` must come from a listed trusted proxy or an operator snippet; this annotation doesn't exempt them from header filtering. |
 
+Header modification annotations reject `Content-Length` and `Transfer-Encoding`. Request annotations also reject `Host`. Removal rejects a `<prefix>*` pattern when the prefix matches any protected name.
+
 #### Custom error pages
 
 HAProxy answers with its own page when it refuses a request (`401`, `403`, `413`, `429`) or when a backend has no available server (`503`), times out (`504`), or returns an invalid response (`502`). To replace those pages for an Ingress, point `error-pages` at a ConfigMap in its namespace. Each key is prefixed with the status code it replaces:

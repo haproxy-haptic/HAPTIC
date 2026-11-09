@@ -188,6 +188,121 @@ validationTests:
       - {type: not_contains, target: 'map:ing-reqhdr.map', pattern: "[Xx]\\|[Bb]ad"}
       - {type: contains, target: 'map:ing-reqhdr.map', pattern: 'default_hn-ok_svc_echo_80\|set\|x-good goodval'}
 
+  # ---- HTTP framing and routing header guards ----
+  test-haptic-request-remove-header-content-length-admission-rejected:
+    description: Admission rejects removal of Content-Length because HAProxy would forward an empty request body.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: del-cl, annotations: {haproxy-haptic.org/request-remove-header: "Content-Length"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: del-cl.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "matches protected header 'content-length'"}
+
+  test-haptic-request-remove-header-prefix-admission-rejected:
+    description: Admission rejects a removal prefix that also matches Transfer-Encoding.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: del-prefix, annotations: {haproxy-haptic.org/request-remove-header: "t*"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: del-prefix.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "matches protected header 'transfer-encoding'"}
+
+  test-haptic-request-remove-header-host-admission-rejected:
+    description: Admission rejects removal of the request Host header.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: del-host, annotations: {haproxy-haptic.org/request-remove-header: "Host"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: del-host.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "matches protected header 'host'"}
+
+  test-haptic-request-set-header-content-length-admission-rejected:
+    description: Admission rejects overwriting Content-Length on requests.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: set-cl, annotations: {haproxy-haptic.org/request-set-header: "Content-Length 0"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: set-cl.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "matches protected header 'content-length'"}
+
+  test-haptic-response-set-header-content-length-admission-rejected:
+    description: Admission rejects overwriting Content-Length on responses.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: rset-cl, annotations: {haproxy-haptic.org/response-set-header: "Content-Length 0"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: rset-cl.example.com
+                http: *httpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "matches protected header 'content-length'"}
+
+  test-haptic-protected-headers-reconcile-skips:
+    description: Reconcile skips exact and prefix matches for protected headers while safe header modifications still render.
+    extraContext: {renderMode: reconcile}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: hdr-protected
+            annotations:
+              haproxy-haptic.org/request-remove-header: "Content-Length, Transfer-Encoding, t*, c*, content-*, Host, h*, Cookie, cf-*"
+              haproxy-haptic.org/response-remove-header: "Content-Length, Transfer-Encoding, c*, Content-Security-Policy, x-amz-*"
+              haproxy-haptic.org/request-set-header: "Content-Length 0\nTransfer-Encoding chunked\nHost upstream\nX-Good goodval"
+              haproxy-haptic.org/response-set-header: "Content-Length 0\nTransfer-Encoding chunked\nX-Good goodval"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: protected.example.com
+                http: *httpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: 'map:ing-reqhdr.map', pattern: 'default_hdr-protected_svc_echo_80\|del\|cookie 1'}
+      - {type: contains, target: 'map:ing-reqhdr.map', pattern: 'default_hdr-protected_svc_echo_80\|del-beg\|cf- 1'}
+      - {type: contains, target: 'map:ing-reshdr.map', pattern: 'default_hdr-protected_svc_echo_80\|del\|content-security-policy 1'}
+      - {type: contains, target: 'map:ing-reshdr.map', pattern: 'default_hdr-protected_svc_echo_80\|del-beg\|x-amz- 1'}
+      - {type: contains, target: 'map:ing-reqhdr.map', pattern: 'default_hdr-protected_svc_echo_80\|set\|x-good goodval'}
+      - {type: contains, target: 'map:ing-reshdr.map', pattern: 'default_hdr-protected_svc_echo_80\|set\|x-good goodval'}
+      - {type: not_contains, target: 'map:ing-reqhdr.map', pattern: '\|(?:del|del-beg|set)\|(?:content-length|transfer-encoding|host) '}
+      - {type: not_contains, target: 'map:ing-reshdr.map', pattern: '\|(?:del|del-beg|set)\|(?:content-length|transfer-encoding) '}
+      - {type: not_contains, target: 'map:ing-reqhdr.map', pattern: '\|del-beg\|(?:c|t|content-|h) 1'}
+      - {type: contains, target: events, pattern: "matches protected header 'content-length'"}
+      - {type: contains, target: events, pattern: "matches protected header 'host'"}
+
   # ---- fixed-response / mock-response content-type + body ----
   test-haptic-fixed-response-body-escapes-dollar:
     description: A fixed-response body containing a dollar sign lands URL-encoded in the body map, so HAProxy never sees it as an environment variable.
