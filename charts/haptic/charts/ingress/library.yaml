@@ -945,6 +945,19 @@ templateSnippets:
       {%- import "util-backend-name-ingress" for BackendNameIngress -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
       {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- var ProtectedHTTPHeader = func(name string, prefix bool, request bool) string {
+        var lower = toLower(name)
+        var protected = []string{"content-length", "transfer-encoding"}
+        if request {
+          protected = append(protected, "host")
+        }
+        for _, protectedName := range protected {
+          if lower == protectedName || (prefix && hasPrefix(protectedName, lower)) {
+            return protectedName
+          }
+        }
+        return ""
+      } -%}
       {% macro PublishIngressHeaderContributions(ingress *resources.ingresses.T, reqAnn string, respAnn string, recordSep string, kvSep string, rankPrefix string) %}
       {%%
         var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name
@@ -970,6 +983,11 @@ templateSnippets:
             }
             if !regex_search(hn, "^[A-Za-z0-9!$&*+.^_~-]+$") {
               _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' names header '" + hn + "', which is not an HTTP token; the header is skipped. Use letters, digits and -._~!$&*+^.")
+              continue
+            }
+            var protected = ProtectedHTTPHeader(hn, false, bucket == "ingReqHeaderMods")
+            if protected != "" {
+              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' has header entry '" + hn + "', which matches protected header '" + protected + "'; changing it can break HTTP message framing or routing. Remove this entry.")
               continue
             }
             if ConfigInjectionKind(hv, "line") != "" {
@@ -1020,6 +1038,11 @@ templateSnippets:
             }
             if hn == "" || !regex_search(hn, "^[A-Za-z0-9!$&+.^_~-]+$") {
               _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' names header '" + tok + "', which is not an HTTP token or '<prefix>*'; the header is skipped. Use letters, digits and -._~!$&+^, optionally followed by a trailing '*'.")
+              continue
+            }
+            var protected = ProtectedHTTPHeader(hn, op == "del-beg", bucket == "ingReqHeaderMods")
+            if protected != "" {
+              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' has header entry '" + tok + "', which matches protected header '" + protected + "'; changing it can break HTTP message framing or routing. Remove this entry.")
               continue
             }
             for _, rule := range ingress.Spec.Rules {
