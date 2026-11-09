@@ -128,7 +128,7 @@ _migrationCoverage:
         note: "External-auth: populates auth-url.map (requires spoaHub.plugins.external-auth; spoa-hub frontend self-gates on the check-auth message)."
       haproxy-haptic.org/backend-ca-secret:
         status: supported
-        note: "Secret ca.crt registered as fileRegistry file and emitted as ca-file; supplying it implies verify required. Missing Secret/key -> warning comment + skip."
+        note: "Secret ca.crt registered as fileRegistry file and emitted as ca-file; reserved @system-ca uses HAProxy's system CA store. Either implies verify required. Missing Secret/key -> route denied 503 with Warning Event."
       haproxy-haptic.org/backend-ciphers:
         status: supported
         note: "ciphers <list> (TLS<=1.2); only on a TLS-enabled backend; ValidateConfigValue-guarded."

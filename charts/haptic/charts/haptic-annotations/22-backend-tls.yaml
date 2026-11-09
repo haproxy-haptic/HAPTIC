@@ -35,8 +35,9 @@ templateSnippets:
               (fail-closed, never a silent downgrade to `verify none`), and
               recovers when the Secret appears. Naming no CA at all is a static
               mistake and is rejected at admission.
-          - haproxy-haptic.org/backend-ca-secret: "<name>" | "<ns>/<name>"
-              Secret whose ca.crt verifies the upstream cert. Supplying it
+          - haproxy-haptic.org/backend-ca-secret: "<name>" | "<ns>/<name>" | "@system-ca"
+              Secret whose ca.crt verifies the upstream cert. The reserved value
+              @system-ca instead uses HAProxy's system CA store. Supplying either
               implies `verify required` even without backend-verify.
           - haproxy-haptic.org/backend-crt-secret: "<name>" | "<ns>/<name>"
               kubernetes.io/tls Secret; tls.crt+tls.key are presented to the
@@ -111,7 +112,10 @@ templateSnippets:
           {%- var caFilePart = "" %}
           {%- var caAdded = false %}
           {%- var caFound = false %}
-          {%- if caSec != "" %}
+          {%- if caSec == "@system-ca" %}
+            {%- caFilePart = " ca-file @system-ca" %}
+            {%- caAdded = true %}
+          {%- else if caSec != "" %}
             {%- var caNs = ns %}
             {%- var caName = caSec %}
             {%- if strings_contains(caSec, "/") %}
@@ -271,7 +275,9 @@ templateSnippets:
           {%- result["verifies"] = wantVerify || caSec != "" -%}
           {%- var caFound = false -%}
           {%- var caAdded = false -%}
-          {%- if caSec != "" -%}
+          {%- if caSec == "@system-ca" -%}
+            {%- caAdded = true -%}
+          {%- else if caSec != "" -%}
             {%- var caNs = ns -%}
             {%- var caName = caSec -%}
             {%- if strings_contains(caSec, "/") -%}
@@ -289,7 +295,7 @@ templateSnippets:
             {%- result["blocked"] = true -%}
             {%- if caSec == "" -%}
               {%- result["reason"] = "BackendVerifyWithoutCA" -%}
-              {%- result["message"] = "Ingress " + key + " sets 'haproxy-haptic.org/backend-verify: on' but no 'haproxy-haptic.org/backend-ca-secret'. The upstream certificate cannot be verified, so this route fails closed with 503. Name a Secret containing ca.crt, or set backend-verify: off." -%}
+              {%- result["message"] = "Ingress " + key + " sets 'haproxy-haptic.org/backend-verify: on' but no 'haproxy-haptic.org/backend-ca-secret'. The upstream certificate cannot be verified, so this route fails closed with 503. Set backend-ca-secret to a Secret containing ca.crt or @system-ca, or set backend-verify: off." -%}
             {%- else if !caFound -%}
               {%- result["reason"] = "BackendCASecretMissing" -%}
               {%- result["message"] = "Ingress " + key + " references Secret '" + caSec + "' in 'haproxy-haptic.org/backend-ca-secret', but it could not be resolved. The upstream certificate cannot be verified, so this route fails closed with 503 until the Secret is present." -%}
