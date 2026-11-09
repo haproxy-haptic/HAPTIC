@@ -142,6 +142,8 @@ validationTests:
                 http: *httpRoot
     assertions:
       - {type: contains, target: rendering_error, pattern: "is not an HTTP token or '<prefix>\\*'"}
+      - {type: contains, target: rendering_error, pattern: "the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "the header is skipped"}
 
   test-haptic-response-remove-header-hostile-name-reconcile-skips:
     description: On reconcile a hostile response-remove-header entry warns and is skipped, while valid entries on the same Ingress still render.
@@ -160,7 +162,7 @@ validationTests:
       - type: haproxy_valid
       - {type: contains, target: 'map:ing-reshdr.map', pattern: 'default_rdel-mixed_svc_echo_80\|del\|server 1'}
       - {type: contains, target: 'map:ing-reshdr.map', pattern: 'default_rdel-mixed_svc_echo_80\|del-beg\|x-amz- 1'}
-      - {type: contains, target: events, pattern: "Warning InvalidAnnotation .* names header '\\*'"}
+      - {type: contains, target: events, pattern: "Warning InvalidAnnotation .* names header '\\*'.* the header is skipped"}
 
   test-haptic-request-set-header-hostile-name-reconcile-skips:
     description: On reconcile the hostile header NAME is skipped and never reaches ing-reqhdr.map, while a valid sibling still emits its entry.
