@@ -172,12 +172,6 @@ templateSnippets:
 
   util-webhook-reject-or-warn:
     template: |-
-      {#
-        CALLER CONTRACT: the warn path returns and the render CONTINUES, so the
-        caller MUST skip the offending resource's own output right after calling
-        this ({% continue %} in a per-resource loop, or stop emitting in a macro)
-        — otherwise it emits config built from the value it just rejected.
-      #}
       {%- var WebhookOutcomeMessage = func(problem string, admissionOutcome string, reconcileOutcome string, fix string) string {
         var outcome = reconcileOutcome
         if renderMode == "admission" { outcome = admissionOutcome }
@@ -185,6 +179,12 @@ templateSnippets:
         if fix != "" { message += " " + fix }
         return message
       } -%}
+      {#
+        CALLER CONTRACT: the warn path returns and the render CONTINUES, so the
+        caller MUST skip the offending resource's own output right after calling
+        this ({% continue %} in a per-resource loop, or stop emitting in a macro)
+        — otherwise it emits config built from the value it just rejected.
+      #}
       {%- macro WebhookRejectOrWarn(resource any, reason string, message string) -%}
         {%- if renderMode == "admission" -%}
           {{- fail(message) -}}
