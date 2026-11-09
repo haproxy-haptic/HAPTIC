@@ -133,7 +133,8 @@ validationTests:
                       pathType: ImplementationSpecific
                       backend: {service: {name: esc-service, port: {number: 80}}}
     assertions:
-      - {type: contains, target: rendering_error, pattern: "Ingress default/esc has regex path '/y\\)\\|\\(\\.\\*', which closes a group it doesn't open; the path is not routed"}
+      - {type: contains, target: rendering_error, pattern: "Ingress default/esc has regex path '/y\\)\\|\\(\\.\\*', which closes a group it doesn't open; the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "the path is not routed"}
 
   test-haptic-path-type-regex:
     description: haproxy-haptic.org/path-type=regex keys path-regex.map on the literal PCRE with a BACKEND qualifier
@@ -249,7 +250,8 @@ validationTests:
                 http: &hapticAliasPaths
                   paths: [{path: /, pathType: Prefix, backend: {service: {name: echo, port: {number: 80}}}}]
     assertions:
-      - {type: contains, target: rendering_error, pattern: "annotation 'haproxy-haptic\\.org/host-alias-regex' regex 'a\\)\\|\\(\\.\\*' closes a group it doesn't open, so it isn't routed"}
+      - {type: contains, target: rendering_error, pattern: "annotation 'haproxy-haptic\\.org/host-alias-regex' regex 'a\\)\\|\\(\\.\\*' closes a group it doesn't open; the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "isn't routed"}
 
   test-haptic-host-alias-regex-group-breakout-skipped-on-reconcile:
     description: On reconcile a host-alias-regex that would escape the anchor isn't written and records an InvalidHostAliasRegex Event; the rest of the config keeps serving.

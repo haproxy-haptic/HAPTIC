@@ -286,7 +286,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-haptic-basic-auth-route" for HapticBasicAuthRoute -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
@@ -305,7 +305,9 @@ templateSnippets:
                 here, and rejecting refused correct manifests applied in order. -#}
             {{- recordEvent(ingress, "AuthSecretMissing", "Ingress " + key + " sets 'haproxy-haptic.org/auth-type: basic' with 'auth-secret: " + tostring(route["secretRef"]) + "', but that Secret does not exist. Basic auth cannot be enforced without it, so this route fails closed with 503. Create the Secret, or remove the auth annotations.") -}}
           {%- else -%}
-            {{- WebhookRejectOrWarn(ingress, "AuthSecretMissing", "Ingress " + key + " sets 'haproxy-haptic.org/auth-type: basic' but no 'haproxy-haptic.org/auth-secret'. Basic auth cannot be enforced without the credentials Secret, so this route fails closed with 503. Set auth-secret, or remove auth-type.") -}}
+            {{- WebhookRejectOrWarn(ingress, "AuthSecretMissing", WebhookOutcomeMessage(
+              "Ingress " + key + " sets 'haproxy-haptic.org/auth-type: basic' but no 'haproxy-haptic.org/auth-secret'. Basic auth cannot be enforced without the credentials Secret",
+              "the Ingress is rejected", "this route fails closed with 503", "Set auth-secret, or remove auth-type.")) -}}
           {%- end -%}
         {%- end -%}
       {%- end -%}
@@ -511,7 +513,7 @@ templateSnippets:
       group: mtls-host-policies
       effects: [publishValue, recordEvent]
     template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {#-
         HAPTIC Client-Cert Verification Registration
 
@@ -1076,7 +1078,7 @@ templateSnippets:
     template: |-
       {%- import "util-service-port-resolution" for ResolveServicePort -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- for _, ingress := range []*resources.ingresses.T{resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name"))} -%}
         {%- var oauth = ingress.Metadata.Annotations["haproxy-haptic.org/oauth"] -%}
@@ -1091,7 +1093,9 @@ templateSnippets:
           {%- if prefix == "" -%}{%- prefix = "/oauth2" -%}{%- end -%}
           {%- var prefixInj = ConfigInjectionKind(prefix, "mapkey") -%}
           {%- if prefixInj != "" -%}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Ingress " + ns + "/" + name + " annotation 'haproxy-haptic.org/oauth-uri-prefix' value contains " + prefixInj + ", which would inject an entry into the auth routing map; the OAuth route is not applied. Remove whitespace and control characters from the value.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+              "Ingress " + ns + "/" + name + " annotation 'haproxy-haptic.org/oauth-uri-prefix' value contains " + prefixInj + ", which would inject an entry into the auth routing map",
+              "the Ingress is rejected", "the OAuth route is not applied", "Remove whitespace and control characters from the value.")) -}}
             {%- continue -%}
           {%- end -%}
           {%- if len(prefix) > 1 && hasSuffix(prefix, "/") -%}{%- prefix = prefix[:len(prefix)-1] -%}{%- end -%}
@@ -1121,7 +1125,7 @@ templateSnippets:
       effects: [recordEvent]
     template: |-
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- for _, ingress := range []*resources.ingresses.T{resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name"))} -%}
         {%- var oauth = ingress.Metadata.Annotations["haproxy-haptic.org/oauth"] -%}
@@ -1136,7 +1140,9 @@ templateSnippets:
           {%- if prefix == "" -%}{%- prefix = "/oauth2" -%}{%- end -%}
           {%- var prefixInj = ConfigInjectionKind(prefix, "mapkey") -%}
           {%- if prefixInj != "" -%}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Ingress " + ns + "/" + name + " annotation 'haproxy-haptic.org/oauth-uri-prefix' value contains " + prefixInj + ", which would inject an entry into the auth routing map; the OAuth route is not applied. Remove whitespace and control characters from the value.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotation", WebhookOutcomeMessage(
+              "Ingress " + ns + "/" + name + " annotation 'haproxy-haptic.org/oauth-uri-prefix' value contains " + prefixInj + ", which would inject an entry into the auth routing map",
+              "the Ingress is rejected", "the OAuth route is not applied", "Remove whitespace and control characters from the value.")) -}}
             {%- continue -%}
           {%- end -%}
           {%- if len(prefix) > 1 && hasSuffix(prefix, "/") -%}{%- prefix = prefix[:len(prefix)-1] -%}{%- end -%}

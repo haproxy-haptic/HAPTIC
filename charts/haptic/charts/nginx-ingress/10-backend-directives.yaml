@@ -22,7 +22,7 @@ templateSnippets:
     template: |
       {%- import "util-validate-config-value" for ValidateConfigValue -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
@@ -32,7 +32,9 @@ templateSnippets:
           {#- HAProxy cookie persistence is always "persistent"; "balanced" can't rebalance on scale-up. The mode emits nothing, so a bad value still gets affinity. -#}
           {%- var affinityMode = ingress.Metadata.Annotations["nginx.ingress.kubernetes.io/affinity-mode"] %}
           {%- if affinityMode != "" && affinityMode != "balanced" && affinityMode != "persistent" %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Annotation 'nginx.ingress.kubernetes.io/affinity-mode' on Ingress '" + key + "' is '" + affinityMode + "', which isn't a session affinity mode, so the value is ignored. Set it to balanced or persistent.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+              "Annotation 'nginx.ingress.kubernetes.io/affinity-mode' on Ingress '" + key + "' is '" + affinityMode + "', which isn't a session affinity mode",
+              "the Ingress is rejected", "the value is ignored", "Set it to balanced or persistent.")) -}}
           {%- end %}
           {%- var cookieName = ingress.Metadata.Annotations["nginx.ingress.kubernetes.io/session-cookie-name"] %}
           {%- if cookieName == "" %}{%- cookieName = "INGRESSCOOKIE" %}{%- end %}
@@ -79,7 +81,9 @@ templateSnippets:
       # Warning: nginx.ingress.kubernetes.io/session-cookie-hash on Ingress {{ key }} is not configurable in HAProxy — dynamic cookies always hash via dynamic-cookie-key.
           {%- end %}
           {%- if scInj != "" %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Ingress '" + key + "' session-cookie-name/-path contains " + scInj + ", which would break the backend cookie directive; session affinity is not applied. Remove whitespace and control characters from the value.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+              "Ingress '" + key + "' session-cookie-name/-path contains " + scInj + ", which would break the backend cookie directive",
+              "the Ingress is rejected", "session affinity is not applied", "Remove whitespace and control characters from the value.")) -}}
           {%- else %}
       # nginx-ingress/session-affinity ({{ key }})
       {{ cookieDir }}
@@ -90,7 +94,7 @@ templateSnippets:
 
   backend-directives-700-nginx-ingress-timeouts:
     template: |
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {#- proxy-read-timeout / proxy-send-timeout collapse into HAProxy's single
           settable server timeout (the larger wins), which moves to
           backend-timeouts.map via map-backend-timeout-700-nginx-timeouts
@@ -100,7 +104,9 @@ templateSnippets:
         {%- var connectTimeout = ingress.Metadata.Annotations["nginx.ingress.kubernetes.io/proxy-connect-timeout"] %}
         {%- if connectTimeout != "" %}
           {%- if !regex_search(connectTimeout, "^[0-9]+$") %}
-            {{- WebhookRejectOrWarn(ingress, "InvalidTimeout", "Annotation 'nginx.ingress.kubernetes.io/proxy-connect-timeout' on Ingress '" + key + "' is not a whole number of seconds; the timeout is not applied.") -}}
+            {{- WebhookRejectOrWarn(ingress, "InvalidTimeout", WebhookOutcomeMessage(
+              "Annotation 'nginx.ingress.kubernetes.io/proxy-connect-timeout' on Ingress '" + key + "' is not a whole number of seconds",
+              "the Ingress is rejected", "the timeout is not applied", "")) -}}
           {%- else %}
       # nginx-ingress/backend-directives-timeouts
       timeout connect {{ connectTimeout }}s
@@ -282,13 +288,15 @@ templateSnippets:
       effects: [recordEvent]
     template: |
       {%- import "util-backend-name-ingress" for BackendNameIngress -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
         {%- var buffering = ingress.Metadata.Annotations["nginx.ingress.kubernetes.io/proxy-request-buffering"] -%}
         {%- if buffering != "on" && buffering != "off" -%}
-          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Annotation 'nginx.ingress.kubernetes.io/proxy-request-buffering' on Ingress '" + ingress.Metadata.Namespace + "/" + ingress.Metadata.Name + "' is '" + buffering + "', so the fleet-wide request buffering applies. Set it to on or off.") -}}
+          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+            "Annotation 'nginx.ingress.kubernetes.io/proxy-request-buffering' on Ingress '" + ingress.Metadata.Namespace + "/" + ingress.Metadata.Name + "' is '" + buffering + "'",
+            "the Ingress is rejected", "the fleet-wide request buffering applies", "Set it to on or off.")) -}}
         {%- else -%}
           {%- for _, rule := range ingress.Spec.Rules -%}
             {%- for _, path := range rule.Http.Paths -%}
@@ -309,14 +317,16 @@ templateSnippets:
       bindingsTemplate: |-
         {{- toJSON(map[string]any{"ingresses": map[string]any{"bufsize": toint(render "util-tune-bufsize")}}) -}}
     template: |-
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
         {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
         {%- var size = ingress.Metadata.Annotations["nginx.ingress.kubernetes.io/proxy-buffer-size"] -%}
         {%- if !regex_search(size, "^[0-9]{1,9}[kKmM]?$") -%}
-          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Annotation 'nginx.ingress.kubernetes.io/proxy-buffer-size' on Ingress '" + key + "' is '" + size + "', which isn't a byte size, so the value is ignored. Use a size like '16k'.") -}}
+          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+            "Annotation 'nginx.ingress.kubernetes.io/proxy-buffer-size' on Ingress '" + key + "' is '" + size + "', which isn't a byte size",
+            "the Ingress is rejected", "the value is ignored", "Use a size like '16k'.")) -}}
         {%- else -%}
           {%- var factor = 1 -%}
           {%- if hasSuffix(size, "k") || hasSuffix(size, "K") -%}{%- factor = 1024 -%}{%- end -%}
@@ -413,7 +423,7 @@ templateSnippets:
       {%- import "util-nginx-ingress-regex-paths" for NginxPathRecords, NginxLocationArg -%}
       {%- import "util-regex-map-key" for RegexGroupProblem -%}
       {%- import "util-nginx-ingress-rewrite-target" for RewriteTargetCaptures -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
@@ -423,7 +433,9 @@ templateSnippets:
         {#- Only a \N backreference forces backend scope (the regex side can't be map-driven); literal rewrites go to path-rewrite.map via map-path-rewrite-750-nginx-ingress. -#}
         {%- if regex_search(rewrite, "\\\\[1-9]") %}
           {%- var injRw = ConfigInjectionKind(rewrite, "line") %}
-          {%- if injRw != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidRewriteTarget", "Ingress " + key + " annotation 'nginx.ingress.kubernetes.io/rewrite-target' contains " + injRw + "; the rewrite is not applied. Remove control characters from the value.") -}}{%- else %}
+          {%- if injRw != "" %}{{- WebhookRejectOrWarn(ingress, "InvalidRewriteTarget", WebhookOutcomeMessage(
+            "Ingress " + key + " annotation 'nginx.ingress.kubernetes.io/rewrite-target' contains " + injRw,
+            "the Ingress is rejected", "the rewrite is not applied", "Remove control characters from the value.")) -}}{%- else %}
             {#- \N binds to the groups of the path regex nginx routed by; with several
                 paths on this backend, the longest one matching on the request's
                 own host is that location. -#}

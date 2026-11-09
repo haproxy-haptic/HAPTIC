@@ -1617,4 +1617,5 @@ validationTests:
                   paths:
                     - { path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }
     assertions:
-      - {type: contains, target: rendering_error, pattern: "fails closed with 503"}
+      - {type: contains, target: rendering_error, pattern: "the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "fails closed with 503"}

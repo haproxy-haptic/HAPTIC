@@ -28,6 +28,7 @@ templateSnippets:
   util-haptic-return-route:
     template: |-
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage -%}
       {%- macro HapticReturnRoute(ingress *resources.ingresses.T, kind string, result map[string]any) -%}
         {%- result["lane"] = "" -%}
         {%- var key = ingress.Metadata.Namespace + "/" + ingress.Metadata.Name -%}
@@ -59,7 +60,9 @@ templateSnippets:
           {%- var inj = ConfigInjectionKind(body, "line") -%}
           {%- if inj != "" -%}
             {%- result["lane"] = "invalid" -%}
-            {%- result["message"] = "Ingress " + key + " annotation '" + bodyAnn + "' value contains " + inj + ", which would split the frontend directive; the response is not applied. Remove control characters from the value." -%}
+            {%- result["message"] = WebhookOutcomeMessage(
+              "Ingress " + key + " annotation '" + bodyAnn + "' value contains " + inj + ", which would split the frontend directive",
+              "the Ingress is rejected", "the response is not applied", "Remove control characters from the value.") -%}
             {%- return -%}
           {%- end -%}
           {%- if toint(code) < 100 || toint(code) > 599 -%}
@@ -68,7 +71,9 @@ templateSnippets:
           {%- inj = ConfigInjectionKind(ct, "line") -%}
           {%- if inj != "" -%}
             {%- result["lane"] = "invalid" -%}
-            {%- result["message"] = "Ingress " + key + " annotation 'haproxy-haptic.org/" + kind + "-response-content-type' value contains " + inj + ", which would split the frontend directive; the response is not applied. Remove control characters from the value." -%}
+            {%- result["message"] = WebhookOutcomeMessage(
+              "Ingress " + key + " annotation 'haproxy-haptic.org/" + kind + "-response-content-type' value contains " + inj + ", which would split the frontend directive",
+              "the Ingress is rejected", "the response is not applied", "Remove control characters from the value.") -%}
             {%- return -%}
           {%- end -%}
           {%- result["lane"] = "map" -%}
@@ -80,7 +85,7 @@ templateSnippets:
   util-haptic-publish-return-route:
     template: |-
       {%- import "util-haptic-return-route" for HapticReturnRoute -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- macro PublishHapticReturnRoute(kind string) -%}
         {%- var ingress = resources.ingresses.GetSingle(
           dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
@@ -515,7 +520,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-haptic-hmac-route" for HapticHMACRoute -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var route = map[string]any{} -%}
       {{- HapticHMACRoute(item, route) -}}
       {%- if route["enabled"] == true -%}
@@ -523,7 +528,9 @@ templateSnippets:
         {%- var ns = dig_string(item, "", "metadata", "namespace") -%}
         {%- var name = dig_string(item, "", "metadata", "name") -%}
         {%- if route["intent"] != "" -%}
-          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "HMACSecretMissing", "Ingress " + ns + "/" + name + " sets 'haproxy-haptic.org/" + tostring(route["intent"]) + "' but no 'haproxy-haptic.org/hmac-secret'. Signatures cannot be checked, so requests return 503. Set hmac-secret.") -}}
+          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "HMACSecretMissing", WebhookOutcomeMessage(
+            "Ingress " + ns + "/" + name + " sets 'haproxy-haptic.org/" + tostring(route["intent"]) + "' but no 'haproxy-haptic.org/hmac-secret'. Signatures cannot be checked",
+            "the Ingress is rejected", "requests return 503", "Set hmac-secret.")) -}}
         {%- else -%}
           {{- shared.Publish("alg", tostring(route["alg"]), tostring(route["alg"])) -}}
           {{- shared.Publish("hdr", tostring(route["hdr"]), tostring(route["hdr"])) -}}
@@ -717,7 +724,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-haptic-consumer-group-route" for HapticConsumerGroupRoute -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var route = map[string]any{} -%}
       {{- HapticConsumerGroupRoute(item, route) -}}
       {%- if route["enabled"] == true -%}
@@ -726,7 +733,9 @@ templateSnippets:
         {%- var name = dig_string(item, "", "metadata", "name") -%}
         {%- var key = ns + "/" + name -%}
         {%- if tostring(route["state"]) == "invalid" -%}
-          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "AllowedConsumerGroupsEmpty", "Ingress " + key + " sets 'haproxy-haptic.org/allowed-consumer-groups' to a value with no group names in it. Consumer-group authorization cannot be enforced against an empty set, so this route fails closed with 503. List at least one group, or remove the annotation.") -}}
+          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "AllowedConsumerGroupsEmpty", WebhookOutcomeMessage(
+            "Ingress " + key + " sets 'haproxy-haptic.org/allowed-consumer-groups' to a value with no group names in it. Consumer-group authorization cannot be enforced against an empty set",
+            "the Ingress is rejected", "this route fails closed with 503", "List at least one group, or remove the annotation.")) -}}
         {%- else if tostring(route["state"]) == "missing" -%}
           {{- recordEvent(resources.ingresses.GetSingle(ns, name), "ConsumerGroupsSecretMissing", "Ingress " + key + " references Secret '" + tostring(route["secretRef"]) + "' in 'haproxy-haptic.org/consumer-groups-secret', but it could not be resolved. Requests are denied with 503 until the Secret is present.") -}}
         {%- end -%}

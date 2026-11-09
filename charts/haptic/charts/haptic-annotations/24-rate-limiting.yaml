@@ -129,7 +129,7 @@ templateSnippets:
     template: |-
       {%- import "util-haptic-rate-limit-route" for HapticRateLimitRoute -%}
       {%- import "util-validate-cidr-list" for ValidateCidrList -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var route = map[string]any{} -%}
       {{- HapticRateLimitRoute(item, route) -}}
       {%- var ns = dig_string(item, "", "metadata", "namespace") -%}
@@ -141,7 +141,9 @@ templateSnippets:
         {%- if route["enabled"] == true || sharedLimit -%}
           {{- shared.Publish("allowlist", key, key + " " + ValidateCidrList(allowlist, "haproxy-haptic.org/rate-limit-allowlist", key)) -}}
         {%- else -%}
-          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "RateLimitAllowlistIgnored", "Ingress " + key + " sets 'haproxy-haptic.org/rate-limit-allowlist' but no rate limit, so nothing is exempted. Set rate-limit-rps, rate-limit-rpm, rate-limit-connections or rate-limit-requests, or remove the allowlist.") -}}
+          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "RateLimitAllowlistIgnored", WebhookOutcomeMessage(
+            "Ingress " + key + " sets 'haproxy-haptic.org/rate-limit-allowlist' but no rate limit",
+            "the Ingress is rejected", "nothing is exempted", "Set rate-limit-rps, rate-limit-rpm, rate-limit-connections or rate-limit-requests, or remove the allowlist.")) -}}
         {%- end -%}
       {%- end -%}
       {%- if route["enabled"] == true -%}

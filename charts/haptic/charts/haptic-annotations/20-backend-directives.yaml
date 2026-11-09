@@ -312,12 +312,14 @@ templateSnippets:
         (WebhookRejectOrWarn) — a chart fail() on a tenant Ingress value would
         abort the whole render.
       #}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- if ingress != nil %}
         {%- var ns = ingress.Metadata.Namespace %}
         {%- var name = ingress.Metadata.Name %}
         {%- if ingress.Metadata.Annotations["haproxy-haptic.org/scale-server-slots"] != "" %}
-          {%- _ = WebhookRejectOrWarn(ingress, "UnsupportedAnnotation", "Ingress " + ns + "/" + name + " sets 'haproxy-haptic.org/scale-server-slots', which no longer has any effect: servers are named after pods and scale with no reserved slots and no reload. Remove the annotation.") %}
+          {%- _ = WebhookRejectOrWarn(ingress, "UnsupportedAnnotation", WebhookOutcomeMessage(
+            "Ingress " + ns + "/" + name + " sets 'haproxy-haptic.org/scale-server-slots', which no longer has any effect: servers are named after pods and scale with no reserved slots and no reload",
+            "the Ingress is rejected", "the annotation has no effect", "Remove the annotation.")) %}
         {%- end %}
       {%- end -%}
 

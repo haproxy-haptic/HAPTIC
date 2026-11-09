@@ -129,7 +129,8 @@ validationTests:
     assertions:
       - type: contains
         target: rendering_error
-        pattern: "sets 'haproxy-haptic.org/https-redirect', which was removed, so it has no effect. Use redirect-scheme: https instead."
+        pattern: "sets 'haproxy-haptic.org/https-redirect', which was removed; the Ingress is rejected. Use redirect-scheme: https instead."
+      - {type: not_contains, target: rendering_error, pattern: "has no effect"}
 
   test-haptic-redirect:
     description: >-

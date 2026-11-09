@@ -151,7 +151,7 @@ templateSnippets:
       {%- import "util-backend-name-ingress" for BackendNameIngress -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
       {%- import "util-canary-publish" for PublishCanary -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil %}
@@ -216,11 +216,17 @@ templateSnippets:
               {%- if canaryHeader != "" && !regex_search(canaryHeader, "^[A-Za-z0-9_.-]+$") %}{%- badName = "canary-by-header" %}
               {%- else if canaryCookie != "" && !regex_search(canaryCookie, "^[A-Za-z0-9_.-]+$") %}{%- badName = "canary-by-cookie" %}{%- end %}
               {%- if canaryInj == "" && badName != "" %}
-                {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Ingress '" + key + "' annotation 'nginx.ingress.kubernetes.io/" + badName + "' may contain only letters, digits, '_', '.' and '-', so the canary route is not applied. Rename the header or cookie.") -}}
+                {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+                  "Ingress '" + key + "' annotation 'nginx.ingress.kubernetes.io/" + badName + "' may contain only letters, digits, '_', '.' and '-'",
+                  "the Ingress is rejected", "the canary route is not applied", "Rename the header or cookie.")) -}}
               {%- else if canaryInj == "" && canaryWeight != "" && !regex_search(canaryWeight, "^[0-9]+$") %}
-                {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "Ingress '" + key + "' annotation 'nginx.ingress.kubernetes.io/canary-weight' is '" + canaryWeight + "', not an integer, so the canary route is not applied. Set a weight from 0 to 100.") -}}
+                {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+                  "Ingress '" + key + "' annotation 'nginx.ingress.kubernetes.io/canary-weight' is '" + canaryWeight + "', not an integer",
+                  "the Ingress is rejected", "the canary route is not applied", "Set a weight from 0 to 100.")) -}}
               {%- else if canaryInj != "" %}
-                {%- var message = "Ingress '" + key + "' annotation 'nginx.ingress.kubernetes.io/" + canaryField + "' value contains " + canaryInj + ", which would break out of the canary routing condition; the canary route is not applied. Remove it from the value." -%}
+                {%- var message = WebhookOutcomeMessage(
+                  "Ingress '" + key + "' annotation 'nginx.ingress.kubernetes.io/" + canaryField + "' value contains " + canaryInj + ", which would break out of the canary routing condition",
+                  "the Ingress is rejected", "the canary route is not applied", "Remove it from the value.") -%}
                 {%- if tostring(renderSubject | dig("mode") | fallback("reconcile")) == "admission" -%}
                   {{- fail(message) -}}
                 {%- else -%}

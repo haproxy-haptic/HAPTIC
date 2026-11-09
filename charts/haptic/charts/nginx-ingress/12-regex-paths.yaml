@@ -53,7 +53,7 @@ templateSnippets:
       {%- import "util-host-key" for MapKeyForHost -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
       {%- import "util-regex-map-key" for RegexGroupProblem, RegexMapKey -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- import "util-nginx-ingress-regex-paths" for NginxPathRecords, NginxRegexMode -%}
       {%%
         var ingress = resources.ingresses.GetSingle(
@@ -71,7 +71,9 @@ templateSnippets:
             if !regex_search(path, `[.*+?()\[\]{}|^$\\]`) { continue }
             var problem = RegexGroupProblem(path)
             if problem != "" {
-              _ = WebhookRejectOrWarn(ingress, "InvalidPath", "Ingress " + key + " has regex path '" + path + "', which " + problem + "; the path is not routed. Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*.")
+              _ = WebhookRejectOrWarn(ingress, "InvalidPath", WebhookOutcomeMessage(
+                "Ingress " + key + " has regex path '" + path + "', which " + problem,
+                "the Ingress is rejected", "the path is not routed", "Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*."))
               continue
             }
             block += "\n" + RegexMapKey(MapKeyForHost(record | dig("host")), path, "(?i)") + " BACKEND:" + tostring(record | dig("backend"))

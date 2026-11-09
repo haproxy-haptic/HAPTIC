@@ -570,7 +570,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-backend-tls-identity" for BackendTLSIdentity -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%%
         var policy = item
         var policyNs = dig_string(policy, "", "metadata", "namespace")
@@ -582,9 +582,9 @@ templateSnippets:
         var validation = dig(policy, "spec", "validation")
         var _, identityError = BackendTLSIdentity(validation)
         if identityError != "" {
-          show WebhookRejectOrWarn(policy, "UnsupportedBackendTLSIdentity",
-            "BackendTLSPolicy " + policyKey + ": " + identityError +
-            ". Backend traffic is blocked. Use a DNS identity matching validation.hostname.")
+          show WebhookRejectOrWarn(policy, "UnsupportedBackendTLSIdentity", WebhookOutcomeMessage(
+            "BackendTLSPolicy " + policyKey + ": " + identityError,
+            "the BackendTLSPolicy is rejected", "backend traffic is blocked", "Use a DNS identity matching validation.hostname."))
         }
         var publishedValue = map[string]any{"validation": validation}
         if len(dig(validation, "caCertificateRefs") | toSlice()) > 0 {

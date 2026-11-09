@@ -65,6 +65,7 @@ validationTests:
       - {type: contains, target: map:gw-reqhdr.map, pattern: 'h_default_rh-good_0\|set\|x-version ok'}
       - {type: not_contains, target: map:gw-reqhdr.map, pattern: 'h_default_rh-attacker_0'}
       - {type: not_contains, target: haproxy.cfg, pattern: "X-Pwned"}
+      - {type: contains, target: events, pattern: "the header is not applied"}
 
   test-httproute-request-header-value-injection-admission-rejected:
     requires: [httproutes]
@@ -88,6 +89,8 @@ validationTests:
                 backendRefs: [{name: web, port: 80}]
     assertions:
       - {type: contains, target: rendering_error, pattern: "would inject a header break at request time"}
+      - {type: contains, target: rendering_error, pattern: "the route is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "the header is not applied"}
 
   test-httproute-request-header-value-escaped:
     requires: [httproutes]

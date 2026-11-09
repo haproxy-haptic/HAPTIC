@@ -1125,16 +1125,23 @@ that iterates every object must not turn an existing warning into an unrelated
 admission failure. Keep the caller's skip or route-denial behavior intact.
 
 ```scriggo
-{%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+{%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
 ...
 {%- for _, ingress := range resources.ingresses.List() %}
   {%- if <value is invalid> %}
-    {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", "<message>") -}}
+    {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+      "<problem>", "the Ingress is rejected", "<feature> is skipped", "<fix>")) -}}
     {%- continue %}   {#- caller MUST skip this resource's output in the warn path -#}
   {%- end %}
   ... emit this Ingress's config ...
 {%- end %}
 ```
+
+When admission and reconciliation outcomes differ, use `WebhookOutcomeMessage(problem,
+admissionOutcome, reconcileOutcome, fix)`. It keeps the problem and fix shared while
+making the admission rejection explicit. Never pass a reconciliation-only outcome such
+as "skipped", "not applied", a fallback, or a 503 response directly to
+`WebhookRejectOrWarn`; mode-neutral validation messages need no builder.
 
 **Decide fail vs warn by what a *skip* would mean** — the warn path skips the
 offending resource's contribution, so it must be safe to serve *without* that

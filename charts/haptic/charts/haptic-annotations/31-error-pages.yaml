@@ -10,7 +10,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-error-pages" for ErrorPages -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
@@ -19,7 +19,9 @@ templateSnippets:
         {%- var name = ingress.Metadata.Annotations["haproxy-haptic.org/error-pages"] -%}
         {%- var pages, problem = ErrorPages(ns, name, props["expressions"]) -%}
         {%- if problem != "" -%}
-          {{- WebhookRejectOrWarn(ingress, "ErrorPagesInvalid", "Ingress " + key + " annotation 'haproxy-haptic.org/error-pages' " + problem + ". Its errors keep the default pages. Fix the ConfigMap or the annotation.") -}}
+          {{- WebhookRejectOrWarn(ingress, "ErrorPagesInvalid", WebhookOutcomeMessage(
+            "Ingress " + key + " annotation 'haproxy-haptic.org/error-pages' " + problem,
+            "the Ingress is rejected", "its errors keep the default pages", "Fix the ConfigMap or the annotation.")) -}}
         {%- else -%}
           {%- for _, code := range []string{"401", "403", "413", "429"} -%}
             {%- if pages[code] != nil -%}

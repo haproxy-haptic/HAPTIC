@@ -78,7 +78,7 @@ templateSnippets:
       {%- import "util-host-key" for MapKeyForHost -%}
       {%- import "util-ingress-host-claims" for HostAliases, HostAliasProblem, HostClaimEmits, HostClaimConflict, HostAliasConflictMessage -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%%
         var annotation = "haproxy-ingress.github.io/server-alias"
         var namespace = dig_string(item, "", "metadata", "namespace")
@@ -93,12 +93,16 @@ templateSnippets:
           for _, alias := range HostAliases(dig_string(item, "", "metadata", "annotations", annotation), "") {
             var aliasInj = ConfigInjectionKind(alias, "mapkey")
             if aliasInj != "" {
-              _ = WebhookRejectOrWarn(item, "InvalidServerAlias", "Ingress " + id + " annotation '" + annotation + "' value contains " + aliasInj + ", which would split the host map; the alias is not applied. Remove whitespace and control characters from the value.")
+              _ = WebhookRejectOrWarn(item, "InvalidServerAlias", WebhookOutcomeMessage(
+                "Ingress " + id + " annotation '" + annotation + "' value contains " + aliasInj + ", which would split the host map",
+                "the Ingress is rejected", "the alias is not applied", "Remove whitespace and control characters from the value."))
               continue
             }
             var problem = HostAliasProblem(alias)
             if problem != "" {
-              _ = WebhookRejectOrWarn(item, "InvalidServerAlias", "Ingress " + id + " annotation '" + annotation + "' alias '" + alias + "' " + problem + ", so it isn't routed. Use a hostname such as www.example.com or *.example.com.")
+              _ = WebhookRejectOrWarn(item, "InvalidServerAlias", WebhookOutcomeMessage(
+                "Ingress " + id + " annotation '" + annotation + "' alias '" + alias + "' " + problem,
+                "the Ingress is rejected", "the alias isn't routed", "Use a hostname such as www.example.com or *.example.com."))
               continue
             }
             var aliasKey = tostring(MapKeyForHost(toLower(alias)))
@@ -142,7 +146,7 @@ templateSnippets:
       {%- import "util-ingress-host-claims" for HostAliasRegexKey, HostClaimEmits, HostClaimConflict, HostAliasConflictMessage -%}
       {%- import "util-regex-map-key" for RegexGroupProblem -%}
       {%- import "util-config-injection-kind" for ConfigInjectionKind -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%%
         var annotation = "haproxy-ingress.github.io/server-alias-regex"
         var id = dig_string(item, "", "metadata", "namespace") + "/" + dig_string(item, "", "metadata", "name")
@@ -154,9 +158,13 @@ templateSnippets:
           var regexInj = ConfigInjectionKind(regexTrimmed, "mapkey")
           var problem = RegexGroupProblem(regexTrimmed)
           if regexInj != "" {
-            _ = WebhookRejectOrWarn(item, "InvalidServerAliasRegex", "Ingress " + id + " annotation '" + annotation + "' value contains " + regexInj + ", which would split the host-alias-regex map; the alias regex is not applied. Remove whitespace and control characters from the value.")
+            _ = WebhookRejectOrWarn(item, "InvalidServerAliasRegex", WebhookOutcomeMessage(
+              "Ingress " + id + " annotation '" + annotation + "' value contains " + regexInj + ", which would split the host-alias-regex map",
+              "the Ingress is rejected", "the alias regex is not applied", "Remove whitespace and control characters from the value."))
           } else if problem != "" {
-            _ = WebhookRejectOrWarn(item, "InvalidServerAliasRegex", "Ingress " + id + " annotation '" + annotation + "' regex '" + regexTrimmed + "' " + problem + ", so it isn't routed. Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*.")
+            _ = WebhookRejectOrWarn(item, "InvalidServerAliasRegex", WebhookOutcomeMessage(
+              "Ingress " + id + " annotation '" + annotation + "' regex '" + regexTrimmed + "' " + problem,
+              "the Ingress is rejected", "the alias regex isn't routed", "Rewrite it so its groups and [ ] classes close within it, without \\Q, \\E, \\c or (*."))
           } else {
             var key = HostAliasRegexKey(regexTrimmed)
             var winner, found = shared.Select("ingress-host-claims", "regexes", key)

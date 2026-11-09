@@ -260,6 +260,7 @@ templateSnippets:
   # 503 so an unverified upstream leg is never served.
   util-haptic-backend-tls-blocked:
     template: |-
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage -%}
       {%- macro HapticBackendTLSBlocked(ingress any, result map[string]any) -%}
         {%- var ns = dig_string(ingress, "", "metadata", "namespace") -%}
         {%- var key = ns + "/" + dig_string(ingress, "", "metadata", "name") -%}
@@ -295,7 +296,9 @@ templateSnippets:
             {%- result["blocked"] = true -%}
             {%- if caSec == "" -%}
               {%- result["reason"] = "BackendVerifyWithoutCA" -%}
-              {%- result["message"] = "Ingress " + key + " sets 'haproxy-haptic.org/backend-verify: on' but no 'haproxy-haptic.org/backend-ca-secret'. The upstream certificate cannot be verified, so this route fails closed with 503. Set backend-ca-secret to a Secret containing ca.crt or @system-ca, or set backend-verify: off." -%}
+              {%- result["message"] = WebhookOutcomeMessage(
+                "Ingress " + key + " sets 'haproxy-haptic.org/backend-verify: on' but no 'haproxy-haptic.org/backend-ca-secret'. The upstream certificate cannot be verified",
+                "the Ingress is rejected", "this route fails closed with 503", "Set backend-ca-secret to a Secret containing ca.crt or @system-ca, or set backend-verify: off.") -%}
             {%- else if !caFound -%}
               {%- result["reason"] = "BackendCASecretMissing" -%}
               {%- result["message"] = "Ingress " + key + " references Secret '" + caSec + "' in 'haproxy-haptic.org/backend-ca-secret', but it could not be resolved. The upstream certificate cannot be verified, so this route fails closed with 503 until the Secret is present." -%}
@@ -338,7 +341,7 @@ templateSnippets:
       effects: [publishValue, recordEvent]
     template: |-
       {%- import "util-haptic-backend-tls-blocked" for HapticBackendTLSBlocked -%}
-      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var result = map[string]any{} -%}
       {{- HapticBackendTLSBlocked(item, result) -}}
       {%- if result["verifies"] == true -%}{{- shared.Publish("any", "any", "any") -}}{%- end -%}

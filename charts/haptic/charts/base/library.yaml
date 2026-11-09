@@ -178,6 +178,13 @@ templateSnippets:
         this ({% continue %} in a per-resource loop, or stop emitting in a macro)
         — otherwise it emits config built from the value it just rejected.
       #}
+      {%- var WebhookOutcomeMessage = func(problem string, admissionOutcome string, reconcileOutcome string, fix string) string {
+        var outcome = reconcileOutcome
+        if renderMode == "admission" { outcome = admissionOutcome }
+        var message = problem + "; " + outcome + "."
+        if fix != "" { message += " " + fix }
+        return message
+      } -%}
       {%- macro WebhookRejectOrWarn(resource any, reason string, message string) -%}
         {%- if renderMode == "admission" -%}
           {{- fail(message) -}}

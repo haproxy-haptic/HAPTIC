@@ -301,7 +301,8 @@ validationTests:
                       pathType: ImplementationSpecific
                       backend: {service: {name: esc-svc, port: {number: 80}}}
     assertions:
-      - {type: contains, target: rendering_error, pattern: "Ingress default/esc has regex path '/x\\)\\|\\(\\.\\*', which closes a group it doesn't open; the path is not routed"}
+      - {type: contains, target: rendering_error, pattern: "Ingress default/esc has regex path '/x\\)\\|\\(\\.\\*', which closes a group it doesn't open; the Ingress is rejected"}
+      - {type: not_contains, target: rendering_error, pattern: "the path is not routed"}
 
   test-nginx-ingress-use-regex-unsafe-paths-not-routed:
     description: Outside admission, a regex path that could escape its group is left out of the regex map and of the rewrite with an Event, while the Ingress's valid regex path still routes.
