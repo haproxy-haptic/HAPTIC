@@ -1,10 +1,10 @@
 # Protect Gateway routes
 
-Attach a `HAProxyRoutePolicy` to an HTTPRoute or GRPCRoute rule to authenticate
-requests, share a rate limit across the fleet, select a web application firewall (WAF) policy, or cache HTTP
-responses. Install HAPTIC and the Gateway API CRDs first. This example assumes an
-HTTPS Gateway named `public` and a Service named `api` on port 8080 in namespace
-`apps`.
+Attach a `HAProxyRoutePolicy` to an HTTPRoute or GRPCRoute rule to restrict client
+addresses, authenticate requests, share a rate limit across the fleet, select a
+web application firewall (WAF) policy, or cache HTTP responses. Install HAPTIC and
+the Gateway API CRDs first. This example assumes an HTTPS Gateway named `public`
+and a Service named `api` on port 8080 in namespace `apps`.
 
 ## Require an API key
 
@@ -97,6 +97,74 @@ HTTPS Gateway named `public` and a Service named `api` on port 8080 in namespace
 The policy and its credential Secret must share the route's namespace. Requests
 without a valid `X-API-Key` receive 401. The authenticated request forwards
 `X-Authenticated-Consumer: example-client`; a caller can't supply its own value.
+
+## Restrict client networks
+
+1. Allow a private network and a virtual private network range on the existing policy.
+
+    ```bash
+    kubectl patch haproxyroutepolicy api-access -n apps --type=merge \
+      -p '{"spec":{"sourceAddress":{"allow":["10.0.0.0/8","100.64.0.0/10"]}}}'
+    ```
+
+    Clients outside either range receive 403. Authentication and other configured
+    policy checks still apply to admitted clients.
+
+2. Create an immutable ConfigMap when you want to version the lists separately.
+
+    ```bash
+    kubectl apply -f - <<'YAML'
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: api-networks-v1
+      namespace: apps
+    immutable: true
+    data:
+      source-address.yaml: |
+        allow: [10.0.0.0/8, 100.64.0.0/10]
+        deny: [100.64.0.0/16]
+    YAML
+    ```
+
+    The deny list takes precedence when an address matches both lists.
+
+3. Replace the inline list with the ConfigMap reference.
+
+    ```bash
+    kubectl patch haproxyroutepolicy api-access -n apps --type=json \
+      -p='[{"op":"remove","path":"/spec/sourceAddress/allow"},{"op":"add","path":"/spec/sourceAddress/configMapRef","value":{"name":"api-networks-v1"}}]'
+    ```
+
+4. Create the next version with its new lists.
+
+    ```bash
+    kubectl apply -f - <<'YAML'
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: api-networks-v2
+      namespace: apps
+    immutable: true
+    data:
+      source-address.yaml: |
+        allow: [10.0.0.0/8, 100.64.0.0/10]
+        deny: [100.64.128.0/18]
+    YAML
+    ```
+
+5. Change the policy reference.
+
+    ```bash
+    kubectl patch haproxyroutepolicy api-access -n apps --type=merge \
+      -p '{"spec":{"sourceAddress":{"configMapRef":{"name":"api-networks-v2"}}}}'
+    ```
+
+Admission rejects invalid CIDRs and unavailable references. If a referenced
+ConfigMap is deleted or replaced by a mutable or malformed one, affected rules
+return 503 while valid sibling rules continue serving. Restore a valid immutable
+ConfigMap or change the reference to recover. See
+[Source address](../route-policy.md#source-address) for the field reference.
 
 ## Rotate credentials
 

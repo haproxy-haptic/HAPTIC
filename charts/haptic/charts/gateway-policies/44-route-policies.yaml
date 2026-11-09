@@ -76,6 +76,7 @@ templateSnippets:
       {%- import "util-policy-authentication" for PolicyAuthentication -%}
       {%- import "util-policy-rate-limit" for PolicyRateLimit -%}
       {%- import "util-policy-cache" for PolicyCache -%}
+      {%- import "util-policy-source-address" for PolicySourceAddress -%}
       {%- import "util-hostname-intersect-gateway" for HostnameSinglePairMatch -%}
       {%- macro GatewayPolicyRecord(route any, kind string, rule any, index int, result map[string]any) -%}
         {%%
@@ -97,8 +98,20 @@ templateSnippets:
               var spec = dig(policy, "spec")
               var auth = dig(spec, "authentication")
               var authenticated = dig(auth, "jwt") != nil || dig(auth, "apiKey") != nil
-              if !authenticated && dig(spec, "rateLimit") == nil && dig(spec, "waf") == nil && dig(spec, "cache") == nil {
-                result["error"] = "HAProxyRoutePolicy " + namespace + "/" + policyName + " has no enforcement settings. Configure authentication, rateLimit, waf, or cache."
+              if !authenticated && dig(spec, "rateLimit") == nil && dig(spec, "waf") == nil && dig(spec, "cache") == nil && dig(spec, "sourceAddress") == nil {
+                result["error"] = "HAProxyRoutePolicy " + namespace + "/" + policyName + " has no enforcement settings. Configure authentication, rateLimit, waf, cache, or sourceAddress."
+              }
+              if dig(spec, "sourceAddress") != nil {
+                var sourceAddress = map[string]any{}
+                PolicySourceAddress(namespace, policyName, dig(spec, "sourceAddress"), sourceAddress)
+                result["sourceAddress"] = sourceAddress
+                for _, dependency := range toSlice(sourceAddress["dependencies"]) {
+                  result["dependencies"] = append(toSlice(result["dependencies"]), dependency)
+                }
+                if result["error"] == "" {
+                  result["error"] = sourceAddress["error"]
+                  result["resolvedReason"] = sourceAddress["resolvedReason"]
+                }
               }
               for _, mode := range []string{"jwt", "apiKey"} {
                 var credential = dig(auth, mode, "secretRef")

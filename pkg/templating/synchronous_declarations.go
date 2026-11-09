@@ -49,6 +49,7 @@ var synchronousDeclarationNames = [...]string{
 	FuncDig,
 	FuncDigString,
 	FuncToStringSlice,
+	FuncCidrPartition,
 	FuncJoin,
 	FuncReplace,
 	FuncCoalesce,
@@ -135,6 +136,7 @@ var synchronousDeclarationNames = [...]string{
 }
 
 var synchronousDeclarationMembers = map[string][]string{
+	FuncCidrPartition:    {memberSecondResultError},
 	builtinParseURL:      {memberSecondResultError},
 	builtinParseJSON:     {memberSecondResultError},
 	builtinParseDuration: {"[0].Milliseconds"},
