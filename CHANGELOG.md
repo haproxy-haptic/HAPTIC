@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Fixed
 
 - Header annotations reject changes to `Content-Length`, `Transfer-Encoding`, and request `Host`, including removal prefixes that match them, preventing dropped request bodies and invalid response framing ([#654](https://github.com/haproxy-haptic/HAPTIC/issues/654)).
+- Admission for an invalid request- or response-remove-header entry says the Ingress is rejected instead of saying the header is skipped ([#655](https://github.com/haproxy-haptic/HAPTIC/issues/655)).
 - Disabling the SPOA hub removes mirror and shared rate-limit dispatch directives, keeping active HTTPS frontends valid.
 - A JWT metadata ConfigMap that is invalid, names a host the Ingress doesn't serve, or conflicts with another document returns `503` for that Ingress with a `JWTMetadataInvalid` Warning Event, instead of stopping the configuration from rendering and failing admission of unrelated Ingresses ([#644](https://github.com/haproxy-haptic/HAPTIC/issues/644)).
 - `haproxy.org/request-redirect` keeps the request path and query, adds `http://` to a bare host, and applies only to the Ingress's routes, as upstream does.

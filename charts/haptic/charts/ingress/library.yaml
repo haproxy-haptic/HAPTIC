@@ -1037,7 +1037,11 @@ templateSnippets:
               hn = tok[:len(tok)-1]
             }
             if hn == "" || !regex_search(hn, "^[A-Za-z0-9!$&+.^_~-]+$") {
-              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' names header '" + tok + "', which is not an HTTP token or '<prefix>*'; the header is skipped. Use letters, digits and -._~!$&+^, optionally followed by a trailing '*'.")
+              var outcome = "the header is skipped"
+              if renderMode == "admission" {
+                outcome = "the Ingress is rejected"
+              }
+              _ = WebhookRejectOrWarn(ingress, "InvalidAnnotation", "Annotation '" + ann + "' on Ingress '" + key + "' names header '" + tok + "', which is not an HTTP token or '<prefix>*'; " + outcome + ". Use letters, digits and -._~!$&+^, optionally followed by a trailing '*'.")
               continue
             }
             var protected = ProtectedHTTPHeader(hn, op == "del-beg", bucket == "ingReqHeaderMods")
