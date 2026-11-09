@@ -1,9 +1,10 @@
 # HAProxyRoutePolicy reference
 
-Use `HAProxyRoutePolicy` to configure authentication, shared rate limits, a web
-application firewall (WAF), or HTTP caching for HTTPRoute and GRPCRoute rules.
-The chart installs the CRD at API version `haproxy-haptic.org/v1alpha1`.
-For a worked example, see [Protect Gateway routes](operations/gateway-policies.md).
+Use `HAProxyRoutePolicy` to configure source-address filtering, authentication,
+shared rate limits, a web application firewall (WAF), or HTTP caching for
+HTTPRoute and GRPCRoute rules. The chart installs the CRD at API version
+`haproxy-haptic.org/v1alpha1`. For a worked example, see
+[Protect Gateway routes](operations/gateway-policies.md).
 
 ## Attachment
 
@@ -13,9 +14,59 @@ The policy must be in the route's namespace. Multiple policy filters on one rule
 backend-level attachments, and SSL passthrough combined with a policy are rejected.
 There is no inherited policy or implicit merge.
 
-A policy must configure at least one of `authentication`, `rateLimit`, `waf`, or
-`cache`. See [Protect Gateway routes](./operations/gateway-policies.md) for a
-complete example.
+A policy must configure at least one of `sourceAddress`, `authentication`,
+`rateLimit`, `waf`, or `cache`. See
+[Protect Gateway routes](./operations/gateway-policies.md) for a complete example.
+
+## Source address
+
+`sourceAddress` checks the client address observed by HAProxy. An `allow` list
+admits only matching clients. A `deny` list rejects matching clients with 403 and
+takes precedence when both lists match. Rules without a policy and rules whose
+policy has no `sourceAddress` aren't affected.
+
+```yaml
+spec:
+  sourceAddress:
+    allow: [10.0.0.0/8, 2001:db8:1::/48]
+    deny: [10.1.0.0/16, 2001:db8:1:2::/64]
+```
+
+Each list accepts up to 128 IPv4 or IPv6 addresses or CIDR ranges. Inline lists
+and `configMapRef` are mutually exclusive.
+
+To load the same `allow` and `deny` document from a ConfigMap, set
+`sourceAddress.configMapRef.name`. The ConfigMap must be in the policy's namespace
+and set `immutable: true`. The key defaults to `source-address.yaml`.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vpn-networks-v1
+  namespace: apps
+immutable: true
+data:
+  source-address.yaml: |
+    allow: [100.64.0.0/10]
+    deny: [100.64.0.0/16]
+---
+apiVersion: haproxy-haptic.org/v1alpha1
+kind: HAProxyRoutePolicy
+metadata:
+  name: api-access
+  namespace: apps
+spec:
+  sourceAddress:
+    configMapRef:
+      name: vpn-networks-v1
+```
+
+Rotate the lists by creating a new immutable ConfigMap and changing the reference.
+Admission validates the affected routes before accepting the change. A missing,
+mutable, empty, or malformed document, including an invalid CIDR, denies the
+affected rules with 503 during reconciliation. Invalid inline CIDRs also fail
+closed. Restoring a valid reference or dependency restores enforcement.
 
 ## Authentication
 
@@ -125,10 +176,11 @@ headers can't be used as `varyHeaders`.
 
 ## Filter order and failures
 
-Authentication, quota checks, and WAF inspection precede a configured
-`RequestRedirect`. Gateway CORS preflight handling returns before authentication;
-browsers don't send application credentials in preflight requests. Actual requests
-still pass the attached policy.
+Source-address filtering precedes authentication, quota checks, WAF inspection,
+and a configured `RequestRedirect`. Gateway CORS preflight handling returns before
+authentication; browsers don't send application credentials in preflight requests.
+Source-address filtering still applies to preflight, and actual requests still
+pass the attached policy.
 
 Missing and invalid dependencies deny the affected rule with 503. Route status
 sets `Accepted=False` when all rules are invalid, `PartiallyInvalid=True` when

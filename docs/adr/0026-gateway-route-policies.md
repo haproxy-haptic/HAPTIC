@@ -54,10 +54,14 @@ closed while admission is unavailable. Missing or invalid trusted catalogs also
 fail closed for their Ingress consumers instead of aborting the entire render.
 Admission continues to reject invalid catalogs and unresolved default policies.
 
-A policy can combine JWT and API-key authentication, a shared rate limit, a WAF
-catalog selection, and HTTP caching. Both authentication checks apply when both
-are configured. WAF selection keeps the catalog's enforcement and tenant limits.
-GRPCRoute rejects caching and WAF policies that buffer request bodies.
+A policy can combine source-address allow and deny lists, JWT and API-key
+authentication, a shared rate limit, a WAF catalog selection, and HTTP caching.
+Source lists are inline or loaded from an immutable same-namespace ConfigMap
+under the same reference and rotation contract as WAF catalogs. Deny takes
+precedence when both lists match, and invalid lists or dependencies fail closed
+for the affected rule. Both authentication checks apply when both are configured.
+WAF selection keeps the catalog's enforcement and tenant limits. GRPCRoute rejects
+caching and WAF policies that buffer request bodies.
 
 Rate limits apply across the HAProxy fleet. Reusing a policy shares its budget
 across attached rules; source IP or authenticated consumer partitions the budget.

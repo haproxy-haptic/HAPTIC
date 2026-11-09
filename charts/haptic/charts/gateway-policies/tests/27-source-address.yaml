@@ -1,0 +1,247 @@
+_fx:
+  sourceAddressInvalid: &sourceAddressInvalid
+    gateways:
+    - apiVersion: gateway.networking.k8s.io/v1
+      kind: Gateway
+      metadata: {namespace: default, name: policy-gateway, generation: 1}
+      spec:
+        gatewayClassName: haptic
+        listeners: [{name: http, port: 80, protocol: HTTP}]
+    services:
+    - {apiVersion: v1, kind: Service, metadata: {namespace: default, name: echo}, spec: {ports: [{port: 80, targetPort: 8080}]}}
+    routepolicies:
+    - apiVersion: haproxy-haptic.org/v1alpha1
+      kind: HAProxyRoutePolicy
+      metadata: {namespace: default, name: invalid-inline}
+      spec:
+        sourceAddress:
+          allow: [999.0.0.0/8]
+    - apiVersion: haproxy-haptic.org/v1alpha1
+      kind: HAProxyRoutePolicy
+      metadata: {namespace: default, name: missing}
+      spec:
+        sourceAddress:
+          configMapRef: {name: absent}
+    - apiVersion: haproxy-haptic.org/v1alpha1
+      kind: HAProxyRoutePolicy
+      metadata: {namespace: default, name: mutable}
+      spec:
+        sourceAddress:
+          configMapRef: {name: mutable}
+    - apiVersion: haproxy-haptic.org/v1alpha1
+      kind: HAProxyRoutePolicy
+      metadata: {namespace: default, name: malformed}
+      spec:
+        sourceAddress:
+          configMapRef: {name: malformed}
+    - apiVersion: haproxy-haptic.org/v1alpha1
+      kind: HAProxyRoutePolicy
+      metadata: {namespace: default, name: invalid-reference}
+      spec:
+        sourceAddress:
+          configMapRef: {name: bad-cidr}
+    - apiVersion: haproxy-haptic.org/v1alpha1
+      kind: HAProxyRoutePolicy
+      metadata: {namespace: default, name: combined}
+      spec:
+        sourceAddress:
+          allow: [10.0.0.0/8]
+          configMapRef: {name: bad-cidr}
+    configmaps:
+    - apiVersion: v1
+      kind: ConfigMap
+      metadata: {namespace: default, name: mutable}
+      data:
+        source-address.yaml: 'allow: [10.0.0.0/8]'
+    - apiVersion: v1
+      kind: ConfigMap
+      metadata: {namespace: default, name: malformed}
+      immutable: true
+      data:
+        source-address.yaml: 'allow: ['
+    - apiVersion: v1
+      kind: ConfigMap
+      metadata: {namespace: default, name: bad-cidr}
+      immutable: true
+      data:
+        source-address.yaml: 'deny: [300.1.2.3/32]'
+    httproutes:
+    - apiVersion: gateway.networking.k8s.io/v1
+      kind: HTTPRoute
+      metadata: {namespace: default, name: broken, generation: 1}
+      spec:
+        parentRefs: [{name: policy-gateway}]
+        hostnames: [broken.example.com]
+        rules:
+        - backendRefs: [{name: echo, port: 80}]
+          filters:
+          - type: ExtensionRef
+            extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: invalid-inline}
+        - backendRefs: [{name: echo, port: 80}]
+          filters:
+          - type: ExtensionRef
+            extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: missing}
+        - backendRefs: [{name: echo, port: 80}]
+          filters:
+          - type: ExtensionRef
+            extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: mutable}
+        - backendRefs: [{name: echo, port: 80}]
+          filters:
+          - type: ExtensionRef
+            extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: malformed}
+        - backendRefs: [{name: echo, port: 80}]
+          filters:
+          - type: ExtensionRef
+            extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: invalid-reference}
+        - backendRefs: [{name: echo, port: 80}]
+          filters:
+          - type: ExtensionRef
+            extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: combined}
+        - backendRefs: [{name: echo, port: 80}]
+
+validationTests:
+  test-gateway-policy-source-address:
+    description: Inline and referenced CIDRs apply to every attached HTTP and gRPC rule, with deny taking precedence.
+    requires: [httproutes, grpcroutes, routepolicies]
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata: {namespace: default, name: policy-gateway, generation: 1}
+        spec:
+          gatewayClassName: haptic
+          listeners: [{name: http, port: 80, protocol: HTTP}]
+      services:
+      - {apiVersion: v1, kind: Service, metadata: {namespace: default, name: echo}, spec: {ports: [{port: 80, targetPort: 8080}]}}
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: inline}
+        spec:
+          sourceAddress:
+            allow: [10.0.0.0/8, 2001:db8:1::/48]
+            deny: [10.1.0.0/16, 2001:db8:1:2::/64]
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: referenced}
+        spec:
+          sourceAddress:
+            configMapRef: {name: vpn}
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: deny-only}
+        spec:
+          sourceAddress:
+            deny: [192.0.2.0/24]
+      configmaps:
+      - apiVersion: v1
+        kind: ConfigMap
+        metadata: {namespace: default, name: vpn}
+        immutable: true
+        data:
+          source-address.yaml: |
+            allow: [100.64.0.0/10]
+            deny: [100.64.0.0/16]
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata: {namespace: default, name: same-name, generation: 1}
+        spec:
+          parentRefs: [{name: policy-gateway}]
+          hostnames: [source.example.com]
+          rules:
+          - backendRefs: [{name: echo, port: 80}]
+            filters:
+            - type: ExtensionRef
+              extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: inline}
+          - backendRefs: [{name: echo, port: 80}]
+            filters:
+            - type: ExtensionRef
+              extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: referenced}
+          - backendRefs: [{name: echo, port: 80}]
+            filters:
+            - type: ExtensionRef
+              extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: deny-only}
+          - backendRefs: [{name: echo, port: 80}]
+      grpcroutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: GRPCRoute
+        metadata: {namespace: default, name: same-name, generation: 1}
+        spec:
+          parentRefs: [{name: policy-gateway}]
+          hostnames: [source.example.com]
+          rules:
+          - backendRefs: [{name: echo, port: 80}]
+            filters:
+            - type: ExtensionRef
+              extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: inline}
+          - backendRefs: [{name: echo, port: 80}]
+            filters:
+            - type: ExtensionRef
+              extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: referenced}
+    assertions:
+    - {type: haproxy_valid}
+    - {type: contains, target: "map:gw-source-address-routes.map", pattern: "(?m)^gateway/h_default_same-name_0 both$"}
+    - {type: contains, target: "map:gw-source-address-routes.map", pattern: "(?m)^gateway/h_default_same-name_1 both$"}
+    - {type: contains, target: "map:gw-source-address-routes.map", pattern: "(?m)^gateway/h_default_same-name_2 deny$"}
+    - {type: contains, target: "map:gw-source-address-routes.map", pattern: "(?m)^gateway/g_default_same-name_0 both$"}
+    - {type: contains, target: "map:gw-source-address-routes.map", pattern: "(?m)^gateway/g_default_same-name_1 both$"}
+    - {type: not_contains, target: "map:gw-source-address-routes.map", pattern: "h_default_same-name_3"}
+    - {type: contains, target: "map:gw-source-address-partitions.map", pattern: "(?m)^10\\.0\\.0\\.0/16 10\\.0\\.0\\.0/16$"}
+    - {type: contains, target: "map:gw-source-address-allow.map", pattern: "(?m)^10\\.128\\.0\\.0/9\\|gateway/h_default_same-name_0 1$"}
+    - {type: contains, target: "map:gw-source-address-allow.map", pattern: "(?m)^10\\.1\\.0\\.0/16\\|gateway/h_default_same-name_0 1$"}
+    - {type: contains, target: "map:gw-source-address-deny.map", pattern: "(?m)^10\\.1\\.0\\.0/16\\|gateway/h_default_same-name_0 1$"}
+    - {type: contains, target: "map:gw-source-address-deny.map", pattern: "(?m)^2001:db8:1:2::/64\\|gateway/g_default_same-name_0 1$"}
+    - {type: contains, target: "map:gw-source-address-allow.map", pattern: "(?m)^100\\.96\\.0\\.0/11\\|gateway/h_default_same-name_1 1$"}
+    - {type: contains, target: "map:gw-source-address-deny.map", pattern: "(?m)^100\\.64\\.0\\.0/16\\|gateway/g_default_same-name_1 1$"}
+    - {type: not_contains, target: "map:gw-policy-errors.map", pattern: "invalid"}
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - 'set-var\(txn.policy_id\)'
+      - 'set-var\(txn.gw_ac_block\)'
+      - 'set-var\(txn.gw_ac_denied\).*map\([^ ]*gw-source-address-allow.map'
+      - 'set-var\(txn.gw_ac_denied\).*map\([^ ]*gw-source-address-deny.map'
+      - 'set-var\(txn.denied_by\) str\(source_address\)'
+      - 'deny deny_status 403 if \{ var\(txn.gw_ac_denied\) -m bool \}'
+
+  test-gateway-policy-source-address-invalid:
+    description: Invalid CIDRs and unavailable references deny only their attached rules.
+    requires: [httproutes, routepolicies]
+    fixtures: *sourceAddressInvalid
+    assertions:
+    - {type: haproxy_valid}
+    - {type: contains, target: "map:gw-policy-errors.map", pattern: "(?m)^gateway/h_default_broken_0 invalid$"}
+    - {type: contains, target: "map:gw-policy-errors.map", pattern: "(?m)^gateway/h_default_broken_1 invalid$"}
+    - {type: contains, target: "map:gw-policy-errors.map", pattern: "(?m)^gateway/h_default_broken_2 invalid$"}
+    - {type: contains, target: "map:gw-policy-errors.map", pattern: "(?m)^gateway/h_default_broken_3 invalid$"}
+    - {type: contains, target: "map:gw-policy-errors.map", pattern: "(?m)^gateway/h_default_broken_4 invalid$"}
+    - {type: contains, target: "map:gw-policy-errors.map", pattern: "(?m)^gateway/h_default_broken_5 invalid$"}
+    - {type: not_contains, target: "map:gw-policy-errors.map", pattern: "h_default_broken_6"}
+    - {type: not_contains, target: "map:gw-source-address-routes.map", pattern: "gateway/h_default_broken"}
+    - {type: contains, target: events, pattern: "invalid CIDR '999.0.0.0/8'"}
+    - {type: contains, target: events, pattern: "ConfigMap default/absent key source-address.yaml is missing"}
+    - {type: contains, target: events, pattern: "ConfigMap default/mutable key source-address.yaml is mutable"}
+    - {type: contains, target: events, pattern: "ConfigMap default/malformed key source-address.yaml is invalid YAML"}
+    - {type: contains, target: events, pattern: "invalid CIDR '300.1.2.3/32'"}
+    - {type: contains, target: events, pattern: "combines inline lists with configMapRef"}
+    - {type: contains, target: "status:default/broken:deployed", pattern: '"status":"True","type":"PartiallyInvalid"'}
+    - {type: contains, target: "status:default/broken:deployed", pattern: '"reason":"RefNotPermitted"'}
+
+  test-gateway-policy-source-address-invalid-admission:
+    description: Admission rejects an invalid inline CIDR.
+    requires: [httproutes, routepolicies]
+    fixtures: *sourceAddressInvalid
+    extraContext: {renderMode: admission}
+    assertions:
+    - {type: contains, target: rendering_error, pattern: "invalid CIDR '999.0.0.0/8'"}
+
+  test-gateway-policy-source-address-reference-admission:
+    description: Admission of a referenced ConfigMap rejects its invalid CIDR.
+    requires: [httproutes, routepolicies]
+    fixtures: *sourceAddressInvalid
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: configmaps, namespace: default, name: bad-cidr}
+    assertions:
+    - {type: contains, target: rendering_error, pattern: "Source-address ConfigMap default/bad-cidr key source-address.yaml.deny contains invalid CIDR '300.1.2.3/32'"}

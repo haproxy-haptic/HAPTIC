@@ -54,6 +54,7 @@ var incrementalDeclarationNames = [...]string{
 	FuncDig,
 	FuncDigString,
 	FuncToStringSlice,
+	FuncCidrPartition,
 	FuncJoin,
 	FuncReplace,
 	FuncCoalesce,

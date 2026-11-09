@@ -7,8 +7,8 @@ and detects newly installed types without a restart.
 For your first route, follow [Expose a Service through a Gateway](../gateway-api.md#expose-a-service-through-a-gateway).
 Use this reference for request matching, weighted backends, header changes,
 rewrites, redirects, and TLS settings. [Gateway route policies](../operations/gateway-policies.md)
-add authentication, shared rate limits, web application firewall (WAF) inspection,
-and HTTP caching.
+add source-address filtering, authentication, shared rate limits, web application
+firewall (WAF) inspection, and HTTP caching.
 
 <a id="overview"></a>
 

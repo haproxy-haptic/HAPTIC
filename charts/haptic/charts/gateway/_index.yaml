@@ -189,8 +189,8 @@ watchedResources:
   configmaps:
     apiVersion: v1
     resources: configmaps
-    # Watched only so BackendTLSPolicy CACertificateRefs that point at
-    # ConfigMaps can be resolved (Core support per Gateway API spec).
+    # Resolves BackendTLSPolicy CACertificateRefs and HAProxyRoutePolicy
+    # sourceAddress ConfigMap references.
     indexBy: ["metadata.namespace", "metadata.name"]
     # This is an unscoped cluster-wide watch, but the chart only ever reads a
     # handful of ConfigMaps by name (GetSingle) for CA bundles — it never

@@ -314,6 +314,10 @@ test-gateway-policy-mutable-credentials
 test-gateway-policy-passthrough-conflict
 test-gateway-policy-rate-limit-disabled
 test-gateway-policy-private-cache
+test-gateway-policy-source-address
+test-gateway-policy-source-address-invalid
+test-gateway-policy-source-address-invalid-admission
+test-gateway-policy-source-address-reference-admission
 test-gateway-policy-waf
 test-gateway-policy-waf-baseline
 test-gateway-policy-waf-catalogs

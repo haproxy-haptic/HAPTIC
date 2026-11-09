@@ -1,0 +1,271 @@
+maps:
+  gw-source-address-routes.map:
+    ordered: false
+    template: |-
+      {%- import "util-gateway-source-address-maps" for GatewaySourceAddressMaps -%}
+      {%- var maps = map[string]any{} -%}
+      {{- GatewaySourceAddressMaps(maps) -}}
+      {{ join(maps["routes"].([]string), "\n") }}
+  gw-source-address-partitions.map:
+    ordered: false
+    template: |-
+      {%- import "util-gateway-source-address-maps" for GatewaySourceAddressMaps -%}
+      {%- var maps = map[string]any{} -%}
+      {{- GatewaySourceAddressMaps(maps) -}}
+      {{ join(maps["partitions"].([]string), "\n") }}
+  gw-source-address-allow.map:
+    ordered: false
+    template: |-
+      {%- import "util-gateway-source-address-maps" for GatewaySourceAddressMaps -%}
+      {%- var maps = map[string]any{} -%}
+      {{- GatewaySourceAddressMaps(maps) -}}
+      {{ join(maps["allow"].([]string), "\n") }}
+  gw-source-address-deny.map:
+    ordered: false
+    template: |-
+      {%- import "util-gateway-source-address-maps" for GatewaySourceAddressMaps -%}
+      {%- var maps = map[string]any{} -%}
+      {{- GatewaySourceAddressMaps(maps) -}}
+      {{ join(maps["deny"].([]string), "\n") }}
+
+templateSnippets:
+  util-policy-source-address:
+    template: |-
+      {%- macro SourceAddressLists(source any, where string, result map[string]any) -%}
+        {%%
+          result["allow"] = []any{}
+          result["deny"] = []any{}
+          for _, field := range []string{"allow", "deny"} {
+            var entries = toSlice(dig(source, field))
+            if len(entries) > 128 {
+              result["error"] = where + "." + field + " has more than 128 entries. Reduce the list."
+              break
+            }
+            for _, entry := range entries {
+              var cidr, ok = entry.(string)
+              if !ok {
+                result["error"] = where + "." + field + " entries must be CIDR strings."
+                break
+              }
+              cidr = trimSpace(cidr)
+              var _, err = cidr_partition([]string{cidr})
+              if err != nil {
+                result["error"] = where + "." + field + " contains invalid CIDR '" + cidr + "'. Use IPv4 or IPv6 addresses or CIDR ranges."
+                break
+              }
+              result[field] = append(result[field].([]any), cidr)
+            }
+            if result["error"] != "" { break }
+          }
+          if result["error"] == "" && len(result["allow"].([]any)) + len(result["deny"].([]any)) == 0 {
+            result["error"] = where + " has no addresses. Configure a non-empty allow or deny list."
+          }
+        %%}
+      {%- end macro -%}
+      {%- macro PolicySourceAddress(namespace string, policyName string, configured any, result map[string]any) -%}
+        {%%
+          result["error"] = ""
+          result["dependencies"] = []any{}
+          var source = configured
+          var where = "HAProxyRoutePolicy " + namespace + "/" + policyName + " sourceAddress"
+          var ref = dig(configured, "configMapRef")
+          if ref != nil {
+            var name = dig_string(ref, "", "name")
+            var key = dig_string(ref, "source-address.yaml", "key")
+            result["dependencies"] = append(result["dependencies"].([]any), map[string]any{
+              "store": "configmaps", "namespace": namespace, "name": name,
+            })
+            if dig(configured, "allow") != nil || dig(configured, "deny") != nil {
+              result["error"] = where + " combines inline lists with configMapRef. Use one source."
+            } else {
+              var cm = resources.configmaps.GetSingle(namespace, name)
+              where = "Source-address ConfigMap " + namespace + "/" + name + " key " + key
+              if cm == nil {
+                result["error"] = where + " is missing. Create the referenced immutable ConfigMap."
+                result["resolvedReason"] = "RefNotPermitted"
+              } else if dig(cm, "immutable") != true {
+                result["error"] = where + " is mutable. Set immutable: true before attaching it."
+                result["resolvedReason"] = "RefNotPermitted"
+              } else {
+                var rawDocument = dig_string(cm, "", "data", key)
+                if strip(rawDocument) == "" {
+                  result["error"] = where + " is empty or missing. Add allow or deny CIDR lists."
+                } else {
+                  var parsed, parseError = parse_yaml(rawDocument)
+                  var parsedMap, parsedOK = parsed.(map[string]any)
+                  if parseError != nil {
+                    result["error"] = where + " is invalid YAML: " + replace(parseError.Error(), "\n", " ")
+                  } else if !parsedOK {
+                    result["error"] = where + " must be a YAML map with allow or deny lists."
+                  } else {
+                    source = parsedMap
+                    for _, field := range keys(parsedMap) {
+                      if field != "allow" && field != "deny" {
+                        result["error"] = where + " has unknown field '" + field + "'. Use only allow and deny."
+                        break
+                      }
+                    }
+                    for _, field := range []string{"allow", "deny"} {
+                      if parsedMap[field] == nil { continue }
+                      var _, listOK = parsedMap[field].([]any)
+                      if !listOK {
+                        result["error"] = where + "." + field + " must be a YAML list."
+                        break
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          if result["error"] == "" {
+            SourceAddressLists(source, where, result)
+          }
+        %%}
+      {%- end macro -%}
+
+  gateway-policy-source-address-empty:
+    incremental:
+      bindingsTemplate: '{}'
+      group: gateway-policy-source-address
+      effects: [publishValue]
+    template: '{{- "" -}}'
+
+  gateway-policy-source-address-http:
+    requires: [httproutes]
+    incremental:
+      whenAnyPathExists: ["spec.rules[*].filters", "spec.rules[*].backendRefs[*].filters"]
+      source: httproutes
+      consumes: [gateway-policy-records]
+      group: gateway-policy-source-address
+      effects: [publishValue]
+    template: |-
+      {%- import "util-gateway-source-address-publish" for PublishGatewaySourceAddress -%}
+      {{- PublishGatewaySourceAddress(item, "HTTPRoute") -}}
+
+  gateway-policy-source-address-grpc:
+    requires: [grpcroutes]
+    incremental:
+      whenAnyPathExists: ["spec.rules[*].filters", "spec.rules[*].backendRefs[*].filters"]
+      source: grpcroutes
+      consumes: [gateway-policy-records]
+      group: gateway-policy-source-address
+      effects: [publishValue]
+    template: |-
+      {%- import "util-gateway-source-address-publish" for PublishGatewaySourceAddress -%}
+      {{- PublishGatewaySourceAddress(item, "GRPCRoute") -}}
+
+  features-005-gateway-source-address:
+    template: '{{- render_glob "gateway-policy-source-address-*" -}}'
+
+  util-gateway-source-address-publish:
+    template: |-
+      {%- import "util-gateway-policy-decision" for GatewayPolicyDecision -%}
+      {%- macro PublishGatewaySourceAddress(route any, kind string) -%}
+        {%- for index, rule := range toSlice(dig(route, "spec", "rules")) -%}
+          {%- var record = map[string]any{} -%}
+          {{- GatewayPolicyDecision(route, kind, rule, index, record) -}}
+          {%- if record["attached"] == true && record["error"] == "" && dig(record, "sourceAddress") != nil -%}
+            {%%
+              var id = tostring(record["id"])
+              var source = dig(record, "sourceAddress")
+              var allow = join(toStringSlice(dig(source, "allow")), " ")
+              var deny = join(toStringSlice(dig(source, "deny")), " ")
+              var mode = "both"
+              if deny == "" { mode = "allow" } else if allow == "" { mode = "deny" }
+              show shared.Publish("route", id, id + " " + mode)
+              if allow != "" { show shared.Publish("allow", id, id + " " + allow) }
+              if deny != "" { show shared.Publish("deny", id, id + " " + deny) }
+            %%}
+          {%- end -%}
+        {%- end -%}
+      {%- end macro -%}
+
+  util-gateway-source-address-maps:
+    template: |-
+      {%- macro GatewaySourceAddressMaps(result map[string]any) -%}
+        {%%
+          var mapsVal, _ = shared.ComputeIfAbsent("gatewaySourceAddressMaps", func() any {
+            var cidrs = []any{}
+            var lists = map[string][]any{"allow": []any{}, "deny": []any{}}
+            for _, kind := range []string{"allow", "deny"} {
+              for _, value := range incremental_values("gateway-policy-source-address", kind) {
+                lists[kind] = append(lists[kind], tostring(value))
+                for _, cidr := range split(strings_splitn(tostring(value), " ", 2)[1], " ") {
+                  cidrs = append(cidrs, cidr)
+                }
+              }
+            }
+            var blocks, err = cidr_partition(cidrs)
+            if err != nil { fail(tostring(err)) }
+            var seen = map[string]bool{}
+            var partitions = []any{}
+            for _, list := range blocks {
+              for _, block := range list {
+                if !seen[block] {
+                  seen[block] = true
+                  partitions = append(partitions, block)
+                }
+              }
+            }
+            var partitionLines = []string{}
+            for _, block := range sort_strings(partitions) {
+              partitionLines = append(partitionLines, tostring(block) + " " + tostring(block))
+            }
+            var members = func(kind string) []string {
+              var out = []any{}
+              var seenLine = map[string]bool{}
+              for _, record := range lists[kind] {
+                var parts = strings_splitn(tostring(record), " ", 2)
+                for _, cidr := range split(parts[1], " ") {
+                  for _, block := range blocks[cidr] {
+                    var line = block + "|" + parts[0] + " 1"
+                    if !seenLine[line] {
+                      seenLine[line] = true
+                      out = append(out, line)
+                    }
+                  }
+                }
+              }
+              var lines = []string{}
+              for _, line := range sort_strings(out) { lines = append(lines, tostring(line)) }
+              return lines
+            }
+            var routes = []any{}
+            for _, value := range incremental_values("gateway-policy-source-address", "route") {
+              routes = append(routes, tostring(value))
+            }
+            var routeLines = []string{}
+            for _, route := range sort_strings(routes) { routeLines = append(routeLines, tostring(route)) }
+            return map[string]any{
+              "routes": routeLines, "partitions": partitionLines,
+              "allow": members("allow"), "deny": members("deny"),
+            }
+          })
+          var maps = mapsVal.(map[string]any)
+          for _, field := range []string{"routes", "partitions", "allow", "deny"} {
+            result[field] = maps[field]
+          }
+        %%}
+      {%- end macro -%}
+
+  frontend-filters-096-gateway-source-address:
+    template: |-
+      {%- import "util-refusal" for Refusal -%}
+      {%- if incremental_value_count("gateway-policy-source-address", "route") > 0 -%}
+        {%%
+          var routes, routesErr = pathResolver.GetPath("gw-source-address-routes.map", "map")
+          var partitions, partitionsErr = pathResolver.GetPath("gw-source-address-partitions.map", "map")
+          var allow, allowErr = pathResolver.GetPath("gw-source-address-allow.map", "map")
+          var deny, denyErr = pathResolver.GetPath("gw-source-address-deny.map", "map")
+          for _, err := range []error{routesErr, partitionsErr, allowErr, denyErr} {
+            if err != nil { fail(tostring(err)) }
+          }
+        %%}
+        {{ "\n" }}http-request set-var(txn.gw_ac_mode) var(txn.policy_id),map({{ routes }})
+        http-request set-var(txn.gw_ac_block) src,map_ip({{ partitions }}) if { var(txn.gw_ac_mode) -m found }
+        http-request set-var(txn.gw_ac_denied) bool(1) if { var(txn.gw_ac_mode) -m str allow both } !{ var(txn.gw_ac_block),concat(|,txn.policy_id),map({{ allow }}) -m found }
+        http-request set-var(txn.gw_ac_denied) bool(1) if { var(txn.gw_ac_mode) -m str deny both } { var(txn.gw_ac_block),concat(|,txn.policy_id),map({{ deny }}) -m found }
+        http-request set-var(txn.denied_by) str(source_address) if { var(txn.gw_ac_denied) -m bool }
+        {{- Refusal("deny deny_status 403", "{ var(txn.gw_ac_denied) -m bool }") }}
+      {%- end -%}
