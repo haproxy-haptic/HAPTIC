@@ -5,8 +5,8 @@ type: application
 # The oldest Kubernetes release still maintained upstream. Never below 1.33: the
 # HAProxy pod's helpers are native sidecars, which outlive HAProxy while it drains.
 kubeVersion: ">=1.35.0-0"
-version: 0.11.0
-appVersion: "0.11.0"
+version: 0.12.0
+appVersion: "0.12.0"
 # Template libraries are packaged as conditional subcharts so a release only
 # carries the source of the libraries it enables — disabled subcharts are
 # pruned from the Helm release Secret, keeping it under the 1 MiB limit. The
@@ -86,7 +86,7 @@ annotations:
   # Document all component images (Artifact Hub standard)
   artifacthub.io/images: |
     - name: controller
-      image: ghcr.io/haproxy-haptic/haptic:0.11.0-haproxy3.4
+      image: ghcr.io/haproxy-haptic/haptic:0.12.0-haproxy3.4
       platforms:
         - linux/amd64
         - linux/arm64
@@ -97,12 +97,12 @@ annotations:
         - linux/amd64
         - linux/arm64
     - name: spoa-hub
-      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.11.0
+      image: ghcr.io/haproxy-haptic/haptic/spoa-hub:0.12.0
       platforms:
         - linux/amd64
         - linux/arm64
     - name: varnish
-      image: ghcr.io/haproxy-haptic/haptic/varnish:0.11.0
+      image: ghcr.io/haproxy-haptic/haptic/varnish:0.12.0
       platforms:
         - linux/amd64
         - linux/arm64
@@ -113,31 +113,31 @@ annotations:
   # Release highlights; full notes are in the root CHANGELOG.md.
   artifacthub.io/changes: |
     - kind: added
-      description: JWT signing keys refresh from approved HTTPS JWKS endpoints and support overlapping keys during rotation
+      description: Gateway route policies support IPv4 and IPv6 source-address allow and deny lists
     - kind: added
-      description: JWT routes can require group claim membership
+      description: Additional controller-namespace TLS certificates can be served by SNI
     - kind: added
-      description: JWT routes serve OAuth protected-resource metadata and advertise it with Bearer challenges
+      description: Generic redirect annotations preserve request components when building redirect targets
     - kind: added
-      description: Templates can decode JSON, parse URLs, convert JWKS to PEM, and match JSON string-array members
+      description: Ingress upstreams can be verified against HAProxy's system CA store
+    - kind: added
+      description: Request and response headers can be removed by exact name or prefix family
+    - kind: changed
+      description: Generic redirect annotations replace the legacy HTTPS, permanent, and temporary redirect annotations
     - kind: fixed
-      description: Live config changes retry timed-out validation tests while keeping the last good configuration active
+      description: Header annotations reject unsafe framing and request Host modifications
     - kind: fixed
-      description: An unavailable OTLP collector no longer blocks access logs or request metrics
+      description: Invalid JWT metadata affects only its Ingress instead of blocking unrelated configuration
     - kind: fixed
-      description: HTTP input refreshes can withdraw signing keys despite unrelated invalid routes and retry after transient failures
+      description: ExternalName Service backends resolve through HAProxy runtime DNS
     - kind: fixed
-      description: Preflight fetches real HTTP inputs and preserves template-handled fetch failures
-    - kind: fixed
-      description: JWT audience validation accepts exact string-array members and missing Bearer tokens have a distinct denial reason
-    - kind: fixed
-      description: Validation tests respect Helm name overrides and aliased chart dependencies
+      description: Disabling the SPOA hub no longer leaves invalid dispatch directives in HTTPS frontends
   artifacthub.io/containsSecurityUpdates: "false"
 
   # Links
   artifacthub.io/links: |
     - name: Documentation
-      url: https://haproxy-haptic.org/docs/0.11.0/
+      url: https://haproxy-haptic.org/docs/0.12.0/
     - name: Issue Tracker
       url: https://github.com/haproxy-haptic/HAPTIC/issues
 

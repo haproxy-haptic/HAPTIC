@@ -123,7 +123,7 @@ matching chart:
 
 ```bash
 helm pull oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-  --version 0.11.0 --untar --untardir ./chart-download
+  --version 0.12.0 --untar --untardir ./chart-download
 mv ./chart-download/haptic ./chart
 ```
 
