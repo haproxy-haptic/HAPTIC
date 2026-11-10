@@ -202,7 +202,7 @@ clients have switched.
     ```bash
     helm upgrade haptic \
       oci://ghcr.io/haproxy-haptic/haptic/charts/haptic \
-      --version 0.11.0 \
+      --version 0.12.0 \
       --namespace haptic --reuse-values \
       --set rateLimit.shared.enabled=true \
       --set rateLimit.shared.managedStore.enabled=true
