@@ -113,25 +113,25 @@ annotations:
   # Release highlights; full notes are in the root CHANGELOG.md.
   artifacthub.io/changes: |
     - kind: added
-      description: JWT signing keys refresh from approved HTTPS JWKS endpoints and support overlapping keys during rotation
+      description: Gateway route policies support IPv4 and IPv6 source-address allow and deny lists
     - kind: added
-      description: JWT routes can require group claim membership
+      description: Additional controller-namespace TLS certificates can be served by SNI
     - kind: added
-      description: JWT routes serve OAuth protected-resource metadata and advertise it with Bearer challenges
+      description: Generic redirect annotations preserve request components when building redirect targets
     - kind: added
-      description: Templates can decode JSON, parse URLs, convert JWKS to PEM, and match JSON string-array members
+      description: Ingress upstreams can be verified against HAProxy's system CA store
+    - kind: added
+      description: Request and response headers can be removed by exact name or prefix family
+    - kind: changed
+      description: Generic redirect annotations replace the legacy HTTPS, permanent, and temporary redirect annotations
     - kind: fixed
-      description: Live config changes retry timed-out validation tests while keeping the last good configuration active
+      description: Header annotations reject unsafe framing and request Host modifications
     - kind: fixed
-      description: An unavailable OTLP collector no longer blocks access logs or request metrics
+      description: Invalid JWT metadata affects only its Ingress instead of blocking unrelated configuration
     - kind: fixed
-      description: HTTP input refreshes can withdraw signing keys despite unrelated invalid routes and retry after transient failures
+      description: ExternalName Service backends resolve through HAProxy runtime DNS
     - kind: fixed
-      description: Preflight fetches real HTTP inputs and preserves template-handled fetch failures
-    - kind: fixed
-      description: JWT audience validation accepts exact string-array members and missing Bearer tokens have a distinct denial reason
-    - kind: fixed
-      description: Validation tests respect Helm name overrides and aliased chart dependencies
+      description: Disabling the SPOA hub no longer leaves invalid dispatch directives in HTTPS frontends
   artifacthub.io/containsSecurityUpdates: "false"
 
   # Links
