@@ -111,6 +111,8 @@
     "upgrade-0.10.0-minimum",
     "upgrade-0.11.0-current",
     "upgrade-0.11.0-minimum",
+    "upgrade-0.12.0-current",
+    "upgrade-0.12.0-minimum",
     "vector",
     "wasm"
   ],
