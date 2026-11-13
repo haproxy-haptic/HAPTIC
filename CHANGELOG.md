@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Shared rate limiting no longer stays on per-pod budgets for an extra cooldown after a Valkey failover (rate-limit plugin v0.4.3, [#668](https://github.com/haproxy-haptic/HAPTIC/issues/668)).
+
 ### Changed
 
 - `haptic_rejected_watched_inputs` carries `resource_type`, `namespace`, and `name` labels, one series per rejected resource, so an alert names the resource to fix.
