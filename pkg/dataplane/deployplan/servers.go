@@ -51,7 +51,7 @@ func (c *composer) addServer(be *renderplan.Backend, srv *renderplan.Server) (op
 	case !c.caps.DynamicServers:
 		return nil, "this HAProxy has no add server"
 	case !dynamicBalance(be.Balance, be.HashType):
-		return nil, fmt.Sprintf("balance %q takes no dynamic server", balanceOf(be))
+		return nil, fmt.Sprintf("balance %q takes no dynamic server", be.Balance)
 	case !api.SafeToken(srv.Name):
 		return nil, "the name is not a safe runtime token"
 	}

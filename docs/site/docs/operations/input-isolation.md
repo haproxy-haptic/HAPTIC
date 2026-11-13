@@ -22,7 +22,8 @@ rejected.
 3. Correct the named resource. HAPTIC retries observed changes automatically and
    removes the rejection once complete validation succeeds.
 
-Alert when `haptic_rejected_watched_inputs` is greater than zero. Successful traffic
+Alert when `haptic_rejected_watched_inputs` is greater than zero; its `resource_type`,
+`namespace` and `name` labels name the rejected resource. Successful traffic
 and endpoint updates don't mean the rejected change took effect.
 
 ## Behavior while a change is rejected

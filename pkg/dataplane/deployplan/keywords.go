@@ -66,13 +66,6 @@ func dynamicBalance(balance, hashType string) bool {
 	}
 }
 
-func balanceOf(be *renderplan.Backend) string {
-	if be.Balance == "" {
-		return "roundrobin"
-	}
-	return be.Balance
-}
-
 // algorithm is the bare keyword of a balance or hash-type setting, without its
 // arguments: "hdr(Host)" is "hdr", "consistent sdbm" is "consistent".
 func algorithm(setting string) string {

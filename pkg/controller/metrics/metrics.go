@@ -143,7 +143,7 @@ type Metrics struct {
 
 	// Resource metrics
 	ResourceCount         *prometheus.GaugeVec
-	RejectedWatchedInputs prometheus.Gauge
+	RejectedWatchedInputs *prometheus.GaugeVec
 
 	// Event metrics
 	EventSubscribers           prometheus.Gauge
@@ -511,10 +511,11 @@ func NewMetrics(registry prometheus.Registerer) *Metrics {
 			"1 while the render gate holds renders HAProxy refused: the fleet keeps serving the last accepted config and no new render reaches it until the input is fixed (leader-only; 0 on followers).",
 		),
 		RetainedConfigActive: pkgmetrics.NewGauge(registry, "haptic_retained_config_active", "1 while the leader uses retained configuration to start HAProxy pods after a failed render."),
-		RejectedWatchedInputs: pkgmetrics.NewGauge(
+		RejectedWatchedInputs: pkgmetrics.NewGaugeVec(
 			registry,
 			"haptic_rejected_watched_inputs",
-			"Watched resource changes held at their last validated revision while independent changes continue.",
+			"1 per watched resource whose change is held at its last validated revision while independent changes continue.",
+			[]string{"resource_type", "namespace", "name"},
 		),
 
 		RenderProfiles: pkgmetrics.NewGauge(
@@ -893,6 +894,19 @@ func (m *Metrics) RecordRenderFailure(graphWarm bool) {
 	}
 	m.RenderTotal.WithLabelValues(cacheState).Inc()
 	m.RenderErrors.WithLabelValues(cacheState).Inc()
+}
+
+// RejectedInput identifies a watched resource held at its last validated revision.
+type RejectedInput struct {
+	ResourceType, Namespace, Name string
+}
+
+// SetRejectedWatchedInputs replaces the rejected-resource series.
+func (m *Metrics) SetRejectedWatchedInputs(rejected []RejectedInput) {
+	m.RejectedWatchedInputs.Reset()
+	for _, r := range rejected {
+		m.RejectedWatchedInputs.WithLabelValues(r.ResourceType, r.Namespace, r.Name).Set(1)
+	}
 }
 
 // SetConfigPinned sets whether the render gate is holding renders.

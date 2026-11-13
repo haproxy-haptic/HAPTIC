@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `haptic_rejected_watched_inputs` carries `resource_type`, `namespace`, and `name` labels, one series per rejected resource, so an alert names the resource to fix.
+
+### Helm chart
+
+#### Changed
+
+- Backends without an explicit algorithm use `balance random` (power of two choices) instead of `roundrobin`, steering requests away from loaded pods. Set `haproxy-haptic.org/load-balance: roundrobin` to keep the previous distribution.
+
 ## [0.12.0] - 2026-11-10
 
 ### Changed
