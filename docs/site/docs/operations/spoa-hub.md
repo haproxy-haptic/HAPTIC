@@ -59,7 +59,7 @@ The image is published at `ghcr.io/haproxy-haptic/haptic/spoa-hub:<HAPTIC versio
 | `fingerprinting`  | `v0.3.0`   |
 | `maxmind`         | `v0.4.0`          |
 | `mirror`          | `v0.6.0`           |
-| `rate-limit`      | `v0.4.2`       |
+| `rate-limit`      | `v0.4.3`       |
 | `sso-auth`        | `v0.4.1`         |
 
 Plugin `.so` files target glibc `2.36` (Debian bookworm).
