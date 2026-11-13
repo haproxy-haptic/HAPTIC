@@ -637,7 +637,7 @@ This annotation has no effect. HAPTIC adds and removes backend servers as endpoi
 
 Load balancing algorithm for distributing traffic across backend servers.
 
-**Default**: `roundrobin`
+**Default**: `random`
 
 **Valid values**: `roundrobin`, `static-rr`, `leastconn`, `first`, `source`, `random`, plus the parameterized `uri`, `url_param(name)`, `hdr(name)`, `rdp-cookie(name)`
 

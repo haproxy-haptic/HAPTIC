@@ -723,9 +723,9 @@ _migrationCoverage:
       - keys:
         - name: load-balance
           default: round_robin
-        setting: Governance default for `haproxy-haptic.org/load-balance` (`roundrobin`)
+        setting: 'Governance default for `haproxy-haptic.org/load-balance`: set it to `roundrobin`'
         status: different
-        note: No `ewma`; `leastconn` is the closest.
+        note: HAPTIC defaults to `random`. No `ewma`; `leastconn` is the closest.
       - keys:
         - name: whitelist-source-range
         - name: denylist-source-range

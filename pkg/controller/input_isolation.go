@@ -19,6 +19,7 @@ import (
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/events"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/inputisolation"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/metrics"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/pipeline"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	"github.com/haproxy-haptic/HAPTIC/pkg/introspection"
@@ -26,13 +27,15 @@ import (
 
 func newInputSelector(setup *componentSetup, cfg *config.Config, validatingPipeline *pipeline.Pipeline, logger *slog.Logger) *inputisolation.Service {
 	selector := inputisolation.New(validatingPipeline, cfg.WatchedResources, logger, inputisolation.Callbacks{
-		Count: func(count int) { setup.MetricsComponent.Metrics().RejectedWatchedInputs.Set(float64(count)) },
 		Updated: func(rejections []inputisolation.Rejection) {
 			changes := make([]events.InputRejection, len(rejections))
+			inputs := make([]metrics.RejectedInput, len(rejections))
 			for i := range rejections {
 				r := &rejections[i]
 				changes[i] = events.InputRejection{Object: r.Object, Deleted: r.Deleted, Reason: r.Reason}
+				inputs[i] = metrics.RejectedInput{ResourceType: r.Store, Namespace: r.Namespace, Name: r.Name}
 			}
+			setup.MetricsComponent.Metrics().SetRejectedWatchedInputs(inputs)
 			setup.Bus.Publish(events.NewWatchedInputsRejectedEvent(changes))
 		},
 	})

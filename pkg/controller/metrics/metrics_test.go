@@ -194,6 +194,23 @@ func TestMetrics_RecordValidation(t *testing.T) {
 	assert.Equal(t, 1.0, testutil.ToFloat64(metrics.ValidationErrors))
 }
 
+func TestMetrics_SetRejectedWatchedInputs(t *testing.T) {
+	metrics := NewMetrics(prometheus.NewRegistry())
+
+	metrics.SetRejectedWatchedInputs([]RejectedInput{
+		{ResourceType: "ingresses", Namespace: "shop", Name: "web"},
+		{ResourceType: "secrets", Namespace: "shop", Name: "tls"},
+	})
+	assert.Equal(t, 2, testutil.CollectAndCount(metrics.RejectedWatchedInputs))
+	assert.Equal(t, 1.0, testutil.ToFloat64(metrics.RejectedWatchedInputs.WithLabelValues("ingresses", "shop", "web")))
+
+	metrics.SetRejectedWatchedInputs([]RejectedInput{{ResourceType: "secrets", Namespace: "shop", Name: "tls"}})
+	assert.Equal(t, 1, testutil.CollectAndCount(metrics.RejectedWatchedInputs))
+
+	metrics.SetRejectedWatchedInputs(nil)
+	assert.Equal(t, 0, testutil.CollectAndCount(metrics.RejectedWatchedInputs))
+}
+
 func TestMetrics_SetResourceCount(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	metrics := NewMetrics(registry)

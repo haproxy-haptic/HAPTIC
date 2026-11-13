@@ -87,7 +87,6 @@ type attempt struct {
 
 // Callbacks reports accepted rejection diagnostics without changing validation.
 type Callbacks struct {
-	Count   func(int)
 	Updated func([]Rejection)
 }
 
@@ -372,9 +371,6 @@ func (s *Service) accept(ctx context.Context, branches map[string]*k8sstore.Snap
 		return nil, errors.New("input validation returned no rendered result")
 	}
 	previous := s.accepted.Swap(&acceptedInputs{branches: branches, rejections: rejected})
-	if s.callbacks.Count != nil {
-		s.callbacks.Count(len(rejected))
-	}
 	if s.callbacks.Updated != nil {
 		s.callbacks.Updated(slices.Clone(rejected))
 	}

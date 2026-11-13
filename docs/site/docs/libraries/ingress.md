@@ -329,7 +329,7 @@ Backends are generated with:
 
 - Automatic endpoint discovery via EndpointSlices
 - TCP-connect health checks (`default-server check`) — the Ingress path isn't used as an HTTP health-check URI
-- Round-robin load balancing
+- `balance random` load balancing (power of two choices)
 - Backend deduplication (multiple paths to same service share one backend)
 
 Not-ready and terminating endpoints are disabled. With no usable endpoints,

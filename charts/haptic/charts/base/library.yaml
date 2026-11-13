@@ -1690,7 +1690,7 @@ templateSnippets:
 
   defaults-settings-200-balance:
     template: |
-      balance roundrobin
+      balance random
 
   defaults-settings-300-timeouts:
     template: |
@@ -3340,6 +3340,12 @@ validationTests:
       - type: haproxy_valid
       - {type: not_contains, target: haproxy.cfg, pattern: 'hard-stop-after'}
 
+
+  test-defaults-balance-random:
+    fixtures: {}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^defaults haptic-base\n(?:[ \t]+[^\n]*\n|\n)*?[ \t]+balance random$'}
 
   test-defaults-timeout-overrides:
     fixtures: {}
