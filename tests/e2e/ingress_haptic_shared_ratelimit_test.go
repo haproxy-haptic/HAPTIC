@@ -490,26 +490,67 @@ func findManagedRateLimitPrimary(ctx context.Context, pods []corev1.Pod) (string
 
 func waitForSharedRateLimitReadyOnPods(ctx context.Context, t *testing.T, namespace, host string, podIPs []string) {
 	t.Helper()
+	waitForSharedRateLimitVerdicts(ctx, t, "rate-limit plugin active on HAProxy pods", func(ctx context.Context) (bool, error) {
+		return sharedRateLimitHeadersReady(ctx, namespace, host, podIPs)
+	})
+}
+
+// waitForStoreBackedSharedRateLimitOnPods also rejects fallback verdicts, which
+// carry the same headers: only a store-backed verdict proves a shared budget.
+func waitForStoreBackedSharedRateLimitOnPods(ctx context.Context, t *testing.T, client klient.Client, namespace, host string, podIPs []string) {
+	t.Helper()
+	waitForSharedRateLimitVerdicts(ctx, t, "store-backed rate-limit verdicts on HAProxy pods", func(ctx context.Context) (bool, error) {
+		before, err := rateLimitOutageSignalsByPod(ctx, client, podIPs)
+		if err != nil {
+			return false, err
+		}
+		if ready, err := sharedRateLimitHeadersReady(ctx, namespace, host, podIPs); !ready {
+			return false, err
+		}
+		after, err := rateLimitOutageSignalsByPod(ctx, client, podIPs)
+		if err != nil {
+			return false, err
+		}
+		return storeBackedOnEveryPod(before, after, podIPs)
+	})
+}
+
+func waitForSharedRateLimitVerdicts(ctx context.Context, t *testing.T, description string, ready func(context.Context) (bool, error)) {
+	t.Helper()
 	waitCfg := testutil.WaitConfig{
 		InitialInterval: 1 * time.Second,
 		MaxInterval:     5 * time.Second,
 		Timeout:         2 * time.Minute,
 		Multiplier:      1.5,
 	}
-	err := testutil.WaitForConditionWithDescription(ctx, waitCfg, "rate-limit plugin active on HAProxy pods",
-		func(ctx context.Context) (bool, error) {
-			result, err := probeSharedRateLimitHeadersOnPods(ctx, namespace, host, podIPs)
-			if err != nil {
-				return false, err
-			}
-			if result.ready {
-				return true, nil
-			}
-			return false, fmt.Errorf("rate-limit headers not ready: %s", result.String())
-		})
-	if err != nil {
-		t.Fatalf("wait for shared rate-limit plugin readiness: %v", err)
+	if err := testutil.WaitForConditionWithDescription(ctx, waitCfg, description, ready); err != nil {
+		t.Fatalf("wait for %s: %v", description, err)
 	}
+}
+
+func sharedRateLimitHeadersReady(ctx context.Context, namespace, host string, podIPs []string) (bool, error) {
+	result, err := probeSharedRateLimitHeadersOnPods(ctx, namespace, host, podIPs)
+	if err != nil {
+		return false, err
+	}
+	if !result.ready {
+		return false, fmt.Errorf("rate-limit headers not ready: %s", result.String())
+	}
+	return true, nil
+}
+
+func storeBackedOnEveryPod(before, after map[string]rateLimitOutageSignals, podIPs []string) (bool, error) {
+	for _, ip := range podIPs {
+		for _, outcome := range rateLimitFallbackOutcomes {
+			if delta := after[ip].outcomes[outcome] - before[ip].outcomes[outcome]; delta > 0 {
+				return false, fmt.Errorf("HAProxy pod %s answered from local fallback (%s +%v)", ip, outcome, delta)
+			}
+		}
+		if delta := after[ip].outcomes["exact_allowed"] - before[ip].outcomes["exact_allowed"]; delta < 1 {
+			return false, fmt.Errorf("HAProxy pod %s has store-backed exact_allowed delta %v", ip, delta)
+		}
+	}
+	return true, nil
 }
 
 type sharedRateLimitReadinessProbeResult struct {
@@ -1615,7 +1656,7 @@ func (s *sharedRateLimitScenario) sharedBudgets(ctx context.Context, t *testing.
 		t.Fatalf("wait for HAProxy rollout after rate-limit profile helm upgrade: %v", err)
 	}
 	podIPs := routableHAProxyPodIPs(ctx, t, client, ns, s.readinessHost, 2)
-	waitForSharedRateLimitReadyOnPods(ctx, t, ns, s.warmupHost, podIPs[:2])
+	waitForStoreBackedSharedRateLimitOnPods(ctx, t, client, ns, s.warmupHost, podIPs[:2])
 	result := sharedRateLimitBurstAcrossPods(ctx, t, ns, s.host, podIPs[:2], s.burstTotal, false)
 	t.Logf("shared rate-limit direct-pod burst: %s", result.String())
 	if result.byTarget["A"] == 0 || result.byTarget["B"] == 0 {
@@ -1651,7 +1692,7 @@ func (s *sharedRateLimitScenario) sharedBudgets(ctx context.Context, t *testing.
 	s.assertAllowlistedRouteUnlimited(ctx, t, ns, podIPs[:2])
 
 	deleteManagedRateLimitPrimary(ctx, t, client)
-	waitForSharedRateLimitReadyOnPods(ctx, t, ns, s.warmupHost, podIPs[:2])
+	waitForStoreBackedSharedRateLimitOnPods(ctx, t, client, ns, s.warmupHost, podIPs[:2])
 	failoverResult := sharedRateLimitBurstAcrossPods(ctx, t, ns, s.failoverHost, podIPs[:2], s.failoverBurst, false)
 	t.Logf("shared rate-limit after Valkey primary failover: %s", failoverResult.String())
 	if failoverResult.byCode["200"] == 0 {
