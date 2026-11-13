@@ -324,6 +324,19 @@
       ]
     },
     {
+      "description": "Docker digests carry no release timestamp, so the soak would hold the golang image forever and strand native ARM jobs on the old Go; the Go version soaks through go.mod.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchDepNames": [
+        "golang"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "minimumReleaseAge": null
+    },
+    {
       "description": "Group Kubernetes dependencies",
       "groupName": "kubernetes packages",
       "matchPackageNames": [
