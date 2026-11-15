@@ -571,7 +571,7 @@ spec:
 
 - The Secret must be in the Ingress's namespace. Admission rejects a
   `namespace/name` reference.
-- The value is printable ASCII without line breaks, at most 8192 bytes. A missing
+- The value uses printable characters from `!` through `~` and spaces, without line breaks, at most 8192 bytes. A missing
   Secret or an invalid value returns `503` and records a Warning Event.
 - The value is stored only in a Secret that HAPTIC publishes in its own
   namespace, never in the Ingress, the rendered `haproxy.cfg`, or an
