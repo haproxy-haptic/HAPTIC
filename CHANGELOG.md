@@ -40,9 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `haproxy-haptic.org/backend-crt-secret` naming a missing Secret, or one without `tls.crt` or `tls.key`, answers `503` with a Warning Event instead of connecting to the upstream without the client certificate.
 - Native annotation errors and Events no longer include Secret data such as usernames, consumer-groups lines, or sso-auth discovery URLs; they name the Secret and the line or entry instead.
 - A bare API key in an `api-key-secret` or `HAProxyRoutePolicy` API-key Secret gets the consumer id `key-<first 12 hex digits of its SHA-256>` instead of the key itself, so the key no longer reaches the access log or the forwarded consumer header. Consumer-groups and per-consumer rate limits that named a bare key must use the new id, or give the key an explicit `:<consumer>`.
-
-#### Security
-
 - HMAC shared keys (`hmac-secret`) and API keys (`api-key-secret`, `HAProxyRoutePolicy` API keys) are published in Secrets instead of plaintext `HAProxyMapFile` objects.
 
 ## [0.12.0] - 2026-11-10
