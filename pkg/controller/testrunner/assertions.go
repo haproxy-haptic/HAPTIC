@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path"
 	"slices"
 	"strings"
 
@@ -274,7 +273,7 @@ func redactSensitiveTarget(result *AssertionResult, target string, auxiliaryFile
 		name, ok = strings.CutPrefix(target, "map:")
 	}
 	if !ok || !slices.ContainsFunc(auxiliaryFiles.SensitiveMapFiles, func(file auxiliaryfiles.SensitiveMapFile) bool {
-		return file.Path == name || path.Base(file.Path) == name
+		return mapNamed(file.Path, name)
 	}) {
 		return
 	}

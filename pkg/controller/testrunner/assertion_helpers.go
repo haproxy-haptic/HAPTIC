@@ -128,12 +128,12 @@ func sensitiveMapTarget(name, target string, auxiliaryFiles *dataplane.Auxiliary
 		return "", &errTargetNotFound{target}
 	}
 	for _, file := range auxiliaryFiles.SensitiveMapFiles {
-		if file.Path == name || path.Base(file.Path) == name {
+		if mapNamed(file.Path, name) {
 			return file.Content, nil
 		}
 	}
 	for _, file := range auxiliaryFiles.MapFiles {
-		if file.Path == name || path.Base(file.Path) == name {
+		if mapNamed(file.Path, name) {
 			return "", &errMapNotSensitive{target}
 		}
 	}
@@ -276,12 +276,12 @@ func (r *Runner) findMapFile(mapName string, auxiliaryFiles *dataplane.Auxiliary
 		return "", false
 	}
 	for _, mapFile := range auxiliaryFiles.MapFiles {
-		if mapFile.Path == mapName || path.Base(mapFile.Path) == mapName {
+		if mapNamed(mapFile.Path, mapName) {
 			return mapFile.Content, true
 		}
 	}
 	for _, mapFile := range auxiliaryFiles.SensitiveMapFiles {
-		if mapFile.Path == mapName || path.Base(mapFile.Path) == mapName {
+		if mapNamed(mapFile.Path, mapName) {
 			return mapFile.Content, true
 		}
 	}
@@ -355,4 +355,9 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// mapNamed reports whether a map file's path is name, or ends in it.
+func mapNamed(filePath, name string) bool {
+	return filePath == name || path.Base(filePath) == name
 }
