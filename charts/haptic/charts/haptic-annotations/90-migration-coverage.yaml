@@ -137,7 +137,7 @@ _migrationCoverage:
         note: "ciphersuites <list> (TLS1.3); only on a TLS-enabled backend; ValidateConfigValue-guarded."
       haproxy-haptic.org/backend-crt-secret:
         status: supported
-        note: "kubernetes.io/tls Secret tls.crt+tls.key combined, registered as cert (ssl/ dir), presented to upstream via crt in any verify mode. Missing -> warning + skip; another namespace -> 503."
+        note: "kubernetes.io/tls Secret tls.crt+tls.key combined, registered as cert (ssl/ dir), presented to upstream via crt in any verify mode. Missing or incomplete Secret, or another namespace -> Warning Event + 503."
       haproxy-haptic.org/backend-protocol:
         status: supported
         note: "Accepts h1|h2|h1-ssl|h2-ssl|http|https|grpc|grpcs; normalized to proto h2 (h2/grpc/h2-ssl/grpcs) and TLS-to-upstream (h1-ssl/https/h2-ssl/grpcs)."

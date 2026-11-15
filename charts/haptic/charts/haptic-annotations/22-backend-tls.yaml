@@ -297,10 +297,23 @@ templateSnippets:
               {%- if (caSecret.Data["ca.crt"] | b64decode()) != "" -%}{%- caAdded = true -%}{%- end -%}
             {%- end -%}
           {%- end -%}
-          {%- if crtSec != "" && HapticPrivateSecretRef(ns, crtSec, "haproxy-haptic.org/backend-crt-secret", key) == "" -%}
+          {%- var crtRef = "" -%}
+          {%- var crtUsable = false -%}
+          {%- if crtSec != "" -%}
+            {%- crtRef = HapticPrivateSecretRef(ns, crtSec, "haproxy-haptic.org/backend-crt-secret", key) -%}
+          {%- end -%}
+          {%- if crtRef != "" -%}
+            {%- var crtSecret = resources.secrets.GetSingle(ns, split(crtRef, "/")[1]) -%}
+            {%- crtUsable = crtSecret != nil && (crtSecret.Data["tls.crt"] | b64decode()) != "" && (crtSecret.Data["tls.key"] | b64decode()) != "" -%}
+          {%- end -%}
+          {%- if crtSec != "" && crtRef == "" -%}
             {%- result["blocked"] = true -%}
             {%- result["reason"] = "BackendCrtSecretForeign" -%}
             {%- result["message"] = HapticForeignSecretMessage(ns, key, "haproxy-haptic.org/backend-crt-secret", crtSec) -%}
+          {%- else if crtSec != "" && !crtUsable -%}
+            {%- result["blocked"] = true -%}
+            {%- result["reason"] = "BackendCrtSecretMissing" -%}
+            {%- result["message"] = "Ingress " + key + " references Secret '" + crtSec + "' in 'haproxy-haptic.org/backend-crt-secret', but it can't be found or lacks tls.crt or tls.key. The client certificate can't be presented, so this route fails closed with 503 until the Secret is fixed." -%}
           {%- else if !caAdded && (wantVerify || caSec != "") -%}
             {%- result["blocked"] = true -%}
             {%- if caSec == "" -%}
