@@ -459,3 +459,130 @@ templateSnippets:
         }
       %%}
       {%- end macro -%}
+
+  # The one verdict on spec.tls.backend.clientCertificateRef, shared by the
+  # Gateway's ResolvedRefs status and the backends that present the certificate.
+  util-gateway-client-certificate:
+    requires: [referencegrants]
+    template: |-
+      {%- import "util-reference-grant-permitted" for ReferenceGrantPermitted -%}
+      {%- macro ResolveGatewayClientCert(gateway any, result map[string]any) -%}
+      {%%
+        var gwNs = dig_string(gateway, "", "metadata", "namespace")
+        var ccRef = dig(gateway, "spec", "tls", "backend", "clientCertificateRef")
+        result["set"] = ccRef != nil
+        result["valid"] = false
+        result["reason"] = ""
+        result["message"] = ""
+        result["pem"] = ""
+        if ccRef == nil {
+          return
+        }
+        var ccGroup = dig_string(ccRef, "", "group")
+        var ccKind = dig_string(ccRef, "", "kind")
+        if ccKind == "" { ccKind = "Secret" }
+        var ccName = dig_string(ccRef, "", "name")
+        var ccNs = dig_string(ccRef, "", "namespace")
+        if ccNs == "" { ccNs = gwNs }
+        if (ccGroup != "" && ccGroup != "core") || ccKind != "Secret" || ccName == "" {
+          result["reason"] = "InvalidClientCertificateRef"
+          result["message"] = "spec.tls.backend.clientCertificateRef must reference a core/v1 Secret"
+          return
+        }
+        if ccNs != gwNs && ReferenceGrantPermitted(
+            "gateway.networking.k8s.io", "Gateway", gwNs, "", "Secret", ccNs, ccName) != "true" {
+          result["reason"] = "RefNotPermitted"
+          result["message"] = "Cross-namespace clientCertificateRef requires a matching ReferenceGrant"
+          return
+        }
+        var ccSec = resources.secrets.GetSingle(ccNs, ccName)
+        if ccSec == nil {
+          result["reason"] = "InvalidClientCertificateRef"
+          result["message"] = "Backend clientCertificateRef Secret " + ccNs + "/" + ccName + " not found"
+          return
+        }
+        var crtPem, crtErr = b64decode(ccSec.Data["tls.crt"])
+        var keyPem, keyErr = b64decode(ccSec.Data["tls.key"])
+        if crtErr != nil || keyErr != nil || crtPem == "" || keyPem == "" {
+          result["reason"] = "InvalidClientCertificateRef"
+          result["message"] = "Backend clientCertificateRef Secret " + ccNs + "/" + ccName + " missing tls.crt or tls.key"
+          return
+        }
+        result["valid"] = true
+        result["pem"] = crtPem + "\n" + keyPem
+      %%}
+      {%- end macro -%}
+
+  # "true" when a listener of the Gateway accepts the route through this
+  # parentRef, by the same checks as the route's Accepted condition.
+  util-gateway-accepts-route:
+    requires: [namespaces]
+    template: |-
+      {%- import "util-listenerset-routing-gate" for IsRouteAllowedOnListener -%}
+      {%- import "util-hostname-intersect-gateway" for HostnamesIntersect -%}
+      {%- macro GatewayAcceptsRoute(route any, routeKind string, gateway any, parentRef any) -%}
+      {%%
+        var routeNs = dig_string(route, "", "metadata", "namespace")
+        var routeHostnames = dig(route, "spec", "hostnames") | toSlice()
+        var gwNs = dig_string(gateway, "", "metadata", "namespace")
+        var section = dig_string(parentRef, "", "sectionName")
+        var parentPort = toint(dig(parentRef, "port") | fallback(0))
+        var accepted = "false"
+        for _, listener := range dig(gateway, "spec", "listeners") | toSlice() {
+          if section != "" && dig_string(listener, "", "name") != section { continue }
+          if parentPort != 0 && toint(dig(listener, "port") | fallback(0)) != parentPort { continue }
+          var allowedKinds = dig(listener, "allowedRoutes", "kinds") | toSlice()
+          var kindOk = len(allowedKinds) == 0
+          for _, ak := range allowedKinds {
+            if dig_string(ak, "gateway.networking.k8s.io", "group") == "gateway.networking.k8s.io" && dig_string(ak, "", "kind") == routeKind {
+              kindOk = true
+            }
+          }
+          if !kindOk || !hasPrefix(IsRouteAllowedOnListener(routeNs, listener, gwNs), "true") { continue }
+          if HostnamesIntersect(dig_string(listener, "", "hostname"), routeHostnames) != "true" { continue }
+          accepted = "true"
+          break
+        }
+        show accepted
+      %%}
+      {%- end macro -%}
+
+  # The client certificate a route's backends present comes from the first
+  # parent Gateway that accepted the route and sets clientCertificateRef. An
+  # invalid ref sets result["broken"]: the backends answer 503 rather than
+  # connect without the certificate.
+  util-gateway-route-client-cert:
+    requires: [gateways, namespaces, referencegrants]
+    template: |-
+      {%- import "util-gateway-client-certificate" for ResolveGatewayClientCert -%}
+      {%- import "util-gateway-accepts-route" for GatewayAcceptsRoute -%}
+      {%- macro GatewayRouteClientCert(route any, routeKind string, result map[string]any) -%}
+      {%%
+        var routeNs = dig_string(route, "", "metadata", "namespace")
+        result["broken"] = false
+        result["pem"] = ""
+        for _, parentRef := range dig(route, "spec", "parentRefs") | toSlice() {
+          var prGroup = dig_string(parentRef, "", "group")
+          if prGroup == "" { prGroup = "gateway.networking.k8s.io" }
+          var prKind = dig_string(parentRef, "", "kind")
+          if prKind == "" { prKind = "Gateway" }
+          if prGroup != "gateway.networking.k8s.io" || prKind != "Gateway" { continue }
+          var gwNs = dig_string(parentRef, "", "namespace")
+          if gwNs == "" { gwNs = routeNs }
+          var gwName = dig_string(parentRef, "", "name")
+          var gw = resources.gateways.GetSingle(gwNs, gwName)
+          if gw == nil || GatewayAcceptsRoute(route, routeKind, gw, parentRef) != "true" { continue }
+          var cc = map[string]any{}
+          ResolveGatewayClientCert(gw, cc)
+          if cc["set"] != true { continue }
+          result["gatewayNamespace"] = gwNs
+          result["gatewayName"] = gwName
+          if cc["valid"] == true {
+            result["pem"] = cc["pem"]
+          } else {
+            result["broken"] = true
+          }
+          return
+        }
+      %%}
+      {%- end macro -%}

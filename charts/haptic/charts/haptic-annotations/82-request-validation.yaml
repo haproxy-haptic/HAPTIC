@@ -5,7 +5,7 @@
 # against JSON Schemas resolved at render time from ConfigMaps or Secrets.
 #
 #   haproxy-haptic.org/request-schema-configmap    [<ns>/]<name>[:<key>]
-#   haproxy-haptic.org/request-schema-secret       [<ns>/]<name>[:<key>]
+#   haproxy-haptic.org/request-schema-secret       [<ingress-ns>/]<name>[:<key>] (another namespace: 503)
 #   haproxy-haptic.org/request-schema-content-types comma-separated media types (default application/json)
 #   haproxy-haptic.org/request-schema-max-body-size positive bytes (default extraContext.apiGateway.requestSchemaValidation.requestBody.defaultMaxBytes)
 #   haproxy-haptic.org/request-schema-fail-open    true | false (default extraContext.apiGateway.requestSchemaValidation.defaultFailOpen)
@@ -47,6 +47,44 @@ templateSnippets:
             {{- fail("Ingress " + ingress.Metadata.Namespace + "/" + ingress.Metadata.Name + " sets haproxy-haptic.org/request-schema-* annotations but request validation is not enabled. Set controller.config.templatingSettings.extraContext.apiGateway.requestSchemaValidation.enabled=true, or remove the annotations.") -}}
           {%- end -%}
         {%- end -%}
+      {%- end -%}
+
+  # "true" when request-schema-secret names a namespace other than the Ingress's.
+  util-haptic-request-schema-secret-foreign:
+    template: |-
+      {%- macro HapticRequestSchemaSecretForeign(ingress any) -%}
+        {%- var ref = strings_splitn(dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/request-schema-secret"), ":", 2)[0] -%}
+        {%- if strings_contains(ref, "/") && strip(strings_splitn(ref, "/", 2)[0]) != dig_string(ingress, "", "metadata", "namespace") -%}true{%- end -%}
+      {%- end macro -%}
+
+  features-806-haptic-request-schema-foreign:
+    requires: [ingresses]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/request-schema-secret']"]
+      group: haptic-request-schema-foreign
+      effects: [publishValue, recordEvent]
+    template: |-
+      {%- import "util-haptic-request-schema-secret-foreign" for HapticRequestSchemaSecretForeign -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookRejectOrWarn -%}
+      {%- import "util-haptic-foreign-secret-message" for HapticForeignSecretMessage -%}
+      {%- if HapticRequestSchemaSecretForeign(item) == "true" -%}
+        {%- var ns = dig_string(item, "", "metadata", "namespace") -%}
+        {%- var name = dig_string(item, "", "metadata", "name") -%}
+        {{- shared.Publish("any", "any", "any") -}}
+        {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "RequestSchemaSecretForeign", HapticForeignSecretMessage(ns, ns + "/" + name,
+          "haproxy-haptic.org/request-schema-secret", dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/request-schema-secret"))) -}}
+      {%- end -%}
+
+  map-haptic-route-unavailable-806-haptic-request-schema:
+    requires: [ingresses]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/request-schema-secret']"]
+    template: |-
+      {%- import "util-haptic-request-schema-secret-foreign" for HapticRequestSchemaSecretForeign -%}
+      {%- if HapticRequestSchemaSecretForeign(item) == "true" -%}
+      {{ "\n" }}{{ dig_string(item, "", "metadata", "namespace") }}/{{ dig_string(item, "", "metadata", "name") }} request_schema_unavailable
       {%- end -%}
 
   # Both parallel legacy consumers replay the immutable publications through one root-local write.
@@ -141,6 +179,7 @@ templateSnippets:
       group: haptic-request-validation
       effects: [publishValue]
     template: |-
+      {%- import "util-haptic-request-schema-secret-foreign" for HapticRequestSchemaSecretForeign -%}
       {%- var enabled = props["enabled"].(bool) -%}
       {%- var defaultMaxBody = tostring(props["defaultMaxBody"]) -%}
       {%- var defaultFailOpen = props["defaultFailOpen"].(bool) -%}
@@ -195,6 +234,7 @@ templateSnippets:
           {%- if sourceNs == "" || sourceName == "" -%}
             {{- fail("Invalid request schema reference '" + sourceRef + "' on Ingress '" + key + "'. Namespace and name must be non-empty.") -}}
           {%- end -%}
+          {%- if sourceKind != "secret" || HapticRequestSchemaSecretForeign(ingress) != "true" -%}
 
           {%- var schemaB64 = "" -%}
           {%- if sourceKind == "configmap" -%}
@@ -269,6 +309,7 @@ templateSnippets:
               "failOpen": failOpen,
               "contentTypes": contentTypesJoined,
             }) -}}
+          {%- end -%}
         {%- end -%}
       {%- end -%}
 

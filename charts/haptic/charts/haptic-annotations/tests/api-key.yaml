@@ -136,7 +136,7 @@ validationTests:
       - {type: contains, target: "map:haptic-api-key-routes.map", pattern: '(?m)^default/api-ingress-missing-secret hdr X-API-Key default/not-observed-yet missing _ false$'}
       - type: contains
         target: haproxy.cfg
-        pattern: 'http-request deny deny_status 503 if \{ var\(txn\.ak_state\) -m str missing nosecret \}'
+        pattern: 'http-request deny deny_status 503 if \{ var\(txn\.ak_state\) -m str missing nosecret foreign \}'
       - {type: contains, target: events, pattern: "ApiKeySecretMissing"}
       - {type: not_contains, target: haproxy.cfg, pattern: "not-observed-yet"}
 
@@ -166,7 +166,7 @@ validationTests:
     assertions:
       - type: haproxy_valid
       - {type: contains, target: "map:haptic-api-key-routes.map", pattern: '(?m)^default/ak-nosecret _ _ _ nosecret _ false$'}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 503 if \{ var\(txn\.ak_state\) -m str missing nosecret \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 503 if \{ var\(txn\.ak_state\) -m str missing nosecret foreign \}'}
       # The block is emitted for an intent-only route too; that is what fails it closed.
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^ *# haptic/api-key$'}
       - {type: contains, target: events, pattern: "ApiKeySecretMissing"}

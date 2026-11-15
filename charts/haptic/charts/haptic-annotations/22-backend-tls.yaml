@@ -16,6 +16,7 @@ templateSnippets:
   backend-directives-820-haptic-backend-tls:
     template: |
       {%- import "util-validate-config-value" for ValidateConfigValue -%}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {#-
         HAPTIC-native Backend TLS (haproxy-haptic.org/backend-*)
 
@@ -39,9 +40,10 @@ templateSnippets:
               Secret whose ca.crt verifies the upstream cert. The reserved value
               @system-ca instead uses HAProxy's system CA store. Supplying either
               implies `verify required` even without backend-verify.
-          - haproxy-haptic.org/backend-crt-secret: "<name>" | "<ns>/<name>"
-              kubernetes.io/tls Secret; tls.crt+tls.key are presented to the
-              upstream as the client certificate (mTLS), in any verify mode.
+          - haproxy-haptic.org/backend-crt-secret: "<name>" | "<ingress-ns>/<name>"
+              kubernetes.io/tls Secret in the Ingress namespace; tls.crt+tls.key
+              are presented to the upstream as the client certificate (mTLS), in
+              any verify mode. Another namespace denies the route with 503.
           - haproxy-haptic.org/backend-sni: "host" | "sni" | "<literal>"
               `host`/`sni` forwards the request Host as SNI (`sni req.hdr(host)`);
               any other value is sent literally (`sni str(<value>)`).
@@ -145,14 +147,13 @@ templateSnippets:
           {#- Client certificate (mTLS) → crt. Presented regardless of verify
               mode. -#}
           {%- var crtPart = "" %}
+          {%- var crtRef = "" %}
           {%- if crtSec != "" %}
+            {%- crtRef = HapticPrivateSecretRef(ns, crtSec, "haproxy-haptic.org/backend-crt-secret", key) %}
+          {%- end %}
+          {%- if crtRef != "" %}
             {%- var crtNs = ns %}
-            {%- var crtName = crtSec %}
-            {%- if strings_contains(crtSec, "/") %}
-              {%- var parts = split(crtSec, "/") %}
-              {%- crtNs = parts[0] %}
-              {%- crtName = parts[1] %}
-            {%- end %}
+            {%- var crtName = split(crtRef, "/")[1] %}
             {%- var crtSecret = resources.secrets.GetSingle(crtNs, crtName) %}
             {%- if crtSecret != nil %}
               {%- var tlsCrt = crtSecret.Data["tls.crt"] | b64decode() %}
@@ -254,26 +255,30 @@ templateSnippets:
         {%- end %}
       {%- end -%}
 
-  # Whether a route asked for upstream verification it cannot get: no CA named,
-  # the CA Secret unresolved, or without ca.crt. The backend directive above
-  # still renders the servers with `verify none`; the frontend denies the route
-  # 503 so an unverified upstream leg is never served.
+  # Whether a route asked for upstream verification it cannot get (no CA named,
+  # the CA Secret unresolved, or without ca.crt) or names a client certificate
+  # outside its namespace. The backend directive above still renders the
+  # servers; the frontend denies the route 503 so that upstream leg is never
+  # served.
   util-haptic-backend-tls-blocked:
     template: |-
       {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage -%}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
+      {%- import "util-haptic-foreign-secret-message" for HapticForeignSecretMessage -%}
       {%- macro HapticBackendTLSBlocked(ingress any, result map[string]any) -%}
         {%- var ns = dig_string(ingress, "", "metadata", "namespace") -%}
         {%- var key = ns + "/" + dig_string(ingress, "", "metadata", "name") -%}
         {%- var proto = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/backend-protocol") -%}
         {%- var sslEnabled = proto == "h1-ssl" || proto == "https" || proto == "h2-ssl" || proto == "grpcs" -%}
         {%- result["blocked"] = false -%}
-        {%- result["verifies"] = false -%}
+        {%- result["guarded"] = false -%}
         {%- if sslEnabled -%}
           {%- var verifyRaw = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/backend-verify") -%}
           {%- var verifyNorm = toLower(trimSpace(verifyRaw)) -%}
           {%- var wantVerify = verifyNorm == "on" || verifyNorm == "true" || verifyNorm == "yes" || verifyNorm == "1" -%}
           {%- var caSec = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/backend-ca-secret") -%}
-          {%- result["verifies"] = wantVerify || caSec != "" -%}
+          {%- var crtSec = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/backend-crt-secret") -%}
+          {%- result["guarded"] = wantVerify || caSec != "" || crtSec != "" -%}
           {%- var caFound = false -%}
           {%- var caAdded = false -%}
           {%- if caSec == "@system-ca" -%}
@@ -292,7 +297,11 @@ templateSnippets:
               {%- if (caSecret.Data["ca.crt"] | b64decode()) != "" -%}{%- caAdded = true -%}{%- end -%}
             {%- end -%}
           {%- end -%}
-          {%- if !caAdded && (wantVerify || caSec != "") -%}
+          {%- if crtSec != "" && HapticPrivateSecretRef(ns, crtSec, "haproxy-haptic.org/backend-crt-secret", key) == "" -%}
+            {%- result["blocked"] = true -%}
+            {%- result["reason"] = "BackendCrtSecretForeign" -%}
+            {%- result["message"] = HapticForeignSecretMessage(ns, key, "haproxy-haptic.org/backend-crt-secret", crtSec) -%}
+          {%- else if !caAdded && (wantVerify || caSec != "") -%}
             {%- result["blocked"] = true -%}
             {%- if caSec == "" -%}
               {%- result["reason"] = "BackendVerifyWithoutCA" -%}
@@ -318,6 +327,7 @@ templateSnippets:
         - "metadata.annotations['haproxy-haptic.org/backend-protocol']"
         - "metadata.annotations['haproxy-haptic.org/backend-verify']"
         - "metadata.annotations['haproxy-haptic.org/backend-ca-secret']"
+        - "metadata.annotations['haproxy-haptic.org/backend-crt-secret']"
     template: |-
       {%- import "util-haptic-backend-tls-blocked" for HapticBackendTLSBlocked -%}
       {%- var result = map[string]any{} -%}
@@ -326,9 +336,9 @@ templateSnippets:
       {{ "\n" }}{{ dig_string(item, "", "metadata", "namespace") }}/{{ dig_string(item, "", "metadata", "name") }} backend_tls_unavailable
       {%- end -%}
 
-  # "any" is published for every route that verifies its upstream, blocked or
-  # not, so the deny block below is already in place when a CA goes missing
-  # and that transition stays a map operation.
+  # "any" is published for every route that verifies its upstream or presents a
+  # client certificate, blocked or not, so the deny block below is already in
+  # place when a CA goes missing and that transition stays a map operation.
   features-820-haptic-backend-tls-names:
     requires: [ingresses]
     incremental:
@@ -337,6 +347,7 @@ templateSnippets:
         - "metadata.annotations['haproxy-haptic.org/backend-protocol']"
         - "metadata.annotations['haproxy-haptic.org/backend-verify']"
         - "metadata.annotations['haproxy-haptic.org/backend-ca-secret']"
+        - "metadata.annotations['haproxy-haptic.org/backend-crt-secret']"
       group: haptic-backend-tls-routes
       effects: [publishValue, recordEvent]
     template: |-
@@ -344,10 +355,10 @@ templateSnippets:
       {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
       {%- var result = map[string]any{} -%}
       {{- HapticBackendTLSBlocked(item, result) -}}
-      {%- if result["verifies"] == true -%}{{- shared.Publish("any", "any", "any") -}}{%- end -%}
+      {%- if result["guarded"] == true -%}{{- shared.Publish("any", "any", "any") -}}{%- end -%}
       {%- if result["blocked"] == true -%}
         {%- var ingress = resources.ingresses.GetSingle(dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
-        {%- if tostring(result["reason"]) == "BackendVerifyWithoutCA" -%}
+        {%- if tostring(result["reason"]) == "BackendVerifyWithoutCA" || tostring(result["reason"]) == "BackendCrtSecretForeign" -%}
           {{- WebhookRejectOrWarn(ingress, tostring(result["reason"]), tostring(result["message"])) -}}
         {%- else -%}
           {{- recordEvent(ingress, tostring(result["reason"]), tostring(result["message"])) -}}
@@ -356,17 +367,18 @@ templateSnippets:
 
   # Routes whose upstream leg could not be configured are denied here, on the
   # client leg before backend selection, so the decision is a map entry.
-  # Emitted only while a route verifies its upstream; the first one reloads
+  # Emitted only while a route guards its upstream leg; the first one reloads
   # once, as does removing the last.
   frontend-filters-899-haptic-route-unavailable:
     requires: [ingresses]
     template: |
       {{- render "util-haptic-sso-auth-providers" -}}
-      {%- if incremental_value_count("haptic-backend-tls-routes", "any") > 0 || incremental_value_count("haptic-sso-auth", "routes") > 0 -%}
+      {%- if incremental_value_count("haptic-backend-tls-routes", "any") > 0 || incremental_value_count("haptic-sso-auth", "routes") > 0 || incremental_value_count("haptic-request-schema-foreign", "any") > 0 -%}
       {%- var unavailable, e1 = pathResolver.GetPath("haptic-route-unavailable.map", "map") -%}
       {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
       {{ "\n" }}# haptic/route-unavailable
       http-request set-var(txn.denied_by) str(backend_tls_unavailable) if { var(txn.resource_key),map({{ unavailable }}) -m str backend_tls_unavailable }
       http-request set-var(txn.denied_by) str(sso_auth_unavailable) if { var(txn.resource_key),map({{ unavailable }}) -m str sso_auth_unavailable }
+      http-request set-var(txn.denied_by) str(request_schema_unavailable) if { var(txn.resource_key),map({{ unavailable }}) -m str request_schema_unavailable }
       http-request deny deny_status 503 if { var(txn.resource_key),map({{ unavailable }}) -m found }
       {%- end %}

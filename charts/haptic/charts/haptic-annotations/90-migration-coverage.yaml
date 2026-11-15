@@ -50,7 +50,7 @@ _migrationCoverage:
         note: "Query parameter carrying the API key; mutually exclusive with api-key-header."
       haproxy-haptic.org/api-key-secret:
         status: supported
-        note: "Secret (data key `keys`, newline apikey[:consumer]) → reload-free apikeys map; deny 401 on unknown key; sets the shared txn.haptic_consumer identity; fails closed with 503 while the Secret is absent."
+        note: "Secret (data key `keys`, newline apikey[:consumer]) → reload-free apikeys map; deny 401 on unknown key; sets the shared txn.haptic_consumer identity; fails closed with 503 while the Secret is absent or outside the Ingress namespace."
       haproxy-haptic.org/error-pages:
         status: supported
         note: "ConfigMap pages: 401/403/413/429 → a route-scoped `http-request deny|return … file|lf-file` before each frontend refusal with that status; 500/502/503/504 → `http-error` in the backend profile."
@@ -95,7 +95,7 @@ _migrationCoverage:
         note: "Basic-auth realm (default \"Restricted\"); guarded against double-quote/newline injection."
       haproxy-haptic.org/auth-secret:
         status: supported
-        note: "References the credentials Secret (ns/name or name); an absent Secret skips the userlist+challenge cleanly."
+        note: "References the credentials Secret in the Ingress namespace; an absent or other-namespace Secret fails closed with 503."
       haproxy-haptic.org/auth-secret-type:
         status: supported
         note: "auth-file (htpasswd in the `auth` key) or auth-map (one key per user); default auth-file."
@@ -137,7 +137,7 @@ _migrationCoverage:
         note: "ciphersuites <list> (TLS1.3); only on a TLS-enabled backend; ValidateConfigValue-guarded."
       haproxy-haptic.org/backend-crt-secret:
         status: supported
-        note: "kubernetes.io/tls Secret tls.crt+tls.key combined, registered as cert (ssl/ dir), presented to upstream via crt in any verify mode. Missing -> warning + skip."
+        note: "kubernetes.io/tls Secret tls.crt+tls.key combined, registered as cert (ssl/ dir), presented to upstream via crt in any verify mode. Missing -> warning + skip; another namespace -> 503."
       haproxy-haptic.org/backend-protocol:
         status: supported
         note: "Accepts h1|h2|h1-ssl|h2-ssl|http|https|grpc|grpcs; normalized to proto h2 (h2/grpc/h2-ssl/grpcs) and TLS-to-upstream (h1-ssl/https/h2-ssl/grpcs)."
@@ -233,7 +233,7 @@ _migrationCoverage:
         note: "Overrides the `Connection` header sent to the backend server."
       haproxy-haptic.org/consumer-groups-secret:
         status: supported
-        note: "Secret (data key `groups`, newline `<consumer>:<group>`) → reload-free consumer→group map (one group per consumer), checked against allowed-consumer-groups; requires an authenticated consumer and fails closed with 503 while the Secret is absent."
+        note: "Secret (data key `groups`, newline `<consumer>:<group>`) → reload-free consumer→group map (one group per consumer), checked against allowed-consumer-groups; requires an authenticated consumer and fails closed with 503 while the Secret is absent or outside the Ingress namespace."
       haproxy-haptic.org/cors-allow-credentials:
         status: supported
         note: "Access-Control-Allow-Credentials 'true' when set (via macro)"
@@ -299,7 +299,7 @@ _migrationCoverage:
         note: "Header carrying the client HMAC signature (default X-Signature; lowercase hex)."
       haproxy-haptic.org/hmac-secret:
         status: different
-        note: "Secret (data key `secret`) → HMAC request-signature verification, deny 401 on mismatch. DIVERGES: the compare is not constant-time — prefer asymmetric JWT. Fails closed (503) when the Secret is absent."
+        note: "Secret (data key `secret`) → HMAC request-signature verification, deny 401 on mismatch. DIVERGES: the compare is not constant-time — prefer asymmetric JWT. Fails closed (503) when the Secret is absent or outside the Ingress namespace."
       haproxy-haptic.org/hmac-signed-string:
         status: supported
         note: "What the HMAC covers: `body` (default, forces option http-buffer-request) or `path`."
@@ -497,7 +497,7 @@ _migrationCoverage:
         note: "Per-route request validation input cap in bytes (1..1048576). It must fit within extraContext.requestBodyInspection.haproxyBuffer.sizeBytes minus reservedBytes. HAProxy returns 413 before the SPOE call when the validation body is larger; the plugin repeats the bound defensively. This does not replace haproxy-haptic.org/max-request-body-size, the general backend body-size limit."
       haproxy-haptic.org/request-schema-secret:
         status: supported
-        note: "Enables JSON request-body validation via the api-gateway SPOA plugin using a Secret data key (`[ns/]name[:key]`, default key schema.json) whose value is already base64 encoded."
+        note: "Enables JSON request-body validation via the api-gateway SPOA plugin using a Secret data key (`[ns/]name[:key]`, Ingress namespace only, default key schema.json) whose value is already base64 encoded."
       haproxy-haptic.org/request-remove-header:
         status: supported
         note: "comma- or newline-separated '<name>' or '<prefix>*' entries -> http-request del-header (with -m beg for '<prefix>*'), backend-scoped via ing-reqhdr.map; token-guarded"

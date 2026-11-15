@@ -158,7 +158,8 @@ validationTests:
       - type: haproxy_valid
       - {type: contains, target: "map:sso-auth.map", pattern: "(?m)^app/web - -$"}
       - {type: not_contains, target: "file:spoa-hub-config.toml", pattern: "providers"}
-      - {type: contains, target: events, pattern: "Warning SsoAuthUnavailable networking\\.k8s\\.io/v1 Ingress app/web: Secret app/app-oidc uses issuer"}
+      - {type: contains, target: events, pattern: "Warning SsoAuthUnavailable networking\\.k8s\\.io/v1 Ingress app/web: Secret app/app-oidc has a discovery-url whose issuer isn't in"}
+      - {type: not_contains, target: events, pattern: "mainframe"}
 
   test-haptic-sso-auth-missing-secret-rejected-at-admission:
     _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'

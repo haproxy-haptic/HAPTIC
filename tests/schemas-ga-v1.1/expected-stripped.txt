@@ -149,3 +149,6 @@ test-tlsroute-passthrough-unrouted-listener-isolation
 test-tlsroute-single-termination-catchall-listener
 test-tlsroute-single-termination-invalid-winner-rejects
 test-tlsroute-static-passthrough-invalid-winner-rejects
+test-gateway-backend-client-cert-cross-namespace-with-grant
+test-gateway-backend-client-cert-cross-namespace-without-grant-fails-closed
+test-gateway-backend-client-cert-only-from-accepting-gateway

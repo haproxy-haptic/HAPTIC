@@ -45,7 +45,7 @@ validationTests:
           namespace: default
           name: api-keys
         data:
-          keys: a2V5LW9uZTphbGljZQprZXktdHdvOmJvYgo=
+          keys: a2V5LW9uZTphbGljZQprZXktdHdvOmJvYgpiYXJlLXJvdXRlLWtleQo=
       routepolicies:
       - apiVersion: haproxy-haptic.org/v1alpha1
         kind: HAProxyRoutePolicy
@@ -192,6 +192,9 @@ validationTests:
     - type: contains
       target: map:haptic-apikeys.map
       pattern: (?m)^default/api-keys\|key-one alice$
+    - type: contains
+      target: map:haptic-apikeys.map
+      pattern: (?m)^default/api-keys\|bare-route-key key-8ad6ec762756$
     - type: not_contains
       target: map:gw-policy-errors.map
       pattern: invalid

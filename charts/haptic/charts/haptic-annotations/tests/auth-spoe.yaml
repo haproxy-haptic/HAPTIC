@@ -266,7 +266,8 @@ validationTests:
               - host: hash-policy.example.com
                 http: *httpRoot
     assertions:
-      - {type: contains, target: rendering_error, pattern: "Ingress 'default/hash-apr1' references Secret 'default/hash-policy', whose password hash for user 'admin' doesn't match"}
+      - {type: contains, target: rendering_error, pattern: "Ingress 'default/hash-apr1' references Secret 'default/hash-policy', whose password hash on line 1 of 'auth' doesn't match"}
+      - {type: not_contains, target: rendering_error, pattern: "admin"}
       - {type: contains, target: rendering_error, pattern: "bcrypt, SHA-256/SHA-512 crypt or yescrypt"}
 
   test-haptic-basic-auth-default-rejects-md5crypt:
@@ -295,7 +296,8 @@ validationTests:
               - host: hash-policy.example.com
                 http: *httpRoot
     assertions:
-      - {type: contains, target: rendering_error, pattern: "Ingress 'default/hash-md5crypt' references Secret 'default/hash-policy', whose password hash for user 'admin' doesn't match"}
+      - {type: contains, target: rendering_error, pattern: "Ingress 'default/hash-md5crypt' references Secret 'default/hash-policy', whose password hash in data entry 1 \\(keys in sorted order\\) doesn't match"}
+      - {type: not_contains, target: rendering_error, pattern: "admin"}
       - {type: contains, target: rendering_error, pattern: "bcrypt, SHA-256/SHA-512 crypt or yescrypt"}
 
   test-haptic-basic-auth-default-rejects-descrypt:
@@ -324,7 +326,8 @@ validationTests:
               - host: hash-policy.example.com
                 http: *httpRoot
     assertions:
-      - {type: contains, target: rendering_error, pattern: "Ingress 'default/hash-descrypt' references Secret 'default/hash-policy', whose password hash for user 'admin' doesn't match"}
+      - {type: contains, target: rendering_error, pattern: "Ingress 'default/hash-descrypt' references Secret 'default/hash-policy', whose password hash in data entry 1 \\(keys in sorted order\\) doesn't match"}
+      - {type: not_contains, target: rendering_error, pattern: "admin"}
       - {type: contains, target: rendering_error, pattern: "bcrypt, SHA-256/SHA-512 crypt or yescrypt"}
 
   test-haptic-basic-auth-default-rejects-plaintext:
@@ -352,7 +355,8 @@ validationTests:
               - host: hash-policy.example.com
                 http: *httpRoot
     assertions:
-      - {type: contains, target: rendering_error, pattern: "Ingress 'default/hash-plaintext' references Secret 'default/hash-policy', whose password hash for user 'admin' doesn't match"}
+      - {type: contains, target: rendering_error, pattern: "Ingress 'default/hash-plaintext' references Secret 'default/hash-policy', whose password hash on line 1 of 'auth' doesn't match"}
+      - {type: not_contains, target: rendering_error, pattern: "admin"}
       - {type: contains, target: rendering_error, pattern: "bcrypt, SHA-256/SHA-512 crypt or yescrypt"}
 
   # ============================================================================

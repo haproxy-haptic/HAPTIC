@@ -121,9 +121,10 @@ Client authentication and upstream verification are separate settings:
 | Authenticate clients | Gateway `spec.tls.frontend.default.validation` | `mode: AllowValidOnly` requires a valid client certificate from `caCertificateRefs`; core ConfigMaps and Secrets supply `ca.crt`. |
 | Override client authentication by port | Gateway `spec.tls.frontend.perPort[].tls.validation` | Applies the selected validation policy to listeners on that entry's `port`. |
 | Verify upstream servers | BackendTLSPolicy `spec.targetRefs` and `spec.validation` | Targets a Service, optionally a named port, and checks its certificate against the configured CA and hostname. |
+| Present a client certificate to upstream servers | Gateway `spec.tls.backend.clientCertificateRef` | Backends of routes the Gateway accepts present the Secret's `tls.crt` and `tls.key`. An invalid reference sets `ResolvedRefs: False` and those backends answer `503`. |
 
 Frontend validation requires a Gateway API schema that serves `spec.tls.frontend`.
-Cross-namespace CA and server-certificate references require a covering
+Cross-namespace CA, server-certificate, and client-certificate references require a covering
 [ReferenceGrant](#cross-namespace-routes-referencegrant). Invalid references appear
 in status; a listener without usable required client trust doesn't accept traffic.
 
