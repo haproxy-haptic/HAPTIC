@@ -721,7 +721,7 @@ func validExactCycleResourceCallable(callable *scriggo.UsedNativeCallable) bool 
 
 func validExactCyclePlanCallable(path string) bool {
 	for _, method := range []string{
-		memberBackend, "BackendWhenAny", "Fragment", "MapMeta", memberProfile, "ProfileGroup", "Section",
+		memberBackend, "BackendWhenAny", "Fragment", "MapMeta", memberProfile, "ProfileGroup", "Section", "SensitiveMap",
 	} {
 		if path == method || path == method+memberSecondResultError {
 			return true

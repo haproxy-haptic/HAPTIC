@@ -205,6 +205,10 @@ func (r *Runner) renderWithStores(ctx context.Context, engine templating.Engine,
 	if err != nil {
 		return RenderOutput{}, fmt.Errorf("merging auxiliary files: %w", err)
 	}
+	auxiliaryFiles, err = bctx.PlanRegistry.SealSensitiveMaps(auxiliaryFiles, nil)
+	if err != nil {
+		return RenderOutput{}, fmt.Errorf("sealing sensitive maps: %w", err)
+	}
 
 	// Debug logging
 	staticCount := len(staticFiles.MapFiles) + len(staticFiles.GeneralFiles) + len(staticFiles.SSLCertificates) + len(staticFiles.CRTListFiles)

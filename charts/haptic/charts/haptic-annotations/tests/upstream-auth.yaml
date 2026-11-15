@@ -48,7 +48,7 @@ validationTests:
         patterns:
           - 'http-request set-var\(txn\.backend_pinned\) bool\(1\) if \{ var\(txn\.ua_state\) -m found \}'
           - '# ingress/canary|# haptic/path-rewrite|http-request set-header Authorization'
-          - 'http-request set-header Authorization %\[var\(txn\.resource_key\),map\(maps/haptic-upstream-auth\.map\)\] if \{ var\(txn\.ua_state\) -m str ok \}'
+          - 'http-request set-header Authorization %\[var\(txn\.resource_key\),map\([^)]*/haptic-upstream-auth\.map\)\] if \{ var\(txn\.ua_state\) -m str ok \}'
       # Uniform frontend rules keep the backend runtime-eligible.
       - {type: contains, target: haproxy.cfg, pattern: '(?ms)^backend default_git_svc_echo_80 from haptic-be-\w+$\n[ \t]+guid [^\n]+\n(?:[ \t]+#[^\n]*\n)*[ \t]+server '}
 
@@ -86,7 +86,7 @@ validationTests:
         target: haproxy.cfg
         patterns:
           - 'http_auth'
-          - 'http-request set-header Authorization %\[var\(txn\.resource_key\),map\(maps/haptic-upstream-auth\.map\)\]'
+          - 'http-request set-header Authorization %\[var\(txn\.resource_key\),map\([^)]*/haptic-upstream-auth\.map\)\]'
 
   test-haptic-upstream-auth-missing-secret-fails-closed:
     description: >-

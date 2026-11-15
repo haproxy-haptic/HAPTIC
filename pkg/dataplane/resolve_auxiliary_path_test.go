@@ -83,3 +83,17 @@ func TestWriteAuxiliaryFiles_RejectsTraversal(t *testing.T) {
 	_, statErr := os.Stat(filepath.Join(filepath.Dir(tmpDir), "etc", "haptic-escape"))
 	assert.True(t, os.IsNotExist(statErr), "traversal write must not land outside the temp tree")
 }
+
+// haproxy -c must read a sensitive map from the maps directory like any other.
+func TestWriteAuxiliaryFilesWritesSensitiveMaps(t *testing.T) {
+	tmpDir := t.TempDir()
+	paths := &ValidationPaths{MapsDir: filepath.Join(tmpDir, "maps"), ConfigFile: filepath.Join(tmpDir, "haproxy.cfg")}
+
+	require.NoError(t, writeAuxiliaryFiles(&AuxiliaryFiles{
+		SensitiveMapFiles: []auxiliaryfiles.SensitiveMapFile{{Path: "keys.map", Content: "route-a key\n", Seal: "s"}},
+	}, paths))
+
+	content, err := os.ReadFile(filepath.Join(tmpDir, "maps", "keys.map"))
+	require.NoError(t, err)
+	assert.Equal(t, "route-a key\n", string(content))
+}

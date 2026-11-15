@@ -2269,6 +2269,9 @@ templateSnippets:
         when it has no entries: creating a map file on the first entry and
         deleting it with the last are both reloads).
 
+        `sensitive: true` marks a map holding credentials: published as a
+        Secret, replaced only as a whole at runtime (planRegistry.SensitiveMap).
+
         Resource-agnostic (RULE #1) — it sees strings, never a kind.
       #}
       {% macro RegisterMap(mapName string, lines []string, opts map[string]any) string %}
@@ -2284,6 +2287,12 @@ templateSnippets:
         var metaErr = planRegistry.MapMeta(mapName, tostring(opts | dig("ordered") | fallback(true)) == "true")
         if metaErr != nil {
           fail("failed to declare " + mapName + " entry order: " + tostring(metaErr))
+        }
+        if tostring(opts | dig("sensitive") | fallback(false)) == "true" {
+          var sensitiveErr = planRegistry.SensitiveMap(mapName)
+          if sensitiveErr != nil {
+            fail("failed to declare " + mapName + " sensitive: " + tostring(sensitiveErr))
+          }
         }
         show path
       %%}

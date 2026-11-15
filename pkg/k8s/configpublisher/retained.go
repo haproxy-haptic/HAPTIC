@@ -360,7 +360,7 @@ func (p *Publisher) readRetainedOutput(ctx context.Context, item *v1.HAProxyCfg,
 	if dataplane.ComputeContentChecksum(canonical.Config, &dataplane.AuxiliaryFiles{
 		MapFiles: canonical.AuxiliaryFiles.MapFiles, SSLCertificates: canonical.AuxiliaryFiles.SSLCertificates,
 		SSLCaFiles: canonical.AuxiliaryFiles.SSLCaFiles, GeneralFiles: canonical.AuxiliaryFiles.GeneralFiles, CRTListFiles: canonical.AuxiliaryFiles.CRTListFiles,
-		SecretFiles: canonical.AuxiliaryFiles.SecretFiles,
+		SecretFiles: canonical.AuxiliaryFiles.SecretFiles, SensitiveMapFiles: canonical.AuxiliaryFiles.SensitiveMapFiles,
 	}) != item.Spec.Checksum {
 		return nil, nil, errors.New("retained configuration checksum differs from its content")
 	}

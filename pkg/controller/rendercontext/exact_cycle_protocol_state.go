@@ -156,7 +156,7 @@ func (r *PlanRegistry) ExactCycleProtocolState() (templating.ExactCycleProtocolS
 		return nil, err
 	}
 	if r.sections == nil || len(r.sections) != 0 || r.backends == nil || len(r.backends) != 0 ||
-		r.mapsMeta == nil || len(r.assembled) != 0 || r.prepared != nil || r.assembly != nil ||
+		r.mapsMeta == nil || len(r.sensitiveMaps) != 0 || len(r.assembled) != 0 || r.prepared != nil || r.assembly != nil ||
 		r.documentAssembly != nil {
 		return nil, errors.New("plan registry is not in its initial declaration state")
 	}

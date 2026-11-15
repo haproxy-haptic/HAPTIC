@@ -282,6 +282,15 @@ func TestCompileRejectsUnsafeTokens(t *testing.T) {
 	}
 }
 
+// A rejected key or value may be a credential: the error is logged, so it
+// names the field and never echoes the token.
+func TestCompileUnsafeTokenErrorOmitsTheToken(t *testing.T) {
+	_, err := Compile(&api.Op{Kind: api.OpMapSet, Path: "m", Key: "route", Value: "hunter2 key"}, fileContent(nil))
+	require.ErrorIs(t, err, ErrUnsafeToken)
+	assert.NotContains(t, err.Error(), "hunter2")
+	assert.Contains(t, err.Error(), "map value")
+}
+
 func TestCompileRefusesUnknownOpKind(t *testing.T) {
 	_, err := Compile(&api.Op{Kind: "backend_teleport"}, fileContent(nil))
 	assert.ErrorIs(t, err, ErrUnknownOp)

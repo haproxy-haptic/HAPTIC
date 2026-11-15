@@ -74,6 +74,17 @@ func BuildAuxiliaryFileSnapshotWithRuntimePaths(
 			return nil, err
 		}
 	}
+	for _, file := range files.SensitiveMapFiles {
+		runtimePath, err := resolveAuxiliaryRuntimePath(resolve, renderartifact.SensitiveMap, file.Path)
+		if err != nil {
+			return nil, err
+		}
+		if err := addAuxiliaryArtifact(builder, renderartifact.Descriptor{
+			Family: renderartifact.SensitiveMap, Path: file.Path, RuntimePath: runtimePath, Seal: file.Seal,
+		}, file.Content); err != nil {
+			return nil, err
+		}
+	}
 	return builder.Build()
 }
 
@@ -218,6 +229,10 @@ func appendMaterializedArtifact(files *AuxiliaryFiles, artifact *renderartifact.
 		files.SecretFiles = append(files.SecretFiles, auxiliaryfiles.SecretFile{
 			Path: strings.Clone(descriptor.Path), Content: content, Seal: descriptor.Seal,
 		})
+	case renderartifact.SensitiveMap:
+		files.SensitiveMapFiles = append(files.SensitiveMapFiles, auxiliaryfiles.SensitiveMapFile{
+			Path: strings.Clone(descriptor.Path), Content: content, Seal: descriptor.Seal,
+		})
 	default:
 		return fmt.Errorf("materializing auxiliary file: invalid family %d", descriptor.Family)
 	}
@@ -296,7 +311,7 @@ func ComputeSnapshotContentChecksum(
 	h := newContentChecksum(haproxyConfig)
 	for _, item := range items {
 		_, _ = h.Write([]byte(item.identifier))
-		if item.family == renderartifact.Secret {
+		if item.family == renderartifact.Secret || item.family == renderartifact.SensitiveMap {
 			_, _ = h.Write([]byte(item.seal))
 			continue
 		}
@@ -321,6 +336,8 @@ func legacyChecksumIdentity(descriptor renderartifact.Descriptor) (snapshotCheck
 		return snapshotChecksumIdentity{familyOrder: 4, identifier: descriptor.Path}, nil
 	case renderartifact.Secret:
 		return snapshotChecksumIdentity{familyOrder: 5, identifier: descriptor.Path}, nil
+	case renderartifact.SensitiveMap:
+		return snapshotChecksumIdentity{familyOrder: 6, identifier: descriptor.Path}, nil
 	default:
 		return snapshotChecksumIdentity{},
 			fmt.Errorf("checksumming auxiliary file: invalid family %d", descriptor.Family)
@@ -395,7 +412,8 @@ func snapshotCurrentFileFor(artifact *renderartifact.Artifact) (snapshotCurrentF
 	case renderartifact.CRTList:
 		order = 2
 		sortKey = descriptor.Path
-	case renderartifact.Certificate, renderartifact.CA, renderartifact.GeneralCA, renderartifact.Secret:
+	case renderartifact.Certificate, renderartifact.CA, renderartifact.GeneralCA, renderartifact.Secret,
+		renderartifact.SensitiveMap:
 		return snapshotCurrentFile{}, false, nil
 	default:
 		return snapshotCurrentFile{}, false,

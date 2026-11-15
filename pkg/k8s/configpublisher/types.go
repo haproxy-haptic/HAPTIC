@@ -52,6 +52,9 @@ type AuxiliaryFiles struct {
 
 	// SecretFiles contains files published as Secrets for sidecars.
 	SecretFiles []auxiliaryfiles.SecretFile
+
+	// SensitiveMapFiles contains map files published as Secrets.
+	SensitiveMapFiles []auxiliaryfiles.SensitiveMapFile
 }
 
 func (f *AuxiliaryFiles) kinds() []string {
@@ -63,7 +66,7 @@ func (f *AuxiliaryFiles) kinds() []string {
 		{kindMapFile, len(f.MapFiles) > 0},
 		{kindGeneralFile, len(f.GeneralFiles) > 0},
 		{kindCRTListFile, len(f.CRTListFiles) > 0},
-		{kindSecret, len(f.SSLCertificates)+len(f.SSLCaFiles)+len(f.SecretFiles) > 0},
+		{kindSecret, len(f.SSLCertificates)+len(f.SSLCaFiles)+len(f.SecretFiles)+len(f.SensitiveMapFiles) > 0},
 	} {
 		if present.files {
 			kinds = append(kinds, present.kind)
@@ -158,7 +161,8 @@ type PublishResult struct {
 	// CRTListFileNames lists the names of created/updated HAProxyCRTListFile resources.
 	CRTListFileNames []string
 
-	// SecretFileNames lists the names of created/updated secret-file Secrets.
+	// SecretFileNames lists the names of created/updated secret-file and
+	// sensitive-map Secrets.
 	SecretFileNames []string
 }
 

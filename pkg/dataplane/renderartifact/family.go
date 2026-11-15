@@ -48,6 +48,7 @@ const (
 	CRTList
 	GeneralCA
 	Secret
+	SensitiveMap
 )
 
 // Descriptor is the deployment-relevant identity and metadata of one artifact.
@@ -61,7 +62,8 @@ type Descriptor struct {
 	Path string
 	// RuntimePath is the path declared in the render plan. Empty defaults to Path.
 	RuntimePath string
-	// Seal is the Secret family's keyed content digest; every other family normalizes empty.
+	// Seal is the Secret and SensitiveMap families' keyed content digest; every
+	// other family normalizes empty.
 	Seal string `json:",omitempty"`
 }
 
@@ -95,7 +97,7 @@ func normalizeDescriptor(descriptor Descriptor) (*descriptorData, error) {
 	descriptor.RuntimePath = strings.Clone(descriptor.RuntimePath)
 	descriptor.Seal = strings.Clone(descriptor.Seal)
 	switch descriptor.Family {
-	case Map:
+	case Map, SensitiveMap:
 		descriptor.Name = descriptor.Path
 	case Certificate, CA, CRTList, Secret:
 		descriptor.Name = path.Base(descriptor.Path)
@@ -116,7 +118,7 @@ func canonicalizeDescriptor(descriptor Descriptor) (Descriptor, artifactKey, err
 	if descriptor.Family != General {
 		descriptor.ReloadOnChange = false
 	}
-	if descriptor.Family != Secret {
+	if descriptor.Family != Secret && descriptor.Family != SensitiveMap {
 		descriptor.Seal = ""
 	} else if descriptor.Seal == "" {
 		return Descriptor{}, artifactKey{}, errInvalidArtifact
@@ -125,7 +127,7 @@ func canonicalizeDescriptor(descriptor Descriptor) (Descriptor, artifactKey, err
 		descriptor.RuntimePath = descriptor.Path
 	}
 	switch descriptor.Family {
-	case Map:
+	case Map, SensitiveMap:
 		descriptor.Name = descriptor.Path
 	case Certificate, CA, CRTList, Secret:
 		descriptor.Name = path.Base(descriptor.Path)
@@ -137,7 +139,7 @@ func canonicalizeDescriptor(descriptor Descriptor) (Descriptor, artifactKey, err
 }
 
 func (f Family) valid() bool {
-	return f >= Map && f <= Secret
+	return f >= Map && f <= SensitiveMap
 }
 
 func (d *descriptorData) validate() error {

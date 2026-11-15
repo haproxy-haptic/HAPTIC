@@ -386,6 +386,7 @@ func canonicalizePublishRequest(req *PublishRequest) (*PublishRequest, error) {
 	hashAuxiliaryContents(h, canonical.AuxiliaryFiles.GeneralFiles)
 	hashAuxiliaryContents(h, canonical.AuxiliaryFiles.CRTListFiles)
 	hashAuxiliaryContents(h, canonical.AuxiliaryFiles.SecretFiles)
+	hashAuxiliaryContents(h, canonical.AuxiliaryFiles.SensitiveMapFiles)
 	canonical.auxiliarySetID = fmt.Sprintf("%s%x", contentSetPrefix, h.Sum(nil))
 	return &canonical, nil
 }
@@ -459,12 +460,13 @@ func canonicalLegacyPayload(
 	inputFiles := &dataplane.AuxiliaryFiles{}
 	if req.AuxiliaryFiles != nil {
 		inputFiles = &dataplane.AuxiliaryFiles{
-			MapFiles:        req.AuxiliaryFiles.MapFiles,
-			SSLCertificates: req.AuxiliaryFiles.SSLCertificates,
-			SSLCaFiles:      req.AuxiliaryFiles.SSLCaFiles,
-			GeneralFiles:    req.AuxiliaryFiles.GeneralFiles,
-			CRTListFiles:    req.AuxiliaryFiles.CRTListFiles,
-			SecretFiles:     req.AuxiliaryFiles.SecretFiles,
+			MapFiles:          req.AuxiliaryFiles.MapFiles,
+			SSLCertificates:   req.AuxiliaryFiles.SSLCertificates,
+			SSLCaFiles:        req.AuxiliaryFiles.SSLCaFiles,
+			GeneralFiles:      req.AuxiliaryFiles.GeneralFiles,
+			CRTListFiles:      req.AuxiliaryFiles.CRTListFiles,
+			SecretFiles:       req.AuxiliaryFiles.SecretFiles,
+			SensitiveMapFiles: req.AuxiliaryFiles.SensitiveMapFiles,
 		}
 	}
 	files, err = dataplane.CanonicalizeAuxiliaryFiles(inputFiles)
@@ -476,12 +478,13 @@ func canonicalLegacyPayload(
 
 func publisherAuxiliaryFiles(files *dataplane.AuxiliaryFiles) *AuxiliaryFiles {
 	return &AuxiliaryFiles{
-		MapFiles:        files.MapFiles,
-		SSLCertificates: files.SSLCertificates,
-		SSLCaFiles:      files.SSLCaFiles,
-		GeneralFiles:    files.GeneralFiles,
-		CRTListFiles:    files.CRTListFiles,
-		SecretFiles:     files.SecretFiles,
+		MapFiles:          files.MapFiles,
+		SSLCertificates:   files.SSLCertificates,
+		SSLCaFiles:        files.SSLCaFiles,
+		GeneralFiles:      files.GeneralFiles,
+		CRTListFiles:      files.CRTListFiles,
+		SecretFiles:       files.SecretFiles,
+		SensitiveMapFiles: files.SensitiveMapFiles,
 	}
 }
 
@@ -581,6 +584,17 @@ func (p *Publisher) publishAuxiliaryFiles(
 		func(ctx context.Context, file auxiliaryfiles.SecretFile, name string) (string, error) {
 			return p.createOrUpdateSecretFileSecret(ctx, req, runtimeConfig, file, name)
 		})
+	if err != nil {
+		return err
+	}
+	sensitiveMapNames, err := publishAuxiliaryKind(ctx, runtimeConfig, kindSecret, suffix, scope, files.SensitiveMapFiles,
+		func(file auxiliaryfiles.SensitiveMapFile) (string, string) {
+			return p.generateSensitiveMapName(file.Path), file.Path
+		},
+		func(ctx context.Context, file auxiliaryfiles.SensitiveMapFile, name string) (string, error) {
+			return p.createOrUpdateSensitiveMapSecret(ctx, req, runtimeConfig, file, name)
+		})
+	result.SecretFileNames = append(result.SecretFileNames, sensitiveMapNames...)
 	return err
 }
 

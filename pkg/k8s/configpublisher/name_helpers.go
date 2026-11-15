@@ -130,6 +130,10 @@ func (p *Publisher) generateSecretFileName(filePath string) string {
 	return sanitizeResourceName("haproxy-secret-", path.Base(filePath), "_", "-")
 }
 
+func (p *Publisher) generateSensitiveMapName(mapPath string) string {
+	return sanitizeResourceName("haproxy-smap-", path.Base(mapPath), "_", "-", ".", "-")
+}
+
 func (p *Publisher) generateCRTListFileName(listPath string) string {
 	return sanitizeResourceName("haproxy-crtlist-", path.Base(listPath), "_", "-")
 }
@@ -183,10 +187,13 @@ func calculateChecksum(content string) string {
 const sealChecksumPrefix = "hmac-sha256:"
 
 // identityChecksum is the checksum a child's readable names and annotations
-// carry: a secret file's seal, never a digest of its content.
+// carry: a secret file's or sensitive map's seal, never a digest of its content.
 func identityChecksum(file auxiliaryfiles.FileItem) string {
-	if secret, ok := file.(auxiliaryfiles.SecretFile); ok {
-		return sealChecksumPrefix + secret.Seal
+	switch sealed := file.(type) {
+	case auxiliaryfiles.SecretFile:
+		return sealChecksumPrefix + sealed.Seal
+	case auxiliaryfiles.SensitiveMapFile:
+		return sealChecksumPrefix + sealed.Seal
 	}
 	return calculateChecksum(file.GetContent())
 }

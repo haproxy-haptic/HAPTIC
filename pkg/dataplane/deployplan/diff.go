@@ -280,6 +280,9 @@ func (b *builder) diffFiles() {
 			}
 			continue
 		}
+		if _, described := b.next.Maps[f.Path]; f.Kind == renderplan.FileKindMap && !described {
+			b.replaceOpaqueMap(f.Path)
+		}
 		if f.ReloadOnChange {
 			b.failf("file %s changed and is declared reload-on-change", f.Path)
 		}

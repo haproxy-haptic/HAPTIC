@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 )
 
 // FileItem is one auxiliary file, whatever its kind.
@@ -183,6 +184,29 @@ func (s SecretFile) GetContent() string {
 	return s.Content
 }
 
+// SensitiveMapFile is a map file holding credentials HAProxy must read in
+// clear. It is delivered like a MapFile but published and identified like a
+// SecretFile: only its Seal reaches anything readable without Secret access.
+type SensitiveMapFile struct {
+	// Path is the map name, as on MapFile.
+	Path string
+
+	Content string `json:"-"`
+
+	// Seal is SealContent of Content.
+	Seal string
+}
+
+// GetIdentifier implements the FileItem interface.
+func (s SensitiveMapFile) GetIdentifier() string {
+	return s.Path
+}
+
+// GetContent implements the FileItem interface.
+func (s SensitiveMapFile) GetContent() string {
+	return s.Content
+}
+
 // SealContent is a keyed digest of content: an unkeyed one would let anyone who
 // reads it test guesses of a low-entropy secret offline. Without a key there
 // is no seal: an HMAC under an empty key is such an unkeyed digest.
@@ -195,11 +219,33 @@ func SealContent(key []byte, content string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+const unkeyedSealPrefix = "unkeyed-sha256:"
+
+// SealSensitiveMap is SealContent, except that without a key it returns an
+// unkeyed digest marked as such: an offline render still needs a change
+// identity, and IsKeyedSeal lets every publisher refuse it.
+func SealSensitiveMap(key []byte, content string) string {
+	if len(key) == 0 {
+		sum := sha256.Sum256([]byte(content))
+		return unkeyedSealPrefix + hex.EncodeToString(sum[:])
+	}
+	return SealContent(key, content)
+}
+
+// IsKeyedSeal reports whether seal came from a key, so readers without
+// Secret access cannot test guesses against it.
+func IsKeyedSeal(seal string) bool {
+	return seal != "" && !strings.HasPrefix(seal, unkeyedSealPrefix)
+}
+
 // IdentityContent is what content identities hash for file: its seal for a
-// SecretFile, its content otherwise.
+// SecretFile or SensitiveMapFile, its content otherwise.
 func IdentityContent(file FileItem) string {
-	if secret, ok := file.(SecretFile); ok {
-		return secret.Seal
+	switch sealed := file.(type) {
+	case SecretFile:
+		return sealed.Seal
+	case SensitiveMapFile:
+		return sealed.Seal
 	}
 	return file.GetContent()
 }

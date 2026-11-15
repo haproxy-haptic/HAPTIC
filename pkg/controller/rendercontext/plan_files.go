@@ -47,6 +47,15 @@ func (r *PlanRegistry) planFiles(config string, aux *dataplane.AuxiliaryFiles) (
 		mapContents[mapPath] = file.Content
 		files = append(files, planFile(mapPath, renderplan.FileKindMap, false, file.Content))
 	}
+	for _, file := range aux.SensitiveMapFiles {
+		mapPath, err := r.MapPath(file.Path)
+		if err != nil {
+			return nil, nil, err
+		}
+		sealed := planFile(mapPath, renderplan.FileKindMap, false, file.Content)
+		sealed.Seal = file.Seal
+		files = append(files, sealed)
+	}
 	for _, file := range aux.SSLCertificates {
 		certPath, err := r.filePath(file.Path, "cert")
 		if err != nil {

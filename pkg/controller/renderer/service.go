@@ -1362,6 +1362,10 @@ func (s *RenderService) materializeRenderDocuments(
 	if err != nil {
 		return "", nil, fmt.Errorf("merging auxiliary files: %w", err)
 	}
+	auxiliaryFiles, err = bctx.PlanRegistry.SealSensitiveMaps(auxiliaryFiles, s.secretFileSealKey)
+	if err != nil {
+		return "", nil, fmt.Errorf("sealing sensitive maps: %w", err)
+	}
 	consistencyErr := validateAuxiliaryFilesConsistency(haproxyConfig, auxiliaryFiles)
 	if resourceErr := bctx.Err(ctx); resourceErr != nil {
 		return "", nil, resourceErr
@@ -1755,7 +1759,7 @@ func (s *RenderService) resolveAuxiliaryRuntimePath(
 ) (string, error) {
 	var kind string
 	switch family {
-	case renderartifact.Map:
+	case renderartifact.Map, renderartifact.SensitiveMap:
 		kind = "map"
 	case renderartifact.Certificate:
 		kind = "cert"

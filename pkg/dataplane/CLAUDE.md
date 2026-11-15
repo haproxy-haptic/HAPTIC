@@ -79,7 +79,7 @@ part of the identity** — adding one changes every plan ID once, which costs th
 fleet one reload. That is acceptable; silently excluding a field from the digest
 is not, because two different renders would then compare equal.
 
-The one exception: a secret file's `File.Digest` is replaced by its keyed
+The one exception: a secret file's or sensitive map's `File.Digest` is replaced by its keyed
 `Seal` in the identity and in retained checkpoints, because both are readable
 without Secret access and an unkeyed digest would let a reader test guesses of
 the secret offline. The wire manifest still carries the digest the agent verifies.

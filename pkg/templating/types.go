@@ -82,6 +82,10 @@ type PlanRegistrar interface {
 	// MapMeta declares whether entry order matters for a map file. Maps are
 	// ordered unless declared otherwise.
 	MapMeta(path string, ordered bool) error
+
+	// SensitiveMap declares that a map file holds credentials for the whole
+	// render: published as a Secret and replaced only as a whole at runtime.
+	SensitiveMap(path string) error
 }
 
 // IncrementalBackendPlanRegistrar records deterministic backend declarations.

@@ -28,7 +28,7 @@ import (
 // fallback: an absence assertion against a map that stopped being registered
 // would otherwise be re-evaluated against haproxy.cfg, which never contained
 // the string either, and pass green with the property it guards gone.
-var targetPrefixes = []string{"map:", "file:", "cert:", "crt-list:", "secret:", "k8s:", "status:", "backend:"}
+var targetPrefixes = []string{"map:", "sensitive-map:", "file:", "cert:", "crt-list:", "secret:", "k8s:", "status:", "backend:"}
 
 // errTargetNotFound reports a prefixed target the render did not produce.
 type errTargetNotFound struct{ target string }
@@ -51,7 +51,7 @@ func (e *errBackendProfileMissing) Error() string {
 // resolveTarget resolves the target content based on the target specification.
 //
 // Target format: "haproxy.cfg", "map:<name>", "file:<name>", "cert:<name>",
-// "crt-list:<name>", "secret:<name>", "k8s:<template-name>", "status:<ns>/<name>:<phase>",
+// "crt-list:<name>", "secret:<name>", "sensitive-map:<name>", "k8s:<template-name>", "status:<ns>/<name>:<phase>",
 // "backend:<name>", "events", or "rendering_error".
 func (r *Runner) resolveTarget(target, haproxyConfig string, auxiliaryFiles *dataplane.AuxiliaryFiles, k8sResources, statusPatches map[string]string, renderedEvents, renderError string) (string, error) {
 	if target == "rendering_error" {
@@ -97,6 +97,10 @@ func (r *Runner) resolveTarget(target, haproxyConfig string, auxiliaryFiles *dat
 		return backendTarget(after, target, haproxyConfig)
 	}
 
+	if after, ok := strings.CutPrefix(target, "sensitive-map:"); ok {
+		return sensitiveMapTarget(after, target, auxiliaryFiles)
+	}
+
 	if content, found := r.resolveAuxiliaryFile(target, auxiliaryFiles); found {
 		return content, nil
 	}
@@ -109,6 +113,31 @@ func (r *Runner) resolveTarget(target, haproxyConfig string, auxiliaryFiles *dat
 
 	// Default to haproxy.cfg if target format is unknown
 	return haproxyConfig, nil
+}
+
+// errMapNotSensitive reports a sensitive-map target naming a map the render
+// produced as a plain one, so its content would be published unprotected.
+type errMapNotSensitive struct{ target string }
+
+func (e *errMapNotSensitive) Error() string {
+	return fmt.Sprintf("target %s names a map that is not sensitive, so it is published as a plain HAProxyMapFile — declare it with planRegistry.SensitiveMap", e.target)
+}
+
+func sensitiveMapTarget(name, target string, auxiliaryFiles *dataplane.AuxiliaryFiles) (string, error) {
+	if auxiliaryFiles == nil {
+		return "", &errTargetNotFound{target}
+	}
+	for _, file := range auxiliaryFiles.SensitiveMapFiles {
+		if file.Path == name || path.Base(file.Path) == name {
+			return file.Content, nil
+		}
+	}
+	for _, file := range auxiliaryFiles.MapFiles {
+		if file.Path == name || path.Base(file.Path) == name {
+			return "", &errMapNotSensitive{target}
+		}
+	}
+	return "", &errTargetNotFound{target}
 }
 
 // configSection is one top-level section of a rendered HAProxy config: the
@@ -247,6 +276,11 @@ func (r *Runner) findMapFile(mapName string, auxiliaryFiles *dataplane.Auxiliary
 		return "", false
 	}
 	for _, mapFile := range auxiliaryFiles.MapFiles {
+		if mapFile.Path == mapName || path.Base(mapFile.Path) == mapName {
+			return mapFile.Content, true
+		}
+	}
+	for _, mapFile := range auxiliaryFiles.SensitiveMapFiles {
 		if mapFile.Path == mapName || path.Base(mapFile.Path) == mapName {
 			return mapFile.Content, true
 		}

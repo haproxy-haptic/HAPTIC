@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Templates can declare a map sensitive with `planRegistry.SensitiveMap()` or the `RegisterMap` option `sensitive`. HAPTIC publishes it as a Kubernetes Secret and keeps its entries out of `HAProxyCfg`, `currentFiles`, and CLI output.
+- Templates can declare a map sensitive with `planRegistry.SensitiveMap()` or the `RegisterMap` option `sensitive`. HAPTIC publishes it as a Kubernetes Secret, keeps its entries out of `HAProxyCfg`, `currentFiles`, and CLI output, and still delivers it to HAProxy. Validation tests read it through the `sensitive-map:<name>` target.
 
 ### Fixed
 
+- The agent no longer echoes a rejected map key or value in its error message.
 - Shared rate limiting no longer stays on per-pod budgets for an extra cooldown after a Valkey failover (rate-limit plugin v0.4.3, [#668](https://github.com/haproxy-haptic/HAPTIC/issues/668)).
 
 ### Changed

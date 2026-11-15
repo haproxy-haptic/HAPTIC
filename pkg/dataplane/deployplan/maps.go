@@ -64,6 +64,21 @@ func (b *builder) diffMap(prev, next *renderplan.Map, name string) {
 	b.pushMapOps(unorderedMapOps(path, prev.Entries, next.Entries), path)
 }
 
+// replaceOpaqueMap swaps a map the plan carries no entries for, a sensitive
+// one, as a whole: per-entry ops would put its keys and values in ops, diffs
+// and errors.
+func (b *builder) replaceOpaqueMap(path string) {
+	if !slices.Contains(b.inventory.Maps, path) {
+		b.notef("map %s is not loaded at runtime, its file is written only", path)
+		return
+	}
+	if !api.SafeToken(path) {
+		b.failf("map %s: the path is not a safe runtime token", path)
+		return
+	}
+	b.push(groupMapUpsert, api.Op{Kind: api.OpMapReplace, Path: path})
+}
+
 func (b *builder) pushMapOps(ops mapOps, path string) {
 	if ops.whole {
 		b.push(groupMapUpsert, api.Op{Kind: api.OpMapReplace, Path: path})

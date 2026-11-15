@@ -309,6 +309,7 @@ func (*incrementalImmutableRootPlanRegistrar) Fragment(string, TextFragment) (st
 func (*incrementalImmutableRootPlanRegistrar) ProfileGroup() string { return "" }
 
 func (*incrementalImmutableRootPlanRegistrar) MapMeta(string, bool) error { return nil }
+func (*incrementalImmutableRootPlanRegistrar) SensitiveMap(string) error  { return nil }
 
 func (*incrementalImmutableRootPlanRegistrar) FutureMethod() {}
 
@@ -437,7 +438,7 @@ func TestIncrementalBackendPlanAllowsOnlyAuditedMethods(t *testing.T) {
 
 func TestRootRenderingAllowsOnlyAuditedNativeMethods(t *testing.T) {
 	rootPlan := reflect.ValueOf(&incrementalImmutableRootPlanRegistrar{})
-	for _, method := range []string{"Section", "Fragment", "Profile", "Backend", "ProfileGroup", "MapMeta"} {
+	for _, method := range []string{"Section", "Fragment", "Profile", "Backend", "ProfileGroup", "MapMeta", "SensitiveMap"} {
 		assert.True(t, nativeMethodPreservesImmutableInputs(rootPlan, method), method)
 	}
 	assert.False(t, nativeMethodPreservesImmutableInputs(rootPlan, "FutureMethod"))
