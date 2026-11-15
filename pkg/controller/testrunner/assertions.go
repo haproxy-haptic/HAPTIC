@@ -255,8 +255,32 @@ func compareAuxiliaryFiles(first, second *dataplane.AuxiliaryFiles) string {
 	if diff := compareFileList("secret files", extractFileMap(first.SecretFiles), extractFileMap(second.SecretFiles)); diff != "" {
 		return diff
 	}
+	if !slices.Equal(first.SensitiveMapFiles, second.SensitiveMapFiles) {
+		return "sensitive map files differ between renders (content not shown)"
+	}
 
 	return ""
+}
+
+// redactSensitiveTarget keeps a sensitive map's content out of an assertion
+// result, which verbose output and the webhook surface.
+func redactSensitiveTarget(result *AssertionResult, target string, auxiliaryFiles *dataplane.AuxiliaryFiles) {
+	if auxiliaryFiles == nil || len(auxiliaryFiles.SensitiveMapFiles) == 0 {
+		return
+	}
+	name, ok := strings.CutPrefix(target, "sensitive-map:")
+	if !ok {
+		name, ok = strings.CutPrefix(target, "map:")
+	}
+	if !ok || !slices.ContainsFunc(auxiliaryFiles.SensitiveMapFiles, func(file auxiliaryfiles.SensitiveMapFile) bool {
+		return mapNamed(file.Path, name)
+	}) {
+		return
+	}
+	result.TargetPreview = ""
+	if !result.Passed && result.Type == "equals" {
+		result.Error = fmt.Sprintf("%s differs from the expected content (sensitive map content is not shown)", target)
+	}
 }
 
 // compareFileList compares two maps of filename to content and returns a diff if they differ.
@@ -323,6 +347,7 @@ func (r *Runner) executeAssertions(
 			return true
 		}
 		assertionResult := r.runAssertion(ctx, &test.Assertions[i], haproxyConfig, auxiliaryFiles, k8sResources, statusPatches, renderedEvents, templateContext, result.RenderError, validationPaths, renderDeps)
+		redactSensitiveTarget(&assertionResult, test.Assertions[i].Target, auxiliaryFiles)
 		if appendAssertionResult(ctx, result, &assertionResult) {
 			return true
 		}

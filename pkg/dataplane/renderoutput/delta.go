@@ -1293,7 +1293,8 @@ func validateChangedMapBinding(
 	if err != nil {
 		return err
 	}
-	mapFileFound := fileFound && binding.file.descriptor.Kind == renderplan.FileKindMap
+	mapFileFound := fileFound && binding.file.descriptor.Kind == renderplan.FileKindMap &&
+		binding.file.legacy.Seal == ""
 	if mapFound != mapFileFound {
 		return fmt.Errorf("render output plan map %q does not match its file", path)
 	}

@@ -10,8 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Templates can declare a map sensitive with `planRegistry.SensitiveMap()` or the `RegisterMap` option `sensitive`. HAPTIC publishes it as a Kubernetes Secret, keeps its entries out of `HAProxyCfg`, `currentFiles`, and CLI output, and still delivers it to HAProxy. Validation tests read it through the `sensitive-map:<name>` target.
+
 ### Fixed
 
+- The agent no longer echoes a rejected map key or value in its error message.
 - Shared rate limiting no longer stays on per-pod budgets for an extra cooldown after a Valkey failover (rate-limit plugin v0.4.3, [#668](https://github.com/haproxy-haptic/HAPTIC/issues/668)).
 
 ### Changed
@@ -20,9 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Helm chart
 
+#### Added
+
+- `haproxy-haptic.org/upstream-authorization-secret` replaces the request's `Authorization` header with a value from a Secret in the Ingress's namespace, after every client check ([#672](https://github.com/haproxy-haptic/HAPTIC/issues/672)).
+
 #### Changed
 
 - Backends without an explicit algorithm use `balance random` (power of two choices) instead of `roundrobin`, steering requests away from loaded pods. Set `haproxy-haptic.org/load-balance: roundrobin` to keep the previous distribution.
+
+#### Security
+
+- HMAC shared keys (`hmac-secret`) and API keys (`api-key-secret`, `HAProxyRoutePolicy` API keys) are published in Secrets instead of plaintext `HAProxyMapFile` objects.
 
 ## [0.12.0] - 2026-11-10
 

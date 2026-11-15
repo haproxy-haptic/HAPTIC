@@ -1332,7 +1332,7 @@ templateSnippets:
           {%- if err != nil -%}{{ fail("Failed to register host match file '" + tostring(file["filename"]) + "': " + err.Error()) }}{%- end -%}
         {%- end -%}
         {%- for _, fragment := range incremental_values("ingress-canary", "pattern") -%}{{- tostring(fragment) -}}{%- end -%}
-        {{- "\n# ingress/canary\nuse_backend %[var(txn.canary_backend)] if { var(txn.canary_backend) -m found }\n" -}}
+        {{- "\n# ingress/canary\nuse_backend %[var(txn.canary_backend)] if { var(txn.canary_backend) -m found } !{ var(txn.backend_pinned) -m found }\n" -}}
       {%- end -%}
 
   # aclPrefix must stay distinct per library — validation tests assert on the

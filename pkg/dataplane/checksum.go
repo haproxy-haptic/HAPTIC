@@ -27,6 +27,7 @@ func ComputeContentChecksum(haproxyConfig string, auxFiles *AuxiliaryFiles) stri
 		hashFileItems(h, auxFiles.SSLCaFiles)
 		hashFileItems(h, auxFiles.CRTListFiles)
 		hashFileItems(h, auxFiles.SecretFiles)
+		hashFileItems(h, auxFiles.SensitiveMapFiles)
 	}
 
 	return finishContentChecksum(h)

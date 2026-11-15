@@ -300,7 +300,7 @@ func (p *Publisher) createOrUpdateSSLFileSecret(
 ) (string, error) {
 	result := p.compressIfNeeded(content, req.CompressionThreshold, "Secret/"+name)
 	return p.createOrUpdateFileSecret(ctx, req, owner, name, filePath, fileType, calculateChecksum(content), result.compressed,
-		map[string][]byte{dataKey: []byte(result.content), "path": []byte(filePath)})
+		map[string][]byte{dataKey: []byte(result.content), secretPathDataKey: []byte(filePath)})
 }
 
 // Secret-file Secrets keep the content checksum in data: as an annotation it
@@ -309,6 +309,7 @@ const (
 	secretFileType            = "secret-file"
 	secretFileDataKey         = "file"
 	secretFileChecksumDataKey = "checksum"
+	secretPathDataKey         = "path"
 )
 
 func (p *Publisher) createOrUpdateSecretFileSecret(ctx context.Context, req *PublishRequest, owner *haproxyv1alpha1.HAProxyCfg, file auxiliaryfiles.SecretFile, name string) (string, error) {
@@ -319,7 +320,22 @@ func (p *Publisher) createOrUpdateSecretFileSecret(ctx context.Context, req *Pub
 	return p.createOrUpdateFileSecret(ctx, req, owner, name, file.Path, secretFileType, identityChecksum(file), result.compressed,
 		map[string][]byte{
 			secretFileDataKey:         []byte(result.content),
-			"path":                    []byte(file.Path),
+			secretPathDataKey:         []byte(file.Path),
+			secretFileChecksumDataKey: []byte(calculateChecksum(file.Content)),
+		})
+}
+
+const sensitiveMapType = "sensitive-map"
+
+func (p *Publisher) createOrUpdateSensitiveMapSecret(ctx context.Context, req *PublishRequest, owner *haproxyv1alpha1.HAProxyCfg, file auxiliaryfiles.SensitiveMapFile, name string) (string, error) {
+	if !auxiliaryfiles.IsKeyedSeal(file.Seal) {
+		return "", fmt.Errorf("sensitive map %s has no keyed seal; refusing to publish it", file.Path)
+	}
+	result := p.compressIfNeeded(file.Content, req.CompressionThreshold, "Secret/"+name)
+	return p.createOrUpdateFileSecret(ctx, req, owner, name, file.Path, sensitiveMapType, identityChecksum(file), result.compressed,
+		map[string][]byte{
+			secretFileDataKey:         []byte(result.content),
+			secretPathDataKey:         []byte(file.Path),
 			secretFileChecksumDataKey: []byte(calculateChecksum(file.Content)),
 		})
 }

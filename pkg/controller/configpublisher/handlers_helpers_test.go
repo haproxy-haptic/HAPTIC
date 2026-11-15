@@ -78,6 +78,9 @@ func TestComponent_ConvertAuxiliaryFiles(t *testing.T) {
 			SSLCaFiles:      []auxiliaryfiles.SSLCaFile{{Path: "/ssl/ca.pem", Content: "ca"}},
 			GeneralFiles:    []auxiliaryfiles.GeneralFile{{Filename: "400.http", Content: "g"}},
 			CRTListFiles:    []auxiliaryfiles.CRTListFile{{Path: "/crts/list.txt", Content: "l"}},
+			SensitiveMapFiles: []auxiliaryfiles.SensitiveMapFile{
+				{Path: "keys.map", Content: "k", Seal: "s"},
+			},
 		}
 
 		got := c.convertAuxiliaryFiles(input)
@@ -91,6 +94,7 @@ func TestComponent_ConvertAuxiliaryFiles(t *testing.T) {
 		assert.Equal(t, input.SSLCaFiles, got.SSLCaFiles, "SSLCaFiles must round-trip")
 		assert.Equal(t, input.GeneralFiles, got.GeneralFiles, "GeneralFiles must round-trip")
 		assert.Equal(t, input.CRTListFiles, got.CRTListFiles, "CRTListFiles must round-trip")
+		assert.Equal(t, input.SensitiveMapFiles, got.SensitiveMapFiles, "SensitiveMapFiles must round-trip")
 	})
 }
 
@@ -164,7 +168,7 @@ func TestComponent_GetCompressionThreshold(t *testing.T) {
 }
 
 // TestComponent_ConvertAuxiliaryFiles_StructShape asserts via reflect
-// that configpublisher.AuxiliaryFiles has exactly the six fields the
+// that configpublisher.AuxiliaryFiles has exactly the seven fields the
 // converter knows about. The original Gitar review pointed out that a
 // keyed struct literal only catches field removals/renames, not
 // additions — Go happily compiles a keyed literal even when the
@@ -176,9 +180,9 @@ func TestComponent_GetCompressionThreshold(t *testing.T) {
 // to be updated alongside convertAuxiliaryFiles.
 func TestComponent_ConvertAuxiliaryFiles_StructShape(t *testing.T) {
 	typ := reflect.TypeOf(configpublisher.AuxiliaryFiles{})
-	require.Equal(t, 6, typ.NumField(),
-		"configpublisher.AuxiliaryFiles must have exactly 6 fields "+
-			"(MapFiles, SSLCertificates, SSLCaFiles, GeneralFiles, CRTListFiles, SecretFiles); "+
+	require.Equal(t, 7, typ.NumField(),
+		"configpublisher.AuxiliaryFiles must have exactly 7 fields "+
+			"(MapFiles, SSLCertificates, SSLCaFiles, GeneralFiles, CRTListFiles, SecretFiles, SensitiveMapFiles); "+
 			"if you added or removed a field, also update convertAuxiliaryFiles in handlers.go "+
 			"to wire the new field through (or drop it from) the type-bridge — otherwise "+
 			"newly-added aux files would be silently dropped from published K8s resources")
@@ -188,7 +192,7 @@ func TestComponent_ConvertAuxiliaryFiles_StructShape(t *testing.T) {
 	// would silently route data to the wrong destination field).
 	wantFields := map[string]bool{
 		"MapFiles": true, "SSLCertificates": true, "SSLCaFiles": true,
-		"GeneralFiles": true, "CRTListFiles": true, "SecretFiles": true,
+		"GeneralFiles": true, "CRTListFiles": true, "SecretFiles": true, "SensitiveMapFiles": true,
 	}
 	gotFields := make(map[string]bool, typ.NumField())
 	for i := 0; i < typ.NumField(); i++ {

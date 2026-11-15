@@ -120,7 +120,7 @@ templateSnippets:
                 {%- end -%}
                 {%- if canaryHeaderPattern != "" -%}
                   {%- var safePattern = ValidateConfigValue(canaryHeaderPattern, "haproxy-haptic.org/canary-by-header-pattern", key, false) -%}
-                  {{- shared.Publish("pattern", key, "\n# haptic/canary (" + key + ")\nuse_backend " + canaryBackend + " if { req.hdr(" + safeHeader + ") -m reg " + safePattern + " } " + HapticHostMatchCondition(key)) -}}
+                  {{- shared.Publish("pattern", key, "\n# haptic/canary (" + key + ")\nuse_backend " + canaryBackend + " if { req.hdr(" + safeHeader + ") -m reg " + safePattern + " } !{ var(txn.backend_pinned) -m found } " + HapticHostMatchCondition(key)) -}}
                   {%- safeHeader = "" -%}
                 {%- else if canaryHeaderValue != "" -%}
                   {%- headerValue = ValidateConfigValue(canaryHeaderValue, "haproxy-haptic.org/canary-by-header-value", key, false) -%}

@@ -378,7 +378,7 @@ func mapContentsByPlanPath(files []auxiliaryfiles.MapFile, plan *renderplan.Plan
 	planned := make(map[string][]string, len(files))
 	if plan != nil {
 		for _, file := range plan.Files {
-			if file.Kind == renderplan.FileKindMap {
+			if file.Kind == renderplan.FileKindMap && file.Seal == "" {
 				planned[file.Digest] = append(planned[file.Digest], file.Path)
 			}
 		}

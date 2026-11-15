@@ -299,7 +299,7 @@ _migrationCoverage:
         note: "Header carrying the client HMAC signature (default X-Signature; lowercase hex)."
       haproxy-haptic.org/hmac-secret:
         status: different
-        note: "Secret (data key `secret`) → HMAC request-signature verification, deny 401 on mismatch. DIVERGES: the shared key is inlined (base64) into the rendered config and the compare is not constant-time — prefer asymmetric JWT. Fails closed (503) when the Secret is absent."
+        note: "Secret (data key `secret`) → HMAC request-signature verification, deny 401 on mismatch. DIVERGES: the compare is not constant-time — prefer asymmetric JWT. Fails closed (503) when the Secret is absent."
       haproxy-haptic.org/hmac-signed-string:
         status: supported
         note: "What the HMAC covers: `body` (default, forces option http-buffer-request) or `path`."
@@ -357,6 +357,9 @@ _migrationCoverage:
       haproxy-haptic.org/upload-bandwidth-limit:
         status: supported
         note: "Caps the bytes per second received from the client via a `bwlim-in` filter. Byte sizes are validated before interpolation."
+      haproxy-haptic.org/upstream-authorization-secret:
+        status: supported
+        note: "Secret in the Ingress's namespace (data key `authorization`) whose value replaces the request's Authorization header after every client check. Fails closed (503) when the Secret is missing or the value is invalid."
       haproxy-haptic.org/bandwidth-limit-scope:
         status: supported
         note: "Who shares the bandwidth budget: `stream` (default), `client` (per source IP, `key src`) or `service` (whole backend, `key be_id`). The shared scopes add a backend stick-table, so they exclude the per-source rate-limit caps."

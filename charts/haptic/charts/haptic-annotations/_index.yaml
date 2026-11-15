@@ -118,6 +118,16 @@ maps:
       # <ns>/<name> → "<download bytes/s|_> <upload bytes/s|_> <stream|client|service>"
       # Populated by map-haptic-bandwidth-routes-*; read by frontend-filters-864-haptic-bandwidth-limit.
       {{ on_own_lines(render_glob "map-haptic-bandwidth-routes-*") -}}
+  haptic-upstream-auth-routes.map:
+    ordered: false
+    template: |
+      # <ns>/<name> → ok | missing | invalid for every route with upstream-authorization-secret.
+      # Populated by map-haptic-upstream-auth-routes-*; read by frontend-filters-994-haptic-upstream-auth.
+      {{ on_own_lines(render_glob "map-haptic-upstream-auth-routes-*") -}}
+  haptic-upstream-auth.map:
+    ordered: false
+    template: |
+      {{ on_own_lines(render_glob "map-haptic-upstream-auth-values-*") -}}
   haptic-route-unavailable.map:
     template: |
       # <ns>/<name> → <denied_by reason> for a route whose backend TLS or sso-auth provider is unusable.

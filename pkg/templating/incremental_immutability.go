@@ -1850,7 +1850,7 @@ func preservingSharedContributionMethod(method string) bool {
 
 func preservingPlanRegistrarMethod(method string) bool {
 	switch method {
-	case "Section", "Fragment", memberProfile, memberBackend, "ProfileGroup", "MapMeta":
+	case "Section", "Fragment", memberProfile, memberBackend, "ProfileGroup", "MapMeta", "SensitiveMap":
 		return true
 	default:
 		return false

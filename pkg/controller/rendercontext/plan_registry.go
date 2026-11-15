@@ -28,6 +28,7 @@ import (
 	iradix "github.com/hashicorp/go-immutable-radix/v2"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/auxiliaryfiles"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/renderplan"
 	"github.com/haproxy-haptic/HAPTIC/pkg/rendercontent"
 	"github.com/haproxy-haptic/HAPTIC/pkg/templating"
@@ -78,6 +79,7 @@ type PlanRegistry struct {
 	fragments           map[string]rendercontent.TextFragment
 	backends            map[string]renderplan.Backend
 	mapsMeta            map[string]bool
+	sensitiveMaps       map[string]struct{}
 	memo                *PlanMemo
 	assembled           []renderplan.Section
 	prepared            *PreparedPlanSnapshot
@@ -142,6 +144,7 @@ func NewPlanRegistryWithAuthority(
 		fragments:      make(map[string]rendercontent.TextFragment),
 		backends:       make(map[string]renderplan.Backend),
 		mapsMeta:       make(map[string]bool),
+		sensitiveMaps:  make(map[string]struct{}),
 	}, nil
 }
 
@@ -335,6 +338,52 @@ func (r *PlanRegistry) MapMeta(path string, ordered bool) error {
 	}
 	r.mapsMeta[resolved] = ordered
 	return nil
+}
+
+// SensitiveMap declares that a map file holds credentials, for the whole render:
+// it is published as a Secret, kept out of the plan's map entries and replaced
+// as a whole at runtime. Declaring it again is a no-op.
+func (r *PlanRegistry) SensitiveMap(path string) error {
+	if path == "" {
+		return fmt.Errorf("planRegistry.SensitiveMap: path must not be empty")
+	}
+	resolved, err := r.MapPath(path)
+	if err != nil {
+		return fmt.Errorf("planRegistry.SensitiveMap: %w", err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// No declarationRevision bump: sensitivity never changes the assembled
+	// sections, and a map root may declare it after assembly.
+	r.sensitiveMaps[resolved] = struct{}{}
+	return nil
+}
+
+// SealSensitiveMaps moves every map file declared sensitive from MapFiles into
+// SensitiveMapFiles, sealed under key. files is not modified.
+func (r *PlanRegistry) SealSensitiveMaps(files *dataplane.AuxiliaryFiles, key []byte) (*dataplane.AuxiliaryFiles, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if files == nil || len(r.sensitiveMaps) == 0 {
+		return files, nil
+	}
+	sealed := *files
+	sealed.MapFiles = make([]auxiliaryfiles.MapFile, 0, len(files.MapFiles))
+	sealed.SensitiveMapFiles = slices.Clone(files.SensitiveMapFiles)
+	for _, file := range files.MapFiles {
+		resolved, err := r.MapPath(file.Path)
+		if err != nil {
+			return nil, err
+		}
+		if _, sensitive := r.sensitiveMaps[resolved]; !sensitive {
+			sealed.MapFiles = append(sealed.MapFiles, file)
+			continue
+		}
+		sealed.SensitiveMapFiles = append(sealed.SensitiveMapFiles, auxiliaryfiles.SensitiveMapFile{
+			Path: file.Path, Content: file.Content, Seal: auxiliaryfiles.SealSensitiveMap(key, file.Content),
+		})
+	}
+	return dataplane.CanonicalizeAuxiliaryFiles(&sealed)
 }
 
 // MapPath is the base-relative path a map file is referenced by in the config

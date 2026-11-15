@@ -195,7 +195,7 @@ func validFileKind(kind string) bool {
 func validateMaps(mapsByPath map[string]renderplan.Map, files map[string]*renderplan.File) error {
 	mapFiles := 0
 	for _, file := range files {
-		if file.Kind == renderplan.FileKindMap {
+		if file.Kind == renderplan.FileKindMap && file.Seal == "" {
 			mapFiles++
 		}
 	}
@@ -340,7 +340,7 @@ func artifactContentMismatchEvidence(content *renderartifact.Content, path strin
 
 func artifactPlanMetadata(descriptor renderartifact.Descriptor) (string, bool) {
 	switch descriptor.Family {
-	case renderartifact.Map:
+	case renderartifact.Map, renderartifact.SensitiveMap:
 		return renderplan.FileKindMap, false
 	case renderartifact.General:
 		return renderplan.FileKindGeneral, descriptor.ReloadOnChange

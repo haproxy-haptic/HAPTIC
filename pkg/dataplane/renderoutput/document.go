@@ -477,7 +477,7 @@ func computeDocumentSnapshotContentChecksum(
 		if _, err := configHash.WriteString(item.identifier); err != nil {
 			return "", err
 		}
-		if item.family == renderartifact.Secret {
+		if item.family == renderartifact.Secret || item.family == renderartifact.SensitiveMap {
 			if _, err := configHash.WriteString(item.seal); err != nil {
 				return "", err
 			}
@@ -581,6 +581,8 @@ func documentChecksumIdentity(
 		return 3, descriptor.Path, nil
 	case renderartifact.Secret:
 		return 5, descriptor.Path, nil
+	case renderartifact.SensitiveMap:
+		return 6, descriptor.Path, nil
 	case renderartifact.CRTList:
 		return 4, descriptor.Path, nil
 	default:

@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/auxiliaryfiles"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/renderartifact"
 )
 
@@ -238,7 +239,7 @@ func (p *Publisher) readRetainedFile(ctx context.Context, ref v1.ResourceReferen
 			return retainedFile{}, err
 		}
 		return retainedSecretFile(item, family)
-	case renderartifact.Secret:
+	case renderartifact.Secret, renderartifact.SensitiveMap:
 		item, err := listedOrGet(ctx, listing, kindSecret, ref.Name, p.k8sClient.CoreV1().Secrets(ref.Namespace).Get)
 		if err != nil {
 			return retainedFile{}, err
@@ -270,12 +271,16 @@ func retainedSecretFileSecret(item *corev1.Secret) (retainedFile, error) {
 	content, present := item.Data[secretFileDataKey]
 	compressed, declared := compressedAnnotation(item)
 	seal, sealed := strings.CutPrefix(checksum, sealChecksumPrefix)
-	if item.Type != corev1.SecretTypeOpaque || item.Labels["haproxy-haptic.org/type"] != secretFileType ||
-		!present || !sealed || seal == "" || filePath == "" || string(item.Data["path"]) != filePath || len(item.Data) != 3 || !declared {
+	family := renderartifact.Secret
+	if item.Labels["haproxy-haptic.org/type"] == sensitiveMapType {
+		family = renderartifact.SensitiveMap
+	}
+	if item.Type != corev1.SecretTypeOpaque || family == renderartifact.Secret && item.Labels["haproxy-haptic.org/type"] != secretFileType ||
+		!present || !sealed || !auxiliaryfiles.IsKeyedSeal(seal) || filePath == "" || string(item.Data["path"]) != filePath || len(item.Data) != 3 || !declared {
 		return retainedFile{}, errors.New("retained secret file metadata differs from its payload")
 	}
 	return retainedFile{
-		meta: item, key: retainedFileKey{renderartifact.Secret, filePath}, content: string(content),
+		meta: item, key: retainedFileKey{family, filePath}, content: string(content),
 		checksum: checksum, contentChecksum: string(item.Data[secretFileChecksumDataKey]), seal: seal,
 		compressed: compressed, empty: len(content) == 0,
 	}, nil

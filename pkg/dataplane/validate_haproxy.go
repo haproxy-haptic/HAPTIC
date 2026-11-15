@@ -25,6 +25,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/auxiliaryfiles"
 )
 
 // defaultCheckGate serializes the checks of every caller that does not bring
@@ -289,8 +291,9 @@ func eachAuxiliaryFile(auxFiles *AuxiliaryFiles, paths *ValidationPaths, visit f
 		return visit(resolved, content, label)
 	}
 
-	for _, mapFile := range auxFiles.MapFiles {
-		if err := each(mapFile.Path, mapFile.Content, paths.MapsDir, "map file "+mapFile.Path); err != nil {
+	for _, mapFile := range mapFileItems(auxFiles) {
+		mapPath := mapFile.GetIdentifier()
+		if err := each(mapPath, mapFile.GetContent(), paths.MapsDir, "map file "+mapPath); err != nil {
 			return err
 		}
 	}
@@ -634,4 +637,16 @@ func extractConfigContext(alertLine string, configLines []string) string {
 	}
 
 	return strings.Join(contextLines, "\n")
+}
+
+// mapFileItems lists plain and sensitive maps alike: HAProxy reads both.
+func mapFileItems(auxFiles *AuxiliaryFiles) []auxiliaryfiles.FileItem {
+	items := make([]auxiliaryfiles.FileItem, 0, len(auxFiles.MapFiles)+len(auxFiles.SensitiveMapFiles))
+	for _, file := range auxFiles.MapFiles {
+		items = append(items, file)
+	}
+	for _, file := range auxFiles.SensitiveMapFiles {
+		items = append(items, file)
+	}
+	return items
 }

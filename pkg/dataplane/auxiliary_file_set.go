@@ -17,6 +17,7 @@ package dataplane
 import (
 	"fmt"
 	"path"
+	"slices"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/auxiliaryfiles"
 )
@@ -86,6 +87,21 @@ func CanonicalizeAuxiliaryFiles(files *AuxiliaryFiles) (*AuxiliaryFiles, error) 
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	result.SensitiveMapFiles, err = canonicalizeFileItems(
+		"Sensitive map file", files.SensitiveMapFiles,
+		func(file auxiliaryfiles.SensitiveMapFile) string { return file.Path },
+		func(a, b auxiliaryfiles.SensitiveMapFile) bool { return a == b },
+		func(file auxiliaryfiles.SensitiveMapFile) auxiliaryfiles.SensitiveMapFile { return file },
+	)
+	if err != nil {
+		return nil, err
+	}
+	for _, sensitive := range result.SensitiveMapFiles {
+		if slices.ContainsFunc(result.MapFiles, func(file auxiliaryfiles.MapFile) bool { return file.Path == sensitive.Path }) {
+			return nil, fmt.Errorf("map file %q is declared both sensitive and plain", sensitive.Path)
+		}
 	}
 
 	if err := rejectSharedGeneralStorageName(result.GeneralFiles, result.CRTListFiles); err != nil {

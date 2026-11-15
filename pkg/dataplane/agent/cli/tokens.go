@@ -38,7 +38,7 @@ func validateToken(field, s string) error {
 		return fmt.Errorf("%w: %s is empty", ErrUnsafeToken, field)
 	}
 	if !api.SafeToken(s) {
-		return fmt.Errorf("%w: %s %q", ErrUnsafeToken, field, s)
+		return fmt.Errorf("%w: %s contains whitespace, a control character or one of ;<>\\", ErrUnsafeToken, field)
 	}
 	return nil
 }

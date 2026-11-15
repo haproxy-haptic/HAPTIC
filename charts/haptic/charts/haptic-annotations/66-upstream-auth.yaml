@@ -1,0 +1,127 @@
+# HAPTIC-native annotation library — upstream credential from a Secret.
+#
+# haproxy-haptic.org/upstream-authorization-secret names a Secret in the
+# Ingress's namespace; its `authorization` value replaces the request's
+# Authorization header after every client check, so the caller's credential
+# never reaches the upstream and the upstream's never reaches the caller.
+#   haptic-upstream-auth-routes.map  <ns>/<name> → ok | missing | invalid
+#   haptic-upstream-auth.map         <ns>/<name> → header value (sensitive map)
+templateSnippets:
+  util-haptic-upstream-auth-route:
+    template: |-
+      {%- macro HapticUpstreamAuthRoute(ingress any, result map[string]any) -%}
+        {%- var ns = dig_string(ingress, "", "metadata", "namespace") -%}
+        {%- var ref = dig_string(ingress, "", "metadata", "annotations", "haproxy-haptic.org/upstream-authorization-secret") -%}
+        {%- result["enabled"] = ref != "" -%}
+        {%- result["ref"] = ref -%}
+        {%- result["state"] = "invalid" -%}
+        {%- result["value"] = "" -%}
+        {%- result["badRef"] = false -%}
+        {%- if ref != "" -%}
+          {#- Same namespace only: the Ingress author chooses the backend, so a
+              foreign Secret here would be readable by anyone who can write an Ingress. -#}
+          {%- if !regex_search(ref, "^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$") -%}
+            {%- result["badRef"] = true -%}
+          {%- else -%}
+            {%- var secret = resources.secrets.GetSingle(ns, ref) -%}
+            {%- if secret == nil -%}
+              {%- result["state"] = "missing" -%}
+            {%- else -%}
+              {%- var value = secret.Data["authorization"] | b64decode() | tostring() -%}
+              {%- if len(value) <= 8192 && regex_search(value, "^[!-~]([ -~]*[!-~])?$") -%}
+                {%- result["state"] = "ok" -%}
+                {%- result["value"] = value -%}
+              {%- end -%}
+            {%- end -%}
+          {%- end -%}
+        {%- end -%}
+      {%- end macro -%}
+
+  map-haptic-upstream-auth-routes-866-haptic:
+    requires: [ingresses]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/upstream-authorization-secret']"]
+    template: |-
+      {%- import "util-haptic-upstream-auth-route" for HapticUpstreamAuthRoute -%}
+      {%- var route = map[string]any{} -%}
+      {{- HapticUpstreamAuthRoute(item, route) -}}
+      {%- if route["enabled"] == true -%}
+      {{ "\n" }}{{ dig_string(item, "", "metadata", "namespace") }}/{{ dig_string(item, "", "metadata", "name") }} {{ route["state"] }}
+      {%- end -%}
+
+  map-haptic-upstream-auth-values-866-haptic:
+    requires: [ingresses]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/upstream-authorization-secret']"]
+    template: |-
+      {%- import "util-haptic-upstream-auth-route" for HapticUpstreamAuthRoute -%}
+      {%- var route = map[string]any{} -%}
+      {{- HapticUpstreamAuthRoute(item, route) -}}
+      {%- if route["state"] == "ok" -%}
+      {{ "\n" }}{{ dig_string(item, "", "metadata", "namespace") }}/{{ dig_string(item, "", "metadata", "name") }} {{ route["value"] }}
+      {%- end -%}
+
+  features-866-haptic-upstream-auth:
+    requires: [ingresses]
+    incremental:
+      source: ingresses
+      whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/upstream-authorization-secret']"]
+      group: haptic-upstream-auth
+      effects: [publishValue, recordEvent]
+    template: |-
+      {%- import "util-haptic-upstream-auth-route" for HapticUpstreamAuthRoute -%}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
+      {%- var route = map[string]any{} -%}
+      {{- HapticUpstreamAuthRoute(item, route) -}}
+      {%- if route["enabled"] == true -%}
+        {{- shared.Publish("any", "any", "any") -}}
+        {%- var ns = dig_string(item, "", "metadata", "namespace") -%}
+        {%- var name = dig_string(item, "", "metadata", "name") -%}
+        {%- var ingress = resources.ingresses.GetSingle(ns, name) -%}
+        {%- var ref = ns + "/" + tostring(route["ref"]) -%}
+        {%- if route["badRef"] == true -%}
+          {{- WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+            "Ingress " + ns + "/" + name + " sets 'haproxy-haptic.org/upstream-authorization-secret' to '" + tostring(route["ref"]) + "', which isn't a Secret name in its own namespace",
+            "the Ingress is rejected", "requests return 503", "Name a Secret in namespace " + ns + ".")) -}}
+        {%- else if route["state"] == "missing" -%}
+          {{- recordEvent(ingress, "UpstreamAuthSecretMissing", "Ingress " + ns + "/" + name + " references Secret '" + ref + "' in 'haproxy-haptic.org/upstream-authorization-secret', but it can't be found. Requests return 503 until it exists.") -}}
+        {%- else if route["state"] == "invalid" -%}
+          {{- recordEvent(ingress, "UpstreamAuthSecretInvalid", "Secret '" + ref + "' referenced by 'haproxy-haptic.org/upstream-authorization-secret' on Ingress " + ns + "/" + name + " has no usable 'authorization' value. Requests return 503. Set it to printable ASCII without line breaks, at most 8192 bytes.") -}}
+        {%- end -%}
+      {%- end -%}
+
+  # Before the canary band (996): a pinned request is never diverted to a
+  # backend another Ingress chose, which would receive this route's credential.
+  frontend-filters-994-haptic-upstream-auth:
+    requires: [ingresses]
+    template: |
+      {%- if incremental_value_count("haptic-upstream-auth", "any") > 0 -%}
+      {%- var routes, e1 = pathResolver.GetPath("haptic-upstream-auth-routes.map", "map") -%}
+      {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
+      {{ "\n" }}# haptic/upstream-auth
+      http-request set-var(txn.ua_state) var(txn.resource_key),map({{ routes }})
+      http-request set-var(txn.backend_pinned) bool(1) if { var(txn.ua_state) -m found }
+      http-request set-var(txn.denied_by) str(upstream_auth_unavailable) if { var(txn.ua_state) -m found } !{ var(txn.ua_state) -m str ok }
+      http-request deny deny_status 503 if { var(txn.ua_state) -m found } !{ var(txn.ua_state) -m str ok }
+      {#- TRACE would echo the injected credential back to the caller. #}
+      http-request set-var(txn.denied_by) str(upstream_auth_trace) if { var(txn.ua_state) -m found } METH_TRACE
+      http-request deny deny_status 405 if { var(txn.ua_state) -m found } METH_TRACE
+      {%- end %}
+
+  # After every rule that reads the caller's Authorization (JWT 858 … satisfy-any 901).
+  # The value is read from the map inline, never stored in a variable.
+  frontend-filters-997-haptic-upstream-auth:
+    requires: [ingresses]
+    template: |
+      {%- if incremental_value_count("haptic-upstream-auth", "any") > 0 -%}
+      {%- var values, e1 = pathResolver.GetPath("haptic-upstream-auth.map", "map") -%}
+      {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
+      {%- var e2 = planRegistry.SensitiveMap("haptic-upstream-auth.map") -%}
+      {%- if e2 != nil -%}{{ fail(tostring(e2)) }}{%- end -%}
+      {{ "\n" }}# haptic/upstream-auth
+      http-request set-var(txn.denied_by) str(upstream_auth_unavailable) if { var(txn.ua_state) -m str ok } !{ var(txn.resource_key),map({{ values }}) -m found }
+      http-request deny deny_status 503 if { var(txn.ua_state) -m str ok } !{ var(txn.resource_key),map({{ values }}) -m found }
+      http-request set-header Authorization %[var(txn.resource_key),map({{ values }})] if { var(txn.ua_state) -m str ok }
+      {%- end %}

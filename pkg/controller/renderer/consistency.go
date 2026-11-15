@@ -69,6 +69,9 @@ func validateAuxiliaryFilesConsistency(haproxyConfig string, auxFiles *dataplane
 	for _, m := range auxFiles.MapFiles {
 		registered[path.Base(m.Path)] = struct{}{}
 	}
+	for _, m := range auxFiles.SensitiveMapFiles {
+		registered[path.Base(m.Path)] = struct{}{}
+	}
 
 	var missing []string
 	for name := range referenced {

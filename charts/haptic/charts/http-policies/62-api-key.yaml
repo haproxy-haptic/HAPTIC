@@ -7,6 +7,8 @@ templateSnippets:
       {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
       {%- var keys, e2 = pathResolver.GetPath("haptic-apikeys.map", "map") -%}
       {%- if e2 != nil -%}{{ fail(tostring(e2)) }}{%- end -%}
+      {%- var e3 = planRegistry.SensitiveMap("haptic-apikeys.map") -%}
+      {%- if e3 != nil -%}{{ fail(tostring(e3)) }}{%- end -%}
       {%- var hdrs = []any{} -%}
       {%- for _, v := range incremental_values("haptic-api-key-routes", "hdr") -%}{%- hdrs = append(hdrs, tostring(v)) -%}{%- end -%}
       {%- var queries = []any{} -%}

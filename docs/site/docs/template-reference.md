@@ -64,6 +64,34 @@ For `"file"`, an optional fourth argument, `reloadOnPush`, defaults to `true`.
 Pass `false` only for a file read by a sidecar rather than HAProxy; a content
 change then deploys without reloading HAProxy.
 
+### Mark a map as sensitive
+
+Call `planRegistry.SensitiveMap(filename)` for a map that HAProxy must read but
+that holds credentials, such as HMAC keys or API keys. It returns an error,
+which you should check. It works for maps declared under `maps:` and for maps
+registered with `fileRegistry.Register("map", …)`. Calling it again for the
+same map does nothing.
+
+```scriggo
+{%- var path, err = fileRegistry.Register("map", "api-keys.map", content) %}
+{%- var sensitiveErr = planRegistry.SensitiveMap("api-keys.map") %}
+```
+
+For the whole render, a sensitive map:
+
+- Is published as a Kubernetes Secret, never as an `HAProxyMapFile`.
+- Is identified by a keyed digest, so a reader without Secret access can't
+  test guesses of its content.
+- Is still written to the maps directory and checked by `haproxy -c`.
+- Is replaced as a whole over the runtime API when it changes, so no key or
+  value appears in an individual runtime operation.
+- Is left out of `currentFiles`, `haptic validate --dump-rendered`, and the
+  playground.
+
+The bundled `RegisterMap` macro calls it when you pass
+`map[string]any{"sensitive": true}` in its options. Test the content with the
+`sensitive-map:<name>` [validation target](./validation-reference.md).
+
 ### Limit a check to the admitted resource
 
 Combine `renderMode` with `admissionSubject` when a rule should reject only the

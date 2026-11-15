@@ -64,10 +64,14 @@ type AuxiliaryFiles struct {
 
 	// SecretFiles contains sidecar files that are published as Kubernetes Secrets
 	SecretFiles []auxiliaryfiles.SecretFile
+
+	// SensitiveMapFiles are map files delivered like MapFiles but published as
+	// Kubernetes Secrets and identified by their seal.
+	SensitiveMapFiles []auxiliaryfiles.SensitiveMapFile
 }
 
 // CurrentFiles projects CRD-backed auxiliary output into the currentFiles map.
-// Secret-backed certificate, CA and secret-file content is deliberately excluded.
+// Secret-backed certificate, CA, secret-file and sensitive-map content is deliberately excluded.
 func (af *AuxiliaryFiles) CurrentFiles() map[string]string {
 	if af == nil {
 		return nil
@@ -108,6 +112,9 @@ func (a *AuxiliaryFiles) Sort() {
 		return cmp.Compare(x.Path, y.Path)
 	})
 	slices.SortFunc(a.SecretFiles, func(x, y auxiliaryfiles.SecretFile) int {
+		return cmp.Compare(x.Path, y.Path)
+	})
+	slices.SortFunc(a.SensitiveMapFiles, func(x, y auxiliaryfiles.SensitiveMapFile) int {
 		return cmp.Compare(x.Path, y.Path)
 	})
 }

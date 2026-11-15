@@ -213,7 +213,8 @@ func renderedAuxiliaryFileCount(entry *renderedConfigEntry) int {
 	}
 	return len(entry.auxFiles.MapFiles) + len(entry.auxFiles.SSLCertificates) +
 		len(entry.auxFiles.SSLCaFiles) + len(entry.auxFiles.GeneralFiles) +
-		len(entry.auxFiles.CRTListFiles) + len(entry.auxFiles.SecretFiles)
+		len(entry.auxFiles.CRTListFiles) + len(entry.auxFiles.SecretFiles) +
+		len(entry.auxFiles.SensitiveMapFiles)
 }
 
 // handleRenderGateCompleted mirrors the gate's latch and records its verdict on
@@ -656,12 +657,13 @@ func (c *Component) convertAuxiliaryFiles(dataplaneFiles *dataplane.AuxiliaryFil
 	}
 
 	return &configpublisher.AuxiliaryFiles{
-		MapFiles:        dataplaneFiles.MapFiles,
-		SSLCertificates: dataplaneFiles.SSLCertificates,
-		SSLCaFiles:      dataplaneFiles.SSLCaFiles,
-		GeneralFiles:    dataplaneFiles.GeneralFiles,
-		CRTListFiles:    dataplaneFiles.CRTListFiles,
-		SecretFiles:     dataplaneFiles.SecretFiles,
+		MapFiles:          dataplaneFiles.MapFiles,
+		SSLCertificates:   dataplaneFiles.SSLCertificates,
+		SSLCaFiles:        dataplaneFiles.SSLCaFiles,
+		GeneralFiles:      dataplaneFiles.GeneralFiles,
+		CRTListFiles:      dataplaneFiles.CRTListFiles,
+		SecretFiles:       dataplaneFiles.SecretFiles,
+		SensitiveMapFiles: dataplaneFiles.SensitiveMapFiles,
 	}
 }
 

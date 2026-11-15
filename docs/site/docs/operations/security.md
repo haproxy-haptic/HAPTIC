@@ -613,6 +613,18 @@ kubectl label namespace "$alias_namespace" example.com/host-aliases=allowed
 Like the governance rules, the policy checks only creates and updates; it doesn't
 remove an alias from an existing Ingress.
 
+### Ingress authors and Secrets
+
+[`haproxy-haptic.org/upstream-authorization-secret`](../libraries/haptic-annotations.md#send-a-credential-to-the-upstream)
+sends a Secret's `authorization` value to the Ingress's backend. Because the Ingress
+author also picks the backend, anyone who can create or edit an Ingress in a
+namespace can read that namespace's Secrets this way, even without RBAC access to
+Secrets. HAPTIC accepts only Secrets in the Ingress's own namespace.
+
+If Ingress authors in a namespace mustn't read its Secrets, reject the annotation
+there with a [governance rule](governance.md#scope-a-rule-to-namespaces) or an
+admission policy, as for host aliases above.
+
 ## Admission validation coverage
 
 The admission webhook renders the proposed state and runs `haproxy -c` before
