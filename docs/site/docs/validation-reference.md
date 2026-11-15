@@ -223,7 +223,7 @@ The `contains`, `not_contains`, `match_count`, `equals`, and `match_order` asser
 | Target | What's checked |
 |--------|----------------|
 | `haproxy.cfg` (or empty) | The rendered main HAProxy configuration |
-| `map:<name>` | A rendered map file, sensitive or not. `<name>` matches against either the full path or the basename |
+| `map:<name>` | Any rendered map file, including sensitive maps. `<name>` matches against either the full path or the basename |
 | `sensitive-map:<name>` | A map declared with `planRegistry.SensitiveMap`. Fails when the map is missing or isn't sensitive, so it also asserts the protection. A failed assertion never shows the content |
 | `file:<name>` | A rendered general file (error pages, etc.), matched by filename |
 | `cert:<name>` | A rendered SSL certificate, matched by basename |
