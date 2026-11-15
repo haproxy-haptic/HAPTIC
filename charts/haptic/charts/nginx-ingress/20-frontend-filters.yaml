@@ -234,7 +234,7 @@ templateSnippets:
                 {%- end -%}
               {%- else if canaryHeader != "" && canaryHeaderPattern != "" %}
                 {%- var match = IngressHostMatchPublication(hosts, tostring(props["fileDir"])) %}
-                {{- shared.Publish("pattern", key, "\n# nginx-ingress/canary (" + key + ")\nuse_backend " + canaryBackend + " if { req.hdr(" + canaryHeader + ") -m reg '" + canaryHeaderPattern + "' } " + tostring(match["condition"])) -}}
+                {{- shared.Publish("pattern", key, "\n# nginx-ingress/canary (" + key + ")\nuse_backend " + canaryBackend + " if { req.hdr(" + canaryHeader + ") -m reg '" + canaryHeaderPattern + "' } !{ var(txn.backend_pinned) -m found } " + tostring(match["condition"])) -}}
                 {%- if match["file"] != nil -%}
                   {{- shared.Publish("files", key, match["file"]) -}}
                 {%- end -%}

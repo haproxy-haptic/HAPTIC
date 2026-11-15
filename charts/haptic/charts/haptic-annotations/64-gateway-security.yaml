@@ -419,11 +419,9 @@ templateSnippets:
 
   # ==========================================================================
   # HMAC request-signature verification: one uniform block per HTTP frontend
-  # (frontend-filters-861), fed by haptic-hmac-routes.map. The route's base64
-  # shared secret travels in the map, so it is visible wherever the map is
-  # (the HAProxyMapFile object and the pod) — prefer asymmetric JWT
-  # (60-jwt-auth) where only a public key ever appears. Status `different` for
-  # this reason plus the non-constant-time signature compare.
+  # (frontend-filters-861), fed by the sensitive haptic-hmac-routes.map, which
+  # holds the route's base64 shared secret. Status `different` because the
+  # signature compare isn't constant-time; prefer asymmetric JWT (60-jwt-auth).
   #
   # The per-value text is one signing rule per distinct algorithm and one
   # compare rule per distinct signature header in use (`hmac(<alg>,…)` and
@@ -564,6 +562,8 @@ templateSnippets:
       {%- if incremental_value_count("haptic-hmac-routes", "any") > 0 -%}
       {%- var routes, e1 = pathResolver.GetPath("haptic-hmac-routes.map", "map") -%}
       {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
+      {%- var e2 = planRegistry.SensitiveMap("haptic-hmac-routes.map") -%}
+      {%- if e2 != nil -%}{{ fail(tostring(e2)) }}{%- end -%}
       {%- var bodyWait = extraContext | dig_string("10s", "requestBuffering", "waitTimeout") -%}
       {%- var algs = []any{} -%}
       {%- for _, v := range incremental_values("haptic-hmac-routes", "alg") -%}{%- algs = append(algs, tostring(v)) -%}{%- end -%}

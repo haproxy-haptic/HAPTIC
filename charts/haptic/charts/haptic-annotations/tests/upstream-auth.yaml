@@ -1,0 +1,250 @@
+# HAPTIC-native annotation library — upstream-authorization-secret tests.
+_fx:
+  httpRoot: &uaHttpRoot
+    paths:
+      - path: /
+        pathType: Prefix
+        backend: { service: { name: echo, port: { number: 80 } } }
+  credentialSecret: &uaCredentialSecret
+    apiVersion: v1
+    kind: Secret
+    metadata: { namespace: default, name: git-deploy }
+    type: Opaque
+    data:
+      authorization: QmFzaWMgWjJsMGJHRmlLMlJsY0d4dmVTMTBiMnRsYmkwME1qcG5iR1IwTFhoNGVBPT0=   # Basic Z2l0bGFiK2RlcGxveS10b2tlbi00MjpnbGR0LXh4eA==
+  routedIngress: &uaIngress
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      namespace: default
+      name: git
+      annotations:
+        haproxy-haptic.org/upstream-authorization-secret: git-deploy
+    spec:
+      ingressClassName: haptic
+      rules:
+        - host: git.example.com
+          http: *uaHttpRoot
+
+validationTests:
+  test-haptic-upstream-auth:
+    description: >-
+      The Secret's authorization value replaces the request's Authorization header
+      after every client check; it travels only in the sensitive map, never in the
+      configuration or the plain route map.
+    fixtures:
+      secrets: [*uaCredentialSecret]
+      ingresses: [*uaIngress]
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^default/git ok$'}
+      - {type: contains, target: "sensitive-map:haptic-upstream-auth.map", pattern: '(?m)^default/git Basic Z2l0bGFiK2RlcGxveS10b2tlbi00MjpnbGR0LXh4eA==$'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'Z2l0bGFiK2RlcGxveS10b2tlbi00Mj'}
+      - {type: not_contains, target: "map:haptic-upstream-auth-routes.map", pattern: 'Z2l0bGFiK2RlcGxveS10b2tlbi00Mj'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 503 if \{ var\(txn\.ua_state\) -m found \} !\{ var\(txn\.ua_state\) -m str ok \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 405 if \{ var\(txn\.ua_state\) -m found \} METH_TRACE'}
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - 'http-request set-var\(txn\.backend_pinned\) bool\(1\) if \{ var\(txn\.ua_state\) -m found \}'
+          - '# ingress/canary|# haptic/path-rewrite|http-request set-header Authorization'
+          - 'http-request set-header Authorization %\[var\(txn\.resource_key\),map\(maps/haptic-upstream-auth\.map\)\] if \{ var\(txn\.ua_state\) -m str ok \}'
+      # Uniform frontend rules keep the backend runtime-eligible.
+      - {type: contains, target: haproxy.cfg, pattern: '(?ms)^backend default_git_svc_echo_80 from haptic-be-\w+$\n[ \t]+guid [^\n]+\n(?:[ \t]+#[^\n]*\n)*[ \t]+server '}
+
+  test-haptic-upstream-auth-after-client-auth:
+    description: >-
+      The credential replaces Authorization only after basic auth has checked the
+      caller's own header.
+    fixtures:
+      secrets:
+        - *uaCredentialSecret
+        - apiVersion: v1
+          kind: Secret
+          metadata: { namespace: default, name: git-users }
+          type: Opaque
+          data:
+            auth: YWRtaW46JDJ5JDA1JG1OMVdWazVRbmJnNFF3ZEFkWGJmei44YjNjZUg2UTVLT1ZDS3hSMklrTkFmSmdMaTVwSUtXCg==   # admin:<bcrypt>
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: git
+            annotations:
+              haproxy-haptic.org/upstream-authorization-secret: git-deploy
+              haproxy-haptic.org/auth-type: basic
+              haproxy-haptic.org/auth-secret: git-users
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: git.example.com
+                http: *uaHttpRoot
+    assertions:
+      - type: haproxy_valid
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - 'http_auth'
+          - 'http-request set-header Authorization %\[var\(txn\.resource_key\),map\(maps/haptic-upstream-auth\.map\)\]'
+
+  test-haptic-upstream-auth-missing-secret-fails-closed:
+    description: >-
+      A Secret that can't be found leaves the route `missing`: requests return 503
+      and a Warning Event names the Secret. The Ingress is still admitted, so an
+      Ingress applied before its Secret works once the Secret arrives.
+    fixtures:
+      ingresses: [*uaIngress]
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^default/git missing$'}
+      - {type: not_contains, target: "sensitive-map:haptic-upstream-auth.map", pattern: '(?m)^default/git '}
+      - {type: contains, target: events, pattern: 'UpstreamAuthSecretMissing.*default/git-deploy'}
+
+  test-haptic-upstream-auth-missing-secret-admitted:
+    description: Admission accepts an Ingress whose Secret doesn't exist yet.
+    extraContext: {renderMode: admission}
+    fixtures:
+      ingresses: [*uaIngress]
+    assertions:
+      - type: haproxy_valid
+
+  test-haptic-upstream-auth-invalid-value-fails-closed:
+    description: >-
+      A value with a line break would inject a header or a map line; the route
+      returns 503 instead and the value is never rendered.
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: { namespace: default, name: git-deploy }
+          type: Opaque
+          data:
+            authorization: QmFzaWMgYWJjDQpYLUluamVjdGVkOiAx   # "Basic abc\r\nX-Injected: 1"
+      ingresses: [*uaIngress]
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^default/git invalid$'}
+      - {type: not_contains, target: "sensitive-map:haptic-upstream-auth.map", pattern: 'X-Injected'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'X-Injected'}
+      - {type: contains, target: events, pattern: 'UpstreamAuthSecretInvalid'}
+
+  test-haptic-upstream-auth-missing-key-fails-closed:
+    description: A Secret without an `authorization` key leaves the route `invalid`.
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: { namespace: default, name: git-deploy }
+          type: Opaque
+          data:
+            token: c2VjcmV0
+      ingresses: [*uaIngress]
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^default/git invalid$'}
+
+  test-haptic-upstream-auth-foreign-namespace-rejected:
+    description: >-
+      Admission rejects a Secret in another namespace: the Ingress author picks the
+      backend, so the reference would let them read that Secret.
+    extraContext: {renderMode: admission}
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: { namespace: platform, name: git-deploy }
+          type: Opaque
+          data:
+            authorization: QmVhcmVyIHRvcHNlY3JldA==
+      ingresses:
+        - &uaForeignIngress
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: git
+            annotations:
+              haproxy-haptic.org/upstream-authorization-secret: platform/git-deploy
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: git.example.com
+                http: *uaHttpRoot
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "upstream-authorization-secret.*isn't a Secret name in its own namespace"}
+
+  test-haptic-upstream-auth-foreign-namespace-fails-closed:
+    description: An existing Ingress with a foreign Secret reference returns 503 and never reads that Secret.
+    extraContext: {renderMode: reconcile}
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: { namespace: platform, name: git-deploy }
+          type: Opaque
+          data:
+            authorization: QmVhcmVyIHRvcHNlY3JldA==   # Bearer topsecret
+      ingresses: [*uaForeignIngress]
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^default/git invalid$'}
+      - {type: not_contains, target: "sensitive-map:haptic-upstream-auth.map", pattern: 'topsecret'}
+      - {type: contains, target: events, pattern: "InvalidAnnotationValue.*upstream-authorization-secret"}
+
+  test-haptic-upstream-auth-pins-canary:
+    description: >-
+      A canary for the same host, here from another namespace, never receives a
+      request of a route with an upstream credential: every canary use_backend
+      skips pinned requests.
+    fixtures:
+      secrets: [*uaCredentialSecret]
+      ingresses:
+        - *uaIngress
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: tenant-b
+            name: grab
+            annotations:
+              haproxy-haptic.org/canary: "true"
+              haproxy-haptic.org/canary-weight: "100"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: git.example.com
+                http: *uaHttpRoot
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: tenant-b
+            name: grab-pattern
+            annotations:
+              haproxy-haptic.org/canary: "true"
+              haproxy-haptic.org/canary-by-header: "X-Grab"
+              haproxy-haptic.org/canary-by-header-pattern: "^yes$"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: git.example.com
+                http: *uaHttpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: 'use_backend %\[var\(txn\.canary_backend\)\] if \{ var\(txn\.canary_backend\) -m found \} !\{ var\(txn\.backend_pinned\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'req\.hdr\(X-Grab\) -m reg [^}]*\} !\{ var\(txn\.backend_pinned\) -m found \}'}
+
+  test-haptic-upstream-auth-absent-without-routes:
+    description: Without the annotation no upstream-auth rule is evaluated per request.
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: default, name: plain }
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: plain.example.com
+                http: *uaHttpRoot
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: haproxy.cfg, pattern: 'txn\.ua_state'}

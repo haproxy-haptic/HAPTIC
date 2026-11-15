@@ -489,7 +489,7 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/consumer-groups-secret` | Names the Secret (data key `groups`, one `<consumer>:<group>` per line) mapping each consumer to a group; combined with `allowed-consumer-groups` to authorize. Requires an authenticated consumer and fails closed (`503`) while the Secret is absent. |
 | `haproxy-haptic.org/hmac-algorithm` | HMAC digest algorithm (default `sha256`; `sha1`/`sha224`/`sha384`/`sha512`). |
 | `haproxy-haptic.org/hmac-header` | Header carrying the client HMAC signature (default `X-Signature`; lowercase hex). |
-| `haproxy-haptic.org/hmac-secret` | Names the Secret (data key `secret`) for HMAC request-signature verification (deny `401` on mismatch). The shared key travels (base64) in `haptic-hmac-routes.map`, visible wherever the map is, and the compare isn't constant-time — prefer JWT. Fails closed (`503`) when the Secret is absent. Required by the other `hmac-*` annotations: admission rejects these options without a secret, and reconciliation returns `503`. |
+| `haproxy-haptic.org/hmac-secret` | Names the Secret (data key `secret`) for HMAC request-signature verification (deny `401` on mismatch). The compare isn't constant-time — prefer JWT. Fails closed (`503`) when the Secret is absent. Required by the other `hmac-*` annotations: admission rejects these options without a secret, and reconciliation returns `503`. |
 | `haproxy-haptic.org/hmac-signed-string` | What the signature covers: `body` (default) or `path`. Body mode requires `Content-Length`, including `0` for an empty body; unknown-length requests return `411`. It waits up to `extraContext.requestBuffering.waitTimeout` and verifies the complete body. Bodies exceeding HAProxy's available request buffer return `413`. |
 | `haproxy-haptic.org/jwt-algorithm` | JWT signature algorithm (default `RS256`); asymmetric only (`RS`/`ES`/`PS` `256`/`384`/`512`) — symmetric `HS*` is rejected so no shared secret is inlined. |
 | `haproxy-haptic.org/jwt-audience` | Required `aud` string or exact member of an `aud` string array. Missing, empty, or non-string audiences return `401`. Identifiers starting with `[` are rejected because HAProxy can't distinguish them from array claims. |
@@ -520,6 +520,7 @@ a shared consumer identity for authorization, rate limits, and caching.
 | `haproxy-haptic.org/require-content-type` | Requires an allowed `Content-Type` (comma-separated) on body methods (POST/PUT/PATCH); a disallowed type is rejected with `415` (prefix-matched, so charset suffixes still match). Applied from a per-route map. |
 | `haproxy-haptic.org/require-headers` | Requires the listed request headers (comma-separated); a request missing any is rejected with `400`. Applied from a per-route map; the first route to require a new header name reloads once. |
 | `haproxy-haptic.org/require-sni-host-match` | `"true"` answers `421 Misdirected Request` when a request's `Host` differs from the TLS SNI it arrived on. A browser that reused one HTTP/2 connection for several hosts retries on a new connection. Applied from a per-route map. |
+| `haproxy-haptic.org/upstream-authorization-secret` | Names a Secret in the Ingress's namespace whose `authorization` value replaces the request's `Authorization` header before it's forwarded. Returns `503` while the Secret is missing or its value is invalid. See [Send a credential to the upstream](#send-a-credential-to-the-upstream). |
 
 #### JWT group authorization
 
@@ -529,6 +530,61 @@ Group authorization accepts up to 32 names of 1–256 characters from `!` (U+002
 haproxy-haptic.org/jwt-allowed-groups: admins,operators
 haproxy-haptic.org/jwt-groups-claim: groups
 ```
+
+#### Send a credential to the upstream
+
+`upstream-authorization-secret` sends the upstream a credential your callers
+never see. HAPTIC replaces the request's `Authorization` header with the
+Secret's `authorization` value after every client check (JWT, API key, HMAC,
+basic auth) has read the caller's header, so the caller's token never reaches the
+upstream either.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: git-deploy
+  namespace: catalog
+stringData:
+  authorization: Basic Z2l0bGFiK2RlcGxveS10b2tlbi00MjpnbGR0LXh4eA==
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: catalog-git
+  namespace: catalog
+  annotations:
+    haproxy-haptic.org/jwt-jwks-url: https://login.example.org/realms/staff/protocol/openid-connect/certs
+    haproxy-haptic.org/jwt-audience: catalog
+    haproxy-haptic.org/path-rewrite: /it/catalog.git/info/refs
+    haproxy-haptic.org/upstream-authorization-secret: git-deploy
+spec:
+  ingressClassName: haptic
+  rules:
+    - host: catalog.example.org
+      http:
+        paths:
+          - path: /git/catalog.git/info/refs
+            pathType: Exact
+            backend: {service: {name: gitlab, port: {number: 80}}}
+```
+
+- The Secret must be in the Ingress's namespace. Admission rejects a
+  `namespace/name` reference.
+- The value is printable ASCII without line breaks, at most 8192 bytes. A missing
+  Secret or an invalid value returns `503` and records a Warning Event.
+- The value is stored only in a Secret that HAPTIC publishes in its own
+  namespace, never in the Ingress, the rendered `haproxy.cfg`, or an
+  `HAProxyMapFile`.
+- `TRACE` requests return `405`, so the upstream can't echo the credential back.
+- Canary annotations don't divert these requests to another backend.
+- The credential wins over `request-set-header` for `Authorization`.
+- The shared response cache bypasses requests that carry `Authorization`, unless the
+  route keys its cache on the consumer.
+
+Anyone who can create or edit an Ingress in a namespace can use this annotation
+to send that namespace's Secrets to a backend they choose. See
+[Ingress authors and Secrets](../operations/security.md#ingress-authors-and-secrets).
 
 #### Authentication and reloads
 
