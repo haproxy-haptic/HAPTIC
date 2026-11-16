@@ -32,6 +32,8 @@ const (
 	listPath = "certs/default.crt-list"
 )
 
+var loadedCerts = []string{certPath, "certs/other.pem", "certs/third.pem"}
+
 // TestDiffCertificates covers rule 6 for the certificate and CA stores: a file
 // the worker already holds is set, one it does not is created first.
 func TestDiffCertificates(t *testing.T) {
@@ -148,7 +150,7 @@ func TestDiffCRTListEntries(t *testing.T) {
 			prev := basePlan(withCRTList(renderplan.CRTList{Path: listPath, Entries: tt.before}))
 			next := basePlan(withCRTList(renderplan.CRTList{Path: listPath, Entries: tt.after}))
 			base := on34(prev)
-			base.Inventory = api.Inventory{CRTLists: []string{listPath}}
+			base.Inventory = api.Inventory{CRTLists: []string{listPath}, Certs: loadedCerts}
 
 			got := deployplan.Diff(next, base)
 
@@ -213,7 +215,7 @@ func TestDiffCRTListOrderIsNotReachablePerEntry(t *testing.T) {
 			prev := basePlan(withCRTList(renderplan.CRTList{Path: listPath, Entries: tt.before}))
 			next := basePlan(withCRTList(renderplan.CRTList{Path: listPath, Entries: tt.after}))
 			base := on34(prev)
-			base.Inventory = api.Inventory{CRTLists: []string{listPath}}
+			base.Inventory = api.Inventory{CRTLists: []string{listPath}, Certs: loadedCerts}
 
 			got := deployplan.Diff(next, base)
 
@@ -231,7 +233,7 @@ func TestDiffCRTListOrderIsNotReachablePerEntry(t *testing.T) {
 			Path: listPath, Entries: []renderplan.CRTListEntry{first, other, third},
 		}))
 		base := on34(prev)
-		base.Inventory = api.Inventory{CRTLists: []string{listPath}}
+		base.Inventory = api.Inventory{CRTLists: []string{listPath}, Certs: loadedCerts}
 
 		got := deployplan.Diff(next, base)
 
@@ -257,7 +259,7 @@ func TestDiffCRTListWithoutEntriesReloads(t *testing.T) {
 	prev := basePlan(withFile(&renderplan.File{Path: listPath, Kind: renderplan.FileKindCRTList, Digest: "before"}))
 	next := basePlan(withFile(&renderplan.File{Path: listPath, Kind: renderplan.FileKindCRTList, Digest: "after"}))
 	base := on34(prev)
-	base.Inventory = api.Inventory{CRTLists: []string{listPath}}
+	base.Inventory = api.Inventory{CRTLists: []string{listPath}, Certs: loadedCerts}
 
 	got := deployplan.Diff(next, base)
 
@@ -325,4 +327,44 @@ func TestDiffCRTListNotLoadedIsWrittenOnly(t *testing.T) {
 	assert.Equal(t, deployplan.VerdictFileOnly, got.Verdict)
 	assert.Empty(t, got.Ops)
 	reasonsContain(t, got.Reasons, "is not loaded at runtime, its file is written only")
+}
+
+// TestDiffCRTListDelNamesTheStoreEntry pins that a removed bare line token is
+// deleted by its store name, even when its certificate leaves the plan with it.
+func TestDiffCRTListDelNamesTheStoreEntry(t *testing.T) {
+	cert := renderplan.File{Path: "ssl/only.pem", Kind: renderplan.FileKindCert, Digest: "same"}
+	prev := basePlan(withFile(&cert), withCRTList(renderplan.CRTList{
+		Path: listPath, Entries: []renderplan.CRTListEntry{{Cert: "only.pem"}},
+	}))
+	base := on34(prev)
+	base.Inventory = api.Inventory{CRTLists: []string{listPath}, Certs: []string{"ssl/only.pem"}}
+
+	got := deployplan.Diff(basePlan(withCRTList(renderplan.CRTList{Path: listPath})), base)
+
+	require.Equal(t, deployplan.VerdictRuntime, got.Verdict, got.Reasons)
+	assert.Equal(t, []api.Op{{Kind: api.OpCRTListDel, Path: listPath, Cert: "ssl/only.pem"}}, got.Ops)
+}
+
+// TestDiffCRTListAddNeedsItsCertificateInTheStore pins that an added entry
+// reaches the worker only when its certificate is loaded or created first:
+// add ssl crt-list resolves the line against the runtime store.
+func TestDiffCRTListAddNeedsItsCertificateInTheStore(t *testing.T) {
+	first := renderplan.CRTListEntry{Cert: certPath}
+	added := renderplan.CRTListEntry{Cert: "certs/other.pem"}
+	prev := basePlan(withCRTList(renderplan.CRTList{Path: listPath, Entries: []renderplan.CRTListEntry{first}}))
+	base := on34(prev)
+	base.Inventory = api.Inventory{CRTLists: []string{listPath}, Certs: []string{certPath}}
+
+	got := deployplan.Diff(basePlan(withCRTList(renderplan.CRTList{
+		Path: listPath, Entries: []renderplan.CRTListEntry{first, added},
+	})), base)
+	require.Equal(t, deployplan.VerdictReload, got.Verdict)
+	reasonsContain(t, got.Reasons, "crt certs/other.pem is not loaded at runtime")
+
+	got = deployplan.Diff(basePlan(
+		withFile(&renderplan.File{Path: "certs/other.pem", Kind: renderplan.FileKindCert, Digest: "new"}),
+		withCRTList(renderplan.CRTList{Path: listPath, Entries: []renderplan.CRTListEntry{first, added}}),
+	), base)
+	require.Equal(t, deployplan.VerdictRuntime, got.Verdict, got.Reasons)
+	assert.Equal(t, []string{api.OpCertNew, api.OpCRTListAdd}, kinds(got.Ops))
 }

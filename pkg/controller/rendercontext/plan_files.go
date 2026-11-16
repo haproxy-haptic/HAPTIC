@@ -91,6 +91,26 @@ func (r *PlanRegistry) planFiles(config string, aux *dataplane.AuxiliaryFiles) (
 	return files, mapContents, nil
 }
 
+// crtLists declares the entries of every crt-list file whose content parses
+// exactly; one that does not stays undeclared, so changing it reloads.
+func crtLists(files []renderplan.File) map[string]renderplan.CRTList {
+	var lists map[string]renderplan.CRTList
+	for i := range files {
+		if files[i].Kind != renderplan.FileKindCRTList {
+			continue
+		}
+		entries, ok := renderplan.ParseCRTListEntries(files[i].Content)
+		if !ok {
+			continue
+		}
+		if lists == nil {
+			lists = make(map[string]renderplan.CRTList)
+		}
+		lists[files[i].Path] = renderplan.CRTList{Path: files[i].Path, Entries: entries}
+	}
+	return lists
+}
+
 func planFile(path, kind string, reloadOnChange bool, content string) renderplan.File {
 	return renderplan.File{
 		Path:           path,

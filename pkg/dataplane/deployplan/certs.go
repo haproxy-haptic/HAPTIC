@@ -16,6 +16,7 @@ package deployplan
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/renderplan"
@@ -36,7 +37,13 @@ func (b *builder) diffCerts() {
 			b.storeFile(f.Path, api.OpCertSet, api.OpCertNew, b.inventory.Certs)
 		case renderplan.FileKindCA:
 			b.storeFile(f.Path, api.OpCASet, api.OpCANew, b.inventory.CAFiles)
-		case renderplan.FileKindCRTList:
+		}
+	}
+	// After every store file: an added entry needs its certificate in the store.
+	for i := range b.next.Files {
+		f := &b.next.Files[i]
+		old, existed := b.prevIndex.files[f.Path]
+		if f.Kind == renderplan.FileKindCRTList && (!existed || !sameFileContent(old, f)) {
 			b.diffCRTList(f.Path, existed)
 		}
 	}
@@ -108,7 +115,7 @@ func (b *builder) crtListOps(path string, prev, next []renderplan.CRTListEntry) 
 			b.failf("crt-list %s: certificate %s is not a safe runtime token", path, cert)
 			return
 		}
-		ops = append(ops, crtListDel(path, cert))
+		ops = append(ops, b.crtListDel(path, cert))
 	}
 	for i := range next {
 		cert := next[i].Cert
@@ -119,10 +126,15 @@ func (b *builder) crtListOps(path string, prev, next []renderplan.CRTListEntry) 
 		if existed {
 			// Options and SNI filters are only replaceable as a whole entry,
 			// which re-adds it at the end of the running list.
-			ops = append(ops, crtListDel(path, cert))
+			ops = append(ops, b.crtListDel(path, cert))
 			running = slices.DeleteFunc(running, func(c string) bool { return c == cert })
 		}
-		ops = append(ops, crtListAdd(path, &next[i]))
+		add := crtListAdd(path, &next[i])
+		if file := b.unloadedFile(&add); file != "" {
+			b.failf("crt-list %s: %s is not loaded at runtime", path, file)
+			return
+		}
+		ops = append(ops, add)
 		running = append(running, cert)
 	}
 	if !slices.Equal(running, crtListOrder(next)) {
@@ -151,6 +163,18 @@ func crtListEntryReason(entry *renderplan.CRTListEntry) string {
 	return ""
 }
 
+// unloadedFile names the first store file an added entry references that the
+// worker neither holds nor gets from this diff; add ssl crt-list refuses it.
+func (b *builder) unloadedFile(add *api.Op) string {
+	files := append([]api.KeywordArg{{Name: keywordCRT, Args: []string{add.Cert}}}, add.Options...)
+	for i := range files {
+		if !b.filesLoaded(&files[i]) {
+			return strings.Join(append([]string{files[i].Name}, files[i].Args...), " ")
+		}
+	}
+	return ""
+}
+
 func crtListOrder(entries []renderplan.CRTListEntry) []string {
 	order := make([]string, 0, len(entries))
 	for i := range entries {
@@ -169,7 +193,12 @@ func crtListAdd(path string, entry *renderplan.CRTListEntry) api.Op {
 	}
 }
 
-func crtListDel(path, cert string) api.Op {
+// crtListDel names the entry by its store name: unlike add ssl crt-list, del
+// does not join crt-base onto a bare line token (pinned in tests/agent).
+func (b *builder) crtListDel(path, cert string) api.Op {
+	if !slices.Contains(b.inventory.Certs, cert) {
+		cert = b.underCRTBase(cert)
+	}
 	return api.Op{Kind: api.OpCRTListDel, Path: path, Cert: cert}
 }
 

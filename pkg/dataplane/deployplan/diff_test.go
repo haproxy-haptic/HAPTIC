@@ -217,7 +217,7 @@ func everyRuleDecision(t *testing.T) []deployplan.Decision {
 		withFile(&renderplan.File{Path: caPath, Kind: renderplan.FileKindCA, Digest: "before"}),
 		withCRTList(crtList),
 	))
-	lifecycle.Inventory = api.Inventory{Maps: []string{routeMap}, CRTLists: []string{listPath}}
+	lifecycle.Inventory = api.Inventory{Maps: []string{routeMap}, CRTLists: []string{listPath}, Certs: loadedCerts}
 	next := basePlan(
 		withBackend(dynBackend("be-new", srv("SRV_2", "10.0.0.2", 8080))),
 		withBackend(dynBackend("be-keep", reweighted)),

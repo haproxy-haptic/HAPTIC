@@ -31,7 +31,7 @@ import (
 // config references — the same string the manifest and every op carry, so no
 // path translation exists anywhere. The chart adds `crt-base ssl` and writes
 // bare filenames into crt-lists; HAProxy still names those certificates
-// `ssl/<file>`, so the crt-list ops carry the store name, not the line.
+// `ssl/<file>`: crtlist_del carries that store name, crtlist_add the bare line.
 const (
 	baseDir          = "/etc/haproxy"
 	configPath       = "haproxy.cfg"

@@ -43,25 +43,35 @@ func TestCertificateOpsRunAtRuntime(t *testing.T) {
 
 	extra := makeCertificate(t, "extra.test", 2001)
 	s.set(extraCertPath, extra.pem)
-	s.set(crtListPath, defaultCertFile+"\n"+extraCertFile+" extra.test\n")
+	s.set(crtListPath, defaultCertFile+"\n"+extraCertFile+" [ocsp-update on alpn h2,http/1.1] extra.test\n")
 	introduced := s.next(api.ModeAuto)
 	introduced.Ops = []api.Op{
 		{Kind: api.OpCertNew, Path: extraCertPath},
 		// The crt-list line token: HAProxy prepends crt-base to it, so it is
 		// the bare filename, not the store name cert_new addressed.
-		{Kind: api.OpCRTListAdd, Path: crtListPath, Cert: extraCertFile, SNIFilters: []string{"extra.test"}},
+		{
+			Kind: api.OpCRTListAdd, Path: crtListPath, Cert: extraCertFile,
+			Options: []api.KeywordArg{
+				{Name: "ocsp-update", Args: []string{"on"}}, {Name: "alpn", Args: []string{"h2,http/1.1"}},
+			},
+			SNIFilters: []string{"extra.test"},
+		},
 	}
 	result = s.apply(introduced, s.allParts())
 	require.True(t, result.OK, "cert_new/crtlist_add were rejected: %+v", result.Error)
+	assert.Equal(t, api.ResultRuntime, result.Mode)
 	assert.Equal(t, worker, e.workerPID(), "serving a new SNI must not reload")
 	assert.Equal(t, "extra.test", e.peerCertificate("extra.test").Subject.CommonName)
 
 	s.set(crtListPath, defaultCertFile+"\n")
 	s.remove(extraCertPath)
 	withdrawn := s.next(api.ModeAuto)
-	withdrawn.Ops = []api.Op{{Kind: api.OpCRTListDel, Path: crtListPath, Cert: extraCertFile}}
+	// Unlike add, del ssl crt-list does not join crt-base: it takes the store name.
+	withdrawn.Ops = []api.Op{{Kind: api.OpCRTListDel, Path: crtListPath, Cert: extraCertPath}}
 	result = s.apply(withdrawn, s.allParts())
 	require.True(t, result.OK, "crtlist_del was rejected: %+v", result.Error)
+	assert.Equal(t, api.ResultRuntime, result.Mode)
+	assert.Equal(t, worker, e.workerPID(), "withdrawing an SNI must not reload")
 	assert.Equal(t, "default.test", e.peerCertificate("extra.test").Subject.CommonName,
 		"the withdrawn SNI must fall back to the default certificate")
 	assert.False(t, e.exists(extraCertPath), "a file absent from the manifest must be deleted")

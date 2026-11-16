@@ -15,6 +15,7 @@
 package deployplan
 
 import (
+	"cmp"
 	"fmt"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
@@ -70,7 +71,7 @@ func DiffIndexed(next *renderplan.Plan, nextIndex *Index, base *Baseline) Decisi
 			caps:                  base.Caps,
 			inventory:             &base.Inventory,
 			created:               map[string]bool{},
-			certDir:               certDirOf(next),
+			certDir:               cmp.Or(certDirOf(next), certDirOf(base.Applied)),
 			pendingServerDeletes:  base.PendingServerDeletes,
 			pendingBackendDeletes: base.PendingBackendDeletes,
 		},
