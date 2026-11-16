@@ -134,12 +134,12 @@ spec:
         {{- end }}
         {{- if $defaults.accessLogDropped }}
         - alert: HAProxyAccessLogRecordsDropped
-          expr: increase(haproxy_process_dropped_logs_total[5m]) > 0
+          expr: increase(haptic_access_log_dropped_records_total[5m]) > 0 or increase(haproxy_process_dropped_logs_total[5m]) > 0
           labels:
             severity: warning
           annotations:
-            summary: "HAProxy is dropping access-log records"
-            description: "HAProxy pod {{ `{{ $labels.pod }}` }} dropped {{ `{{ $value | humanize }}` }} access-log records in 5m. The log reaches the vector sidecar over a UNIX datagram socket, which absorbs only ~167 records; when vector stops draining (topology reload, GC pause, CPU starvation) HAProxy discards records rather than blocking traffic. Requests are unaffected, but the log is incomplete — which matters most during an incident, when it is the evidence you reach for. Raise vector's CPU request or reduce log volume with accessLog.suppress."
+            summary: "HAProxy access-log records are being dropped"
+            description: "HAProxy pod {{ `{{ $labels.pod }}` }} lost {{ `{{ $value | humanize }}` }} access-log records in 5m because the vector sidecar stopped reading them fast enough. Requests are unaffected, but the log and the metrics derived from it are incomplete. Raise vector's CPU request or reduce log volume with accessLog.suppress."
         {{- end }}
         {{- if $defaults.applyRejected }}
         - alert: HAProxyAgentApplyRejected

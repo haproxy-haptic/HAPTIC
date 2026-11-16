@@ -306,7 +306,7 @@
             "metrics" $enabledMetrics }}
     {{- end }}
     {{- $_ := set $extraContext "vector" (dict
-          "socketPath" .Values.vector.socketPath
+          "logAddress" (include "haptic.vector.logAddress" .)
           "metricsPort" (.Values.vector.metricsPort | int)
           "sizeMetricsPort" (.Values.vector.sizeMetricsPort | int)
           "scrapeIntervalSecs" (.Values.vector.scrapeIntervalSecs | int)
@@ -316,13 +316,13 @@
           "requestMetrics" $vectorRequestMetrics
           "dataDir" "/var/lib/vector") }}
 
-    {{- /* Point the access log at the socket — but only if the operator hasn't
+    {{- /* Point the access log at vector — but only if the operator hasn't
            chosen targets themselves. Overwriting an explicit `targets` would
            silently redirect a stream they deliberately routed elsewhere. */ -}}
     {{- $accessLog := $extraContext.accessLog | default dict }}
     {{- if not (hasKey $accessLog "targets") }}
       {{- $_ := set $accessLog "targets" (dict "vector" (dict
-            "address" .Values.vector.socketPath
+            "address" (include "haptic.vector.logAddress" .)
             "format" "raw")) }}
     {{- end }}
     {{- $_ := set $extraContext "accessLog" $accessLog }}

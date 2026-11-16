@@ -62,13 +62,13 @@ for line in rendered.split("#### vector.yaml", 1)[1].splitlines():
         continue
     body.append(line)
 config = yaml.safe_load("\n".join(body))
+(work / "log-port").write_text(config["sources"]["haproxy_log"]["address"].rsplit(":", 1)[1])
 for compact in (False, True):
     forwarding = {
         "data_dir": "/tmp/vector-forwarding",
         "sources": {"haproxy_log": copy.deepcopy(config["sources"]["haproxy_log"])},
         "sinks": {"stdout": copy.deepcopy(config["sinks"]["stdout"])},
     }
-    forwarding["sources"]["haproxy_log"]["path"] = "/probe/haproxy.sock"
     if compact:
         forwarding["transforms"] = {"log_drop_empty": copy.deepcopy(config["transforms"]["log_drop_empty"])}
     else:
@@ -80,8 +80,9 @@ for transform in transforms.values():
     transform["inputs"] = ["test_access_log" if name == "haproxy_log" else name
                            for name in transform["inputs"]]
 transforms["test_access_log"] = {"type": "remap", "inputs": ["haproxy_log"], "source": ". = ."}
-metric_transforms = [name for name, value in transforms.items() if value["type"] == "log_to_metric"]
-for name in metric_transforms:
+metric_transforms = [name for name, value in transforms.items()
+                     if value["type"] == "log_to_metric" and name != "access_log_drops_metric"]
+for name in metric_transforms + ["access_log_drops_metric"]:
     transforms["observe_" + name] = {"type": "metric_to_log", "inputs": [name]}
 
 def output(name, source):
@@ -195,6 +196,29 @@ for invalid in ["", "-1", "1.5", "1e3", "1suffix", 1, None]:
 for compact in [True, False]:
     message = json.dumps(base, separators=(",", ":") if compact else None)
     cases.append(case("JSON whitespace " + str(compact), message, checks))
+
+log_port = int(config["sources"]["haproxy_log"]["address"].rsplit(":", 1)[1])
+udp_table = "\n".join([
+    "   sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops",
+    f"  417: 0100007F:{log_port + 1:04X} 00000000:0000 07 00000000:00000000 00:00000000 00000000  1000        0 9 2 0000000000000000 99",
+    f" 1312: 0100007F:{log_port:04X} 00000000:0000 07 00000000:00012C00 00:00000000 00000000  1000        0 8 2 0000000000000000 234   ",
+    "",
+])
+cases.append({
+    "name": "log socket drops become an absolute counter",
+    "inputs": [{"insert_at": "access_log_drops", "type": "log", "log_fields": {"message": udp_table}}],
+    "outputs": [output("observe_access_log_drops_metric", "\n".join([
+        'assert_eq!(.name, "access_log_dropped_records_total")', 'assert_eq!(.namespace, "haptic")',
+        'assert_eq!(.kind, "absolute")', 'assert_eq!(.counter.value, 234.0)',
+    ]))],
+})
+cases.append({
+    "name": "no log socket row emits no drop sample",
+    "inputs": [{"insert_at": "access_log_drops", "type": "log",
+                "log_fields": {"message": udp_table.replace(f":{log_port:04X} ", ":0001 ")}}],
+    "outputs": [],
+    "no_outputs_from": ["access_log_drops_metric"],
+})
 
 config["tests"] = cases
 (work / "vector.yaml").write_text(yaml.safe_dump(config, sort_keys=False))

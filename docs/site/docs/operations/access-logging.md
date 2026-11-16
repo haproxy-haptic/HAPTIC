@@ -196,6 +196,11 @@ Keep these constraints in mind:
   exist wherever the config is validated — the controller pod — not only in the
   HAProxy pod. Deliver such material through the chart's file mechanism so both
   see it.
+- **A reload discards what the old worker's ring still holds.** When HAProxy
+  reloads, the old worker closes its ring connection at once. Records not yet
+  sent, and the records of requests it finishes afterwards, are lost. The
+  default Vector target uses UDP for this reason: each record leaves the worker
+  when the request ends.
 - **A plain-path (Unix socket) target does no buffering.** It's the way to reach a
   collector on a socket, since HAProxy 3.4 rejects a Unix socket as a ring server.
   If the socket is absent, HAProxy continues serving and reports log-delivery
@@ -230,14 +235,19 @@ uses `option dontlog-normal`; TLS passthrough logs each connection.
 
 ## The access log is lossy under back-pressure
 
-The default connection to Vector uses a Unix datagram socket. If its receive
-queue fills, HAProxy discards records and continues serving requests. Access
-logs, and the metrics and traces derived from them, can therefore miss traffic.
+HAProxy sends each record to Vector as a UDP datagram on the pod's loopback
+address, `127.0.0.1:9514`, and never waits for Vector. The kernel queues records
+while Vector is busy: the default 208 KiB receive buffer holds about 90 records
+of 800 bytes. When the buffer is full, or while Vector restarts, records are
+dropped and HAProxy continues serving requests. Access logs, and the metrics and
+traces derived from them, can therefore miss traffic.
 
-Monitor `haproxy_process_dropped_logs_total` on HAProxy's Prometheus endpoint,
-or `DroppedLogs` in the stats socket's `show info` output. These counters track
-records HAProxy discards; they don't detect records lost or rejected later in
-your collection pipeline.
+Monitor `haptic_access_log_dropped_records_total` on Vector's metrics endpoint.
+It counts the records the kernel dropped because Vector's buffer was full, and
+it resets when Vector restarts. HAProxy's `haproxy_process_dropped_logs_total`
+counts records HAProxy failed to send at all. Neither counter detects records
+sent while Vector isn't running, or records lost later in your collection
+pipeline; alert on the Vector scrape target being down for the first.
 
 The chart's `HAProxyAccessLogRecordsDropped` alert is available through
 `controller.monitoring.prometheusRule`. If it fires, check Vector's health and

@@ -89,7 +89,7 @@ func TestVectorSidecar(t *testing.T) {
 			t.Helper()
 			return assessVectorWatchdogRecovery(ctx, t, cfg, pod)
 		}).
-		Assess("an access-log record reaches the sidecar over the Unix socket", assessVectorSocketLog).
+		Assess("an access-log record reaches the sidecar over loopback UDP", assessVectorLogTransport).
 		Feature()
 
 	testEnv.Test(t, feature)
@@ -328,11 +328,11 @@ func assertVectorRecoveryLog(ctx context.Context, t *testing.T, pod, host string
 	}
 }
 
-func assessVectorSocketLog(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+func assessVectorLogTransport(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 	t.Helper()
-	// End-to-end proof that the datagrams arrive. A UNIX datagram sender gets
-	// NO error when nothing is listening, so a wrong socket path would look
-	// identical to a working one from HAProxy's side.
+	// End-to-end proof that the datagrams arrive. A UDP sender gets NO error
+	// when nothing is listening, so a wrong address would look identical to a
+	// working one from HAProxy's side.
 	client, err := cfg.NewClient()
 	if err != nil {
 		t.Fatalf("new client: %v", err)
@@ -340,7 +340,7 @@ func assessVectorSocketLog(ctx context.Context, t *testing.T, cfg *envconf.Confi
 	ns := NamespaceForTest(ctx, t, client)
 	DumpLogsOnFailure(t, ns)
 	backend := NewEchoServerBackendWithResources(ctx, t, client, ns, vectorProbeResources())
-	host := "vector-socket-log.localdev.me"
+	host := "vector-udp-log.localdev.me"
 	NewIngress(ctx, t, client, ns, &IngressSpec{
 		Name:           "echo-vector-log",
 		Host:           host,
@@ -363,6 +363,11 @@ func assessVectorSocketLog(ctx context.Context, t *testing.T, cfg *envconf.Confi
 		body, err := apiProxyGet(c, pod, VectorMetricsPort, "metrics")
 		if err != nil {
 			return false, err
+		}
+		// The drop counter is sampled from /proc/net/udp inside the sidecar; its
+		// presence proves the sampler found the log socket in the real pod.
+		if !strings.Contains(body, "\nhaptic_access_log_dropped_records_total") {
+			return false, nil
 		}
 		return requestCounterAliasesMatch(body, ns, "echo-vector-log", recordString(t, rec, "server"))
 	})

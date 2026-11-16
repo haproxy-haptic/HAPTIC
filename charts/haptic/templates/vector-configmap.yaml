@@ -6,9 +6,8 @@ general/vector.yaml through the agent within seconds of startup and vector's
 
 Two deliberate properties:
 
-  1. It ALREADY forwards the access log to stdout, so Vector can bind the socket
-     before HAPTIC's first push. HAProxy and Vector are unordered regular
-     containers; records emitted before Vector binds can still be lost.
+  1. It ALREADY forwards the access log to stdout. Its haproxy_log source is
+     identical to the rendered one, so the first push does not rebind it.
 
   2. It omits the metrics exporter and request pipeline. Their endpoints become
      available after HAPTIC pushes the rendered config.
@@ -30,9 +29,10 @@ data:
     sources:
       haproxy_log:
         type: socket
-        mode: unix_datagram
-        path: {{ .Values.vector.socketPath }}
-        socket_file_mode: 0o666
+        mode: udp
+        address: {{ include "haptic.vector.logAddress" . }}
+        framing:
+          method: newline_delimited
         decoding:
           codec: bytes
 
