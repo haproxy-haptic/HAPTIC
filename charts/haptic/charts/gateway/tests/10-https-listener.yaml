@@ -666,6 +666,156 @@ validationTests:
         target: "status:gateway-conformance-infra/gateway-tls-backend-client-certificate:rendered"
         pattern: '"reason":"ResolvedRefs","status":"True","type":"ResolvedRefs"'
 
+  test-gateway-backend-client-cert-cross-namespace-without-grant-fails-closed:
+    requires: [gatewayclasses, gateways, httproutes, referencegrants]
+    requiresFields: [gateways.spec.tls.backend]
+    description: "A cross-namespace clientCertificateRef without a ReferenceGrant is never loaded: the Gateway reports RefNotPermitted and the route's backend answers 503 instead of connecting without the certificate."
+    fixtures:
+      gatewayclasses: *gatewayclassesGatewayclass2
+      namespaces: *namespacesNamespace
+      gateways:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: Gateway
+          metadata: {name: gw-cc-nogrant, namespace: gateway-conformance-infra, generation: 1}
+          spec:
+            gatewayClassName: haptic
+            listeners:
+              - {name: http, port: 80, protocol: HTTP, allowedRoutes: {namespaces: {from: Same}}}
+            tls:
+              backend: {clientCertificateRef: {group: "", kind: Secret, name: client-cert, namespace: cert-store}}
+      httproutes:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: HTTPRoute
+          metadata: {name: cc-nogrant, namespace: gateway-conformance-infra}
+          spec:
+            parentRefs: [{name: gw-cc-nogrant}]
+            hostnames: [cc-nogrant.example.com]
+            rules:
+              - backendRefs: [{name: cc-backend, port: 8443}]
+      services: &ccServices
+        - apiVersion: v1
+          kind: Service
+          metadata: {name: cc-backend, namespace: gateway-conformance-infra}
+          spec:
+            ports:
+              - {name: https, protocol: TCP, port: 8443, targetPort: 8443}
+      secrets: &ccForeignSecret
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: client-cert, namespace: cert-store}
+          type: kubernetes.io/tls
+          data:
+            tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJmakNDQVNXZ0F3SUJBZ0lVSkdvYlN1UzZ6K0lnWnVHejQwYU8xc01NL0RJd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1DQVhEVEkyTURVd09USXdORFV6TjFvWUR6SXhNall3TkRFMQpNakEwTlRNM1dqQVVNUkl3RUFZRFZRUUREQWxzYjJOaGJHaHZjM1F3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPClBRTUJCd05DQUFRZ1FnRDBWaEErcDNrTzgxWndSdW8yM3JLVmVVZ0FyZ3YwZ09obEpOakczN1lzNXJ4aHNXSk8KZWttODVOM3JDS1htRmlBNWp0RlNMTXBydlhqUnVEZlFvMU13VVRBZEJnTlZIUTRFRmdRVUs0T1lyMzY0eVlRZgpMYUFiUFZpcXlsS2wrcXN3SHdZRFZSMGpCQmd3Rm9BVUs0T1lyMzY0eVlRZkxhQWJQVmlxeWxLbCtxc3dEd1lEClZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSEFEQkVBaUI5R0RBaE5Uc29GblZWZVJPWVdVSE8KellnNzNQUG5OU2JDK1lhWnFaWHNoZ0lnWnpqVDkvdDNxUlAwMFVhMGJ3T1N6Z2tEcnVKd2lhM2dxNEYrNGdjVQpLdk09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+            tls.key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUc4R2ZxNnd4aUY4aU9BakxqWnA3dXlJQ1RuY1JnMGtLOFVqR1VNc1BROGNvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFSUVJQTlGWVFQcWQ1RHZOV2NFYnFOdDZ5bFhsSUFLNEw5SURvWlNUWXh0KzJMT2E4WWJGaQpUbnBKdk9UZDZ3aWw1aFlnT1k3UlVpekthNzE0MGJnMzBBPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: haproxy.cfg, pattern: 'crt gw-clientcert-'}
+      - {type: not_exists, target: "cert:gw-clientcert-gateway-conformance-infra-gw-cc-nogrant.pem"}
+      - {type: contains, target: "backend:gw_h_gateway-conformance-infra_cc-nogrant_cc-backend_8443", pattern: 'http-request return status 503'}
+      - {type: contains, target: "status:gateway-conformance-infra/gw-cc-nogrant:rendered", pattern: '"reason":"RefNotPermitted","status":"False","type":"ResolvedRefs"'}
+
+  test-gateway-backend-client-cert-cross-namespace-with-grant:
+    requires: [gatewayclasses, gateways, httproutes, referencegrants]
+    requiresFields: [gateways.spec.tls.backend]
+    description: "A ReferenceGrant in the Secret's namespace permits the cross-namespace clientCertificateRef: the backend presents the certificate and ResolvedRefs is True."
+    fixtures:
+      gatewayclasses: *gatewayclassesGatewayclass2
+      namespaces: *namespacesNamespace
+      gateways:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: Gateway
+          metadata: {name: gw-cc-grant, namespace: gateway-conformance-infra, generation: 1}
+          spec:
+            gatewayClassName: haptic
+            listeners:
+              - {name: http, port: 80, protocol: HTTP, allowedRoutes: {namespaces: {from: Same}}}
+            tls:
+              backend: {clientCertificateRef: {group: "", kind: Secret, name: client-cert, namespace: cert-store}}
+      httproutes:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: HTTPRoute
+          metadata: {name: cc-grant, namespace: gateway-conformance-infra}
+          spec:
+            parentRefs: [{name: gw-cc-grant}]
+            hostnames: [cc-grant.example.com]
+            rules:
+              - backendRefs: [{name: cc-backend, port: 8443}]
+      services: *ccServices
+      secrets: *ccForeignSecret
+      referencegrants:
+        - apiVersion: gateway.networking.k8s.io/v1beta1
+          kind: ReferenceGrant
+          metadata: {name: allow-gateway-client-cert, namespace: cert-store}
+          spec:
+            from:
+              - {group: gateway.networking.k8s.io, kind: Gateway, namespace: gateway-conformance-infra}
+            to:
+              - {group: "", kind: Secret, name: client-cert}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: 'ssl verify none .*crt gw-clientcert-gateway-conformance-infra-gw-cc-grant\.pem'}
+      - {type: not_contains, target: "backend:gw_h_gateway-conformance-infra_cc-grant_cc-backend_8443", pattern: 'http-request return status 503'}
+      - {type: contains, target: "status:gateway-conformance-infra/gw-cc-grant:rendered", pattern: '"reason":"ResolvedRefs","status":"True","type":"ResolvedRefs"'}
+
+  test-gateway-backend-client-cert-only-from-accepting-gateway:
+    requires: [gatewayclasses, gateways, httproutes]
+    requiresFields: [gateways.spec.tls.backend]
+    description: "A route's backends present the client certificate of a parent Gateway that accepted the route, never of a listed parent that rejected it."
+    fixtures:
+      gatewayclasses: *gatewayclassesGatewayclass2
+      namespaces: *namespacesNamespace
+      gateways:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: Gateway
+          metadata: {name: gw-cc-rejects, namespace: cert-store, generation: 1}
+          spec:
+            gatewayClassName: haptic
+            listeners:
+              - {name: http, port: 80, protocol: HTTP, allowedRoutes: {namespaces: {from: Same}}}
+            tls:
+              backend: {clientCertificateRef: {group: "", kind: Secret, name: client-cert}}
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: Gateway
+          metadata: {name: gw-cc-accepts, namespace: gateway-conformance-infra, generation: 1}
+          spec:
+            gatewayClassName: haptic
+            listeners:
+              - {name: http, port: 80, protocol: HTTP, allowedRoutes: {namespaces: {from: Same}}}
+            tls:
+              backend: {clientCertificateRef: {group: "", kind: Secret, name: tls-checks-client-certificate}}
+      httproutes:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: HTTPRoute
+          metadata: {name: cc-two-parents, namespace: gateway-conformance-infra}
+          spec:
+            parentRefs:
+              - {name: gw-cc-rejects, namespace: cert-store}
+              - {name: gw-cc-accepts}
+            hostnames: [cc-two-parents.example.com]
+            rules:
+              - backendRefs: [{name: cc-backend, port: 8443}]
+      services: *ccServices
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: client-cert, namespace: cert-store}
+          type: kubernetes.io/tls
+          data:
+            tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJmakNDQVNXZ0F3SUJBZ0lVSkdvYlN1UzZ6K0lnWnVHejQwYU8xc01NL0RJd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1DQVhEVEkyTURVd09USXdORFV6TjFvWUR6SXhNall3TkRFMQpNakEwTlRNM1dqQVVNUkl3RUFZRFZRUUREQWxzYjJOaGJHaHZjM1F3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPClBRTUJCd05DQUFRZ1FnRDBWaEErcDNrTzgxWndSdW8yM3JLVmVVZ0FyZ3YwZ09obEpOakczN1lzNXJ4aHNXSk8KZWttODVOM3JDS1htRmlBNWp0RlNMTXBydlhqUnVEZlFvMU13VVRBZEJnTlZIUTRFRmdRVUs0T1lyMzY0eVlRZgpMYUFiUFZpcXlsS2wrcXN3SHdZRFZSMGpCQmd3Rm9BVUs0T1lyMzY0eVlRZkxhQWJQVmlxeWxLbCtxc3dEd1lEClZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSEFEQkVBaUI5R0RBaE5Uc29GblZWZVJPWVdVSE8KellnNzNQUG5OU2JDK1lhWnFaWHNoZ0lnWnpqVDkvdDNxUlAwMFVhMGJ3T1N6Z2tEcnVKd2lhM2dxNEYrNGdjVQpLdk09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+            tls.key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUc4R2ZxNnd4aUY4aU9BakxqWnA3dXlJQ1RuY1JnMGtLOFVqR1VNc1BROGNvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFSUVJQTlGWVFQcWQ1RHZOV2NFYnFOdDZ5bFhsSUFLNEw5SURvWlNUWXh0KzJMT2E4WWJGaQpUbnBKdk9UZDZ3aWw1aFlnT1k3UlVpekthNzE0MGJnMzBBPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+        - apiVersion: v1
+          kind: Secret
+          metadata: {name: tls-checks-client-certificate, namespace: gateway-conformance-infra}
+          type: kubernetes.io/tls
+          data:
+            tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJmakNDQVNXZ0F3SUJBZ0lVSkdvYlN1UzZ6K0lnWnVHejQwYU8xc01NL0RJd0NnWUlLb1pJemowRUF3SXcKRkRFU01CQUdBMVVFQXd3SmJHOWpZV3hvYjNOME1DQVhEVEkyTURVd09USXdORFV6TjFvWUR6SXhNall3TkRFMQpNakEwTlRNM1dqQVVNUkl3RUFZRFZRUUREQWxzYjJOaGJHaHZjM1F3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPClBRTUJCd05DQUFRZ1FnRDBWaEErcDNrTzgxWndSdW8yM3JLVmVVZ0FyZ3YwZ09obEpOakczN1lzNXJ4aHNXSk8KZWttODVOM3JDS1htRmlBNWp0RlNMTXBydlhqUnVEZlFvMU13VVRBZEJnTlZIUTRFRmdRVUs0T1lyMzY0eVlRZgpMYUFiUFZpcXlsS2wrcXN3SHdZRFZSMGpCQmd3Rm9BVUs0T1lyMzY0eVlRZkxhQWJQVmlxeWxLbCtxc3dEd1lEClZSMFRBUUgvQkFVd0F3RUIvekFLQmdncWhrak9QUVFEQWdOSEFEQkVBaUI5R0RBaE5Uc29GblZWZVJPWVdVSE8KellnNzNQUG5OU2JDK1lhWnFaWHNoZ0lnWnpqVDkvdDNxUlAwMFVhMGJ3T1N6Z2tEcnVKd2lhM2dxNEYrNGdjVQpLdk09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+            tls.key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUc4R2ZxNnd4aUY4aU9BakxqWnA3dXlJQ1RuY1JnMGtLOFVqR1VNc1BROGNvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFSUVJQTlGWVFQcWQ1RHZOV2NFYnFOdDZ5bFhsSUFLNEw5SURvWlNUWXh0KzJMT2E4WWJGaQpUbnBKdk9UZDZ3aWw1aFlnT1k3UlVpekthNzE0MGJnMzBBPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: 'crt gw-clientcert-gateway-conformance-infra-gw-cc-accepts\.pem'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'gw-clientcert-cert-store-gw-cc-rejects'}
+      - {type: not_exists, target: "cert:gw-clientcert-cert-store-gw-cc-rejects.pem"}
+
   test-gateway-https-listener-dual-cert:
     requires: [gatewayclasses, gateways]
     description: "A Gateway HTTPS listener with TWO certificateRefs (ECDSA + RSA) emits both certs to the crt-list under the listener hostname, so HAProxy serves ECDSA or RSA per client capability (dual-cert via Gateway API)."

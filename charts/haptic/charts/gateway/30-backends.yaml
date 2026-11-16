@@ -83,7 +83,7 @@ templateSnippets:
       } -%}
 
   util-generate-httproute-backends-gateway:
-    requires: [gateways, httproutes, referencegrants]
+    requires: [gateways, httproutes, namespaces, referencegrants]
     template: |
       {%- import "util-backend" for FlagsToKeywordArgs, PrepareBackend -%}
       {%- import "util-backend-timeouts" for BackendTimeouts -%}
@@ -91,6 +91,7 @@ templateSnippets:
       {%- import "util-backend-ref-valid" for BackendRefValid -%}
       {%- import "util-bounded-name" for BoundedName -%}
       {%- import "util-resolve-backend-tls" for ResolveBackendTLS -%}
+      {%- import "util-gateway-route-client-cert" for GatewayRouteClientCert -%}
       {%- import "util-gateway-retry-policy" for GatewayRetryPolicy -%}
       {%- import "util-gateway-session-persistence" for GatewaySessionPersistence -%}
       {%- import "util-backend-name-gateway-rule" for BackendNameGatewayRule -%}
@@ -156,6 +157,7 @@ templateSnippets:
       {%- var btlsVerifyHost = "" -%}
       {%- var btlsBroken = false -%}
       {%- var gwClientCertPath = "" -%}
+      {%- var gwClientCertBroken = false -%}
       {%%
         var btls = ResolveBackendTLS(tostring(backendNs), tostring(backendName), toint(backendPort))
         btlsHostname = tostring(btls["hostname"])
@@ -172,59 +174,15 @@ templateSnippets:
         // An unresolvable CA makes the policy invalid: fail closed (503
         // below), never downgrade the backend connection to plaintext.
         btlsBroken = btls["found"] == true && btlsCaPath == ""
-        for _, parentRef := range toSlice(dig(route, "spec", "parentRefs")) {
-          if gwClientCertPath != "" {
-            break
-          }
-          var prGroup = dig_string(parentRef, "", "group")
-          if prGroup == "" { prGroup = "gateway.networking.k8s.io" }
-          var prKind = dig_string(parentRef, "", "kind")
-          if prKind == "" { prKind = "Gateway" }
-          if prGroup != "gateway.networking.k8s.io" || prKind != "Gateway" {
-            continue
-          }
-          var gwNs = dig_string(parentRef, "", "namespace")
-          if gwNs == "" { gwNs = routeNs }
-          var gwName = dig_string(parentRef, "", "name")
-          var gw = resources.gateways.GetSingle(gwNs, gwName)
-          if gw == nil {
-            continue
-          }
-          // Dig-only: spec.tls newer than the oldest resolvable Gateway schema.
-          var ccRef = dig(gw, "spec", "tls", "backend", "clientCertificateRef")
-          if dig_string(ccRef, "", "name") == "" {
-            continue
-          }
-          var refGroup = dig_string(ccRef, "", "group")
-          var refKind = dig_string(ccRef, "", "kind")
-          if refKind == "" { refKind = "Secret" }
-          var refName = dig_string(ccRef, "", "name")
-          var refNs = dig_string(ccRef, "", "namespace")
-          if refNs == "" { refNs = gwNs }
-          if (refGroup != "" && refGroup != "core") || refKind != "Secret" || refName == "" {
-            continue
-          }
-          var sec = resources.secrets.GetSingle(refNs, refName)
-          if sec == nil {
-            continue
-          }
-          var dataMap = sec.Data
-          var crtB64, ok1 = dataMap["tls.crt"]
-          var keyB64, ok2 = dataMap["tls.key"]
-          if !ok1 || !ok2 || crtB64 == "" || keyB64 == "" {
-            continue
-          }
-          var crtPem, e1 = b64decode(crtB64)
-          var keyPem, e2 = b64decode(keyB64)
-          if e1 != nil || e2 != nil {
-            continue
-          }
-          var combined = crtPem + "\n" + keyPem
-          var fname = BoundedName("gw-clientcert-" + gwNs + "-" + gwName, 251) + ".pem"
+        var clientCert = map[string]any{}
+        GatewayRouteClientCert(route, "HTTPRoute", clientCert)
+        gwClientCertBroken = clientCert["broken"] == true
+        if tostring(clientCert["pem"]) != "" {
+          var fname = BoundedName("gw-clientcert-" + tostring(clientCert["gatewayNamespace"]) + "-" + tostring(clientCert["gatewayName"]), 251) + ".pem"
           // Type "cert" lands the file under ssl/, and HAProxy's
           // `crt-base ssl` prepends ssl/ again — so emit the bare filename,
           // not the path fileRegistry returns.
-          var _, fErr = RegisterBackendFile("cert", fname, combined)
+          var _, fErr = RegisterBackendFile("cert", fname, tostring(clientCert["pem"]))
           if fErr == nil {
             gwClientCertPath = fname
           }
@@ -297,9 +255,9 @@ templateSnippets:
           tostring(toMap) + ") if { var(txn.gw_rule_id),map_str_int(" + tostring(toMap) + ") -m found }")
         // Last: an unconditional final action makes every later http-request rule a
         // warned-about NOOP.
-        if btlsBroken {
+        if btlsBroken || gwClientCertBroken {
           profile = append(profile,
-            "# Invalid BackendTLSPolicy blocks traffic.",
+            "# Invalid BackendTLSPolicy or Gateway clientCertificateRef blocks traffic.",
             "http-request return status 503")
         }
       %%}
@@ -334,7 +292,7 @@ templateSnippets:
       {%- end macro -%}
 
   util-generate-grpcroute-backends-gateway:
-    requires: [gateways, grpcroutes, referencegrants]
+    requires: [gateways, grpcroutes, namespaces, referencegrants]
     template: |
       {%- import "util-backend" for FlagsToKeywordArgs, PrepareBackend -%}
       {%- import "util-backend-timeouts" for BackendTimeouts -%}
@@ -342,6 +300,7 @@ templateSnippets:
       {%- import "util-backend-ref-valid" for BackendRefValid -%}
       {%- import "util-bounded-name" for BoundedName -%}
       {%- import "util-resolve-backend-tls" for ResolveBackendTLS -%}
+      {%- import "util-gateway-route-client-cert" for GatewayRouteClientCert -%}
       {%- import "util-gateway-session-persistence" for GatewaySessionPersistence -%}
       {%- import "util-backend-name-gateway-rule" for BackendNameGatewayRule -%}
       {%- macro GenerateGRPCRouteBackends(routes []*resources.grpcroutes.T, dedupCategory string) -%}
@@ -393,6 +352,7 @@ templateSnippets:
         var btlsVerifyHost = ""
         var btlsBroken = false
         var gwClientCertPath = ""
+        var gwClientCertBroken = false
       %%}
       {%%
         var btls = ResolveBackendTLS(tostring(backendNs), tostring(backendName), toint(backendPort))
@@ -410,59 +370,15 @@ templateSnippets:
         // An unresolvable CA makes the policy invalid: fail closed (503
         // below), never downgrade the backend connection to plaintext.
         btlsBroken = btls["found"] == true && btlsCaPath == ""
-        for _, parentRef := range route.Spec.ParentRefs {
-          if gwClientCertPath != "" {
-            break
-          }
-          var prGroup = parentRef.Group
-          if prGroup == "" { prGroup = "gateway.networking.k8s.io" }
-          var prKind = parentRef.Kind
-          if prKind == "" { prKind = "Gateway" }
-          if prGroup != "gateway.networking.k8s.io" || prKind != "Gateway" {
-            continue
-          }
-          var gwNs = parentRef.Namespace
-          if gwNs == "" { gwNs = routeNs }
-          var gwName = parentRef.Name
-          var gw = resources.gateways.GetSingle(gwNs, gwName)
-          if gw == nil {
-            continue
-          }
-          // Dig-only: spec.tls newer than the oldest resolvable Gateway schema.
-          var ccRef = dig(gw, "spec", "tls", "backend", "clientCertificateRef")
-          if dig_string(ccRef, "", "name") == "" {
-            continue
-          }
-          var refGroup = dig_string(ccRef, "", "group")
-          var refKind = dig_string(ccRef, "", "kind")
-          if refKind == "" { refKind = "Secret" }
-          var refName = dig_string(ccRef, "", "name")
-          var refNs = dig_string(ccRef, "", "namespace")
-          if refNs == "" { refNs = gwNs }
-          if (refGroup != "" && refGroup != "core") || refKind != "Secret" || refName == "" {
-            continue
-          }
-          var sec = resources.secrets.GetSingle(refNs, refName)
-          if sec == nil {
-            continue
-          }
-          var dataMap = sec.Data
-          var crtB64, ok1 = dataMap["tls.crt"]
-          var keyB64, ok2 = dataMap["tls.key"]
-          if !ok1 || !ok2 || crtB64 == "" || keyB64 == "" {
-            continue
-          }
-          var crtPem, e1 = b64decode(crtB64)
-          var keyPem, e2 = b64decode(keyB64)
-          if e1 != nil || e2 != nil {
-            continue
-          }
-          var combined = crtPem + "\n" + keyPem
-          var fname = BoundedName("gw-clientcert-" + gwNs + "-" + gwName, 251) + ".pem"
+        var clientCert = map[string]any{}
+        GatewayRouteClientCert(route, "GRPCRoute", clientCert)
+        gwClientCertBroken = clientCert["broken"] == true
+        if tostring(clientCert["pem"]) != "" {
+          var fname = BoundedName("gw-clientcert-" + tostring(clientCert["gatewayNamespace"]) + "-" + tostring(clientCert["gatewayName"]), 251) + ".pem"
           // Type "cert" lands the file under ssl/, and HAProxy's
           // `crt-base ssl` prepends ssl/ again — so emit the bare filename,
           // not the path fileRegistry returns.
-          var _, fErr = RegisterBackendFile("cert", fname, combined)
+          var _, fErr = RegisterBackendFile("cert", fname, tostring(clientCert["pem"]))
           if fErr == nil {
             gwClientCertPath = fname
           }
@@ -526,9 +442,9 @@ templateSnippets:
           tostring(toMap) + ") if { var(txn.gw_rule_id),map_str_int(" + tostring(toMap) + ") -m found }")
         // Last: an unconditional final action makes every later http-request rule a
         // warned-about NOOP.
-        if btlsBroken {
+        if btlsBroken || gwClientCertBroken {
           profile = append(profile,
-            "# Invalid BackendTLSPolicy blocks traffic.",
+            "# Invalid BackendTLSPolicy or Gateway clientCertificateRef blocks traffic.",
             "http-request return status 503")
         }
       %%}

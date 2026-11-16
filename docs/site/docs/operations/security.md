@@ -398,8 +398,8 @@ command prompts for the password:
 | SHA-256 crypt | `$5$` | `openssl passwd -5` |
 | yescrypt | `$y$` | `mkpasswd -m yescrypt` |
 
-HAPTIC refuses every other credential with an error that names the Ingress, the
-Secret, and the user. The admission webhook denies a new or changed Ingress that
+HAPTIC refuses every other credential with an error that names the Ingress and
+the Secret. The admission webhook denies a new or changed Ingress that
 references such a Secret. If a Secret already in the cluster holds one, HAPTIC
 applies no configuration changes until you replace the hash. The default refuses:
 
@@ -435,6 +435,42 @@ annotations.
 Most annotation values reach the config as validated or escaped data: CIDR-list annotations are parsed as CIDRs, and header, cookie, SNI, and rewrite-target values are checked against a strict character set that rejects control characters, so they can't break out of their directive and inject arbitrary HAProxy config. Invalid values reject the proposed resource change. If a watched change prevents complete configuration validation, [input isolation](input-isolation.md) keeps its previous validated revision while independent valid changes continue.
 
 [Raw configuration annotations](#raw-configuration-annotations) are the exception, and HAPTIC rejects them by default.
+
+### Secret references across namespaces
+
+The controller reads Secrets cluster-wide, so a Secret reference in an
+annotation decides whose credentials a route uses. The `haproxy-haptic.org`
+annotations read private material only from the Ingress's own namespace:
+
+| Annotation | Secret holds | Other namespace |
+| --- | --- | --- |
+| `auth-secret` | Basic-auth credentials | Rejected |
+| `api-key-secret` | API keys | Rejected |
+| `hmac-secret` | HMAC shared key | Rejected |
+| `consumer-groups-secret` | Consumer-to-group mapping | Rejected |
+| `backend-crt-secret` | Upstream client certificate and key | Rejected |
+| `request-schema-secret` | JSON Schema | Rejected |
+| `backend-ca-secret` | Upstream CA bundle | Allowed |
+| `auth-tls-secret` | Client CA bundle | Allowed |
+| `jwt-secret` | JWT public key | Allowed |
+
+A rejected reference fails admission. An Ingress that already has one keeps no
+access to the Secret: its route answers `503` and gets a Warning Event. `name`
+and `namespace/name` naming the Ingress's namespace both work. To use a Secret
+from another namespace, copy it into the Ingress's namespace.
+
+The `haproxy.org`, `haproxy-ingress.github.io`, and `nginx.ingress.kubernetes.io`
+annotation libraries keep their upstream controllers' behavior, which accepts a
+`namespace/name` reference to a Secret in any namespace. Anyone who can write an
+Ingress that those libraries process can make a route use another namespace's
+credentials. Disable the libraries you don't use, or limit Secret access with
+[`releaseNamespaceSecretsOnly`](#read-secrets-only-in-the-release-namespace).
+
+A Gateway's `spec.tls.backend.clientCertificateRef` follows Gateway API rules: a
+Secret in another namespace needs a ReferenceGrant in that namespace. Without
+one, the Gateway reports `ResolvedRefs: False` with reason `RefNotPermitted`, and
+routes attached to it answer `503` instead of connecting without the
+certificate.
 
 ### Raw configuration annotations
 

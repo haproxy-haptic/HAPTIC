@@ -376,3 +376,6 @@ test-tlsroute-static-passthrough-all-routes-removed
 test-tlsroute-static-passthrough-invalid-winner-rejects
 test-tlsroute-static-single-passthrough-without-route
 test-tlsroute-static-unrouted-listener-with-https
+test-gateway-backend-client-cert-cross-namespace-with-grant
+test-gateway-backend-client-cert-cross-namespace-without-grant-fails-closed
+test-gateway-backend-client-cert-only-from-accepting-gateway

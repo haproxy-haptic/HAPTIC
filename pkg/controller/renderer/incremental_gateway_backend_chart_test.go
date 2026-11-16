@@ -72,6 +72,7 @@ type gatewayBackendChartFixture struct {
 	secrets            *k8sstore.MemoryStore
 	configMaps         *k8sstore.MemoryStore
 	referenceGrants    *k8sstore.MemoryStore
+	namespaces         *k8sstore.MemoryStore
 	provider           stores.StoreProvider
 }
 
@@ -431,6 +432,7 @@ func newGatewayBackendChartFixtureWithTemplates(
 			"secrets":            {APIVersion: "v1", Resources: "secrets", IndexBy: []string{"metadata.namespace", "metadata.name"}},
 			"configmaps":         {APIVersion: "v1", Resources: "configmaps", IndexBy: []string{"metadata.namespace", "metadata.name"}},
 			"referencegrants":    {APIVersion: "gateway.networking.k8s.io/v1", Resources: "referencegrants", IndexBy: []string{"metadata.namespace", "metadata.name"}},
+			"namespaces":         {APIVersion: "v1", Resources: "namespaces", IndexBy: []string{"metadata.name"}},
 		},
 		TemplateSnippets: snippets,
 		HAProxyConfig:    config.HAProxyConfig{Template: root},
@@ -451,13 +453,13 @@ func newGatewayBackendChartFixtureWithTemplates(
 		grpcRoutes: k8sstore.NewMemoryStore(2), backendTLSPolicies: k8sstore.NewMemoryStore(2),
 		services: k8sstore.NewMemoryStore(2), endpoints: k8sstore.NewMemoryStore(2),
 		secrets: k8sstore.NewMemoryStore(2), configMaps: k8sstore.NewMemoryStore(2),
-		referenceGrants: k8sstore.NewMemoryStore(2),
+		referenceGrants: k8sstore.NewMemoryStore(2), namespaces: k8sstore.NewMemoryStore(1),
 	}
 	fixture.provider = stores.NewRealStoreProvider(map[string]stores.Store{
 		"gateways": fixture.gateways, "httproutes": fixture.httpRoutes, "grpcroutes": fixture.grpcRoutes,
 		"backendtlspolicies": fixture.backendTLSPolicies, "services": fixture.services,
 		"endpoints": fixture.endpoints, "secrets": fixture.secrets, "configmaps": fixture.configMaps,
-		"referencegrants": fixture.referenceGrants,
+		"referencegrants": fixture.referenceGrants, "namespaces": fixture.namespaces,
 	})
 	return fixture
 }
@@ -480,13 +482,14 @@ func gatewayBackendSchemaTypes(t *testing.T) *typebootstrap.Result {
 			{Name: "endpoints", GVK: schema.GroupVersionKind{Group: "discovery.k8s.io", Version: "v1", Kind: "EndpointSlice"}},
 			{Name: "secrets", GVK: schema.GroupVersionKind{Version: "v1", Kind: "Secret"}},
 			{Name: "configmaps", GVK: schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}},
+			{Name: "namespaces", GVK: schema.GroupVersionKind{Version: "v1", Kind: "Namespace"}},
 		},
 		Fetcher: fetcher,
 		Logger:  slog.Default(),
 	})
 	require.NoError(t, err)
 	require.Empty(t, result.Errors)
-	require.Len(t, result.Types, 9)
+	require.Len(t, result.Types, 10)
 	return result
 }
 
@@ -497,7 +500,7 @@ func loadGatewayBackendChartSnippets(t *testing.T) map[string]config.TemplateSni
 	chartRoot := filepath.Join(filepath.Dir(sourceFile), "..", "..", "..", "charts", "haptic", "charts")
 	files := []string{
 		"base/library.yaml", "kubernetes-backends/library.yaml",
-		"gateway/21-route-helpers.yaml", "gateway/30-backends.yaml",
+		"gateway/20-route-analysis.yaml", "gateway/21-route-helpers.yaml", "gateway/30-backends.yaml",
 		"gateway/73-status-policy.yaml",
 	}
 	wanted := map[string]bool{
@@ -521,7 +524,9 @@ func loadGatewayBackendChartSnippets(t *testing.T) map[string]config.TemplateSni
 		"backendtlsvalues-490-gateway":             true, "util-gateway-backend-bindings": true,
 		"util-gateway-http-backend-bindings": true, "util-gateway-grpc-backend-bindings": true,
 		"util-replay-gateway-backend-effects": true,
-		gatewayHTTPBackendComponent:           true, gatewayGRPCBackendComponent: true,
+		"util-gateway-client-certificate":     true, "util-gateway-accepts-route": true, "util-gateway-route-client-cert": true,
+		"util-listenerset-routing-gate": true, "util-hostname-intersect-gateway": true,
+		gatewayHTTPBackendComponent: true, gatewayGRPCBackendComponent: true,
 		"backends-500-gateway": true,
 	}
 	result := make(map[string]config.TemplateSnippet, len(wanted))

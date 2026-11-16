@@ -268,6 +268,55 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 503 if \{ var\(txn\.resource_key\),map\([^)]*haptic-route-unavailable\.map\) -m found \}'}
       - {type: contains, target: events, pattern: "BackendCASecretMissing"}
 
+  test-haptic-backend-crt-secret-missing-fails-closed:
+    description: >-
+      A client certificate that can't be loaded fails the route closed instead of
+      connecting without the configured mTLS identity.
+    fixtures:
+      secrets:
+        - apiVersion: v1
+          kind: Secret
+          metadata: { namespace: default, name: no-key }
+          type: Opaque
+          data: { tls.crt: Y2VydA== }
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: btls-nocrt
+            annotations:
+              haproxy-haptic.org/backend-protocol: "https"
+              haproxy-haptic.org/backend-crt-secret: "does-not-exist"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: btls-nocrt.example.com
+                http:
+                  paths:
+                    - { path: /, pathType: Prefix, backend: { service: { name: echo, port: { number: 80 } } } }
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            namespace: default
+            name: btls-nokey
+            annotations:
+              haproxy-haptic.org/backend-protocol: "https"
+              haproxy-haptic.org/backend-crt-secret: "no-key"
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: btls-nokey.example.com
+                http:
+                  paths:
+                    - { path: /, pathType: Prefix, backend: { service: { name: echo2, port: { number: 80 } } } }
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: "map:haptic-route-unavailable.map", pattern: '(?m)^default/btls-nocrt backend_tls_unavailable$'}
+      - {type: contains, target: "map:haptic-route-unavailable.map", pattern: '(?m)^default/btls-nokey backend_tls_unavailable$'}
+      - {type: contains, target: events, pattern: "BackendCrtSecretMissing.*btls-nocrt"}
+      - {type: contains, target: events, pattern: "BackendCrtSecretMissing.*btls-nokey"}
+
   test-haptic-backend-ca-secret-present-still-verifies:
     description: >-
       Control for the guard above: a resolvable CA Secret must still render

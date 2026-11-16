@@ -22,8 +22,8 @@ templateSnippets:
       http-request set-var(txn.ak_secret) var(txn.ak_cfg),field(3,' ') if { var(txn.ak_cfg) -m found }
       http-request set-var(txn.ak_state) var(txn.ak_cfg),field(4,' ') if { var(txn.ak_cfg) -m found }
       http-request set-var(txn.ak_fwd) var(txn.ak_cfg),field(5,' ') if { var(txn.ak_cfg) -m found }
-      http-request set-var(txn.denied_by) str(api_key_unavailable) if { var(txn.ak_state) -m str missing nosecret }
-      http-request deny deny_status 503 if { var(txn.ak_state) -m str missing nosecret }
+      http-request set-var(txn.denied_by) str(api_key_unavailable) if { var(txn.ak_state) -m str missing nosecret foreign }
+      http-request deny deny_status 503 if { var(txn.ak_state) -m str missing nosecret foreign }
       {%- for _, h := range sort_strings(hdrs) %}
       http-request set-var(txn.haptic_apikey) req.hdr({{ h }}) if { var(txn.ak_src) -m str hdr } { var(txn.ak_name) -m str {{ h }} }
       {%- end %}

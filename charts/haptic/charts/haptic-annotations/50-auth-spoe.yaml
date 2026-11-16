@@ -37,7 +37,7 @@ templateSnippets:
 
         Annotations:
           - haproxy-haptic.org/auth-type: "basic" (required; any other value fails)
-          - haproxy-haptic.org/auth-secret: "<ns/name>" or "<name>" (required)
+          - haproxy-haptic.org/auth-secret: "<name>" or "<ingress-ns>/<name>" (required)
           - haproxy-haptic.org/auth-secret-type: "auth-file" | "auth-map"
             (optional, default "auth-file")
 
@@ -74,7 +74,7 @@ templateSnippets:
                   {%- end %}
       # haptic/auth ({{ key }})
       userlist {{ userlistName }}
-                  {%- for _, line := range split(authData, "\n") %}
+                  {%- for lineIndex, line := range split(authData, "\n") %}
                     {%- var l = strip(line) %}
                     {%- if l == "" || !strings_contains(l, ":") %}{%- continue %}{%- end %}
                     {%- var lparts = strings_splitn(l, ":", 2) %}
@@ -87,10 +87,10 @@ templateSnippets:
                         both the username and the credential (they land on a single
                         HAProxy `user` line). -#}
                     {%- if !regex_search(user, "^[!-~]+$") || !regex_search(rest, "^[!-~]+$") %}
-                      {{- fail("Secret '" + secretNs + "/" + secretName + "' referenced on Ingress '" + key + "' has an invalid username or credential for user '" + user + "' (whitespace / control characters are not permitted).") -}}
+                      {{- fail("Secret '" + secretNs + "/" + secretName + "' referenced on Ingress '" + key + "' has an invalid username or credential on line " + tostring(lineIndex + 1) + " of 'auth' (whitespace / control characters are not permitted).") -}}
                     {%- end %}
                     {%- if !regex_search(rest, hashRegex) %}
-                      {{- fail("Ingress '" + key + "' references Secret '" + secretNs + "/" + secretName + "', whose password hash for user '" + user + "' doesn't match the allowed pattern hapticPasswordHashRegex \"" + hashRegex + "\"; HAPTIC refuses the configuration until it is replaced. Replace it with a bcrypt, SHA-256/SHA-512 crypt or yescrypt hash, for example from htpasswd -nB <user>") -}}
+                      {{- fail("Ingress '" + key + "' references Secret '" + secretNs + "/" + secretName + "', whose password hash on line " + tostring(lineIndex + 1) + " of 'auth' doesn't match the allowed pattern hapticPasswordHashRegex \"" + hashRegex + "\"; HAPTIC refuses the configuration until it is replaced. Replace it with a bcrypt, SHA-256/SHA-512 crypt or yescrypt hash, for example from htpasswd -nB <user>") -}}
                     {%- end %}
         user {{ user }} {{ pwKeyword }} {{ rest }}
                   {%- end %}
@@ -98,16 +98,16 @@ templateSnippets:
                   {# auth-map: each Secret data key is a username, its value the hash. #}
       # haptic/auth ({{ key }})
       userlist {{ userlistName }}
-                  {%- for _, username := range keys(secretData) %}
+                  {%- for entryIndex, username := range keys(secretData) %}
                     {%- var passwordHash = secretData[username] | b64decode() | tostring() %}
                     {%- if username == "" || passwordHash == "" %}
-                      {{- fail("Secret '" + secretNs + "/" + secretName + "' (auth-map) referenced on Ingress '" + key + "' has an empty username or hash.") -}}
+                      {{- fail("Secret '" + secretNs + "/" + secretName + "' (auth-map) referenced on Ingress '" + key + "' has an empty username or hash in data entry " + tostring(entryIndex + 1) + " (keys in sorted order).") -}}
                     {%- end %}
                     {%- if !regex_search(username, "^[!-~]+$") || !regex_search(passwordHash, "^[!-~]+$") %}
-                      {{- fail("Secret '" + secretNs + "/" + secretName + "' (auth-map) referenced on Ingress '" + key + "' has an invalid username or hash for user '" + username + "' (whitespace / control characters are not permitted).") -}}
+                      {{- fail("Secret '" + secretNs + "/" + secretName + "' (auth-map) referenced on Ingress '" + key + "' has an invalid username or hash in data entry " + tostring(entryIndex + 1) + " (keys in sorted order; whitespace / control characters are not permitted).") -}}
                     {%- end %}
                     {%- if !regex_search(passwordHash, hashRegex) %}
-                      {{- fail("Ingress '" + key + "' references Secret '" + secretNs + "/" + secretName + "', whose password hash for user '" + username + "' doesn't match the allowed pattern hapticPasswordHashRegex \"" + hashRegex + "\"; HAPTIC refuses the configuration until it is replaced. Replace it with a bcrypt, SHA-256/SHA-512 crypt or yescrypt hash, for example from htpasswd -nB <user>") -}}
+                      {{- fail("Ingress '" + key + "' references Secret '" + secretNs + "/" + secretName + "', whose password hash in data entry " + tostring(entryIndex + 1) + " (keys in sorted order) doesn't match the allowed pattern hapticPasswordHashRegex \"" + hashRegex + "\"; HAPTIC refuses the configuration until it is replaced. Replace it with a bcrypt, SHA-256/SHA-512 crypt or yescrypt hash, for example from htpasswd -nB <user>") -}}
                     {%- end %}
         user {{ username }} password {{ passwordHash }}
                   {%- end %}
@@ -126,6 +126,7 @@ templateSnippets:
       group: haptic-auth-userlists
       effects: [publishValue]
     template: |-
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
@@ -144,14 +145,12 @@ templateSnippets:
             {%- if secretType != "auth-file" && secretType != "auth-map" -%}
               {{- fail("Invalid value '" + secretType + "' for annotation 'haproxy-haptic.org/auth-secret-type' on Ingress '" + key + "'. Valid values: 'auth-file', 'auth-map'.") -}}
             {%- end -%}
+            {%- var secretRef = HapticPrivateSecretRef(ns, authSecret, "haproxy-haptic.org/auth-secret", key) -%}
             {%- var secretNs = ns -%}
-            {%- var secretName = authSecret -%}
-            {%- if strings_contains(authSecret, "/") -%}
-              {%- var parts = split(authSecret, "/") -%}
-              {%- secretNs = parts[0] -%}
-              {%- secretName = parts[1] -%}
-            {%- end -%}
-            {%- var secret = resources.secrets.GetSingle(secretNs, secretName) -%}
+            {%- var secretName = "" -%}
+            {%- if secretRef != "" -%}{%- secretName = split(secretRef, "/")[1] -%}{%- end -%}
+            {%- var secret *resources.secrets.T = nil -%}
+            {%- if secretName != "" -%}{%- secret = resources.secrets.GetSingle(secretNs, secretName) -%}{%- end -%}
             {%- if secret != nil -%}
               {%- var userlistName = "haptic_auth_" + secretNs + "_" + secretName -%}
               {%- var secretData = map[string]any{} -%}
@@ -219,6 +218,7 @@ templateSnippets:
   util-haptic-basic-auth-route:
     template: |-
       {%- import "util-haptic-satisfy" for SatisfyAnyMode -%}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {%- macro HapticBasicAuthRoute(ingress *resources.ingresses.T, forSatisfy bool, result map[string]any) -%}
         {%- result["state"] = "" -%}
         {%- var satisfy = SatisfyAnyMode(ingress) == "any" -%}
@@ -238,18 +238,17 @@ templateSnippets:
             {%- if !regex_search(realm, "^[^\"\\\\$\\r\\n\\t]*$") -%}
               {{- fail("Invalid auth-realm '" + realm + "' on Ingress '" + key + "': must not contain double-quotes, backslashes, '$', tabs or newlines.") -}}
             {%- end -%}
-            {%- var secretNs = ns -%}
-            {%- var secretName = authSecret -%}
-            {%- if strings_contains(authSecret, "/") -%}
-              {%- var parts = split(authSecret, "/") -%}
-              {%- secretNs = parts[0] -%}
-              {%- secretName = parts[1] -%}
+            {%- var secretRef = HapticPrivateSecretRef(ns, authSecret, "haproxy-haptic.org/auth-secret", key) -%}
+            {%- if secretRef == "" -%}
+              {%- result["state"] = "foreign" -%}
+            {%- else -%}
+              {%- var secretName = split(secretRef, "/")[1] -%}
+              {%- result["secretRef"] = secretRef -%}
+              {%- result["userlist"] = "haptic_auth_" + ns + "_" + secretName -%}
+              {%- result["realm"] = realm -%}
+              {%- result["state"] = "ok" -%}
+              {%- if resources.secrets.GetSingle(ns, secretName) == nil -%}{%- result["state"] = "missing" -%}{%- end -%}
             {%- end -%}
-            {%- result["secretRef"] = secretNs + "/" + secretName -%}
-            {%- result["userlist"] = "haptic_auth_" + secretNs + "_" + secretName -%}
-            {%- result["realm"] = realm -%}
-            {%- result["state"] = "ok" -%}
-            {%- if resources.secrets.GetSingle(secretNs, secretName) == nil -%}{%- result["state"] = "missing" -%}{%- end -%}
           {%- end -%}
         {%- end -%}
       {%- end macro -%}
@@ -287,6 +286,7 @@ templateSnippets:
     template: |-
       {%- import "util-haptic-basic-auth-route" for HapticBasicAuthRoute -%}
       {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
+      {%- import "util-haptic-foreign-secret-message" for HapticForeignSecretMessage -%}
       {%- var ingress = resources.ingresses.GetSingle(
         dig_string(item, "", "metadata", "namespace"), dig_string(item, "", "metadata", "name")) -%}
       {%- if ingress != nil -%}
@@ -299,6 +299,9 @@ templateSnippets:
           {%- if state == "ok" -%}
             {%- var pair = tostring(route["userlist"]) + " " + tostring(route["realm"]) -%}
             {{- shared.Publish("pair", pair, pair) -}}
+          {%- else if state == "foreign" -%}
+            {{- WebhookRejectOrWarn(ingress, "AuthSecretForeign", HapticForeignSecretMessage(ingress.Metadata.Namespace, key,
+              "haproxy-haptic.org/auth-secret", ingress.Metadata.Annotations["haproxy-haptic.org/auth-secret"])) -}}
           {%- else if state == "missing" -%}
             {#- A warning, never an admission rejection: the webhook's store lags
                 the API server, so "missing" and "not observed yet" are the same
@@ -324,17 +327,17 @@ templateSnippets:
       {#
         Annotations:
           - haproxy-haptic.org/auth-type: "basic" (required)
-          - haproxy-haptic.org/auth-secret: "<ns/name>" | "<name>" (required)
+          - haproxy-haptic.org/auth-secret: "<name>" | "<ingress-ns>/<name>" (required)
           - haproxy-haptic.org/auth-realm: "<realm>" (default "Restricted")
 
         The route's state, userlist and realm come from
         haptic-basic-auth-routes.map. `auth realm` and http_auth() take
         literals only, so there is one rule per distinct (userlist, realm)
         pair, selected by comparing the whole map value. A route whose Secret
-        is absent or unset is denied 503. satisfy=any routes are not in the
-        map: backend-directives-825 owns their IP-or-auth gate. Emitted only
-        while a route uses basic auth; the first one reloads once, as does
-        removing the last or adding a pair.
+        is absent, unset or in another namespace is denied 503. satisfy=any
+        routes are not in the map: backend-directives-825 owns their
+        IP-or-auth gate. Emitted only while a route uses basic auth; the
+        first one reloads once, as does removing the last or adding a pair.
       #}
       {%- if incremental_value_count("haptic-basic-auth-routes", "any") > 0 -%}
       {%- var routes, e1 = pathResolver.GetPath("haptic-basic-auth-routes.map", "map") -%}
@@ -343,8 +346,8 @@ templateSnippets:
       {%- for _, v := range incremental_values("haptic-basic-auth-routes", "pair") -%}{%- pairs = append(pairs, tostring(v)) -%}{%- end -%}
       {{ "\n" }}# haptic/basic-auth
       http-request set-var(txn.ba_cfg) var(txn.resource_key),map({{ routes }})
-      http-request set-var(txn.denied_by) str(basic_auth_unavailable) if { var(txn.ba_cfg) -m str missing nosecret }
-      http-request deny deny_status 503 if { var(txn.ba_cfg) -m str missing nosecret }
+      http-request set-var(txn.denied_by) str(basic_auth_unavailable) if { var(txn.ba_cfg) -m str missing nosecret foreign }
+      http-request deny deny_status 503 if { var(txn.ba_cfg) -m str missing nosecret foreign }
       {%- for _, p := range sort_strings(pairs) %}
       {%- var pair = strings_splitn(tostring(p), " ", 2) %}
       http-request auth realm "{{ pair[1] }}" if { var(txn.ba_cfg) -m str "ok {{ p }}" } !{ http_auth({{ pair[0] }}) }
@@ -366,6 +369,7 @@ templateSnippets:
         macro and suppress themselves when it returns "any", leaving the
         combined gate below as the single OR check.
       #}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {%- macro SatisfyAnyMode(ingress *resources.ingresses.T) string -%}
         {%%
           if ingress.Metadata.Annotations["haproxy-haptic.org/satisfy"] != "any" {
@@ -386,15 +390,8 @@ templateSnippets:
             return
           }
           var ns = ingress.Metadata.Namespace
-          var secretNs = ns
-          var secretName = authSecret
-          if strings_contains(authSecret, "/") {
-            var parts = split(authSecret, "/")
-            secretNs = parts[0]
-            secretName = parts[1]
-          }
-          var sec = resources.secrets.GetSingle(secretNs, secretName)
-          if sec == nil {
+          var secretRef = HapticPrivateSecretRef(ns, authSecret, "haproxy-haptic.org/auth-secret", ns + "/" + ingress.Metadata.Name)
+          if secretRef == "" || resources.secrets.GetSingle(ns, split(secretRef, "/")[1]) == nil {
             show ""
             return
           }
@@ -459,6 +456,7 @@ templateSnippets:
         structural, which is the cost of the fallback.
       #}
       {%- import "util-haptic-satisfy" for SatisfyAnyMode -%}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {%- import "util-validate-cidr-list" for ValidateCidrList -%}
       {%- if ingress != nil %}
         {%- if SatisfyAnyMode(ingress) != "" && strings_contains(ValidateCidrList(ingress.Metadata.Annotations["haproxy-haptic.org/allowlist-source-range"], "haproxy-haptic.org/allowlist-source-range", ingress.Metadata.Namespace + "/" + ingress.Metadata.Name), ":") %}
@@ -472,14 +470,7 @@ templateSnippets:
             {{- fail("Invalid auth-realm '" + authRealm + "' on Ingress '" + key + "': must not contain double-quotes or newlines.") -}}
           {%- end %}
           {%- var authSecret = ingress.Metadata.Annotations["haproxy-haptic.org/auth-secret"] %}
-          {%- var secretNs = ns %}
-          {%- var secretName = authSecret %}
-          {%- if strings_contains(authSecret, "/") %}
-            {%- var parts = split(authSecret, "/") %}
-            {%- secretNs = parts[0] %}
-            {%- secretName = parts[1] %}
-          {%- end %}
-          {%- var userlistName = "haptic_auth_" + secretNs + "_" + secretName %}
+          {%- var userlistName = "haptic_auth_" + ns + "_" + split(HapticPrivateSecretRef(ns, authSecret, "haproxy-haptic.org/auth-secret", key), "/")[1] %}
           {%- var aclName = "haptic_satisfy_ip_" + ns + "_" + name %}
       # haptic/satisfy-any ({{ key }})
       acl {{ aclName }} src {{ ValidateCidrList(allowlist, "haproxy-haptic.org/allowlist-source-range", key) }}

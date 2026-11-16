@@ -321,6 +321,7 @@ templateSnippets:
       {%- import "util-reference-grant-permitted" for ReferenceGrantPermitted -%}
       {%- import "util-condition-transition-time" for TopLevelTransitionTime, ListenerTransitionTime -%}
       {%- import "util-bounded-k8s-name" for BoundedK8sName -%}
+      {%- import "util-gateway-client-certificate" for ResolveGatewayClientCert -%}
       {% macro GenerateGatewayStatusPatch(gateway *resources.gateways.T) %}
         {%- var rawAddresses = shared.SelectValues("gateway-status-addresses", "loadbalancer") %}
         {%- if len(rawAddresses) == 0 -%}
@@ -844,45 +845,13 @@ templateSnippets:
                 gwAcceptedMessage = "One or more listeners are not accepted"
               }
             }
-            // Validate spec.tls.backend.clientCertificateRef when set.
-            // The chart's util-generate-backends-gateway resolves this
-            // ref at backend-emit time; we replay the same checks here
-            // so the Gateway status reflects the same resolution.
-            if dig(gateway, "spec", "tls", "backend", "clientCertificateRef") != nil && gwResolvedRefsStatus == "True" {
-              var ccRef = dig(gateway, "spec", "tls", "backend", "clientCertificateRef")
-              var ccGroup = dig_string(ccRef, "", "group")
-              var ccKind = dig_string(ccRef, "", "kind")
-              if ccKind == "" { ccKind = "Secret" }
-              var ccName = dig_string(ccRef, "", "name")
-              var ccNs = dig_string(ccRef, "", "namespace")
-              if ccNs == "" { ccNs = nsStr }
-              if (ccGroup != "" && ccGroup != "core") || ccKind != "Secret" || ccName == "" {
+            if gwResolvedRefsStatus == "True" {
+              var clientCert = map[string]any{}
+              ResolveGatewayClientCert(gateway, clientCert)
+              if clientCert["set"] == true && clientCert["valid"] != true {
                 gwResolvedRefsStatus = "False"
-                gwResolvedRefsReason = "InvalidClientCertificateRef"
-                gwResolvedRefsMessage = "spec.tls.backend.clientCertificateRef must reference a core/v1 Secret"
-              } else if ccNs != nsStr && ReferenceGrantPermitted(
-                  "gateway.networking.k8s.io", "Gateway", nsStr,
-                  "", "Secret", ccNs, ccName) != "true" {
-                gwResolvedRefsStatus = "False"
-                gwResolvedRefsReason = "RefNotPermitted"
-                gwResolvedRefsMessage = "Cross-namespace clientCertificateRef requires a matching ReferenceGrant"
-              } else {
-                var ccSec = resources.secrets.GetSingle(ccNs, ccName)
-                if ccSec == nil {
-                  gwResolvedRefsStatus = "False"
-                  gwResolvedRefsReason = "InvalidClientCertificateRef"
-                  gwResolvedRefsMessage = "Backend clientCertificateRef Secret " + ccNs + "/" + ccName + " not found"
-                } else {
-                  // ccSec is typed *resources.secrets.T — ccSec.Data is
-                  // map[string]string directly.
-                  var ccCrt, hasCrt = ccSec.Data["tls.crt"]
-                  var ccKey, hasKey = ccSec.Data["tls.key"]
-                  if !hasCrt || !hasKey || ccCrt == "" || ccKey == "" {
-                    gwResolvedRefsStatus = "False"
-                    gwResolvedRefsReason = "InvalidClientCertificateRef"
-                    gwResolvedRefsMessage = "Backend clientCertificateRef Secret " + ccNs + "/" + ccName + " missing tls.crt or tls.key"
-                  }
-                }
+                gwResolvedRefsReason = tostring(clientCert["reason"])
+                gwResolvedRefsMessage = tostring(clientCert["message"])
               }
             }
 

@@ -19,7 +19,8 @@
 # the Secret; a propagation race must never disable authentication.
 #
 # Secret format (data key `keys`, base64-encoded): one entry per line, either a
-# bare `<apikey>` (the key is its own consumer id) or `<apikey>:<consumer>`.
+# bare `<apikey>` (consumer id `key-<first 12 hex of sha256(apikey)>`, so the key
+# never reaches logs or upstream headers) or `<apikey>:<consumer>`.
 templateSnippets:
   util-haptic-secret-ref:
     template: |-
@@ -32,13 +33,28 @@ templateSnippets:
         {%- if strings_contains(ref, "/") -%}{{- ref -}}{%- else -%}{{- ns + "/" + ref -}}{%- end -%}
       {%- end macro -%}
 
+      {#- Private material (credentials, keys) is read only from the Ingress namespace; "" for any other. -#}
+      {%- macro HapticPrivateSecretRef(ns string, ref string, annotation string, key string) -%}
+        {%- var resolved = HapticSecretRef(ns, ref, annotation, key) -%}
+        {%- if hasPrefix(resolved, ns + "/") -%}{{- resolved -}}{%- end -%}
+      {%- end macro -%}
+
+  util-haptic-foreign-secret-message:
+    template: |-
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage -%}
+      {%- var HapticForeignSecretMessage = func(ns string, key string, annotation string, ref string) string {
+        return WebhookOutcomeMessage(
+          "Ingress " + key + " references Secret '" + ref + "' in '" + annotation + "', but HAPTIC reads this Secret only from the Ingress namespace " + ns,
+          "the Ingress is rejected", "this route fails closed with 503", "Copy the Secret into namespace " + ns + " and reference it by name.")
+      } -%}
+
   # Resolves one Ingress's API-key settings; result["enabled"] false when the
   # route has none. Shared by the map producer and the name publisher so both
   # see the same values.
   util-haptic-api-key-route:
     template: |-
       {%- import "util-validate-config-value" for ValidateConfigValue -%}
-      {%- import "util-haptic-secret-ref" for HapticSecretRef -%}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {%- macro HapticApiKeyRoute(ingress any, result map[string]any) -%}
         {%- var ns = dig_string(ingress, "", "metadata", "namespace") -%}
         {%- var key = ns + "/" + dig_string(ingress, "", "metadata", "name") -%}
@@ -80,11 +96,13 @@ templateSnippets:
             {%- result["fwd"] = ValidateConfigValue(consumerHdr, "haproxy-haptic.org/api-key-consumer-header", key, false) -%}
             {%- result["fwdSet"] = true -%}
           {%- end -%}
-          {%- var secretRef = HapticSecretRef(ns, apiKeySecret, "haproxy-haptic.org/api-key-secret", key) -%}
-          {%- var refParts = split(secretRef, "/") -%}
+          {%- var secretRef = HapticPrivateSecretRef(ns, apiKeySecret, "haproxy-haptic.org/api-key-secret", key) -%}
           {%- result["secretRef"] = secretRef -%}
           {%- result["state"] = "ok" -%}
-          {%- if resources.secrets.GetSingle(refParts[0], refParts[1]) == nil -%}
+          {%- if secretRef == "" -%}
+            {%- result["secretRef"] = "_" -%}
+            {%- result["state"] = "foreign" -%}
+          {%- else if resources.secrets.GetSingle(ns, split(secretRef, "/")[1]) == nil -%}
             {%- result["state"] = "missing" -%}
           {%- end -%}
         {%- end -%}
@@ -124,6 +142,7 @@ templateSnippets:
     template: |-
       {%- import "util-haptic-api-key-route" for HapticApiKeyRoute -%}
       {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
+      {%- import "util-haptic-foreign-secret-message" for HapticForeignSecretMessage -%}
       {%- var route = map[string]any{} -%}
       {{- HapticApiKeyRoute(item, route) -}}
       {%- if route["enabled"] == true -%}
@@ -139,7 +158,10 @@ templateSnippets:
           {%- var fetchName = tostring(route["name"]) -%}
           {{- shared.Publish(tostring(route["source"]), fetchName, fetchName) -}}
           {%- if route["fwdSet"] == true -%}{{- shared.Publish("fwd", tostring(route["fwd"]), tostring(route["fwd"])) -}}{%- end -%}
-          {%- if tostring(route["state"]) == "missing" -%}
+          {%- if tostring(route["state"]) == "foreign" -%}
+            {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "ApiKeySecretForeign", HapticForeignSecretMessage(ns, key,
+              "haproxy-haptic.org/api-key-secret", dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/api-key-secret"))) -}}
+          {%- else if tostring(route["state"]) == "missing" -%}
             {{- recordEvent(resources.ingresses.GetSingle(ns, name), "ApiKeySecretMissing", "Ingress " + key + " references Secret '" + tostring(route["secretRef"]) + "' in 'haproxy-haptic.org/api-key-secret', but it could not be resolved. Requests are denied with 503 until the Secret is present.") -}}
           {%- end -%}
         {%- end -%}
@@ -151,14 +173,16 @@ templateSnippets:
       source: ingresses
       whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/api-key-secret']"]
     template: |-
-      {%- import "util-haptic-secret-ref" for HapticSecretRef -%}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {%- var ns = dig_string(item, "", "metadata", "namespace") -%}
       {%- var key = ns + "/" + dig_string(item, "", "metadata", "name") -%}
       {%- var apiKeySecret = dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/api-key-secret") -%}
+      {%- var secretRef = "" -%}
       {%- if apiKeySecret != "" -%}
-        {%- var secretRef = HapticSecretRef(ns, apiKeySecret, "haproxy-haptic.org/api-key-secret", key) -%}
-        {%- var refParts = split(secretRef, "/") -%}
-        {%- var secret = resources.secrets.GetSingle(refParts[0], refParts[1]) -%}
+        {%- secretRef = HapticPrivateSecretRef(ns, apiKeySecret, "haproxy-haptic.org/api-key-secret", key) -%}
+      {%- end -%}
+      {%- if secretRef != "" -%}
+        {%- var secret = resources.secrets.GetSingle(ns, split(secretRef, "/")[1]) -%}
         {%- if secret != nil -%}
           {%- var keysData = secret.Data["keys"] | b64decode() | tostring() -%}
           {%- if strip(keysData) == "" -%}
@@ -168,7 +192,7 @@ templateSnippets:
             {%- var l = strip(rawLine) -%}
             {%- if l == "" %}{%- continue %}{%- end -%}
             {%- var apikey = l -%}
-            {%- var consumer = l -%}
+            {%- var consumer = "key-" + sha256(l)[0:12] -%}
             {%- if strings_contains(l, ":") -%}
               {%- var kp = strings_splitn(l, ":", 2) -%}
               {%- apikey = kp[0] -%}

@@ -430,7 +430,7 @@ templateSnippets:
   util-haptic-hmac-route:
     template: |-
       {%- import "util-validate-config-value" for ValidateConfigValue -%}
-      {%- import "util-haptic-secret-ref" for HapticSecretRef -%}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {%- macro HapticHMACRoute(ingress any, result map[string]any) -%}
         {%- var ns = dig_string(ingress, "", "metadata", "namespace") -%}
         {%- var key = ns + "/" + dig_string(ingress, "", "metadata", "name") -%}
@@ -465,13 +465,15 @@ templateSnippets:
             {{- fail("Invalid value '" + signed + "' for annotation 'haproxy-haptic.org/hmac-signed-string' on Ingress '" + key + "'. Valid: body, path.") -}}
           {%- end -%}
           {%- result["signed"] = signed -%}
-          {%- var secretRef = HapticSecretRef(ns, hmacSecret, "haproxy-haptic.org/hmac-secret", key) -%}
-          {%- var refParts = split(secretRef, "/") -%}
+          {%- var secretRef = HapticPrivateSecretRef(ns, hmacSecret, "haproxy-haptic.org/hmac-secret", key) -%}
           {%- result["secretRef"] = secretRef -%}
-          {%- var secret = resources.secrets.GetSingle(refParts[0], refParts[1]) -%}
           {%- result["state"] = "ok" -%}
           {%- result["key"] = "_" -%}
-          {%- if secret == nil -%}
+          {%- var secret *resources.secrets.T = nil -%}
+          {%- if secretRef != "" -%}{%- secret = resources.secrets.GetSingle(ns, split(secretRef, "/")[1]) -%}{%- end -%}
+          {%- if secretRef == "" -%}
+            {%- result["state"] = "foreign" -%}
+          {%- else if secret == nil -%}
             {%- result["state"] = "missing" -%}
           {%- else -%}
             {#- HAProxy's hmac converter wants the key base64-encoded, which is the
@@ -519,6 +521,7 @@ templateSnippets:
     template: |-
       {%- import "util-haptic-hmac-route" for HapticHMACRoute -%}
       {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
+      {%- import "util-haptic-foreign-secret-message" for HapticForeignSecretMessage -%}
       {%- var route = map[string]any{} -%}
       {{- HapticHMACRoute(item, route) -}}
       {%- if route["enabled"] == true -%}
@@ -532,7 +535,10 @@ templateSnippets:
         {%- else -%}
           {{- shared.Publish("alg", tostring(route["alg"]), tostring(route["alg"])) -}}
           {{- shared.Publish("hdr", tostring(route["hdr"]), tostring(route["hdr"])) -}}
-          {%- if tostring(route["state"]) == "missing" -%}
+          {%- if tostring(route["state"]) == "foreign" -%}
+            {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "HMACSecretForeign", HapticForeignSecretMessage(ns, ns + "/" + name,
+              "haproxy-haptic.org/hmac-secret", dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/hmac-secret"))) -}}
+          {%- else if tostring(route["state"]) == "missing" -%}
             {{- recordEvent(resources.ingresses.GetSingle(ns, name), "HMACSecretMissing", "Ingress " + ns + "/" + name + " references Secret '" + tostring(route["secretRef"]) + "' in 'haproxy-haptic.org/hmac-secret', but it could not be resolved. Requests are denied with 503 until the Secret is present.") -}}
           {%- end -%}
         {%- end -%}
@@ -544,7 +550,7 @@ templateSnippets:
       {%- import "util-refusal" for Refusal -%}
       {#
         Annotations:
-          - haproxy-haptic.org/hmac-secret: "<ns/name>" | "<name>" (required; Secret
+          - haproxy-haptic.org/hmac-secret: "<name>" | "<ingress-ns>/<name>" (required; Secret
             with a `secret` data key holding the shared key)
           - haproxy-haptic.org/hmac-algorithm: sha256 (default) | sha1/sha224/sha384/sha512
           - haproxy-haptic.org/hmac-header: header carrying the client signature
@@ -576,8 +582,8 @@ templateSnippets:
       http-request set-var(txn.hm_signed) var(txn.hm_cfg),field(3,' ') if { var(txn.hm_cfg) -m found }
       http-request set-var(txn.hm_state) var(txn.hm_cfg),field(4,' ') if { var(txn.hm_cfg) -m found }
       http-request set-var(txn.hm_key) var(txn.hm_cfg),field(5,' ') if { var(txn.hm_cfg) -m found }
-      http-request set-var(txn.denied_by) str(hmac_unavailable) if { var(txn.hm_state) -m str missing nosecret }
-      http-request deny deny_status 503 if { var(txn.hm_state) -m str missing nosecret }
+      http-request set-var(txn.denied_by) str(hmac_unavailable) if { var(txn.hm_state) -m str missing nosecret foreign }
+      http-request deny deny_status 503 if { var(txn.hm_state) -m str missing nosecret foreign }
       http-request set-var(txn.denied_by) str(hmac_no_content_length) if { var(txn.hm_state) -m str ok } { var(txn.hm_signed) -m str body } !{ req.hdr(Content-Length) -m found }
       http-request return status 411 if { var(txn.hm_state) -m str ok } { var(txn.hm_signed) -m str body } !{ req.hdr(Content-Length) -m found }
       http-request set-var(txn.hm_body_size) req.body_size if { var(txn.hm_state) -m str ok } { var(txn.hm_signed) -m str body }
@@ -605,7 +611,7 @@ templateSnippets:
   # ==========================================================================
   util-haptic-consumer-group-route:
     template: |-
-      {%- import "util-haptic-secret-ref" for HapticSecretRef -%}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {%- macro HapticConsumerGroupRoute(ingress any, result map[string]any) -%}
         {%- var ns = dig_string(ingress, "", "metadata", "namespace") -%}
         {%- var key = ns + "/" + dig_string(ingress, "", "metadata", "name") -%}
@@ -630,15 +636,17 @@ templateSnippets:
             {%- end -%}
           {%- end -%}
           {%- result["groups"] = groups -%}
-          {%- var secretRef = HapticSecretRef(ns, cgSecret, "haproxy-haptic.org/consumer-groups-secret", key) -%}
-          {%- var refParts = split(secretRef, "/") -%}
+          {%- var secretRef = HapticPrivateSecretRef(ns, cgSecret, "haproxy-haptic.org/consumer-groups-secret", key) -%}
           {%- result["secretRef"] = secretRef -%}
           {%- result["state"] = "ok" -%}
           {#- A non-empty value whose tokens all strip to nothing (", ") passes the
               pair guard but yields no groups; deny rather than skip the check. -#}
           {%- if len(groups) == 0 -%}
             {%- result["state"] = "invalid" -%}
-          {%- else if resources.secrets.GetSingle(refParts[0], refParts[1]) == nil -%}
+          {%- else if secretRef == "" -%}
+            {%- result["secretRef"] = "_" -%}
+            {%- result["state"] = "foreign" -%}
+          {%- else if resources.secrets.GetSingle(ns, split(secretRef, "/")[1]) == nil -%}
             {%- result["state"] = "missing" -%}
           {%- end -%}
         {%- end -%}
@@ -683,30 +691,32 @@ templateSnippets:
       source: ingresses
       whenAnyPathExists: ["metadata.annotations['haproxy-haptic.org/consumer-groups-secret']"]
     template: |-
-      {%- import "util-haptic-secret-ref" for HapticSecretRef -%}
+      {%- import "util-haptic-secret-ref" for HapticPrivateSecretRef -%}
       {%- var ns = dig_string(item, "", "metadata", "namespace") -%}
       {%- var key = ns + "/" + dig_string(item, "", "metadata", "name") -%}
       {%- var cgSecret = dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/consumer-groups-secret") -%}
+      {%- var secretRef = "" -%}
       {%- if cgSecret != "" -%}
-        {%- var secretRef = HapticSecretRef(ns, cgSecret, "haproxy-haptic.org/consumer-groups-secret", key) -%}
-        {%- var refParts = split(secretRef, "/") -%}
-        {%- var secret = resources.secrets.GetSingle(refParts[0], refParts[1]) -%}
+        {%- secretRef = HapticPrivateSecretRef(ns, cgSecret, "haproxy-haptic.org/consumer-groups-secret", key) -%}
+      {%- end -%}
+      {%- if secretRef != "" -%}
+        {%- var secret = resources.secrets.GetSingle(ns, split(secretRef, "/")[1]) -%}
         {%- if secret != nil -%}
           {%- var groupsData = secret.Data["groups"] | b64decode() | tostring() -%}
           {%- if strip(groupsData) == "" -%}
             {{- fail("Secret '" + secretRef + "' referenced by annotation 'haproxy-haptic.org/consumer-groups-secret' on Ingress '" + key + "' has an empty or missing 'groups' data key.") -}}
           {%- end -%}
-          {%- for _, ln := range split(groupsData, "\n") -%}
+          {%- for lineIndex, ln := range split(groupsData, "\n") -%}
             {%- var t = strip(ln) -%}
             {%- if t == "" %}{%- continue %}{%- end -%}
             {%- if !strings_contains(t, ":") -%}
-              {{- fail("Secret '" + secretRef + "' (consumer-groups) on Ingress '" + key + "' has a malformed line '" + t + "'; expected '<consumer>:<group>'.") -}}
+              {{- fail("Secret '" + secretRef + "' (consumer-groups) on Ingress '" + key + "' has a malformed line " + tostring(lineIndex + 1) + " in 'groups'; expected '<consumer>:<group>'.") -}}
             {%- end -%}
             {%- var kv = strings_splitn(t, ":", 2) -%}
             {%- var consumer = strip(kv[0]) -%}
             {%- var grp = strip(kv[1]) -%}
             {%- if !regex_search(consumer, "^[!-~]+$") || !regex_search(grp, "^[!-~]+$") -%}
-              {{- fail("Secret '" + secretRef + "' (consumer-groups) on Ingress '" + key + "' has an invalid consumer or group token (whitespace / control characters not permitted).") -}}
+              {{- fail("Secret '" + secretRef + "' (consumer-groups) on Ingress '" + key + "' has an invalid consumer or group token on line " + tostring(lineIndex + 1) + " in 'groups' (whitespace / control characters not permitted).") -}}
             {%- end -%}
             {{- shared.Unique("map-haptic-consumer-groups", secretRef + "|" + consumer, "\n" + secretRef + "|" + consumer + " " + grp) -}}
           {%- end -%}
@@ -725,6 +735,7 @@ templateSnippets:
     template: |-
       {%- import "util-haptic-consumer-group-route" for HapticConsumerGroupRoute -%}
       {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
+      {%- import "util-haptic-foreign-secret-message" for HapticForeignSecretMessage -%}
       {%- var route = map[string]any{} -%}
       {{- HapticConsumerGroupRoute(item, route) -}}
       {%- if route["enabled"] == true -%}
@@ -736,6 +747,9 @@ templateSnippets:
           {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "AllowedConsumerGroupsEmpty", WebhookOutcomeMessage(
             "Ingress " + key + " sets 'haproxy-haptic.org/allowed-consumer-groups' to a value with no group names in it. Consumer-group authorization cannot be enforced against an empty set",
             "the Ingress is rejected", "this route fails closed with 503", "List at least one group, or remove the annotation.")) -}}
+        {%- else if tostring(route["state"]) == "foreign" -%}
+          {{- WebhookRejectOrWarn(resources.ingresses.GetSingle(ns, name), "ConsumerGroupsSecretForeign", HapticForeignSecretMessage(ns, key,
+            "haproxy-haptic.org/consumer-groups-secret", dig_string(item, "", "metadata", "annotations", "haproxy-haptic.org/consumer-groups-secret"))) -}}
         {%- else if tostring(route["state"]) == "missing" -%}
           {{- recordEvent(resources.ingresses.GetSingle(ns, name), "ConsumerGroupsSecretMissing", "Ingress " + key + " references Secret '" + tostring(route["secretRef"]) + "' in 'haproxy-haptic.org/consumer-groups-secret', but it could not be resolved. Requests are denied with 503 until the Secret is present.") -}}
         {%- end -%}
@@ -747,7 +761,7 @@ templateSnippets:
       {%- import "util-refusal" for Refusal -%}
       {#
         Annotations:
-          - haproxy-haptic.org/consumer-groups-secret: "<ns/name>" | "<name>" (required)
+          - haproxy-haptic.org/consumer-groups-secret: "<name>" | "<ingress-ns>/<name>" (required)
           - haproxy-haptic.org/allowed-consumer-groups: comma-separated group names
             the route permits (required)
 
@@ -768,8 +782,8 @@ templateSnippets:
       http-request set-var(txn.cg_cfg) var(txn.resource_key),map({{ routes }})
       http-request set-var(txn.cg_secret) var(txn.cg_cfg),field(1,' ') if { var(txn.cg_cfg) -m found }
       http-request set-var(txn.cg_state) var(txn.cg_cfg),field(2,' ') if { var(txn.cg_cfg) -m found }
-      http-request set-var(txn.denied_by) str(consumer_groups_unavailable) if { var(txn.cg_state) -m str missing invalid }
-      http-request deny deny_status 503 if { var(txn.cg_state) -m str missing invalid }
+      http-request set-var(txn.denied_by) str(consumer_groups_unavailable) if { var(txn.cg_state) -m str missing invalid foreign }
+      http-request deny deny_status 503 if { var(txn.cg_state) -m str missing invalid foreign }
       http-request set-var(txn.cg_group) var(txn.cg_secret),concat(|,txn.haptic_consumer),map({{ groups }}) if { var(txn.cg_state) -m str ok } { var(txn.haptic_consumer) -m found }
       http-request set-var(txn.denied_by) str(consumer_groups) if { var(txn.cg_state) -m str ok } !{ var(txn.resource_key),concat(|,txn.cg_group),map({{ allow }}) -m found }
       {{- Refusal(`deny deny_status 403`, `{ var(txn.cg_state) -m str ok } !{ var(txn.resource_key),concat(|,txn.cg_group),map(` + tostring(allow) + `) -m found }`) }}

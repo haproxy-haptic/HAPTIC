@@ -32,9 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Changed
 
 - Backends without an explicit algorithm use `balance random` (power of two choices) instead of `roundrobin`, steering requests away from loaded pods. Set `haproxy-haptic.org/load-balance: roundrobin` to keep the previous distribution.
+- **BREAKING:** `haproxy-haptic.org/auth-secret`, `api-key-secret`, `hmac-secret`, `consumer-groups-secret`, `backend-crt-secret`, and `request-schema-secret` read Secrets only from the Ingress's namespace. Admission rejects a reference to another namespace, and an existing Ingress with one answers `503` with a Warning Event. To migrate, copy the Secret into the Ingress's namespace and reference it by name. `backend-ca-secret`, `auth-tls-secret`, and `jwt-secret` still accept other namespaces.
 
 #### Security
 
+- A Gateway's cross-namespace `spec.tls.backend.clientCertificateRef` without a ReferenceGrant is no longer loaded; routes attached to a Gateway with an invalid client certificate reference answer `503` instead of connecting without it, and a route takes the certificate only from a parent Gateway that accepted it.
+- `haproxy-haptic.org/backend-crt-secret` naming a missing Secret, or one without `tls.crt` or `tls.key`, answers `503` with a Warning Event instead of connecting to the upstream without the client certificate.
+- Native annotation errors and Events no longer include Secret data such as usernames, consumer-groups lines, or sso-auth discovery URLs; they name the Secret and the line or entry instead.
+- A bare API key in an `api-key-secret` or `HAProxyRoutePolicy` API-key Secret gets the consumer id `key-<first 12 hex digits of its SHA-256>` instead of the key itself, so the key no longer reaches the access log or the forwarded consumer header. Consumer-groups and per-consumer rate limits that named a bare key must use the new id, or give the key an explicit `:<consumer>`.
 - HMAC shared keys (`hmac-secret`) and API keys (`api-key-secret`, `HAProxyRoutePolicy` API keys) are published in Secrets instead of plaintext `HAProxyMapFile` objects.
 
 ## [0.12.0] - 2026-11-10

@@ -580,6 +580,9 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
         --test test-haptic-request-validation-missing-key \
         --test test-haptic-request-validation-max-body-bounded \
         --test test-haptic-request-validation-max-body-fits-buffer \
+        --test test-haptic-request-schema-foreign-secret-fails-closed \
+        --test test-haptic-request-schema-foreign-secret-rejected-at-admission \
+        --test test-haptic-request-schema-own-namespace-qualified-secret-accepted \
         "$@" || FULL_RC=$?
     if [[ $FULL_RC -eq 0 ]]; then
         echo -e "${YELLOW}Request-validation Helm guard: requestBody.defaultMaxBytes hard cap...${NC}" >&2

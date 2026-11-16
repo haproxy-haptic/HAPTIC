@@ -117,7 +117,7 @@ templateSnippets:
               if !hasPrefix(discovery, "https://") || !regex_search(discovery, token) {
                 reject(secretRef + " needs discovery-url, an https:// OpenID discovery URL, so Ingress " + routeID + " answers 503.")
               } else if !issuerAllowed {
-                reject(secretRef + " uses issuer " + discovery + ", which isn't in controller.config.templatingSettings.extraContext.ssoAuth.allowedIssuers, so Ingress " + routeID + " answers 503. Ask the HAPTIC administrator to allow the issuer.")
+                reject(secretRef + " has a discovery-url whose issuer isn't in controller.config.templatingSettings.extraContext.ssoAuth.allowedIssuers, so Ingress " + routeID + " answers 503. Ask the HAPTIC administrator to allow the issuer.")
               }
               if clientID == "" || !regex_search(clientID, token) {
                 reject(secretRef + " needs client-id without spaces, so Ingress " + routeID + " answers 503.")
@@ -129,7 +129,7 @@ templateSnippets:
                 reject(secretRef + " has an invalid callback-path; use a path such as /oauth2/callback. Ingress " + routeID + " answers 503.")
               }
               if passToken != "" && passToken != "id_token" && passToken != "access_token" {
-                reject(secretRef + " sets pass-token '" + passToken + "'; use id_token or access_token. Ingress " + routeID + " answers 503.")
+                reject(secretRef + " has an invalid pass-token; use id_token or access_token. Ingress " + routeID + " answers 503.")
               }
               for _, key := range []string{"scopes", "extract-claims", "groups-claim"} {
                 if data[key] != "" && !regex_search(strip(data[key]), "^[!-~]+(,[ ]*[!-~]+)*$") {
