@@ -1,13 +1,12 @@
 """Send real datagrams and check Vector's stdout record framing."""
 
 import json
-import os
 import pathlib
-import socket
 import sys
-import time
 
-mode, directory = sys.argv[1:]
+from vector_udp import send, wait_bound
+
+mode, directory = sys.argv[1:3]
 work = pathlib.Path(directory)
 records = [
     b'{"status":200,"path":"/newline"}',
@@ -19,16 +18,10 @@ records = [
     b'{"status":204,"path":"/framing-complete"}',
 ]
 if mode == "send":
-    deadline = time.monotonic() + 10
-    while not (work / "haproxy.sock").exists():
-        if time.monotonic() >= deadline:
-            sys.exit("Vector did not create its log socket")
-        time.sleep(0.05)
+    container, port = sys.argv[3], int(sys.argv[4])
+    wait_bound(container, port)
     endings = [b"\n", b"", b"\r\n", b"\n", b"\n", b"\n", b"\n"]
-    os.chdir(work)
-    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sender:
-        for record, ending in zip(records, endings):
-            sender.sendto(record + ending, "haproxy.sock")
+    send(container, port, [record + ending for record, ending in zip(records, endings)])
 elif mode == "check":
     actual = (work / "stdout").read_bytes().splitlines()
     if actual != records:

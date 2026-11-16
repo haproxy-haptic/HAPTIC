@@ -134,12 +134,29 @@ spec:
         {{- end }}
         {{- if $defaults.accessLogDropped }}
         - alert: HAProxyAccessLogRecordsDropped
+          expr: increase(haptic_access_log_dropped_records_total[5m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "HAProxy access-log records overflowed the vector sidecar's buffer"
+            description: "Pod {{ `{{ $labels.pod }}` }} lost {{ `{{ $value | humanize }}` }} access-log records in 5m because the vector sidecar read them too slowly. Requests are unaffected; the log and its metrics are incomplete. Raise vector's CPU request or reduce log volume with accessLog.suppress."
+        - alert: HAProxyAccessLogSendFailed
           expr: increase(haproxy_process_dropped_logs_total[5m]) > 0
           labels:
             severity: warning
           annotations:
-            summary: "HAProxy is dropping access-log records"
-            description: "HAProxy pod {{ `{{ $labels.pod }}` }} dropped {{ `{{ $value | humanize }}` }} access-log records in 5m. The log reaches the vector sidecar over a UNIX datagram socket, which absorbs only ~167 records; when vector stops draining (topology reload, GC pause, CPU starvation) HAProxy discards records rather than blocking traffic. Requests are unaffected, but the log is incomplete — which matters most during an incident, when it is the evidence you reach for. Raise vector's CPU request or reduce log volume with accessLog.suppress."
+            summary: "HAProxy could not send access-log records"
+            description: "Pod {{ `{{ $labels.pod }}` }} failed to send {{ `{{ $value | humanize }}` }} log records in 5m. Requests are unaffected; the log is incomplete. Check the vector container on that pod."
+        {{- if and .Values.vector.enabled .Values.haproxy.monitoring.podMonitor.enabled }}
+        - alert: HAProxyAccessLogCollectorDown
+          expr: up{job="{{ .Release.Namespace }}/{{ include "haptic.fullname" . }}-haproxy", endpoint="vector-metrics"} == 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The vector sidecar is not serving metrics"
+            description: "Pod {{ `{{ $labels.pod }}` }}: vector has not answered scrapes for 2m. Access-log records sent while it is down are lost and not counted. Check the vector container's logs and restarts."
+        {{- end }}
         {{- end }}
         {{- if $defaults.applyRejected }}
         - alert: HAProxyAgentApplyRejected

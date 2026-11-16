@@ -168,8 +168,9 @@ spec:
         # containers.
         {{- if $vectorEnabled }}
         {{- $vector := .Values.vector }}
-        # Vector sidecar: receives the HAProxy access log over a UNIX datagram
-        # socket, derives the request metrics from it, and re-exports the hub's
+        {{- $logPortHex := printf "%04X" (include "haptic.vector.logAddress" . | splitList ":" | last | int) }}
+        # Vector sidecar: receives the HAProxy access log over loopback UDP,
+        # derives the request metrics from it, and re-exports the hub's
         # Prometheus metrics with its own. HAProxy's exporter is scraped directly.
         - name: vector
           restartPolicy: Always
@@ -184,8 +185,6 @@ spec:
             # peak for a little allocator contention across the worker threads.
             - name: MALLOC_ARENA_MAX
               value: "2"
-          # Vector does not unlink its UNIX socket after an exit, so each child
-          # start removes the stale path before binding it again.
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -214,7 +213,6 @@ spec:
 
               _backoff=1
               while true; do
-                rm -f '{{ $vector.socketPath }}'
                 # The config can be pruned until the first leader reconcile.
                 _waited=0
                 while [ ! -s /etc/haproxy/general/vector.yaml ]; do
@@ -231,16 +229,19 @@ spec:
                 /usr/bin/vector --watch-config --watch-config-method poll --watch-config-poll-interval-seconds 2 --config /etc/haproxy/general/vector.yaml &
                 _child_pid=$!
                 _start_watchdog
-                # The socket proves the watcher is armed; HUP closes the preceding read/watch race.
+                # The bound log port proves the watcher is armed; HUP closes the preceding read/watch race.
+                _log_port_bound() {
+                  grep -q '^ *[0-9]*: 0100007F:{{ $logPortHex }} ' /proc/net/udp
+                }
                 _sync_waited=0
-                while [ ! -S '{{ $vector.socketPath }}' ] && [ "$_sync_waited" -lt "$_watch_startup_grace_seconds" ]; do
+                while ! _log_port_bound && [ "$_sync_waited" -lt "$_watch_startup_grace_seconds" ]; do
                   if ! kill -0 "$_child_pid" 2>/dev/null; then
                     break
                   fi
                   sleep 1
                   _sync_waited=$((_sync_waited + 1))
                 done
-                if [ -S '{{ $vector.socketPath }}' ] && kill -0 "$_child_pid" 2>/dev/null; then
+                if _log_port_bound && kill -0 "$_child_pid" 2>/dev/null; then
                   kill -HUP "$_child_pid"
                 fi
                 wait "$_child_pid"
@@ -280,8 +281,6 @@ spec:
             - name: general-storage
               mountPath: /etc/haproxy/general
               readOnly: true
-            - name: vector-socket
-              mountPath: {{ include "haptic.vector.socketDir" . }}
             # data_dir. Vector requires it to be writable even when no sink uses
             # disk buffering.
             - name: vector-data
@@ -583,14 +582,6 @@ spec:
             - name: devshm
               mountPath: /dev/shm
             {{- end }}
-            {{- if $vectorEnabled }}
-            # Shared with the vector sidecar. HAProxy's `log <path>` target is a
-            # UNIX datagram sender, so it needs write access to the socket vector
-            # creates here. Note a datagram sender gets NO error when nothing is
-            # listening — records are silently dropped until Vector binds it.
-            - name: vector-socket
-              mountPath: {{ include "haptic.vector.socketDir" . }}
-            {{- end }}
             {{- if $spoaHubEnabled }}
             # Shared with the spoa-hub sidecar; HAProxy connects via a
             # unix socket the hub creates here at startup.
@@ -704,11 +695,6 @@ spec:
         - name: vector-bootstrap
           configMap:
             name: {{ include "haptic.vector.configMapName" . }}
-        # Holds the log socket. Its own volume rather than a subdirectory of
-        # haproxy-runtime so the haproxy container gets write access to the socket
-        # without vector gaining access to SSL private keys or backend maps.
-        - name: vector-socket
-          emptyDir: {}
         # data_dir. Memory-backed: nothing here needs to survive a restart, and a
         # disk-backed emptyDir lands on the node's ephemeral storage.
         - name: vector-data

@@ -4337,9 +4337,9 @@ validationTests:
     fixtures: {}
     # Pinned explicitly rather than relying on the absent-key default: the chart
     # now ships vector.enabled=true, which points the default target at the
-    # vector socket, so an unpinned test would assert whatever the current
+    # vector sidecar, so an unpinned test would assert whatever the current
     # sidecar default happens to be instead of the stdout path it exists to
-    # cover. test-access-log-target-vector-socket covers the other default.
+    # cover. test-access-log-target-vector-udp covers the other default.
     extraContext: {accessLog: {targets: {main: {address: stdout}}}}
     assertions:
       - type: haproxy_valid

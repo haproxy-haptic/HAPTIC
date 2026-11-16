@@ -31,8 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Changed
 
+- **BREAKING:** `vector.socketPath` is removed because HAProxy now reaches Vector over loopback UDP. A render that still sets it fails until you delete it from your values.
 - Backends without an explicit algorithm use `balance random` (power of two choices) instead of `roundrobin`, steering requests away from loaded pods. Set `haproxy-haptic.org/load-balance: roundrobin` to keep the previous distribution.
 - **BREAKING:** `haproxy-haptic.org/auth-secret`, `api-key-secret`, `hmac-secret`, `consumer-groups-secret`, `backend-crt-secret`, and `request-schema-secret` read Secrets only from the Ingress's namespace. Admission rejects a reference to another namespace, and an existing Ingress with one answers `503` with a Warning Event. To migrate, copy the Secret into the Ingress's namespace and reference it by name. `backend-ca-secret`, `auth-tls-secret`, and `jwt-secret` still accept other namespaces.
+
+#### Fixed
+
+- HAProxy sends access-log records to the Vector sidecar over UDP on `127.0.0.1:9514` instead of a Unix datagram socket, whose 10-record queue dropped records on every reload ([#677](https://github.com/haproxy-haptic/HAPTIC/issues/677)).
+- Vector exports `haptic_access_log_dropped_records_total`, and the `HAProxyAccessLogRecordsDropped` alert fires on it.
 
 #### Security
 

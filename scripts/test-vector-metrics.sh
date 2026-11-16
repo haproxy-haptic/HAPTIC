@@ -30,12 +30,11 @@ for server_label in false true counters; do
     docker rm "$container" > /dev/null
     container=""
     for compact in false true; do
-        rm -f "$profile/haproxy.sock"
         container=$(docker create --network none \
             --mount "type=bind,src=$profile,dst=/probe" \
             "$(cat "$profile/vector-image")" --config "/probe/forwarding-$compact.yaml")
         docker start "$container" > /dev/null
-        python3 "$root/scripts/tests/vector_forwarding.py" send "$profile"
+        python3 "$root/scripts/tests/vector_forwarding.py" send "$profile" "$container" "$(cat "$profile/log-port")"
         for attempt in {1..100}; do
             docker logs "$container" > "$profile/stdout" 2> "$profile/stderr"
             if rg -q '/framing-complete' "$profile/stdout"; then

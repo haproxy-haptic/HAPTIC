@@ -24,26 +24,13 @@ tests:
             name: general-storage
             mountPath: /etc/haproxy/general
             readOnly: true
-      - contains:
-          path: spec.template.spec.initContainers[?(@.name=="vector")].volumeMounts
-          content:
-            name: vector-socket
-            mountPath: /run/vector
 
-  - it: should unlink a stale socket before starting vector
+  - it: should supervise vector and wait for its log port before arming the config watch
     template: haproxy-deployment.yaml
     asserts:
-      # The socket survives a Vector child exit on the shared emptyDir.
       - equal:
           path: spec.template.spec.initContainers[?(@.name=="vector")].command
           value: ["/bin/sh", "-c"]
-      - matchRegex:
-          path: spec.template.spec.initContainers[?(@.name=="vector")].args[0]
-          # (?m) so the anchors bind to a LINE — args[0] is a multi-line script
-          # and Go's ^/$ would otherwise mean start/end of the whole string.
-          # Quoted: the path is interpolated into a shell script. The charset
-          # guard in _vector.tpl is the real boundary, this is defence in depth.
-          pattern: "(?m)^  rm -f '/run/vector/haproxy\\.sock'$"
       # Waits for the config rather than dying without it: the file can be
       # transiently absent (the dataplane prunes it as an orphan until a reconcile
       # includes it, and a controller rollout has a leaderless window), and vector
@@ -55,9 +42,14 @@ tests:
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="vector")].args[0]
           pattern: '(?m)^  /usr/bin/vector --watch-config --watch-config-method poll --watch-config-poll-interval-seconds 2 --config /etc/haproxy/general/vector\.yaml &$'
+      # (?m) so the anchors bind to a LINE — args[0] is a multi-line script.
+      # 252A is 9514 in hex, how /proc/net/udp prints the bound port.
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="vector")].args[0]
-          pattern: '(?m)^  while \[ ! -S ''/run/vector/haproxy\.sock'' \] && \[ "\$_sync_waited" -lt "\$_watch_startup_grace_seconds" \]; do$'
+          pattern: "(?m)^    grep -q '\\^ \\*\\[0-9\\]\\*: 0100007F:252A ' /proc/net/udp$"
+      - matchRegex:
+          path: spec.template.spec.initContainers[?(@.name=="vector")].args[0]
+          pattern: '(?m)^  while ! _log_port_bound && \[ "\$_sync_waited" -lt "\$_watch_startup_grace_seconds" \]; do$'
       - matchRegex:
           path: spec.template.spec.initContainers[?(@.name=="vector")].args[0]
           pattern: '(?m)^    kill -HUP "\$_child_pid"$'
@@ -98,16 +90,16 @@ tests:
           path: spec.template.spec.initContainers[?(@.name=="vector")].args[0]
           pattern: 'if \[ "\$_backoff" -gt 30 \]; then _backoff=30; fi'
 
-  - it: should give the haproxy container write access to the log socket
+  - it: should share no log volume between haproxy and vector
     template: haproxy-deployment.yaml
     asserts:
-      # HAProxy is the datagram SENDER, so it needs the socket directory mounted
-      # read-write; a datagram sender gets no error when the socket is missing.
-      - contains:
-          path: spec.template.spec.containers[0].volumeMounts
+      # The log travels over loopback UDP; a leftover socket volume would mean a
+      # template still points HAProxy at the UNIX datagram path.
+      - notContains:
+          path: spec.template.spec.volumes
           content:
             name: vector-socket
-            mountPath: /run/vector
+          any: true
 
   - it: should remove every trace of the sidecar when disabled
     template: haproxy-deployment.yaml

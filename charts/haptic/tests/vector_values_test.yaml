@@ -5,35 +5,13 @@ suite: vector value guards
 templates:
   - haproxytemplateconfig.yaml
 tests:
-  - it: should reject a socketPath at the filesystem root
+  - it: should tell an operator still setting vector.socketPath that it was removed
     template: haproxytemplateconfig.yaml
     set:
-      # dir("/haproxy.sock") is "/", and that parent is what gets mounted as the
-      # shared emptyDir — it would shadow both containers' root filesystems.
-      vector.socketPath: /haproxy.sock
+      vector.socketPath: /run/vector/haproxy.sock
     asserts:
       - failedTemplate:
-          errorMessage: 'vector.socketPath must be inside a subdirectory, not directly at the filesystem root, got "/haproxy.sock". The chart mounts the socket''s parent directory as a shared emptyDir in both the haproxy and vector containers, so a parent of "/" would shadow their root filesystems. Use something like /run/vector/haproxy.sock.'
-
-  - it: should reject shell metacharacters in socketPath
-    template: haproxytemplateconfig.yaml
-    set:
-      # The path is interpolated into the sidecar's /bin/sh -c start script, so
-      # this is the boundary that keeps a values string out of a shell. It is
-      # quoted there too, but a single quote would break out of the quoting —
-      # which is why the charset check, not the quoting, is the real guard.
-      vector.socketPath: /run/vector/a;id
-    asserts:
-      - failedTemplate:
-          errorMessage: 'vector.socketPath may only contain letters, digits, dot, underscore, hyphen and slash, got "/run/vector/a;id". It is interpolated into the sidecar''s shell start script, so shell metacharacters are refused.'
-
-  - it: should reject a relative socketPath
-    template: haproxytemplateconfig.yaml
-    set:
-      vector.socketPath: run/vector/haproxy.sock
-    asserts:
-      - failedTemplate:
-          errorMessage: 'vector.socketPath must be an absolute path, got "run/vector/haproxy.sock". HAProxy''s `log <path>` form requires one.'
+          errorMessage: 'vector.socketPath was removed: HAProxy now sends the access log to Vector over loopback UDP. Delete the value.'
 
   - it: should reject a metricsPort that collides with an HAProxy port
     template: haproxytemplateconfig.yaml

@@ -843,6 +843,10 @@ test-vector-metrics: build ## Verify rendered Vector metrics and log preservatio
 test-vector-backpressure: build ## Verify access logs and metrics survive an OTLP outage
 	python3 scripts/tests/vector_backpressure.py
 
+.PHONY: test-vector-log-burst
+test-vector-log-burst: build ## Verify real HAProxy delivers a log burst to the rendered Vector config and counts overflow
+	python3 scripts/tests/vector_log_burst.py
+
 test-install-without-gateway-api: $(if $(SKIP_DOCKER_BUILD),,docker-build-test) ## Assert a default install converges on a cluster with no Gateway API CRDs
 	@# Every other suite installs Gateway API first. This one must not, which is
 	@# why it owns its own cluster rather than joining the e2e one.

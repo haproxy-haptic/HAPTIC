@@ -53,7 +53,7 @@ files:
     template: |
       {%%
         var vec = extraContext | dig("vector") | fallback(map[string]any{})
-        var socketPath = vec | dig_string("/run/vector/haproxy.sock", "socketPath")
+        var logAddress = vec | dig_string("127.0.0.1:9514", "logAddress")
         var metricsPort = vec | dig("metricsPort") | fallback(9598)
         var scrapeSecs = vec | dig("scrapeIntervalSecs") | fallback(15)
         var hubPort = vec | dig("spoaHubMetricsPort") | fallback(0)
@@ -165,9 +165,14 @@ files:
       {#- Mirror of haptic.vector.validateValues in _vector.tpl. Duplicated on
           purpose: the HAProxyTemplateConfig CR is a first-class API that bypasses
           Helm, so a Helm-only guard protects nothing for a hand-written CR. -#}
-      {%- if !hasPrefix(socketPath, "/") -%}
-        {%- fail("extraContext.vector.socketPath must be an absolute path, got '" + socketPath + "'. HAProxy's `log <path>` form requires one.") -%}
+      {%- var logPortMatch = regexp("^127\\.0\\.0\\.1:([0-9]{1,5})$").FindSubmatch(logAddress) -%}
+      {%- if len(logPortMatch) == 0 || toint(logPortMatch[1]) < 1 || toint(logPortMatch[1]) > 65535 -%}
+        {%- fail("extraContext.vector.logAddress must be 127.0.0.1:<port>, got '" + logAddress + "'. Any other address would let traffic from outside the pod inject access-log records.") -%}
       {%- end -%}
+      {#- /proc/net/udp prints a little-endian 127.0.0.1 and an upper-case hex port. -#}
+      {%- var logPort = toint(logPortMatch[1]) -%}
+      {%- var hexDigits = "0123456789ABCDEF" -%}
+      {%- var logSocketKey = "0100007F:" + hexDigits[logPort/4096:logPort/4096+1] + hexDigits[logPort/256%16:logPort/256%16+1] + hexDigits[logPort/16%16:logPort/16%16+1] + hexDigits[logPort%16:logPort%16+1] -%}
       {%- if toint(metricsPort) < 1 || toint(metricsPort) > 65535 -%}
         {%- fail("extraContext.vector.metricsPort must be a TCP port between 1 and 65535, got '" + tostring(metricsPort) + "'.") -%}
       {%- end -%}
@@ -178,20 +183,31 @@ files:
       data_dir: {{ dataDir }}
 
       sources:
-        {# HAProxy's log target is in the `global` section, which carries BOTH
-           access-log records and runtime process messages. The two have different
-           shapes, so this is a byte passthrough: parsing as JSON here would drop
-           every process line as a decode error. A future log-derived-metrics step
-           can parse in a transform without changing this source. #}
+        {# HAProxy's proxies log BOTH access-log records and their own messages
+           (health checks, proxy stops) here. The two have different shapes, so
+           this is a byte passthrough: parsing as JSON here would drop every
+           process line as a decode error.
+           Keep it identical to the bootstrap ConfigMap's source, or the first
+           push rebinds the port and drops what arrives meanwhile. #}
         haproxy_log:
           type: socket
-          mode: unix_datagram
-          path: {{ socketPath }}
-          # HAProxy must be able to write to a socket vector created. Both
-          # containers run as the pod's runAsUser, so this is belt-and-braces.
-          socket_file_mode: 0o666
+          mode: udp
+          address: {{ logAddress }}
           framing:
             method: newline_delimited
+          decoding:
+            codec: bytes
+
+        {# The kernel counts datagrams it discarded because vector's receive
+           buffer was full in the socket's `drops` column; nothing else sees them. #}
+        access_log_socket_stats:
+          type: exec
+          mode: scheduled
+          command: [cat, /proc/net/udp]
+          scheduled:
+            exec_interval_secs: {{ toint(scrapeSecs) }}
+          framing:
+            method: bytes
           decoding:
             codec: bytes
       {%- if toint(hubPort) > 0 %}
@@ -227,9 +243,22 @@ files:
         {%- for _, i := range rmCoreInputs %}
             - {{ i }}
         {%- end %}
+            - access_log_drops_metric
             - vector_metrics
           condition:
             type: is_metric
+        access_log_drops:
+          type: remap
+          inputs: [access_log_socket_stats]
+          source: |
+            caps, err = parse_regex(string(.message) ?? "", r'(?m)^\s*\d+: {{ logSocketKey }} .* (?P<drops>\d+)\s*$')
+            if err != null { abort }
+            . = {"name": "access_log_dropped_records_total", "namespace": "haptic", "kind": "absolute", "counter": {"value": to_float!(caps.drops)}}
+        access_log_drops_metric:
+          type: log_to_metric
+          inputs: [access_log_drops]
+          all_metrics: true
+          metrics: []
       {%- if len(rmSizeInputs) > 0 %}
         metrics_size_stream:
           type: filter
@@ -906,7 +935,7 @@ validationTests:
     fixtures: {}
     extraContext:
       vector:
-        socketPath: /run/vector/haproxy.sock
+        logAddress: 127.0.0.1:9514
         metricsPort: 9598
         scrapeIntervalSecs: 15
         spoaHubMetricsPort: 9101
@@ -915,12 +944,32 @@ validationTests:
       - {type: haproxy_valid, description: HAProxy config must still be valid with vector enabled}
       - type: contains
         target: file:vector.yaml
-        pattern: 'mode: unix_datagram'
-        description: Log source must be a UNIX datagram socket
+        pattern: '(?s)haproxy_log:\s+type: socket\s+mode: udp\s+address: 127\.0\.0\.1:9514\s'
+        description: >-
+          Loopback UDP, not a UNIX datagram socket: the pod's
+          net.unix.max_dgram_qlen of 10 dropped records on every reload burst
+      - type: not_contains
+        target: file:vector.yaml
+        pattern: 'unix_datagram|mode: tcp'
+        description: >-
+          A ring's TCP forwarder closes the moment a worker soft-stops, losing the
+          records of requests that worker still completes
       - type: contains
         target: file:vector.yaml
-        pattern: 'path: /run/vector/haproxy\.sock'
-        description: Socket path must come from the operator value
+        pattern: '(?s)access_log_socket_stats:\s+type: exec\s+mode: scheduled\s+command: \[cat, /proc/net/udp\]'
+        description: The kernel's per-socket drop count is the only record of an overflow
+      - type: contains
+        target: file:vector.yaml
+        pattern: 'r''\(\?m\)\^\\s\*\\d\+: 0100007F:252A \.\* \(\?P<drops>\\d\+\)\\s\*\$'''
+        description: The drop count is read from the log socket's own row, port 9514 in hex
+      - type: contains
+        target: file:vector.yaml
+        pattern: '"name": "access_log_dropped_records_total", "namespace": "haptic", "kind": "absolute"'
+        description: Absolute, because the kernel's counter is cumulative
+      - type: contains
+        target: file:vector.yaml
+        pattern: '(?s)metrics_stream:\s+type: filter\s+inputs:(\s+- [A-Za-z_]+)*\s+- access_log_drops_metric\s'
+        description: The drop counter must reach the scrape endpoint
       - type: contains
         target: file:vector.yaml
         pattern: 'method: newline_delimited'
@@ -966,7 +1015,7 @@ validationTests:
           endpoint: http://tempo:4318/v1/traces
           serviceName: haptic-edge
           clusterName: ""
-      vector: { socketPath: /run/vector/haproxy.sock, metricsPort: 9598, scrapeIntervalSecs: 15, spoaHubMetricsPort: 0, dataDir: /var/lib/vector }
+      vector: { logAddress: 127.0.0.1:9514, metricsPort: 9598, scrapeIntervalSecs: 15, spoaHubMetricsPort: 0, dataDir: /var/lib/vector }
     assertions:
       - type: haproxy_valid
       - {type: contains, target: file:vector.yaml, pattern: '(?m)^\s+spans:'}
@@ -1022,7 +1071,7 @@ validationTests:
     fixtures: {}
     extraContext:
       tracing: {otlp: {endpoint: ""}}
-      vector: { socketPath: /run/vector/haproxy.sock, metricsPort: 9598, scrapeIntervalSecs: 15, spoaHubMetricsPort: 0, dataDir: /var/lib/vector }
+      vector: { logAddress: 127.0.0.1:9514, metricsPort: 9598, scrapeIntervalSecs: 15, spoaHubMetricsPort: 0, dataDir: /var/lib/vector }
     assertions:
       - type: haproxy_valid
       - {type: not_contains, target: file:vector.yaml, pattern: 'otlp_traces'}
@@ -1036,7 +1085,7 @@ validationTests:
     fixtures: {}
     extraContext:
       vector:
-        socketPath: /run/vector/haproxy.sock
+        logAddress: 127.0.0.1:9514
         metricsPort: 9598
         scrapeIntervalSecs: 15
         spoaHubMetricsPort: 0
@@ -1078,7 +1127,7 @@ validationTests:
     fixtures: {}
     extraContext:
       vector:
-        socketPath: /run/vector/haproxy.sock
+        logAddress: 127.0.0.1:9514
         metricsPort: 9598
         scrapeIntervalSecs: 15
         spoaHubMetricsPort: 0
@@ -1102,7 +1151,7 @@ validationTests:
     fixtures: {}
     extraContext:
       vector:
-        socketPath: /run/vector/haproxy.sock
+        logAddress: 127.0.0.1:9514
         metricsPort: 9598
         scrapeIntervalSecs: 15
         omitEmptyLogFields: "false"
@@ -1117,7 +1166,7 @@ validationTests:
     fixtures: {}
     extraContext:
       vector:
-        socketPath: /run/vector/haproxy.sock
+        logAddress: 127.0.0.1:9514
         metricsPort: 9598
         scrapeIntervalSecs: 15
         spoaHubMetricsPort: 0
@@ -1139,7 +1188,7 @@ validationTests:
     fixtures: {}
     extraContext:
       vector:
-        socketPath: /run/vector/haproxy.sock
+        logAddress: 127.0.0.1:9514
         metricsPort: 9598
         scrapeIntervalSecs: 15
         # Explicit 0, not omitted: a test's extraContext MERGES over the _global
@@ -1160,10 +1209,10 @@ validationTests:
         pattern: '- vector_metrics'
         description: The exporter still carries vector's own metrics
 
-  test-access-log-target-vector-socket:
+  test-access-log-target-vector-udp:
     description: >-
-      With vector enabled the access log is emitted to the mounted UNIX datagram
-      socket instead of stdout — the counterpart to
+      With vector enabled the access log is sent to vector over loopback UDP
+      instead of stdout — the counterpart to
       test-access-log-target-default-is-stdout in base.yaml.
     fixtures: {}
     extraContext:
@@ -1171,32 +1220,31 @@ validationTests:
         targets:
           # Same key the chart's own default uses, so this overrides it rather
           # than fanning out to a second identical target.
-          vector: {address: /run/vector/haproxy.sock, format: raw}
+          vector: {address: 127.0.0.1:9514, format: raw}
     assertions:
       - type: haproxy_valid
-        description: A plain-path log target must pass HAProxy's config check
       - type: contains
         target: haproxy.cfg
-        pattern: '(?ms)^global$.*?^  log /run/vector/haproxy\.sock len 16384 format raw local0 info$'
+        pattern: '(?m)^  log 127\.0\.0\.1:9514 len 16384 format raw local0 info$'
         description: >-
-          The plain-path form is HAProxy's UNIX datagram target; deliberately not
-          `unix@`, which HAProxy 3.4 rejects for a ring server
+          A host:port target is HAProxy's UDP syslog sender. It hands each record
+          to the kernel synchronously, so a soft-stopping worker loses nothing
       - type: not_contains
         target: haproxy.cfg
-        pattern: '^  log stdout '
+        pattern: 'defaults haptic-base\n(  [^\n]*\n|\n)*  log (stdout|ring@|/)'
         description: >-
-          Nothing should still be logging to stdout — a second target would double
-          every record once vector re-emits to its own stdout
+          No second target: stdout would double every record once vector re-emits
+          it, and a ring or a UNIX socket is the lossy transport this replaced
 
-  test-vector-socket-path-must-be-absolute:
-    description: A relative socketPath is rejected at render time
+  test-vector-log-address-must-be-loopback:
+    description: A log address off loopback is rejected at render time
     fixtures: {}
-    extraContext: {vector: {socketPath: run/vector/haproxy.sock, metricsPort: 9598, scrapeIntervalSecs: 15}}
+    extraContext: {vector: {logAddress: 0.0.0.0:9514, metricsPort: 9598, scrapeIntervalSecs: 15}}
     assertions:
       - type: contains
         target: rendering_error
-        pattern: 'socketPath must be an absolute path'
-        description: HAProxy resolves a relative log path against default-path origin
+        pattern: 'logAddress must be 127\.0\.0\.1:<port>'
+        description: Any other bind would let traffic from outside the pod inject records
 
   test-vector-log-derived-metrics-registry:
     description: >-
@@ -1206,7 +1254,7 @@ validationTests:
     fixtures: {}
     extraContext:
       vector:
-        socketPath: /run/vector/haproxy.sock
+        logAddress: 127.0.0.1:9514
         metricsPort: 9598
         scrapeIntervalSecs: 15
         spoaHubMetricsPort: 0
@@ -1265,7 +1313,7 @@ validationTests:
     extraContext:
       renderMode: admission
       vector:
-        socketPath: /run/vector/haproxy.sock
+        logAddress: 127.0.0.1:9514
         metricsPort: 9598
         scrapeIntervalSecs: 15
         spoaHubMetricsPort: 0

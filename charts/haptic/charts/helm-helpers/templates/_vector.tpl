@@ -25,12 +25,12 @@ true
 {{- end -}}
 
 {{/*
-Directory holding the log socket. Derived from vector.socketPath so the two can
-never drift: the haproxy container mounts this dir to reach the socket and vector
-mounts it to create the socket.
+UDP address HAProxy sends access-log records to and vector binds. Loopback only,
+so nothing outside the pod can inject records. Not a UNIX datagram socket: the
+pod's net.unix.max_dgram_qlen of 10 overflowed on every reload burst (#677).
 */}}
-{{- define "haptic.vector.socketDir" -}}
-{{- .Values.vector.socketPath | dir -}}
+{{- define "haptic.vector.logAddress" -}}
+127.0.0.1:9514
 {{- end -}}
 
 {{/*
@@ -58,6 +58,9 @@ guard that lives only here would not protect a hand-written CR.
 {{- if hasKey $v "excludeMaintServerMetrics" -}}
   {{- fail "vector.excludeMaintServerMetrics moved to controller.config.templatingSettings.extraContext.prometheusExporter.excludeMaintServers: HAProxy applies ?no-maint itself, for every scraper." -}}
 {{- end -}}
+{{- if hasKey $v "socketPath" -}}
+  {{- fail "vector.socketPath was removed: HAProxy now sends the access log to Vector over loopback UDP. Delete the value." -}}
+{{- end -}}
 {{- if hasKey $v "podMonitor" -}}
   {{- fail "vector.podMonitor moved to haproxy.monitoring.podMonitor: one PodMonitor now scrapes every metrics endpoint on the HAProxy pod — HAProxy's exporter (stats port), vector's endpoints and, without vector, the hub's. Same fields (enabled, interval, scrapeTimeout, labels, relabelings, metricRelabelings)." -}}
 {{- end -}}
@@ -83,33 +86,6 @@ guard that lives only here would not protect a hand-written CR.
   {{- end -}}
   {{- if eq ($v.metricsPort | int) ($v.sizeMetricsPort | int) -}}
     {{- fail (printf "vector.metricsPort and vector.sizeMetricsPort are both %v. They are two prometheus_exporter sinks with different histogram buckets, so they cannot share a port." ($v.metricsPort | int)) -}}
-  {{- end -}}
-  {{- if not (hasPrefix "/" ($v.socketPath | toString)) -}}
-    {{- fail (printf "vector.socketPath must be an absolute path, got %q. HAProxy's `log <path>` form requires one." $v.socketPath) -}}
-  {{- end -}}
-  {{- /* HAProxy resolves a relative log path against default-path origin, and a
-         path with whitespace breaks the generated `log` line's tokenisation. */ -}}
-  {{- if regexMatch "[[:space:]]" ($v.socketPath | toString) -}}
-    {{- fail (printf "vector.socketPath must not contain whitespace, got %q." $v.socketPath) -}}
-  {{- end -}}
-  {{- /* The path is interpolated into the vector container's `/bin/sh -c` start
-         script (it unlinks a stale socket before exec'ing vector), so restrict it
-         to an explicit allowlist rather than trusting it. It is quoted there as
-         well, but a value containing a single quote would break out of the
-         quoting, so the charset check is the real boundary — belt and braces,
-         because this is the one place a values string reaches a shell. */ -}}
-  {{- if not (regexMatch "^[A-Za-z0-9._/-]+$" ($v.socketPath | toString)) -}}
-    {{- fail (printf "vector.socketPath may only contain letters, digits, dot, underscore, hyphen and slash, got %q. It is interpolated into the sidecar's shell start script, so shell metacharacters are refused." $v.socketPath) -}}
-  {{- end -}}
-  {{- /* The socket's PARENT directory is what gets mounted as the shared emptyDir
-         (haptic.vector.socketDir), in both the haproxy and vector containers. A
-         path directly at the root, e.g. /haproxy.sock, makes that parent "/" and
-         the mount would shadow each container's entire root filesystem — the pod
-         breaks in a way that looks nothing like a bad log path. Rejected here
-         rather than in the Scriggo library because the mount is Helm-only; the
-         library validates what it can see (the address itself). */ -}}
-  {{- if eq (dir ($v.socketPath | toString)) "/" -}}
-    {{- fail (printf "vector.socketPath must be inside a subdirectory, not directly at the filesystem root, got %q. The chart mounts the socket's parent directory as a shared emptyDir in both the haproxy and vector containers, so a parent of \"/\" would shadow their root filesystems. Use something like /run/vector/haproxy.sock." $v.socketPath) -}}
   {{- end -}}
   {{- if lt ($v.scrapeIntervalSecs | int) 1 -}}
     {{- fail (printf "vector.scrapeIntervalSecs must be a positive integer, got %v." $v.scrapeIntervalSecs) -}}

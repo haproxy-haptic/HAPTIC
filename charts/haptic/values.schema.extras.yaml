@@ -224,3 +224,4 @@ vector:
   excludeMetrics: null  # @schema anyOf: [{}]; description: Moved to controller.config.templatingSettings.extraContext.prometheusExporter.excludeMetrics.
   excludeMaintServerMetrics: null  # @schema anyOf: [{}]; description: Moved to controller.config.templatingSettings.extraContext.prometheusExporter.excludeMaintServers.
   podMonitor: null  # @schema anyOf: [{}]; description: Moved to haproxy.monitoring.podMonitor.
+  socketPath: null  # @schema anyOf: [{}]; description: Removed. HAProxy sends the access log to vector over UDP on 127.0.0.1.

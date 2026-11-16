@@ -258,23 +258,21 @@ func dumpHAProxyRuntimeServers(t *testing.T, dumpDir string) {
 			"exec", pod, "-c", "haproxy", "--",
 			"sh", "-c", `printf '@1 show servers state\n' | socat - UNIX-CONNECT:/etc/haproxy/haproxy-master.sock`)
 
-		// Access-log records HAProxy discarded because the receiver was not
-		// draining. The log target is a UNIX datagram socket owned by the vector
-		// sidecar, and HAProxy drops rather than blocking traffic when it backs
-		// up — silently, apart from this counter. Without it, "the request was
-		// served but no record appeared" (#109) cannot be told apart from "the
-		// record was never emitted", which is the whole difficulty of that
-		// issue. `show info` also carries Uptime, so a value here is
-		// attributable to the run rather than inherited.
+		// DroppedLogs counts records HAProxy failed to send at all. `show info`
+		// also carries Uptime, so a value here is attributable to the run.
 		dumpCommand(t, dumpDir, "haproxy-show-info-"+pod+".txt",
 			"kubectl", kubeconfigFlag, kubeconfigPath, "-n", ControllerNamespace,
 			"exec", pod, "-c", "haproxy", "--",
 			"sh", "-c", `printf '@1 show info\n' | socat - UNIX-CONNECT:/etc/haproxy/haproxy-master.sock`)
 
-		// The other half of the same question: whether vector was alive and
-		// draining. A restart (it exits 0 on a stale socket) or an OOM leaves
-		// the socket unattended, and the buffer absorbs only ~167 records at the
-		// default rmem — about 170ms of stall at 1000 req/s.
+		// Records the kernel discarded because vector's UDP receive buffer was
+		// full: the `drops` column of the 0100007F:252A row (127.0.0.1:9514).
+		// It separates "served but never logged" (#109, #677) from "never emitted".
+		dumpCommand(t, dumpDir, "vector-udp-sockets-"+pod+".txt",
+			"kubectl", kubeconfigFlag, kubeconfigPath, "-n", ControllerNamespace,
+			"exec", pod, "-c", "vector", "--", "cat", "/proc/net/udp")
+
+		// Whether vector was alive: while it restarts nothing reads the port.
 		dumpCommand(t, dumpDir, "vector-container-state-"+pod+".txt",
 			"kubectl", kubeconfigFlag, kubeconfigPath, "-n", ControllerNamespace,
 			"get", "pod", pod, "-o",

@@ -1,17 +1,17 @@
 """Keep access logs and request metrics flowing while the OTLP buffer is full."""
 
 import copy
-from contextlib import chdir
 import json
 import os
 from pathlib import Path
 import re
-import socket
 import subprocess
 import tempfile
 import time
 
 import yaml
+
+from vector_udp import send, wait_bound
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -48,7 +48,6 @@ def prepare(work):
         body.append(line)
     pipeline = yaml.safe_load("\n".join(body))
     pipeline["data_dir"] = "/tmp/vector-backpressure"
-    pipeline["sources"]["haproxy_log"]["path"] = "/probe/haproxy.sock"
     for sink in pipeline["sinks"].values():
         if sink["type"] == "prometheus_exporter":
             sink["address"] = sink["address"].replace("0.0.0.0", "127.0.0.1")
@@ -57,7 +56,7 @@ def prepare(work):
               for container in d["spec"]["template"]["spec"].get("initContainers", [])
               + d["spec"]["template"]["spec"].get("containers", []) if container["name"] == "vector"}
     image, = images
-    return image, vector["metricsPort"]
+    return image, vector["metricsPort"], int(pipeline["sources"]["haproxy_log"]["address"].rsplit(":", 1)[1])
 
 
 def metrics(container, port):
@@ -76,7 +75,7 @@ def total(text, name, component=None):
     return sum(values)
 
 
-def send_records(work, start=0, count=RECORDS):
+def send_records(container, log_port, start=0, count=RECORDS):
     base = {
         "ts": "2026-07-30T09:00:00.123456Z", "trace_id": "a" * 32, "span_id": "b" * 16,
         "upstream_span_id": "c" * 16, "parent_span_id": "", "trace_flags": "01",
@@ -88,16 +87,8 @@ def send_records(work, start=0, count=RECORDS):
         "server_pod": "echo-pod", "resource": "default/echo", "service": "echo", "namespace": "default",
         "instance_pod": "haproxy-1", "status": 200, "bytes": 4096, "bytes_in": 128, "term": "----",
     }
-    with chdir(work), socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sender:
-        sender.settimeout(2)
-        for index in range(start, start + count):
-            record = dict(base, req_id=f"pressure-{index}")
-            try:
-                sender.sendto(json.dumps(record).encode(), "haproxy.sock")
-            except TimeoutError as error:
-                raise AssertionError(f"Vector stopped draining the log socket at record {index}") from error
-            if index % 25 == 0:
-                time.sleep(0.01)
+    send(container, log_port, [json.dumps(dict(base, req_id=f"pressure-{index}")).encode()
+                               for index in range(start, start + count)], pause_every=25)
 
 
 def check_logs(container, expected_count):
@@ -141,7 +132,7 @@ def received_request_ids(work):
     return result
 
 
-def check_recovery(work, container, port):
+def check_recovery(work, container, port, log_port):
     collector = {
         "data_dir": "/tmp/vector-collector",
         "sources": {"otlp": {"type": "http_server", "address": "127.0.0.1:4318", "path": "/v1/traces",
@@ -161,7 +152,7 @@ def check_recovery(work, container, port):
         if time.monotonic() >= deadline:
             raise AssertionError("Trace export did not recover after the collector started")
         time.sleep(0.1)
-    send_records(work, start=RECORDS, count=1)
+    send_records(container, log_port, start=RECORDS, count=1)
     deadline = time.monotonic() + 15
     while True:
         text = metrics(container, port)
@@ -178,19 +169,15 @@ def check_recovery(work, container, port):
 def main():
     with tempfile.TemporaryDirectory(prefix=".vector-backpressure-", dir=ROOT) as directory:
         work = Path(directory)
-        image, port = prepare(work)
+        image, port, log_port = prepare(work)
         container = run("docker", "create", "--network", "none", "--mount", f"type=bind,src={work},dst=/probe",
                         image, "--config", "/probe/vector.yaml").strip()
         try:
             run("docker", "start", container)
-            deadline = time.monotonic() + 15
-            while not (work / "haproxy.sock").exists():
-                if time.monotonic() >= deadline:
-                    raise AssertionError("Vector did not create its access-log socket")
-                time.sleep(0.05)
-            send_records(work)
+            wait_bound(container, log_port)
+            send_records(container, log_port)
             check_outage(container, port)
-            check_recovery(work, container, port)
+            check_recovery(work, container, port, log_port)
         except Exception:
             print(run("docker", "inspect", "--format", "{{json .State}}", container))
             samples = metrics(container, port)

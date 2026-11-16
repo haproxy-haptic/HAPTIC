@@ -317,9 +317,8 @@ controller:
         agentInvariantViolated: true
         recoveryReloadFailed: true
         agentVersionSkew: true
-        # HAProxy discarded access-log records because the vector sidecar
-        # stopped draining the UNIX datagram socket. Traffic is unaffected;
-        # the log is not.
+        # Access-log records were lost on the way to the vector sidecar.
+        # Traffic is unaffected; the log is not.
         accessLogDropped: true
     grafanaDashboard:
       enabled: false
@@ -2564,7 +2563,7 @@ spoaHub:
   extraVolumeMounts: []
 
 # Vector sidecar (https://vector.dev) on every HAProxy pod: it receives the
-# HAProxy access log over a mounted UNIX datagram socket, derives the request
+# HAProxy access log over UDP on the pod's loopback, derives the request
 # metrics from it, and re-exports the SPOA hub's Prometheus metrics alongside
 # its own. HAProxy's exporter is scraped directly (extraContext.prometheusExporter).
 #
@@ -2677,12 +2676,6 @@ vector:
       header_duration_seconds: true
       request_size: true
       response_size: true
-
-  # UNIX datagram socket HAProxy writes access-log records to. Lives on its own
-  # emptyDir shared with the haproxy container. HAProxy's `log <path>` form is a
-  # datagram target (deliberately not `unix@` — HAProxy 3.4 rejects a UNIX ring
-  # server while 3.0 accepts it).
-  socketPath: /run/vector/haproxy.sock
 
   # Scrape interval vector uses for the spoa-hub endpoint it re-exports. Keep
   # at or below Prometheus's own interval, otherwise Prometheus samples a value
