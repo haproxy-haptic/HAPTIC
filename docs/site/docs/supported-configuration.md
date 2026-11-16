@@ -72,8 +72,9 @@ for template authoring constraints.
 | Content of a map loaded by the worker | Runtime entry updates; whole-map replacement when needed to preserve entry order or represent the values. |
 | Content of a map the worker hasn't loaded | File update only. Adding a configuration reference requires a reload. |
 | Certificate or CA content | Create or update the runtime-store object. |
-| Remove an entry from a loaded CRT-list, or append one after every existing entry | Runtime entry update. The entry's certificate must be loaded or created in the same change. |
-| Insert an entry before an existing one, reorder entries, or change a line that's not last | Reload. Runtime additions always append, and the first entry is the certificate served without a matching SNI. |
+| Add, remove, or change an entry in a loaded CRT-list | Runtime entry update. The entry's certificate must be loaded or created in the same change. |
+| Change the first entry, or move an entry relative to another one with a shared SNI filter or with no SNI filters | Reload. Runtime additions always append, so the worker's order would choose a different certificate for that SNI. The first entry is the certificate served without a matching SNI. |
+| Update the certificate of a CRT-list entry listed ahead of another entry with the same SNI filter, or update a CA file while two entries share an SNI filter | Reload. HAProxy re-inserts the affected entries behind the others, which would change the certificate served for that SNI. |
 | Add or remove a CRT-list file, or change one whose lines HAPTIC can't parse exactly | Reload. |
 | Change or remove a general file with `reloadOnPush: true` (the default) | Reload. |
 | Other file changes | File update only; changes to the configuration that references the file may also require a reload. |
