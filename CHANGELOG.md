@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Removing a TLS certificate, or adding one whose crt-list line comes after every existing line, updates HAProxy at runtime instead of reloading it. A change that moves existing lines, including the default certificate, still reloads.
+- Adding or removing a TLS certificate updates HAProxy at runtime instead of reloading it, wherever its crt-list line lands. A change to the default certificate, or one that would change which line serves an SNI name two lines share, still reloads.
 - `haptic_rejected_watched_inputs` carries `resource_type`, `namespace`, and `name` labels, one series per rejected resource, so an alert names the resource to fix.
 
 ### Helm chart

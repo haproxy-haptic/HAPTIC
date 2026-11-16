@@ -131,9 +131,9 @@ func TestDiffCRTListEntries(t *testing.T) {
 			want:   []api.Op{{Kind: api.OpCRTListDel, Path: listPath, Cert: "certs/other.pem"}},
 		},
 		{
-			name:   "options changed",
-			before: []renderplan.CRTListEntry{first},
-			after:  []renderplan.CRTListEntry{retuned},
+			name:   "options changed on an entry other than the default",
+			before: []renderplan.CRTListEntry{second, first},
+			after:  []renderplan.CRTListEntry{second, retuned},
 			want: []api.Op{
 				{Kind: api.OpCRTListDel, Path: listPath, Cert: certPath},
 				{
@@ -182,19 +182,19 @@ func TestDiffCRTListOrderIsNotReachablePerEntry(t *testing.T) {
 			name:   "a new default certificate is not an append",
 			before: []renderplan.CRTListEntry{first},
 			after:  []renderplan.CRTListEntry{other, first},
-			reason: "the entry order changed",
+			reason: "the default certificate changes",
 		},
 		{
 			name:   "retained entries that swap places",
 			before: []renderplan.CRTListEntry{first, other},
 			after:  []renderplan.CRTListEntry{other, first},
-			reason: "the entry order changed",
+			reason: "the default certificate changes",
 		},
 		{
 			name:   "an options change on an entry other than the last",
 			before: []renderplan.CRTListEntry{first, other},
 			after:  []renderplan.CRTListEntry{retuned, other},
-			reason: "the entry order changed",
+			reason: "the default certificate changes",
 		},
 		{
 			name:   "a certificate the line form cannot name",

@@ -39,12 +39,14 @@ func (b *builder) diffCerts() {
 			b.storeFile(f.Path, api.OpCASet, api.OpCANew, b.inventory.CAFiles)
 		}
 	}
-	// After every store file: an added entry needs its certificate in the store.
+	// After every store file: an added entry needs its certificate in the
+	// store, and a committed store object moves its entries in the SNI lookup.
 	for i := range b.next.Files {
 		f := &b.next.Files[i]
 		old, existed := b.prevIndex.files[f.Path]
-		if f.Kind == renderplan.FileKindCRTList && (!existed || !sameFileContent(old, f)) {
-			b.diffCRTList(f.Path, existed)
+		changed := !existed || !sameFileContent(old, f)
+		if f.Kind == renderplan.FileKindCRTList && (changed || len(b.groups[groupCert]) > 0) {
+			b.diffCRTList(f.Path, existed, changed)
 		}
 	}
 	for i := range b.prev.Files {
@@ -73,42 +75,38 @@ func (b *builder) storeFile(path, set, create string, loaded []string) {
 
 // diffCRTList turns the entry lists of two renders into crt-list ops. A list
 // the config gains or loses is a core change, and one the render did not
-// describe cannot be reached entry by entry.
-func (b *builder) diffCRTList(path string, existed bool) {
+// describe cannot be reached entry by entry. An unchanged list is checked
+// because a store commit can move its entries.
+func (b *builder) diffCRTList(path string, existed, changed bool) {
 	if !existed {
 		b.failf("crt-list %s added, which only a reload puts into the config", path)
 		return
 	}
 	prev, hadEntries := b.prev.CRTLists[path]
 	next, hasEntries := b.next.CRTLists[path]
+	loaded := slices.Contains(b.inventory.CRTLists, path)
 	switch {
+	case !changed && (!hadEntries || !hasEntries || !loaded):
 	case !hadEntries || !hasEntries:
 		b.failf("crt-list %s changed, but crt-list entries are not declared by the render yet", path)
-	case !slices.Contains(b.inventory.CRTLists, path):
+	case !loaded:
 		b.notef("crt-list %s is not loaded at runtime, its file is written only", path)
 	default:
 		b.crtListOps(path, prev.Entries, next.Entries)
 	}
 }
 
-// crtListOps composes per-entry ops only when replaying them leaves the worker
-// in the file's order: `add ssl crt-list` appends, and HAProxy serves the first
-// entry to a handshake without a matching SNI, so an entry that would have to
-// move is a reload rather than a silently different default certificate.
+// crtListOps composes per-entry ops when the worker, after replaying them,
+// selects the same entry for every SNI as a reload of the file would.
 func (b *builder) crtListOps(path string, prev, next []renderplan.CRTListEntry) {
 	before, after := crtListIndex(prev), crtListIndex(next)
-	for i := range next {
-		if reason := crtListEntryReason(&next[i]); reason != "" {
-			b.failf("crt-list %s: %s", path, reason)
-			return
-		}
-	}
 	var ops []api.Op
-	running := make([]string, 0, len(prev)+len(next))
+	kept := make([]string, 0, len(prev))
+	var added []string
 	for i := range prev {
 		cert := prev[i].Cert
-		if _, kept := after[cert]; kept {
-			running = append(running, cert)
+		if _, ok := after[cert]; ok {
+			kept = append(kept, cert)
 			continue
 		}
 		if !api.SafeToken(cert) {
@@ -123,11 +121,14 @@ func (b *builder) crtListOps(path string, prev, next []renderplan.CRTListEntry) 
 		if existed && sameCRTListEntry(old, &next[i]) {
 			continue
 		}
+		if reason := crtListEntryReason(&next[i]); reason != "" {
+			b.failf("crt-list %s: %s", path, reason)
+			return
+		}
 		if existed {
-			// Options and SNI filters are only replaceable as a whole entry,
-			// which re-adds it at the end of the running list.
+			// Options and SNI filters are only replaceable as a whole entry.
 			ops = append(ops, b.crtListDel(path, cert))
-			running = slices.DeleteFunc(running, func(c string) bool { return c == cert })
+			kept = slices.DeleteFunc(kept, func(c string) bool { return c == cert })
 		}
 		add := crtListAdd(path, &next[i])
 		if file := b.unloadedFile(&add); file != "" {
@@ -135,13 +136,117 @@ func (b *builder) crtListOps(path string, prev, next []renderplan.CRTListEntry) 
 			return
 		}
 		ops = append(ops, add)
-		running = append(running, cert)
+		added = append(added, cert)
 	}
-	if !slices.Equal(running, crtListOrder(next)) {
-		b.failf("crt-list %s: the entry order changed, which only a reload applies", path)
+	if reason := sniOrderReason(prev, next, b.sniOrder(kept, added), b.caCommitted()); reason != "" {
+		b.failf("crt-list %s: %s, which only a reload applies", path, reason)
 		return
 	}
 	b.push(groupCRTList, ops...)
+}
+
+// sniOrder is the worker's SNI lookup order after this diff: the previous
+// render's order, replaying that a commit or an add re-inserts at the end.
+func (b *builder) sniOrder(kept, added []string) []string {
+	order := slices.Clone(kept)
+	for i := range b.groups[groupCert] {
+		op := &b.groups[groupCert][i]
+		if op.Kind != api.OpCertSet {
+			continue
+		}
+		var moved []string
+		order = slices.DeleteFunc(order, func(cert string) bool {
+			hit := cert == op.Path || b.underCRTBase(cert) == op.Path
+			if hit {
+				moved = append(moved, cert)
+			}
+			return hit
+		})
+		order = append(order, moved...)
+	}
+	return append(order, added...)
+}
+
+// caCommitted reports a CA-file commit, which re-inserts every entry using
+// the file, bind-level ones included, in an order the plan does not know.
+func (b *builder) caCommitted() bool {
+	return slices.ContainsFunc(b.groups[groupCert], func(op api.Op) bool { return op.Kind == api.OpCASet })
+}
+
+// sniOrderReason names why the worker could select a different entry than the
+// file for some SNI, or returns "". See "CRT-list entry order" in
+// docs/site/docs/development/agent.md.
+func sniOrderReason(prev, next []renderplan.CRTListEntry, running []string, unknownOrder bool) string {
+	if len(next) == 0 {
+		return ""
+	}
+	if len(prev) == 0 || prev[0].Cert != next[0].Cert || !sameCRTListEntry(&prev[0], &next[0]) {
+		return "the default certificate changes"
+	}
+	runningAt := make(map[string]int, len(running))
+	for i, cert := range running {
+		runningAt[cert] = i
+	}
+	kept := func(x, y string) bool { return !unknownOrder && runningAt[x] < runningAt[y] }
+	names, byName, unnamed := groupBySNI(next)
+	for _, name := range names {
+		certs := byName[name]
+		for j := 1; j < len(certs); j++ {
+			if !kept(certs[j-1], certs[j]) {
+				return "entries " + certs[j-1] + " and " + certs[j] + " both match SNI " + name + " and their order is not kept"
+			}
+		}
+	}
+	for _, i := range unnamed {
+		for j := range next {
+			if j != i && !kept(next[min(i, j)].Cert, next[max(i, j)].Cert) {
+				return "entry " + next[i].Cert + " has no SNI filter and its order against " + next[j].Cert + " is not kept"
+			}
+		}
+	}
+	return ""
+}
+
+// groupBySNI lists each lookup name's certificates in file order, the names in
+// first-seen order, and the indexes of entries without filters. The first
+// entry also holds the default's name, "*".
+func groupBySNI(entries []renderplan.CRTListEntry) (names []string, byName map[string][]string, unnamed []int) {
+	byName = make(map[string][]string)
+	for i := range entries {
+		keys, known := sniKeys(&entries[i])
+		if !known {
+			unnamed = append(unnamed, i)
+			continue
+		}
+		if i == 0 && !slices.Contains(keys, "*") {
+			keys = append(keys, "*")
+		}
+		for _, key := range keys {
+			if _, seen := byName[key]; !seen {
+				names = append(names, key)
+			}
+			byName[key] = append(byName[key], entries[i].Cert)
+		}
+	}
+	return names, byName, unnamed
+}
+
+// sniKeys are the lookup names an entry's filters insert, lowercased as
+// HAProxy stores them; a negative filter only excludes its own wildcard.
+// known is false for an entry without filters.
+func sniKeys(entry *renderplan.CRTListEntry) (keys []string, known bool) {
+	if len(entry.SNIFilters) == 0 {
+		return nil, false
+	}
+	for _, filter := range entry.SNIFilters {
+		if strings.HasPrefix(filter, "!") {
+			continue
+		}
+		if key := strings.ToLower(filter); !slices.Contains(keys, key) {
+			keys = append(keys, key)
+		}
+	}
+	return keys, true
 }
 
 // crtListEntryReason names the first token of an entry the runtime API cannot
@@ -173,14 +278,6 @@ func (b *builder) unloadedFile(add *api.Op) string {
 		}
 	}
 	return ""
-}
-
-func crtListOrder(entries []renderplan.CRTListEntry) []string {
-	order := make([]string, 0, len(entries))
-	for i := range entries {
-		order = append(order, entries[i].Cert)
-	}
-	return order
 }
 
 func crtListAdd(path string, entry *renderplan.CRTListEntry) api.Op {

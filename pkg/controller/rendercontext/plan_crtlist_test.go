@@ -93,6 +93,18 @@ func TestCRTListChangesFromRenderedContentStayRuntime(t *testing.T) {
 		}, got.Ops, "the certificate is created before the entry naming it")
 	})
 
+	t.Run("a host added ahead of a retained entry", func(t *testing.T) {
+		next := crtListPlan(t, defaultLine+"app.pem [ocsp-update on] app.example.com\n"+apiLine,
+			"default.pem", "app.pem", "api.pem")
+		got := deployplan.Diff(next, loaded(twoHosts))
+		require.Equal(t, deployplan.VerdictRuntime, got.Verdict, got.Reasons)
+		require.Len(t, got.Ops, 2)
+		assert.Equal(t, api.Op{
+			Kind: api.OpCRTListAdd, Path: crtListTestPath, Cert: "app.pem",
+			Options: onOCSP, SNIFilters: []string{"app.example.com"},
+		}, got.Ops[1])
+	})
+
 	t.Run("a host removed", func(t *testing.T) {
 		got := deployplan.Diff(crtListPlan(t, defaultLine, "default.pem"), loaded(twoHosts))
 		require.Equal(t, deployplan.VerdictRuntime, got.Verdict, got.Reasons)
@@ -105,7 +117,7 @@ func TestCRTListChangesFromRenderedContentStayRuntime(t *testing.T) {
 		assert.Equal(t, deployplan.VerdictReload, got.Verdict)
 		assert.Empty(t, got.Ops)
 		assert.Contains(t, got.Reasons,
-			"crt-list "+crtListTestPath+": the entry order changed, which only a reload applies")
+			"crt-list "+crtListTestPath+": the default certificate changes, which only a reload applies")
 	})
 
 	t.Run("an unparsable list reloads", func(t *testing.T) {

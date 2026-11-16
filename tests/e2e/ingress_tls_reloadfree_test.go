@@ -19,6 +19,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -119,26 +120,124 @@ func waitForHTTPSServing(ctx context.Context, t *testing.T, cs kubernetes.Interf
 	})
 }
 
+// TestIngressTLSHostMidListAddIsReloadFree pins that a TLS host whose crt-list
+// line renders ahead of existing lines is added at runtime: no other line shares
+// its SNI, so the worker's append order serves what the file would.
+func TestIngressTLSHostMidListAddIsReloadFree(t *testing.T) {
+	const (
+		anchorHost = "tls-mid-z.localdev.me"
+		addedHost  = "tls-mid-a.localdev.me"
+	)
+	var (
+		client     klient.Client
+		cs         kubernetes.Interface
+		namespace  string
+		backend    BackendRef
+		anchorCert string
+	)
+
+	feature := features.New("Ingress TLS host added mid-list is reload-free on 3.4").
+		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			var err error
+			if client, err = cfg.NewClient(); err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+			if cs, err = newClientsetForE2E(client.RESTConfig()); err != nil {
+				t.Fatalf("build clientset: %v", err)
+			}
+			namespace = NamespaceForTest(ctx, t, client)
+			DumpLogsOnFailure(t, namespace)
+			backend = NewNamedEchoServerBackend(ctx, t, client, namespace, "echo-tls-mid")
+			secret := NewTLSSecret(ctx, t, client, namespace, "tls-mid-z", []string{anchorHost})
+			NewIngress(ctx, t, client, namespace, &IngressSpec{
+				Name: "tls-mid-z", Host: anchorHost, BackendService: backend.Service, BackendPort: backend.Port,
+				TLSSecretName: secret,
+			})
+			waitForHTTPSServing(ctx, t, cs, anchorHost)
+			anchorCert = namespace + "_" + secret + ".pem"
+			return ctx
+		}).
+		Assess("a TLS host rendered ahead of an existing line is added without a reload", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			waitFleetQuiescent(ctx, t, client, cs)
+			before := captureReloadFingerprint(ctx, t, cs)
+
+			secret := NewTLSSecret(ctx, t, client, namespace, "tls-mid-a", []string{addedHost})
+			NewIngress(ctx, t, client, namespace, &IngressSpec{
+				Name: "tls-mid-a", Host: addedHost, BackendService: backend.Service, BackendPort: backend.Port,
+				TLSSecretName: secret,
+			})
+			addedCert := namespace + "_" + secret + ".pem"
+			reloadFreeReaction(ctx, t, cs, addedCert+" enters the running crt-list",
+				func(ctx context.Context) (bool, error) {
+					return strings.Contains(showMainCRTList(ctx, t, cs), addedCert), nil
+				})
+			waitForHTTPSServing(ctx, t, cs, addedHost)
+
+			file := mainCRTListFile(ctx, t, cs)
+			added, anchor := strings.Index(file, addedCert), strings.Index(file, anchorCert)
+			if added < 0 || anchor < 0 || added > anchor {
+				t.Fatalf("expected %s ahead of %s in the rendered crt-list:\n%s", addedCert, anchorCert, file)
+			}
+			for host, want := range map[string]string{addedHost: addedHost, anchorHost: anchorHost} {
+				cert, err := httpclient.New(t).PeerCertificate(ctx, host)
+				if err != nil {
+					t.Fatalf("handshake for %s: %v", host, err)
+				}
+				if !slices.Contains(cert.DNSNames, want) {
+					t.Fatalf("SNI %s served a certificate for %v", host, cert.DNSNames)
+				}
+			}
+			if dynamicBackendsSupported() {
+				assertReloadFree(t, before, captureReloadFingerprint(ctx, t, cs), "TLS host added mid-list")
+			}
+			return ctx
+		}).
+		Feature()
+
+	testEnv.Test(t, feature)
+}
+
 // showMainCRTList prints the entries of the running crt-list the default HTTPS
 // bind serves, read from one pod's worker socket.
 func showMainCRTList(ctx context.Context, t *testing.T, cs kubernetes.Interface) string {
 	t.Helper()
-	pod := firstHAProxyPod(ctx, t, cs)
-	run := func(command string) string {
-		script := "printf '" + command + "\\n' | socat -t5 stdio unix-connect:" + haproxyWorkerSocketPath
-		out, err := execInHAProxyPod(ctx, pod, "haproxy", "sh", "-c", script)
-		if err != nil {
-			t.Fatalf("%s on %s: %v\n%s", command, pod, err, out)
-		}
-		return out
+	pod, name := mainCRTList(ctx, t, cs)
+	return haproxyWorkerCommand(ctx, t, pod, "show ssl crt-list "+name)
+}
+
+// mainCRTListFile is the rendered file of that crt-list on the same pod.
+func mainCRTListFile(ctx context.Context, t *testing.T, cs kubernetes.Interface) string {
+	t.Helper()
+	pod, name := mainCRTList(ctx, t, cs)
+	out, err := execInHAProxyPod(ctx, pod, "haproxy", "cat", "/etc/haproxy/"+name)
+	if err != nil {
+		t.Fatalf("read %s on %s: %v\n%s", name, pod, err, out)
 	}
-	for _, line := range strings.Split(run("show ssl crt-list"), "\n") {
+	return out
+}
+
+func mainCRTList(ctx context.Context, t *testing.T, cs kubernetes.Interface) (pod, name string) {
+	t.Helper()
+	pod = firstHAProxyPod(ctx, t, cs)
+	for _, line := range strings.Split(haproxyWorkerCommand(ctx, t, pod, "show ssl crt-list"), "\n") {
 		if name := strings.TrimSpace(line); strings.HasSuffix(name, "certificate-list.txt") {
-			return run("show ssl crt-list " + name)
+			return pod, name
 		}
 	}
 	t.Fatalf("no certificate-list.txt among the running crt-lists on %s", pod)
-	return ""
+	return "", ""
+}
+
+func haproxyWorkerCommand(ctx context.Context, t *testing.T, pod, command string) string {
+	t.Helper()
+	script := "printf '" + command + "\\n' | socat -t5 stdio unix-connect:" + haproxyWorkerSocketPath
+	out, err := execInHAProxyPod(ctx, pod, "haproxy", "sh", "-c", script)
+	if err != nil {
+		t.Fatalf("%s on %s: %v\n%s", command, pod, err, out)
+	}
+	return out
 }
 
 func mustDynamic(t *testing.T, client klient.Client) dynamic.Interface {

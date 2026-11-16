@@ -326,6 +326,40 @@ the agent executes the traffic-stopping half immediately (`unpublish backend`,
 caps at 1000 servers and 100 backends per pod; past that the apply reloads
 instead of growing the queue.
 
+### CRT-list entry order
+
+`add ssl crt-list` appends, so a runtime add can leave the worker's lookup order
+different from the file's. `deployplan` keeps such a change at runtime only when
+no SNI value, and no missing SNI, can select a different entry. On HAProxy 3.0
+to 3.4 the lookup works like this:
+
+- Each filter, in lower case, is a key in one of two trees: exact names, and
+  wildcards stored as the suffix from the first dot. The lookup tries the exact
+  key first and the wildcard key second. Within a key, it takes the first
+  entry inserted for each key type (ECDSA, RSA). A negative filter only excludes
+  a name from its own entry's wildcard (`ssl_sock_chose_sni_ctx`, later
+  `ssl_sock_choose_sni_ctx`, in `src/ssl_clienthello.c`; `src/ssl_sock.c` on 3.0).
+  Duplicate keys are walked in insertion order (`include/import/ebtree.h`).
+- An entry without filters is keyed by its certificate's SAN and CN names,
+  which the plan doesn't know (`ckch_inst_new_load_store`, `src/ssl_sock.c`).
+- The default is the first entry loaded into a bind with empty trees, keyed
+  `*`. A runtime add is never a default, and `del ssl crt-list` refuses the
+  default unless `strict-sni` is set (`src/ssl_crtlist.c`).
+- `commit ssl cert` and `commit ssl ca-file` rebuild every affected entry and
+  re-insert it at the end of its keys (`ckch_store_replace` and the CA-file
+  commit handler in `src/ssl_ckch.c`). `show ssl crt-list` prints entries in
+  the order they were added, so it can't report the lookup order.
+
+The rule therefore requires the same first entry. Entries sharing a key must
+keep their relative order, and an entry without filters must keep its order
+against every entry. A CA-file commit reloads any list where two entries
+compete, because its re-insert order is unknown. The diff tracks lookup order
+from the previous render's order plus the commits and adds of this diff. Wherever
+order decides, that matches the worker, because every earlier runtime diff
+satisfied the rule and a reload re-reads the file. The rule only looks inside
+one crt-list: it assumes no other certificate on the same bind shares a name
+with a moved entry.
+
 ## Pacing, rollback, and the known-bad cache
 
 `--reload-interval-min` is the shortest interval between two reloads. A reload
