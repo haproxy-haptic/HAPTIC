@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.28
+# syntax=docker/dockerfile:1.29
 # HAPTIC SPOA hub image: layers all nine plugin shared libraries on top of
 # the upstream haproxy-spoa-hub container so they're loaded at hub startup.
 #
