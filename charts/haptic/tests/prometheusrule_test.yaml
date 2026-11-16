@@ -414,3 +414,40 @@ tests:
       - equal:
           path: spec.groups[0].name
           value: haptic
+
+  - it: names each access-log loss cause in its own alert
+    release:
+      name: rel
+      namespace: edge
+    set:
+      fullnameOverride: haptic
+    asserts:
+      - contains:
+          path: spec.groups[0].rules
+          content:
+            alert: HAProxyAccessLogRecordsDropped
+            expr: increase(haptic_access_log_dropped_records_total[5m]) > 0
+          any: true
+      - contains:
+          path: spec.groups[0].rules
+          content:
+            alert: HAProxyAccessLogSendFailed
+            expr: increase(haproxy_process_dropped_logs_total[5m]) > 0
+          any: true
+      - contains:
+          path: spec.groups[0].rules
+          content:
+            alert: HAProxyAccessLogCollectorDown
+            expr: up{job="edge/haptic-haproxy", endpoint="vector-metrics"} == 0
+            for: 2m
+          any: true
+
+  - it: has no collector alert without the vector sidecar
+    set:
+      vector.enabled: false
+    asserts:
+      - notContains:
+          path: spec.groups[0].rules
+          content:
+            alert: HAProxyAccessLogCollectorDown
+          any: true

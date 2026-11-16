@@ -247,11 +247,13 @@ It counts the records the kernel dropped because Vector's buffer was full, and
 it resets when Vector restarts. HAProxy's `haproxy_process_dropped_logs_total`
 counts records HAProxy failed to send at all. Neither counter detects records
 sent while Vector isn't running, or records lost later in your collection
-pipeline; alert on the Vector scrape target being down for the first.
+pipeline.
 
-The chart's `HAProxyAccessLogRecordsDropped` alert is available through
-`controller.monitoring.prometheusRule`. If it fires, check Vector's health and
-CPU budget. You can also [reduce log volume](#dropping-records-you-dont-need),
+`controller.monitoring.prometheusRule` provides one alert per case:
+`HAProxyAccessLogRecordsDropped` (Vector read too slowly: check its CPU budget),
+`HAProxyAccessLogSendFailed` (HAProxy couldn't send: check the Vector container),
+and `HAProxyAccessLogCollectorDown` (Vector isn't answering scrapes, so records
+are lost uncounted). You can also [reduce log volume](#dropping-records-you-dont-need),
 which reduces the requests available for log-derived metrics and traces.
 
 ## Vector sidecar

@@ -170,7 +170,9 @@ files:
         {%- fail("extraContext.vector.logAddress must be 127.0.0.1:<port>, got '" + logAddress + "'. Any other address would let traffic from outside the pod inject access-log records.") -%}
       {%- end -%}
       {#- /proc/net/udp prints a little-endian 127.0.0.1 and an upper-case hex port. -#}
-      {%- var logSocketKey = "0100007F:" + sprintf("%04X", toint(logPortMatch[1])) -%}
+      {%- var logPort = toint(logPortMatch[1]) -%}
+      {%- var hexDigits = "0123456789ABCDEF" -%}
+      {%- var logSocketKey = "0100007F:" + hexDigits[logPort/4096:logPort/4096+1] + hexDigits[logPort/256%16:logPort/256%16+1] + hexDigits[logPort/16%16:logPort/16%16+1] + hexDigits[logPort%16:logPort%16+1] -%}
       {%- if toint(metricsPort) < 1 || toint(metricsPort) > 65535 -%}
         {%- fail("extraContext.vector.metricsPort must be a TCP port between 1 and 65535, got '" + tostring(metricsPort) + "'.") -%}
       {%- end -%}
