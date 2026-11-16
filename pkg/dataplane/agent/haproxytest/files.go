@@ -16,7 +16,7 @@ package haproxytest
 
 import (
 	"fmt"
-	"path"
+	pathpkg "path"
 	"sort"
 	"strconv"
 	"strings"
@@ -203,7 +203,7 @@ func crtListEntryNamed(line, cert string) bool {
 	if strings.Contains(token, "/") {
 		return cert == token
 	}
-	return strings.Contains(cert, "/") && path.Base(cert) == token
+	return strings.Contains(cert, "/") && pathpkg.Base(cert) == token
 }
 
 func (h *HAProxy) addMap(rest, payload string) reply {
