@@ -1277,7 +1277,7 @@ Libraries communicate across boundaries using the `globalFeatures` map (commonly
 | `sslPassthroughBackends` | `[]any` | SSL passthrough backend definitions | ssl.yaml | gateway/, haproxytech.yaml |
 | `tlsCertificates` | `[]any` | TLS certificate references for crt-list | ssl.yaml | gateway/, ingress.yaml |
 
-This table is illustrative, not exhaustive — other genuinely cross-library keys include `sslRedirectHosts`, `clientCertVerifyHosts`, and `needHTTPSTermination`. Before introducing a new key, check it isn't an existing one under a different spelling — grep the authoritative set: `grep -rhoE '(gf|globalFeatures)\["[a-zA-Z_]+"\]' charts/haptic/charts/ | sort -u`.
+This table is illustrative, not exhaustive — other genuinely cross-library keys include `sslRedirectHosts`, `clientCertVerifyHosts`, and `tlsInspectionRequired`. Before introducing a new key, check it isn't an existing one under a different spelling — grep the authoritative set: `grep -rhoE '(gf|globalFeatures)\["[a-zA-Z_]+"\]' charts/haptic/charts/ | sort -u`.
 
 !!! warning "Map Key Consistency is Critical"
     All libraries **MUST** use the exact same map key names. The codebase uses **camelCase** for shared state keys. Using different key names (e.g., `tls_certificates` vs `tlsCertificates`) will cause silent failures where data written by one library is invisible to another.

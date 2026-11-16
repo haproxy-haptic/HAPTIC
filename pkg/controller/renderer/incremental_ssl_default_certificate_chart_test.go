@@ -220,7 +220,7 @@ func TestMigratedChartRootsDoNotReadWatchedResourcesDirectly(t *testing.T) {
 			"features-110-gateway-frontend-mtls",
 			"features-140-gateway-service-extra-ports",
 			"features-141-listenerset-service-extra-ports",
-			"features-150-gateway-bind",
+			"features-150-gateway-tls-listeners",
 		},
 		"gateway/18-bind-per-gateway.yaml": {
 			"https-bind-extra-100-per-gateway",

@@ -156,7 +156,7 @@ const gatewayFeatureLegacyProjectionRoot = `{%- import "util-reference-grant-per
             "secret_namespace": secretNamespace,
             "secret_name": certificateRef.Name,
             "listener_hostname": listener.Hostname,
-            "listener_port": listener.Port,
+            "listener_key": namespace + "/" + name + "/" + listener.Name,
           })
         }
       }

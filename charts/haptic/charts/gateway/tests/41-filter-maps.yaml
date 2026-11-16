@@ -77,7 +77,7 @@ validationTests:
       - {type: contains, target: map:gw-reqhdr.map, pattern: 'h_default_hdr-a_0\|set\|x-shared from-a'}
       - {type: contains, target: map:gw-reqhdr.map, pattern: 'h_default_hdr-b_0\|set\|x-shared from-b'}
       # One line per rendered frontend — not one line per route per frontend.
-      - {type: match_count, target: haproxy.cfg, pattern: 'set-header X-Shared %\[var\(txn\.gw_rule_id\),concat\(\|set\|x-shared\)', expected: "2"}
+      - {type: match_count, target: haproxy.cfg, pattern: 'set-header X-Shared %\[var\(txn\.gw_rule_id\),concat\(\|set\|x-shared\)', expected: "3"}
       # Negative control: the lowercase spelling loses even though the route
       # spelling it comes first, so the line's spelling is a rule, not an order.
       - {type: not_contains, target: haproxy.cfg, pattern: 'set-header x-shared %'}
@@ -152,8 +152,8 @@ validationTests:
       - type: haproxy_valid
       # "M" defers the length to the per-match lines below.
       - {type: contains, target: map:gw-redirect.map, pattern: 'h_default_multi-pfx_0 302\|https\|new\.example\.com\|\|P\|M\|%2fz'}
-      - {type: match_count, target: haproxy.cfg, pattern: 'set-var\(txn\.gw_pfxlen\) int\(2\) if \{ var\(txn\.gw_rule_id\) -m str "h_default_multi-pfx_0" \}', expected: "2"}
-      - {type: match_count, target: haproxy.cfg, pattern: 'set-var\(txn\.gw_pfxlen\) int\(4\) if \{ var\(txn\.gw_rule_id\) -m str "h_default_multi-pfx_0" \}', expected: "2"}
+      - {type: match_count, target: haproxy.cfg, pattern: 'set-var\(txn\.gw_pfxlen\) int\(2\) if \{ var\(txn\.gw_rule_id\) -m str "h_default_multi-pfx_0" \}', expected: "3"}
+      - {type: match_count, target: haproxy.cfg, pattern: 'set-var\(txn\.gw_pfxlen\) int\(4\) if \{ var\(txn\.gw_rule_id\) -m str "h_default_multi-pfx_0" \}', expected: "3"}
       - type: match_order
         target: haproxy.cfg
         patterns:

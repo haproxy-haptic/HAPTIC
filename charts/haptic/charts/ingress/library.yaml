@@ -71,40 +71,17 @@ templateSnippets:
       effects: [publishValue]
     template: '{{- "" -}}'
 
-  features-100-ingress-bind:
+  features-100-ingress-presence:
     template: |-
       {%- var gf = shared.Get("globalFeatures").(map[string]any) %}
-      {%- var tlsDefault bool = extraContext | dig("ingressDefaultHTTPS") | fallback(true) %}
-      {%- var haveDefaultCert = tostring(extraContext | dig("tls", "defaultCertificate", "name") | fallback("")) != "" %}
-      {%- var httpsByDefault = tlsDefault && haveDefaultCert %}
-      {%- gf["ingressHTTPSByDefault"] = httpsByDefault %}
-      {%- var flags = render "featuresvalues-100-ingress-bind" -%}
-      {%- gf["haveIngresses"] = strings_contains(flags, "H") -%}
-      {%- if strings_contains(flags, "H") -%}
-        {%- gf["bindHTTPDefault"] = true -%}
-        {%- gf["needHTTPFrontend"] = true -%}
-      {%- end -%}
-      {%- if strings_contains(flags, "S") -%}
-        {%- gf["bindHTTPSDefault"] = true -%}
-        {%- gf["needHTTPSFrontend"] = true -%}
-        {%- gf["needHTTPSTermination"] = true -%}
-      {%- end %}
+      {%- var flags = render "featuresvalues-100-ingress-presence" -%}
+      {%- gf["haveIngresses"] = strings_contains(flags, "H") %}
 
-  util-ingress-bind-bindings:
-    template: |-
-      {%- var tlsDefault bool = extraContext | dig("ingressDefaultHTTPS") | fallback(true) -%}
-      {%- var haveDefaultCert = tostring(extraContext | dig("tls", "defaultCertificate", "name") | fallback("")) != "" -%}
-      {{- toJSON(map[string]any{"ingresses": map[string]any{"httpsByDefault": tlsDefault && haveDefaultCert}}) -}}
-
-  featuresvalues-100-ingress-bind:
+  featuresvalues-100-ingress-presence:
     requires: [ingresses]
-    incremental:
-      bindingsTemplate: '{{- render "util-ingress-bind-bindings" -}}'
+    incremental: {source: ingresses}
     template: |-
       {{- shared.Unique("flags", "http", "H") -}}
-      {%- if props["httpsByDefault"] == true || len(item | dig("spec", "tls") | toSlice()) > 0 -%}
-        {{- shared.Unique("flags", "https", "S") -}}
-      {%- end -%}
 
   features-100-ingress-tls:
     template: |
@@ -1575,7 +1552,7 @@ validationTests:
       - {type: contains, target: cert:default_example-tls.pem, pattern: "BEGIN CERTIFICATE"}
 
   test-ingress-default-https:
-    description: "A plain Ingress with no spec.tls is served over HTTPS by default — the chart binds its https port and terminates TLS with the default certificate (extraContext.ingressDefaultHTTPS defaults true). See features-100-ingress-bind."
+    description: "A plain Ingress with no spec.tls is served over HTTPS on the chart's https port with the default certificate."
     fixtures: *fixturesPlainPlainExampleCom
     assertions:
       - type: haproxy_valid
@@ -1583,12 +1560,13 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: "bind \\*:443 ssl crt-list"}
 
   test-ingress-default-https-disabled:
-    description: "extraContext.ingressDefaultHTTPS=false keeps a plain Ingress (no spec.tls) plaintext-only — no https frontend is emitted even though the default certificate is configured. See features-100-ingress-bind."
-    extraContext: {ingressDefaultHTTPS: false}
+    description: "extraContext.ingressDefaultHTTPS=false keeps a host without spec.tls out of the default HTTP-to-HTTPS redirect; the https port stays bound."
+    extraContext: {ingressDefaultHTTPS: false, ingressDefaultSSLRedirect: true}
     fixtures: *fixturesPlainPlainExampleCom
     assertions:
       - type: haproxy_valid
-      - {type: not_contains, target: haproxy.cfg, pattern: "(?m)^frontend https$"}
+      - {type: not_contains, target: haproxy.cfg, pattern: "redirect scheme https"}
+      - {type: contains, target: haproxy.cfg, pattern: "(?m)^frontend https$"}
 
   test-ingress-default-ssl-redirect:
     description: "extraContext.ingressDefaultSSLRedirect=true redirects every HTTPS-served Ingress host from HTTP to HTTPS with the configured code (default 308), reusing the shared ssl-redirect map. See features-105-ingress-ssl-redirect."

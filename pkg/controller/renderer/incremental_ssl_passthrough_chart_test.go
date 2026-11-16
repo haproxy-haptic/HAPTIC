@@ -55,11 +55,8 @@ const sslPassthroughChartRoot = `{%- import "util-ssl-passthrough-backends" for 
 {%- var _, _ = shared.ComputeIfAbsent("globalFeatures", func() any {
   return map[string]any{
     "sslPassthroughBackends": toSlice(extraContext | dig("gatewayBackends")),
-    "bindHTTPSDefault": false,
-    "needHTTPSFrontend": false,
   }
 }) -%}
-{{- render "features-140-ssl-passthrough-binds" -}}
 {%- var values = SSLPassthroughBackends() -%}
 # values
 {%- for _, value := range values %}
@@ -434,7 +431,6 @@ func loadSSLPassthroughChartSnippets(t *testing.T) map[string]config.TemplateSni
 		"util-gated-pod-routable":                   true,
 		"util-ssl-passthrough-backends":             true,
 		"util-ssl-sni-use-backend-lines":            true,
-		"features-140-ssl-passthrough-binds":        true,
 		"frontends-500-ssl-tcp":                     true,
 		"backends-500-ssl-loopback":                 true,
 		"util-annotation-ssl-passthrough-component": true,

@@ -965,7 +965,8 @@ Review these behavior changes before upgrading:
   snippets; see [access logging](operations/access-logging.md).
 - Ingress serves HTTPS using the default certificate. Set
   `controller.config.templatingSettings.extraContext.ingressDefaultHTTPS: false`
-  if you require plaintext-only Ingress without an explicit TLS declaration.
+  to keep hosts without an explicit TLS declaration out of the global
+  HTTP-to-HTTPS redirect.
 - HAProxy response compression is opt-in. If you used an alpha version's automatic
   compression, set `haproxy-haptic.org/compress-enable: "true"` on appropriate
   routes. Avoid compressing responses that combine secrets with attacker-controlled

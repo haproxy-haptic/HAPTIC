@@ -46,13 +46,7 @@ validationTests:
                 protocol: HTTPS
                 tls:
                   mode: Terminate
-                  # Listeners need certificateRefs for the bind-decision
-                  # cert-resolvability check (features-150-gateway-bind)
-                  # to greenlight the frontend rendering. Without a
-                  # registered cert the listener is treated as
-                  # unresolvable and dropped — same path
-                  # GatewayFrontendInvalidDefaultClientCertificateValidation
-                  # exercises with NoValidCACertificate.
+                  # An unresolvable cert would drop the listener's bind.
                   certificateRefs:
                     - {kind: Secret, name: shared-tls}
               - name: l-https-8443

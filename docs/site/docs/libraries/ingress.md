@@ -284,16 +284,9 @@ application, also configure [backend TLS](haptic-annotations.md#backend-tls-to-t
 
 #### HTTPS on by default
 
-Every Ingress is served over **both HTTP and HTTPS** out of the box, even without a `spec.tls` entry. HAPTIC binds the chart's https port (`haproxy.ports.https`, default `443`) and terminates TLS with the [default certificate](../ssl-certificates.md) — a self-signed cert out of the box — routing HTTPS requests through the same host and path rules as HTTP. A `spec.tls` entry layers a host-specific certificate on top: that host is served with its own certificate instead of the default.
+Every Ingress is served over **both HTTP and HTTPS** out of the box, even without a `spec.tls` entry. HAProxy always listens on the chart's https port (`haproxy.ports.https`, default `443`) and terminates TLS with the [default certificate](../ssl-certificates.md) — a self-signed cert out of the box — routing HTTPS requests through the same host and path rules as HTTP. A `spec.tls` entry layers a host-specific certificate on top: that host is served with its own certificate instead of the default.
 
-Two `extraContext` settings control the default HTTPS bind:
-
-| Key | Default | Effect |
-|-----|---------|--------|
-| `ingressDefaultHTTPS` | `true` | Bind the https port for every Ingress using the default certificate. Set `false` to serve Ingress over plain HTTP only until a host opts in with `spec.tls`. |
-| `tls.defaultCertificate.name` / `tls.defaultCertificate.namespace` | chart-set | The Secret backing the default certificate. When the default certificate is disabled (`defaultSSLCertificate.enabled=false`), there is no cert to bind, so the https port stays closed regardless of `ingressDefaultHTTPS`. |
-
-To serve Ingress over plain HTTP only, disable the default bind through the chart:
+`ingressDefaultHTTPS` (default `true`) decides whether a host without `spec.tls` counts as HTTPS-served. Only HTTPS-served hosts get the [global redirect](#redirect-http-to-https), and they satisfy a governance rule with `satisfiedBy: tls`. Set it to `false` to keep hosts without `spec.tls` out of both:
 
 ```yaml
 controller:
@@ -303,9 +296,11 @@ controller:
         ingressDefaultHTTPS: false
 ```
 
+The https port stays open either way, so those hosts still answer HTTPS requests with the default certificate. The setting has no effect when the default certificate is disabled (`defaultSSLCertificate.enabled=false`).
+
 #### Redirect HTTP to HTTPS
 
-To send all Ingress traffic to HTTPS, turn on the global redirect. HAPTIC then emits an `http-request redirect scheme https` rule for every Ingress host that's served over HTTPS (the default-HTTPS bind is on, or the host has its own `spec.tls`), so it never redirects to a closed port:
+To send all Ingress traffic to HTTPS, turn on the global redirect. HAPTIC then emits an `http-request redirect scheme https` rule for every Ingress host that's served over HTTPS (`ingressDefaultHTTPS` is on, or the host has its own `spec.tls`):
 
 ```yaml
 controller:
