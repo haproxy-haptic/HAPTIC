@@ -711,7 +711,7 @@ validationTests:
       - type: haproxy_valid
       - {type: not_contains, target: haproxy.cfg, pattern: 'crt gw-clientcert-'}
       - {type: not_exists, target: "cert:gw-clientcert-gateway-conformance-infra-gw-cc-nogrant.pem"}
-      - {type: contains, target: haproxy.cfg, pattern: 'http-request return status 503'}
+      - {type: contains, target: "backend:gw_h_gateway-conformance-infra_cc-nogrant_cc-backend_8443", pattern: 'http-request return status 503'}
       - {type: contains, target: "status:gateway-conformance-infra/gw-cc-nogrant:rendered", pattern: '"reason":"RefNotPermitted","status":"False","type":"ResolvedRefs"'}
 
   test-gateway-backend-client-cert-cross-namespace-with-grant:
@@ -754,7 +754,7 @@ validationTests:
     assertions:
       - type: haproxy_valid
       - {type: contains, target: haproxy.cfg, pattern: 'ssl verify none .*crt gw-clientcert-gateway-conformance-infra-gw-cc-grant\.pem'}
-      - {type: not_contains, target: haproxy.cfg, pattern: 'http-request return status 503'}
+      - {type: not_contains, target: "backend:gw_h_gateway-conformance-infra_cc-grant_cc-backend_8443", pattern: 'http-request return status 503'}
       - {type: contains, target: "status:gateway-conformance-infra/gw-cc-grant:rendered", pattern: '"reason":"ResolvedRefs","status":"True","type":"ResolvedRefs"'}
 
   test-gateway-backend-client-cert-only-from-accepting-gateway:

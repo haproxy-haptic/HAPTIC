@@ -251,7 +251,7 @@ func loadRequestValidationSnippets(t *testing.T) map[string]config.TemplateSnipp
 	require.NoError(t, err)
 	var library requestValidationChartLibrary
 	require.NoError(t, yaml.Unmarshal(content, &library))
-	wanted := []string{"util-haptic-request-validation-bindings", requestValidationPublicationComponent}
+	wanted := []string{"util-haptic-request-validation-bindings", "util-haptic-request-schema-secret-foreign", requestValidationPublicationComponent}
 	result := make(map[string]config.TemplateSnippet, len(wanted))
 	for _, name := range wanted {
 		chartSnippet, exists := library.TemplateSnippets[name]
