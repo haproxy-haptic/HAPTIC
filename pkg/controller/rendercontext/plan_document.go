@@ -147,6 +147,7 @@ func (r *PlanRegistry) documentPlanMetadata(
 		Sections:      slices.Clone(r.assembled),
 		Profiles:      r.profiles(),
 		Maps:          r.mapFiles(mapContents),
+		CRTLists:      crtLists(files),
 		Files:         sortedFiles(files),
 	}, backends, nil
 }

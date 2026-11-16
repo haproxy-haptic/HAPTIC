@@ -173,7 +173,7 @@ const (
 	OpCASet                = "ca_set"             // Path
 	OpCANew                = "ca_new"             // Path
 	OpCRTListAdd           = "crtlist_add"        // Path (list), Cert (the crt-list line token: bare under crt-base), Options, SNIFilters (payload form)
-	OpCRTListDel           = "crtlist_del"        // Path (list), Cert (as in crtlist_add)
+	OpCRTListDel           = "crtlist_del"        // Path (list), Cert (the store name: crt-base joined onto the line token)
 )
 
 // Op is one typed runtime command. Fields not used by a kind are empty. Every

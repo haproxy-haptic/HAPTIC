@@ -16,6 +16,7 @@ package haproxytest
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -184,15 +185,25 @@ func (h *HAProxy) delSSL(rest string) reply {
 	entries := h.m.CRTLists[list]
 	kept := entries[:0]
 	for _, e := range entries {
-		if !strings.HasPrefix(e, cert) {
+		if !crtListEntryNamed(e, cert) {
 			kept = append(kept, e)
 		}
 	}
 	if len(kept) == len(entries) {
-		return failure("No such certificate '%s' in crt-list.", cert)
+		return failure("Can't delete the entry: certificate '%s' does not exist!", cert)
 	}
 	h.m.CRTLists[list] = kept
 	return silent()
+}
+
+// crtListEntryNamed matches del ssl crt-list's argument as HAProxy does: by the
+// certificate's store name, which joins crt-base onto a bare line token.
+func crtListEntryNamed(line, cert string) bool {
+	token, _, _ := strings.Cut(line, " ")
+	if strings.Contains(token, "/") {
+		return cert == token
+	}
+	return strings.Contains(cert, "/") && path.Base(cert) == token
 }
 
 func (h *HAProxy) addMap(rest, payload string) reply {

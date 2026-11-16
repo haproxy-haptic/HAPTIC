@@ -492,7 +492,11 @@ whose runtime CLI differs — with no Kubernetes cluster involved.
 Under `default-path origin`, HAProxy names a map, a certificate and a crt-list at
 runtime by the literal base-relative string the configuration references. That
 string is also the manifest's `File.Path` and an op's `Path`, so no component
-translates paths. `TestRuntimeNamesAreTheManifestPaths` pins that.
+translates paths. `TestRuntimeNamesAreTheManifestPaths` pins that. One asymmetry
+is HAProxy's own: `add ssl crt-list` joins `crt-base` onto a bare line token, but
+`del ssl crt-list` doesn't, so `crtlist_add.Cert` is the bare filename and
+`crtlist_del.Cert` is the store name `ssl/<file>`. `TestCertificateOpsRunAtRuntime`
+pins both.
 
 To debug one test and see the logs emitted on failure:
 

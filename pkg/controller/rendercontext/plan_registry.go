@@ -469,6 +469,7 @@ func (r *PlanRegistry) plan(
 		Backends:      backends,
 		Profiles:      r.profiles(),
 		Maps:          r.mapFiles(mapContents),
+		CRTLists:      crtLists(files),
 		Files:         sortedFiles(files),
 	}
 	plan.ComputeID()
