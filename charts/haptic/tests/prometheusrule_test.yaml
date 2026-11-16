@@ -421,6 +421,7 @@ tests:
       namespace: edge
     set:
       fullnameOverride: haptic
+      haproxy.monitoring.podMonitor.enabled: true
     asserts:
       - contains:
           path: spec.groups[0].rules
@@ -445,6 +446,14 @@ tests:
   - it: has no collector alert without the vector sidecar
     set:
       vector.enabled: false
+    asserts:
+      - notContains:
+          path: spec.groups[0].rules
+          content:
+            alert: HAProxyAccessLogCollectorDown
+          any: true
+
+  - it: has no collector alert without the HAProxy PodMonitor that scrapes vector
     asserts:
       - notContains:
           path: spec.groups[0].rules

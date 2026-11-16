@@ -504,7 +504,7 @@ The chart's `PrometheusRule` deploys these seventeen alerts when `controller.mon
 | `HAProxyAgentVersionSkew` | `agentVersionSkew` | `increase(haptic_agent_version_skew_total[15m]) > 0` for 30m |
 | `HAProxyAccessLogRecordsDropped` | `accessLogDropped` | `increase(haptic_access_log_dropped_records_total[5m]) > 0` |
 | `HAProxyAccessLogSendFailed` | `accessLogDropped` | `increase(haproxy_process_dropped_logs_total[5m]) > 0` |
-| `HAProxyAccessLogCollectorDown` | `accessLogDropped` (with `vector.enabled`) | `up{endpoint="vector-metrics"}` of the HAProxy PodMonitor `== 0` for 2m |
+| `HAProxyAccessLogCollectorDown` | `accessLogDropped` (with `vector.enabled` and `haproxy.monitoring.podMonitor.enabled`) | `up{endpoint="vector-metrics"}` of the HAProxy PodMonitor `== 0` for 2m |
 
 Turn one rule off, or replace the whole set with your own:
 

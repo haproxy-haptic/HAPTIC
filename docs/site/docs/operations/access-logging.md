@@ -253,7 +253,8 @@ pipeline.
 `HAProxyAccessLogRecordsDropped` (Vector read too slowly: check its CPU budget),
 `HAProxyAccessLogSendFailed` (HAProxy couldn't send: check the Vector container),
 and `HAProxyAccessLogCollectorDown` (Vector isn't answering scrapes, so records
-are lost uncounted). You can also [reduce log volume](#dropping-records-you-dont-need),
+are lost uncounted). All three read series that the HAProxy PodMonitor scrapes,
+so they need `haproxy.monitoring.podMonitor.enabled: true`. You can also [reduce log volume](#dropping-records-you-dont-need),
 which reduces the requests available for log-derived metrics and traces.
 
 ## Vector sidecar

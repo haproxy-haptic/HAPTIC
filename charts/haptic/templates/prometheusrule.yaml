@@ -147,7 +147,7 @@ spec:
           annotations:
             summary: "HAProxy could not send access-log records"
             description: "Pod {{ `{{ $labels.pod }}` }} failed to send {{ `{{ $value | humanize }}` }} log records in 5m. Requests are unaffected; the log is incomplete. Check the vector container on that pod."
-        {{- if .Values.vector.enabled }}
+        {{- if and .Values.vector.enabled .Values.haproxy.monitoring.podMonitor.enabled }}
         - alert: HAProxyAccessLogCollectorDown
           expr: up{job="{{ .Release.Namespace }}/{{ include "haptic.fullname" . }}-haproxy", endpoint="vector-metrics"} == 0
           for: 2m
