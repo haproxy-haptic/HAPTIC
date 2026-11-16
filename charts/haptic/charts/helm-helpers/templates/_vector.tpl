@@ -59,7 +59,7 @@ guard that lives only here would not protect a hand-written CR.
   {{- fail "vector.excludeMaintServerMetrics moved to controller.config.templatingSettings.extraContext.prometheusExporter.excludeMaintServers: HAProxy applies ?no-maint itself, for every scraper." -}}
 {{- end -}}
 {{- if hasKey $v "socketPath" -}}
-  {{- fail "vector.socketPath was removed: HAProxy now sends the access log to vector over UDP on the pod's loopback, because the pod's UNIX datagram queue holds only 10 records and overflowed on reloads. Delete the value." -}}
+  {{- fail "vector.socketPath was removed: HAProxy now sends the access log to Vector over loopback UDP. Delete the value." -}}
 {{- end -}}
 {{- if hasKey $v "podMonitor" -}}
   {{- fail "vector.podMonitor moved to haproxy.monitoring.podMonitor: one PodMonitor now scrapes every metrics endpoint on the HAProxy pod — HAProxy's exporter (stats port), vector's endpoints and, without vector, the hub's. Same fields (enabled, interval, scrapeTimeout, labels, relabelings, metricRelabelings)." -}}

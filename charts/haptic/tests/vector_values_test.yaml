@@ -11,7 +11,7 @@ tests:
       vector.socketPath: /run/vector/haproxy.sock
     asserts:
       - failedTemplate:
-          errorMessage: 'vector.socketPath was removed: HAProxy now sends the access log to vector over UDP on the pod''s loopback, because the pod''s UNIX datagram queue holds only 10 records and overflowed on reloads. Delete the value.'
+          errorMessage: 'vector.socketPath was removed: HAProxy now sends the access log to Vector over loopback UDP. Delete the value.'
 
   - it: should reject a metricsPort that collides with an HAProxy port
     template: haproxytemplateconfig.yaml
