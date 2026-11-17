@@ -143,7 +143,6 @@ templateSnippets:
   frontends-600-gateway-tls-listener:
     requires: [gateways, namespaces, referencegrants, secrets, services]
     template: |
-      {%- import "util-ssl-passthrough-backends" for SSLPassthroughBackends -%}
       {%- import "util-gateway-tls-dispatch-frontend" for TLSDispatchFrontend, TLSListenerBindOptions, TLSRouteLines -%}
       {%- import "util-backend" for Backend -%}
       {%- var byPortRaw = shared.Get("gatewayTLSListenersByPort") %}
@@ -161,21 +160,6 @@ templateSnippets:
         {%- var byPort = byPortRaw.(map[int]any) %}
         {%- var httpsPort = toint(extraContext | dig("httpsPort") | fallback(8443)) %}
         {%- var allBackends = incremental_values("gateway-ssl-passthrough", "backends") | sort_by([]string{"$.rank"}) %}
-        {#- Determine whether the chart-static HTTPS frontend or ssl-tcp
-            will bind the chart-static httpsPort. The two flags
-            (bindHTTPSDefault + len(passthroughBackends)>0) cover both
-            cases: bindHTTPSDefault gates the chart-static `bind *:httpsPort`
-            in mode-http; the ssl-tcp frontend renders only when
-            bindHTTPSDefault AND there's at least one passthrough
-            backend. If both are absent, the port is free for the new
-            TLS frontend to claim — which is what the upstream
-            TLSRouteTerminateSimpleSameNamespace fixture needs (a
-            Gateway with a TLS-Terminate listener on httpsPort and
-            nothing else competing for that port). -#}
-        {%- var gf = shared.Get("globalFeatures").(map[string]any) %}
-        {%- var bindHTTPSDefault = tostring(dig(gf, "bindHTTPSDefault")) == "true" %}
-        {%- var hasPassthroughBackends = len(SSLPassthroughBackends()) > 0 %}
-        {%- var chartStaticBindsHTTPSPort = bindHTTPSDefault || hasPassthroughBackends %}
         {#- Sort port keys numerically for deterministic output. Bare
             sort_strings would give "10" before "2"; sort_ints is the
             right tool because byPort is keyed by port number. -#}
@@ -185,8 +169,8 @@ templateSnippets:
         {%- end %}
         {%- var portKeys = sort_ints(portKeysRaw) %}
         {%- for _, port := range portKeys %}
-          {#- The allocated Gateway pod port remains active when a chart-static frontend owns the source port. -#}
-          {%- if port != httpsPort || !chartStaticBindsHTTPSPort %}
+          {#- The chart-static HTTPS frontend (or ssl-tcp) always owns httpsPort; the allocated Gateway pod port stays active. -#}
+          {%- if port != httpsPort %}
             {%- var portEntry = byPort[port].(map[string]any) %}
             {%- var portMode = tostring(portEntry["mode"]) %}
             {%- if len(toSlice(portEntry["listeners"])) > 1 %}

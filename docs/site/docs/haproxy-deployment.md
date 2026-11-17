@@ -56,6 +56,14 @@ its ports through `haproxy.service.*` and pod ports through `haproxy.ports.*`:
 `https-quic` carries [HTTP/3](#http3-quic). It follows the `https` entry's port
 and nodePort, and setting `haproxy.service.https.port: 0` drops both.
 
+HAProxy listens on `haproxy.ports.http` and `haproxy.ports.https` as soon as it
+starts, whether or not any Ingress or Gateway routes traffic. A request that
+matches no route gets `404 Not Found` (gRPC clients get status `UNIMPLEMENTED`),
+and HTTPS connections are answered with the
+[default certificate](ssl-certificates.md#default-ssl-certificate). Adding the
+first route or removing the last one doesn't open or close a port, so it doesn't
+reload HAProxy.
+
 The agent gets its own internal-only `ClusterIP` Service (`<fullname>-haproxy-dataplane`, for example `<release>-haptic-haproxy-dataplane`) on port 5555. Its type comes from `haproxy.agent.service.type`.
 
 **Local access**, including kind clusters, works with `kubectl port-forward`

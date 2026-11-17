@@ -26,6 +26,7 @@ test-backendtlspolicy-tlsroute-unsupported-identity-rejects
 test-gateway-backend-client-cert-file-name-bounded-for-maximum-length-gateway-name
 test-gateway-backend-client-cert-shape
 test-gateway-bind-per-gateway-shape
+test-gateway-conformance-invalid-default-client-validation
 test-gateway-crtlist-per-listener-shapes
 test-gateway-frontend-client-cert-default-line-verify
 test-gateway-frontend-client-cert-insecure-fallback-default-line

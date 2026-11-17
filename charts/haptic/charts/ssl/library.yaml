@@ -241,15 +241,11 @@ templateSnippets:
 
   log-fields-200-tls:
     template: |-
-      {# Gated per INSTALL, not per frontend: one format string is shared by every
-          HTTP frontend, so a per-frontend gate would break the single JSON schema
-          (ssl_fc_* render "" on plain HTTP). Cipher omitted — the global
-          ssl-default-bind-ciphers policy makes it near-constant fleet-wide. #}
-      {%- var gfRaw = shared.Get("globalFeatures") -%}
-      {%- if gfRaw != nil && tostring(gfRaw.(map[string]any) | dig("needHTTPSFrontend")) == "true" %}
+      {# One format string is shared by every HTTP frontend, so ssl_fc_* render ""
+          on plain HTTP. Cipher omitted — the global ssl-default-bind-ciphers policy
+          makes it near-constant fleet-wide. #}
       %(tls_version)[ssl_fc_protocol]
       %(tls_sni)[ssl_fc_sni]
-      {%- end %}
 
   log-fields-205-tls-resumption:
     template: |-
@@ -272,10 +268,6 @@ templateSnippets:
           "tlsCertificates":             []any{},
           "sslRedirectHosts":            []any{},
           "clientCertVerifyHosts":       map[string]any{},
-          "bindHTTPDefault":             false,
-          "bindHTTPSDefault":            false,
-          "needHTTPFrontend":            false,
-          "needHTTPSFrontend":           false,
         }
       }) -%}
       {#- globalFeatures may have been created by another library without these keys. -#}
@@ -291,23 +283,6 @@ templateSnippets:
       {%- end -%}
       {%- if gf["clientCertVerifyHosts"] == nil -%}
         {%- gf["clientCertVerifyHosts"] = map[string]any{} -%}
-      {%- end -%}
-      {#- Each resource library's features-100-* ORs into these. bindHTTP(S)Default is
-          narrower than needHTTP(S)Frontend: a listener on a non-default port needs the
-          frontend but leaves the chart-static bind off, and a listener whose cert
-          failed validation deliberately leaves bindHTTPSDefault false so HAProxy never
-          answers its handshakes. -#}
-      {%- if gf["bindHTTPDefault"] == nil -%}
-        {%- gf["bindHTTPDefault"] = false -%}
-      {%- end -%}
-      {%- if gf["bindHTTPSDefault"] == nil -%}
-        {%- gf["bindHTTPSDefault"] = false -%}
-      {%- end -%}
-      {%- if gf["needHTTPFrontend"] == nil -%}
-        {%- gf["needHTTPFrontend"] = false -%}
-      {%- end -%}
-      {%- if gf["needHTTPSFrontend"] == nil -%}
-        {%- gf["needHTTPSFrontend"] = false -%}
       {%- end -%}
 
   features-085-ssl-hsts-global:
@@ -365,23 +340,6 @@ templateSnippets:
         {%- var _, tkErr = fileRegistry.Register("file", "tls-ticket-keys", content) -%}
         {%- if tkErr != nil -%}{{ fail("failed to register tls-ticket-keys file: " + tostring(tkErr)) }}{%- end -%}
       {%- end -%}
-
-  features-140-ssl-passthrough-binds:
-    template: |
-      {# Lives here, not in gateway/: an annotation-driven passthrough with no Gateway
-          API left bindHTTPSDefault false and silently skipped the ssl-tcp frontend.
-          Passthrough deliberately does NOT set needHTTPSTermination — a port with only
-          TLS listeners must RST unclaimed SNIs, not serve the 404 the ssl-loopback
-          fall-through would give. #}
-      {%- import "util-ssl-passthrough-backends" for SSLPassthroughBackends -%}
-      {%- var gf = shared.Get("globalFeatures").(map[string]any) %}
-      {%- var passthroughBackends = SSLPassthroughBackends() %}
-      {%%
-        if len(passthroughBackends) > 0 || dig(gf, "tlsInspectionRequired") == true {
-          gf["bindHTTPSDefault"] = true
-          gf["needHTTPSFrontend"] = true
-        }
-      %%}
 
   util-ssl-default-certificate-bindings:
     template: |-
@@ -814,7 +772,7 @@ templateSnippets:
       {%- import "util-ssl-passthrough-backends" for SSLPassthroughBackends -%}
       {%- var gfMap = shared.Get("globalFeatures").(map[string]any) -%}
       {%- var passthroughBackends = SSLPassthroughBackends() -%}
-      {%- var sslTCPOwnsPort = (len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true) && tostring(gfMap | dig("bindHTTPSDefault")) == "true" -%}
+      {%- var sslTCPOwnsPort = len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true -%}
       {%- if !sslTCPOwnsPort && tostring(extraContext | dig("proxyProtocol", "enabled") | fallback(false)) == "true" %}
       bind *:{{ toint(extraContext | dig("proxyProtocol", "httpsPort") | fallback(8444)) }} accept-proxy name https-proxy-protocol{{ render "util-ssl-bind-options" }}
       {%- end -%}
@@ -834,8 +792,7 @@ templateSnippets:
       {%- var gf = shared.Get("globalFeatures") -%}
       {%- var gfMap = gf.(map[string]any) -%}
       {%- var passthroughBackends = SSLPassthroughBackends() -%}
-      {%- var bindHTTPSDefault = tostring(gfMap | dig("bindHTTPSDefault")) == "true" -%}
-      {%- if (len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true) && bindHTTPSDefault -%}
+      {%- if len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true -%}
       # ssl/frontends-ssl-tcp
 
       frontend ssl-tcp
@@ -868,12 +825,9 @@ templateSnippets:
           {%- end %}
           {%- end %}
 
-          {%- var needHTTPSTermination = tostring(gfMap | dig("needHTTPSTermination")) == "true" %}
-          {%- if needHTTPSTermination %}
           # Unmatched SNIs fall through to ssl-loopback (the chart's HTTPS-frontend bridge) for
-          # cert-based TLS termination — HTTPS Gateway listeners / Ingress spec.tls.
+          # cert-based TLS termination.
           default_backend ssl-loopback
-          {%- end %}
 
       {% end -%}
 
@@ -908,27 +862,21 @@ templateSnippets:
       {%- var gf = shared.Get("globalFeatures") -%}
       {%- var gfMap = gf.(map[string]any) -%}
       {%- var passthroughBackends = SSLPassthroughBackends() -%}
-      {%- var needHTTPSFrontend = tostring(gfMap | dig("needHTTPSFrontend")) == "true" -%}
-      {%- var bindHTTPSDefault = tostring(gfMap | dig("bindHTTPSDefault")) == "true" -%}
-      {#- Gated because a frontend with no bind is an HAProxy validation error: render
-          only when something terminates TLS (Ingress spec.tls, a Gateway HTTPS/TLS
-          listener on any port, or passthrough needing the unix-socket loopback). -#}
-      {%- if needHTTPSFrontend -%}
+      {#- The default HTTPS port is bound whether or not any route uses it, so the
+          first and last route never open or close a port. The crt-list always holds
+          the default certificate, which HAProxy requires of an `ssl` bind. #}
       # ssl/frontends-https
 
       frontend https
           guid fe:https
           mode http{{ render "util-http-frontend-settings" }}
-      {%- if (len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true) && bindHTTPSDefault %}
+      {%- if len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true %}
           bind unix@/etc/haproxy/ssl-frontend.sock mode 660{{ render "util-ssl-bind-options" }} accept-proxy
-      {%- else if bindHTTPSDefault %}
+      {%- else %}
           bind *:{{ extraContext | dig("httpsPort") | fallback(8443) }}{{ render "util-ssl-bind-options" }}
       {%- end %}
       {#- UDP stays free even when ssl-tcp owns the TCP port for passthrough. -#}
-      {%- var quicBind = "" %}
-      {%- if bindHTTPSDefault %}
-        {%- quicBind = HTTP3Bind(toint(extraContext | dig("httpsPort") | fallback(8443)), "certificate-list.txt", "") %}
-      {%- end %}
+      {%- var quicBind = HTTP3Bind(toint(extraContext | dig("httpsPort") | fallback(8443)), "certificate-list.txt", "") %}
       {%- if quicBind != "" %}
           {{ quicBind }}
       {%- end %}
@@ -952,7 +900,6 @@ templateSnippets:
 
           # Default backend
           default_backend default_backend
-      {%- end -%}
 
 # Only the default cert is declared here; resource libraries register every other
 # TLS Secret at render time via fileRegistry as {namespace}_{secretname}.pem.
@@ -1004,6 +951,16 @@ validationTests:
           data:
             tls.crt: *test_tls_crt
             tls.key: *test_tls_key
+
+  test-ssl-default-https-bind-without-routes:
+    description: The default HTTPS port is bound with the default certificate even when no resource routes traffic.
+    extraContext: {httpsPort: 443}
+    fixtures: {}
+    assertions:
+      - {type: haproxy_valid}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend https\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:443 ssl crt-list \S*certificate-list\.txt '}
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '(?m)^default\.pem '}
+      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^frontend ssl-tcp$'}
 
   test-ssl-additional-certificates-explicit:
     extraContext:
@@ -1114,7 +1071,7 @@ validationTests:
           data: {tls.crt: *test_tls_crt, tls.key: *test_tls_key}
     assertions:
       - {type: haproxy_valid}
-      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^frontend https$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend https$'}
       - {type: contains, target: crt-list:certificate-list.txt, pattern: 'haptic_available\.pem \[ocsp-update on\] new\.example'}
 
   test-ssl-additional-certificates-foreign-namespace:

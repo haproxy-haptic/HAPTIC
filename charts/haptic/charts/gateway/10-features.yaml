@@ -65,9 +65,8 @@ templateSnippets:
   # util-tls-cert-by-secret
   #
   # Indexes gf.tlsCertificates by `<secret_namespace>/<secret_name>` so the
-  # cert-resolvability check in phases 1/2/4 plus features-150-gateway-bind
-  # is a single map lookup instead of an O(N) scan. Cached via
-  # shared.ComputeIfAbsent so the index is built at most once per render
+  # cert-resolvability check in phases 1/2/4 is a single map lookup
+  # instead of an O(N) scan. Cached via shared.ComputeIfAbsent so the index is built at most once per render
   # (any caller can render this util — order is irrelevant since the cache
   # ignores duplicate calls).
   #
@@ -185,7 +184,7 @@ templateSnippets:
                 "secret_namespace": secretNamespace,
                 "secret_name": secretName,
                 "listener_hostname": listener.Hostname,
-                "listener_port": listener.Port,
+                "listener_key": namespace + "/" + name + "/" + listener.Name,
               }
               show shared.Publish("occurrences", occurrenceKey, occurrence)
 
@@ -213,9 +212,14 @@ templateSnippets:
     template: |
       {{- render "gateway-tls-permissions-100-gateway" default "" -}}
       {{- render "gateway-tls-certificates-100-gateway" -}}
+      {{- render "gateway-listener-mtls-100-gateway" default "" -}}
       {%%
         var _, _ = shared.ComputeIfAbsent("gatewayCertAggregates", func() any {
           var certAggregates = map[string]map[string]any{}
+          var blockedListeners = map[string]bool{}
+          for _, blocked := range incremental_values("gateway-listener-mtls", "blocked") {
+            blockedListeners[dig_string(blocked, "", "listener")] = true
+          }
           for _, occurrence := range incremental_values("gateway-tls-certificates", "resolved") {
             var secretNamespace = dig_string(occurrence, "", "secret_namespace")
             var secretName = dig_string(occurrence, "", "secret_name")
@@ -227,20 +231,17 @@ templateSnippets:
                 "secret_name": secretName,
                 "sni_patterns": []any{},
                 "is_gateway_default": false,
-                "listener_ports": []any{},
                 "pem": dig_string(occurrence, "", "pem"),
               }
               certAggregates[secretKey] = existing
             }
+            // The default HTTPS port must never serve a listener that refuses handshakes.
+            if blockedListeners[dig_string(occurrence, "", "listener_key")] { continue }
             var listenerHostname = dig_string(occurrence, "", "listener_hostname")
             if listenerHostname != "" {
               existing["sni_patterns"] = append(existing["sni_patterns"].([]any), listenerHostname)
             } else {
               existing["is_gateway_default"] = true
-            }
-            var listenerPort = toint(dig(occurrence, "listener_port") | fallback(0))
-            if listenerPort > 0 {
-              existing["listener_ports"] = append(existing["listener_ports"].([]any), listenerPort)
             }
             certAggregates[secretKey] = existing
           }
@@ -269,7 +270,7 @@ templateSnippets:
       #}
       {# Two-pass cert registration. Pass 1 — walking every
           (gateway, listener, certRef) triple to aggregate per-secret
-          (sni_patterns, listener_ports, is_gateway_default) — lives in
+          (sni_patterns, is_gateway_default) — lives in
           util-aggregate-gateway-cert-metadata. We render that snippet
           to populate the shared cache, then load the result and emit
           one tlsCert entry per unique secret here.
@@ -309,7 +310,6 @@ templateSnippets:
             "sni_patterns":       agg["sni_patterns"],
             "sanitized_filename": sanitizedFilename,
             "is_gateway_default": agg["is_gateway_default"],
-            "listener_ports":     agg["listener_ports"],
           }
           var tlsCerts []any = gf["tlsCertificates"]
           gf["tlsCertificates"] = append(tlsCerts, tlsCert)
@@ -683,9 +683,9 @@ templateSnippets:
           spec.tls.frontend.default.validation set MUST refuse TLS
           handshakes when the configured CA can't be resolved — closes
           the GatewayFrontendInvalidDefaultClientCertificateValidation
-          conformance gap. Read by features-150-gateway-bind to gate
-          bindHTTPSDefault / needHTTPSFrontend so the listener's bind
-          line drops out of the rendered HAProxy config. -#}
+          conformance gap. Read by the per-listener crt-list and bind
+          snippets so the listener's bind drops out of the rendered
+          HAProxy config. -#}
       {%- var mtlsBlockedListeners = gf["mtlsBlockedListeners"].(map[string]any) %}
       {#- gatewayListenerMTLSConfig: per-(Gateway, listener) resolved
           mTLS state, keyed by `<gwNs>/<gwName>/<listenerName>`. Each
@@ -898,23 +898,14 @@ templateSnippets:
   # Route Analysis (Cached)
   # ============================================================================
 
-  util-gateway-bind-flags-bindings:
-    template: |-
-      {{- toJSON(map[string]any{"gateways": map[string]any{
-        "httpPort": toint(extraContext | dig("httpPort") | fallback(8080)),
-        "httpsPort": toint(extraContext | dig("httpsPort") | fallback(8443)),
-      }}) -}}
-
-  # Each Gateway's contribution to the chart-static bind flags and its TLS
-  # listeners, published once per Gateway and replayed for unrelated changes
-  # (#226). An HTTPS or TLS-Terminate listener counts only with a resolved
-  # certificate and no blocked frontend validation, so an invalid cert never
-  # lights the HTTPS bind.
-  gateway-bind-flags-100-gateway:
+  # Each Gateway's TLS listeners, published once per Gateway and replayed for
+  # unrelated changes (#226). A TLS-Terminate listener is servable only with a
+  # resolved certificate and no blocked frontend validation.
+  gateway-tls-listeners-100-gateway:
     requires: [gateways, secrets]
     incremental:
-      bindingsTemplate: '{{- render "util-gateway-bind-flags-bindings" -}}'
-      group: gateway-bind-flags
+      source: gateways
+      group: gateway-tls-listeners
       consumes: [gateway-tls-certificates]
       optionalConsumes: [gateway-host-listenersets, gateway-listener-mtls]
       effects: [publishValue]
@@ -925,40 +916,23 @@ templateSnippets:
         var gateway = resources.gateways.GetSingle(namespace, name)
         if gateway != nil {
           var gatewayKey = namespace + "/" + name
-          var httpPort = toint(props["httpPort"])
-          var httpsPort = toint(props["httpsPort"])
           var fixed = func(value int) string {
             var encoded = tostring(value)
             var zeroes = "0000000000"
             if len(encoded) >= len(zeroes) { return encoded }
             return zeroes[:len(zeroes)-len(encoded)] + encoded
           }
-          var flags = map[string]bool{}
           var tlsListeners = []any{}
           var apply = func(listener any, resolvedCert bool) {
-            var protocol = dig_string(listener, "", "protocol")
-            var port = toint(dig(listener, "port") | fallback(0))
+            if dig_string(listener, "", "protocol") != "TLS" { return }
             var listenerName = dig_string(listener, "", "name")
-            if protocol == "HTTP" {
-              flags["needHTTPFrontend"] = true
-              if port == httpPort { flags["bindHTTPDefault"] = true }
-              return
-            }
-            if protocol != "HTTPS" && protocol != "TLS" { return }
             var _, blocked = shared.Select("gateway-listener-mtls", "blocked", gatewayKey + "/" + listenerName)
             var tlsMode = tostring(listener | dig("tls", "mode") | fallback("Terminate"))
-            if protocol == "TLS" {
-              tlsListeners = append(tlsListeners, map[string]any{
-                "port": port, "gwNs": namespace, "gwName": name, "name": listenerName,
-                "hostname": dig_string(listener, "", "hostname"), "mode": tlsMode,
-                "servable": !blocked && (tlsMode == "Passthrough" || resolvedCert),
-              })
-              return
-            }
-            if blocked || !resolvedCert { return }
-            flags["needHTTPSFrontend"] = true
-            flags["needHTTPSTermination"] = true
-            if port == httpsPort { flags["bindHTTPSDefault"] = true }
+            tlsListeners = append(tlsListeners, map[string]any{
+              "port": toint(dig(listener, "port") | fallback(0)), "gwNs": namespace, "gwName": name, "name": listenerName,
+              "hostname": dig_string(listener, "", "hostname"), "mode": tlsMode,
+              "servable": !blocked && (tlsMode == "Passthrough" || resolvedCert),
+            })
           }
           for listenerIndex, listener := range gateway.Spec.Listeners {
             var resolved = false
@@ -989,65 +963,22 @@ templateSnippets:
               apply(candidate, resolved)
             }
           }
-          for _, flag := range []string{"needHTTPFrontend", "bindHTTPDefault", "needHTTPSFrontend", "needHTTPSTermination", "bindHTTPSDefault"} {
-            if flags[flag] {
-              show shared.Publish("flags", flag, flag)
-            }
-          }
           for index, entry := range tlsListeners {
             show shared.Publish("tls", gatewayKey + "/" + fixed(index), entry)
           }
         }
       %%}
 
-  features-150-gateway-bind:
-    requires: [configmaps, gateways, grpcroutes, httproutes, namespaces, secrets]
+  features-150-gateway-tls-listeners:
+    requires: [configmaps, gateways, namespaces, secrets]
     template: |
-      {{- render "gateway-route-candidates-100-http" -}}
-      {{- render "gateway-route-candidates-200-grpc" -}}
-      {#-
-        Gateway / ListenerSet contribution to the chart-static bind decision.
-
-        Runs at priority 150, after features-100-* have populated
-        gf["tlsCertificates"] (Terminate listeners with valid certs)
-        and gf["sslPassthroughBackends"] (Passthrough listeners).
-        Here we OR our findings into:
-          - bindHTTPDefault   — emit `bind *:httpPort` for HTTP listeners
-                                at the chart's default http port
-          - bindHTTPSDefault  — emit `bind *:httpsPort` only when at
-                                least one valid cert (or passthrough
-                                backend) wants traffic on that port
-          - needHTTPFrontend  — render http_frontend block (any HTTP
-                                listener at any port — even non-default
-                                ones, so http-bind-extra-* has somewhere
-                                to attach)
-          - needHTTPSFrontend — same idea for HTTPS / TLS listeners /
-                                passthrough
-
-        The conformance gap this closes:
-        GatewayFrontendInvalidDefaultClientCertificateValidation
-        sends an HTTPS listener with NoValidCACertificate. The cert
-        registration in features-100-gateway-tls fails the PEM check
-        and skips the listener, so `tlsCertificates` ends up without
-        an entry for that secret. Reading the populated structure
-        rather than re-walking listeners means an invalid cert never
-        lights up the bind, and the LB doesn't expose port 443 to
-        connections HAProxy would otherwise answer with the chart's
-        default cert.
-      -#}
-      {%- var gf = shared.Get("globalFeatures").(map[string]any) %}
-      {%- var httpPort = toint(extraContext | dig("httpPort") | fallback(8080)) %}
-      {%- var httpsPort = toint(extraContext | dig("httpsPort") | fallback(8443)) %}
       {{- render "map-hostvalues-479-gateway-listenersets-empty" -}}
       {{- render "map-hostvalues-480-gateway-listenersets" default "" -}}
       {{- render "gateway-listener-mtls-100-gateway" default "" -}}
-      {{- render "gateway-bind-flags-100-gateway" -}}
-      {%- for _, flag := range incremental_values("gateway-bind-flags", "flags") %}
-        {%- gf[tostring(flag)] = true %}
-      {%- end %}
+      {{- render "gateway-tls-listeners-100-gateway" -}}
       {{- render "util-gateway-pod-port-allocator" -}}
       {%%
-        var tlsRecords = incremental_values("gateway-bind-flags", "tls")
+        var tlsRecords = incremental_values("gateway-tls-listeners", "tls")
         var allocations = shared.Get("gatewayPodPortAllocations").(map[string]any)
         if len(tlsRecords) > 0 {
           var byPortRaw, _ = shared.ComputeIfAbsent("gatewayTLSListenersByPort", func() any { return map[int]any{} })
@@ -1084,49 +1015,3 @@ templateSnippets:
           }
         }
       %%}
-      {#- HTTPRoutes / GRPCRoutes contribute to needHTTPFrontend
-          even when they aren't pinned to a specific Gateway in the
-          fixtures we see. Their routing logic emits inside the
-          http_frontend block (regardless of bind port — the routing
-          logic uses dst_port to disambiguate listener ports), so
-          the frontend has to exist whenever at least one route is
-          declared. The narrower bindHTTPDefault flag stays gated on
-          actual listeners at the chart's default httpPort. -#}
-      {%- if incremental_value_count("gateway-route-candidates", "presence-http") > 0 ||
-        incremental_value_count("gateway-route-candidates", "presence-grpc") > 0 -%}
-        {%- gf["needHTTPFrontend"] = true -%}
-      {%- end -%}
-      {#- Ingress contribution: any cert registered via
-          features-100-ingress-tls indicates an Ingress with spec.tls,
-          which the chart routes through the chart-static https
-          frontend at httpsPort. ingress.yaml's
-          features-100-ingress-bind already lit bindHTTPSDefault
-          + needHTTPSFrontend for that case; this is a defensive
-          re-affirmation when an Ingress's cert ends up in
-          tlsCertificates without going through that path. -#}
-      {%%
-        for _, certEntry := range gf["tlsCertificates"].([]any) {
-          var entry = certEntry.(map[string]any)
-          // Ingress-registered entries have no listener_ports key;
-          // detect by absence and infer the chart's default httpsPort.
-          var ports = entry | dig("listener_ports") | toSlice()
-          if len(ports) == 0 {
-            gf["needHTTPSFrontend"] = true
-            gf["bindHTTPSDefault"] = true
-            // HTTPS termination is configured: chart-static
-            // ssl-tcp's default_backend should fall through to
-            // ssl-loopback for SNIs not claimed by a passthrough
-            // route (the chart's pre-existing behaviour).
-            gf["needHTTPSTermination"] = true
-          }
-        }
-      %%}
-      {# HTTPS-Passthrough bind decisions moved to ssl.yaml's
-          `features-140-ssl-passthrough-binds`: `sslPassthroughBackends`
-          is cross-library shared state owned by ssl.yaml (any of
-          gateway, haproxy-ingress, nginx-ingress can populate it),
-          so the consequent bind-decision lives next to the consumer
-          (frontends-500-ssl-tcp) rather than in this Level-2 library.
-          Without that move, an ingress-only chart with annotation-driven
-          ssl-passthrough never saw `bindHTTPSDefault` lit, and the
-          TCP frontend silently failed to bind. #}

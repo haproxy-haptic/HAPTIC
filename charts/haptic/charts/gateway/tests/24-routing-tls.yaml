@@ -125,7 +125,7 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s+tcp-request content reject$'}
   test-tlsroute-invalid-backend-rejects-on-chart-static:
     requires: [gateways, tlsroutes]
-    description: "Mirrors the upstream TLSRouteInvalidBackendRefNonexistent / TLSRouteInvalidBackendRefUnknownKind conformance scenario at chart-static httpsPort (443/8443): a TLS Passthrough listener on the chart-static port has a TLSRoute attached whose backendRef points at a non-existent Service. The route is recorded in sslPassthroughBackends with `invalid: true`; this lights bindHTTPSDefault so chart-static `frontend ssl-tcp` renders, and the route's claimed SNI joins listener_sni so connections to that SNI hit the reject path (not the ssl-loopback fallback)."
+    description: "A TLS Passthrough listener on httpsPort with a TLSRoute whose backendRef is missing renders `frontend ssl-tcp` and rejects the route's SNI instead of sending it to ssl-loopback (upstream TLSRouteInvalidBackendRef*)."
     extraContext: {controllerName: "haproxy-haptic.org/controller"}
     fixtures:
       gateways:

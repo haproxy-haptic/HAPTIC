@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** `vector.socketPath` is removed because HAProxy now reaches Vector over loopback UDP. A render that still sets it fails until you delete it from your values.
 - Backends without an explicit algorithm use `balance random` (power of two choices) instead of `roundrobin`, steering requests away from loaded pods. Set `haproxy-haptic.org/load-balance: roundrobin` to keep the previous distribution.
 - **BREAKING:** `haproxy-haptic.org/auth-secret`, `api-key-secret`, `hmac-secret`, `consumer-groups-secret`, `backend-crt-secret`, and `request-schema-secret` read Secrets only from the Ingress's namespace. Admission rejects a reference to another namespace, and an existing Ingress with one answers `503` with a Warning Event. To migrate, copy the Secret into the Ingress's namespace and reference it by name. `backend-ca-secret`, `auth-tls-secret`, and `jwt-secret` still accept other namespaces.
+- HAProxy always listens on `haproxy.ports.http` and `haproxy.ports.https`, even with no Ingress or Gateway; a request that matches no route gets `404` and HTTPS uses the default certificate. Adding the first route or removing the last no longer reloads HAProxy. `ingressDefaultHTTPS: false` now only keeps hosts without `spec.tls` out of the global HTTPS redirect.
 
 #### Fixed
 
@@ -43,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Security
 
+- A Gateway HTTPS listener whose client-certificate validation can't be resolved no longer has its certificate served, unverified, on the default HTTPS port.
 - A Gateway's cross-namespace `spec.tls.backend.clientCertificateRef` without a ReferenceGrant is no longer loaded; routes attached to a Gateway with an invalid client certificate reference answer `503` instead of connecting without it, and a route takes the certificate only from a parent Gateway that accepted it.
 - `haproxy-haptic.org/backend-crt-secret` naming a missing Secret, or one without `tls.crt` or `tls.key`, answers `503` with a Warning Event instead of connecting to the upstream without the client certificate.
 - Native annotation errors and Events no longer include Secret data such as usernames, consumer-groups lines, or sso-auth discovery URLs; they name the Secret and the line or entry instead.

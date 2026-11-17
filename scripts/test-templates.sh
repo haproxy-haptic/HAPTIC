@@ -485,7 +485,9 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
         | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' > "$POLICY_CONFIG"
     "$CONTROLLER_BIN" validate --file "$POLICY_CONFIG" "${SCHEMA_DIR_ARGS[@]}" \
         --test test-gateway-policy-authentication --test test-gateway-policy-shared-rate-limit \
-        --test test-gateway-policy-private-cache --test test-gateway-policy-waf-catalogs "$@" || FULL_RC=$?
+        --test test-gateway-policy-private-cache --test test-gateway-policy-waf-catalogs \
+        --test test-default-http-bind-without-routes --test test-ssl-default-https-bind-without-routes \
+        --test test-http-demultiplexer-https-only-route "$@" || FULL_RC=$?
     if [[ $FULL_RC -eq 0 && ${#SCHEMA_DIR_ARGS[@]} -gt 0 ]]; then
         POLICY_SCHEMAS=$(mktemp -d /tmp/haptic-policy-schemas-XXXXXX)
         cp "$SCHEMA_DIR"/*.yaml "$POLICY_SCHEMAS/"

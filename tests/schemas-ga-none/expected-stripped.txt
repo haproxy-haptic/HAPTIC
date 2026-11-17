@@ -49,6 +49,7 @@ test-gateway-backend-client-cert-shape
 test-gateway-backend-namespace-identity
 test-gateway-backend-service-map-incremental-group
 test-gateway-bind-per-gateway-shape
+test-gateway-conformance-invalid-default-client-validation
 test-gateway-crtlist-name-bounded-for-maximum-length-gateway-name
 test-gateway-crtlist-per-listener-shapes
 test-gateway-frontend-client-cert-default-line-verify

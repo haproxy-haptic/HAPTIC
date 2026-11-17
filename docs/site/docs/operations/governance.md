@@ -166,7 +166,7 @@ Review WAF metrics and audit logs before selecting deny mode; see [Security](sec
 
 ## Require every Ingress to terminate TLS
 
-`satisfiedBy: tls` passes when the Ingress has a `spec.tls` block **or** the chart-wide default HTTPS is on (`extraContext.ingressDefaultHTTPS`, the default). It fails only for an Ingress that would be served plaintext.
+`satisfiedBy: tls` passes when the Ingress has a `spec.tls` block **or** the chart-wide default HTTPS is on (`extraContext.ingressDefaultHTTPS`, the default). It fails only for an Ingress without `spec.tls` while `ingressDefaultHTTPS` is `false`.
 
 ```yaml
 controller:

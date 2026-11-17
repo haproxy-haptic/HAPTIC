@@ -81,7 +81,7 @@ _fx:
 validationTests:
   test-gateway-https-listener-with-invalid-cert-no-bind:
     requires: [gatewayclasses, gateways]
-    description: "A Gateway HTTPS listener at the chart's default httpsPort with a malformed cert (Secret exists but tls."
+    description: "A Gateway HTTPS listener with a malformed cert gets no listener bind and its cert never reaches the default HTTPS port, which serves only the default certificate."
     fixtures:
       gatewayclasses: *gatewayclassesGatewayclass
       gateways:
@@ -110,13 +110,14 @@ validationTests:
             tls.key: bm90LWFjdHVhbGx5LXBlbQ==
     assertions:
       - type: haproxy_valid
-      - {type: not_contains, target: haproxy.cfg, pattern: "frontend https"}
-      - {type: not_contains, target: haproxy.cfg, pattern: "bind .*:443.*ssl crt"}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s+bind \*:443 ssl crt-list \S*/certificate-list\.txt '}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'gw-default-invalid-cert-gw-https'}
+      - {type: not_contains, target: "crt-list:certificate-list.txt", pattern: 'malformed|example\.com'}
 
   test-gateway-https-listener-mtls-unresolved-ca-no-bind:
     requires: [gatewayclasses, gateways]
     requiresFields: [gateways.spec.tls.frontend]
-    description: "Closes the GatewayFrontendInvalidDefaultClientCertificateValidation conformance gap on the chart side: a Gateway HTTPS listener with a valid server cert AND `spec.tls.frontend.default."
+    description: "GatewayFrontendInvalidDefaultClientCertificateValidation: a listener whose client-CA refs don't resolve gets no listener bind, and its server cert never reaches the default HTTPS port."
     fixtures:
       gatewayclasses: *gatewayclassesGatewayclass
       gateways:
@@ -144,8 +145,59 @@ validationTests:
                     caCertificateRefs: *cacertificaterefsConfigmap
     assertions:
       - type: haproxy_valid
-      - {type: not_contains, target: haproxy.cfg, pattern: "frontend https"}
-      - {type: not_contains, target: haproxy.cfg, pattern: "bind .*:443.*ssl crt"}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s+bind \*:443 ssl crt-list \S*/certificate-list\.txt '}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'gw-default-mtls-bad-ca-gw-https'}
+      - {type: not_contains, target: "crt-list:certificate-list.txt", pattern: 'shared-tls|example\.com'}
+  test-gateway-conformance-invalid-default-client-validation:
+    requires: [gatewayclasses, gateways, httproutes]
+    requiresFields: [gateways.spec.tls.frontend]
+    description: "The GatewayFrontendInvalidDefaultClientCertificateValidation manifest: the blocked no-hostname HTTPS listener's cert never becomes the default HTTPS port's default certificate, and the HTTP listener keeps serving."
+    extraContext: {httpPort: 80, httpsPort: 443}
+    fixtures:
+      gatewayclasses: *gatewayclassesGatewayclass
+      gateways:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: Gateway
+          metadata: {name: invalid-default-client-validation-config, namespace: default}
+          spec:
+            gatewayClassName: haproxy
+            tls:
+              frontend:
+                default:
+                  validation:
+                    caCertificateRefs: [{kind: ConfigMap, group: "", name: does-not-exist}]
+                perPort:
+                  - port: 80
+                    tls:
+                      validation:
+                        caCertificateRefs: [{kind: ConfigMap, group: "", name: also-missing}]
+            listeners:
+              - name: https
+                port: 443
+                protocol: HTTPS
+                allowedRoutes: {namespaces: {from: Same}}
+                tls:
+                  certificateRefs: [{group: "", kind: Secret, name: shared-tls, namespace: default}]
+              - name: http
+                port: 80
+                protocol: HTTP
+                allowedRoutes: {namespaces: {from: Same}}
+      httproutes:
+        - apiVersion: gateway.networking.k8s.io/v1
+          kind: HTTPRoute
+          metadata: {name: invalid-default-client-validation-config, namespace: default}
+          spec:
+            parentRefs: [{name: invalid-default-client-validation-config}]
+            hostnames: [example.org]
+            rules: [{backendRefs: [{name: echo, port: 80}]}]
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:80$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend https\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:443 ssl crt-list \S*/certificate-list\.txt '}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'gw-default-invalid-default-client-validation-config-https'}
+      - {type: contains, target: "crt-list:certificate-list.txt", pattern: '\Adefault\.pem '}
+      - {type: not_contains, target: "crt-list:certificate-list.txt", pattern: 'shared-tls'}
+
   test-gateway-https-listener-mtls-unresolved-ca-status-conditions:
     requires: [gatewayclasses, gateways]
     requiresFields: [gateways.spec.tls.frontend]
@@ -185,7 +237,7 @@ validationTests:
 
   test-gateway-https-listener-with-valid-cert-binds:
     requires: [gatewayclasses, gateways]
-    description: "The companion test to the invalid-cert case: a Gateway HTTPS listener at httpsPort with a resolvable cert sets gf [\"bindHTTPSDefault\"]=true via features-150-gateway-bind, the chart-static `bind *:443 ssl crt-list ...` renders normally, and `frontend https` exists."
+    description: "The companion test to the invalid-cert case: a Gateway HTTPS listener at httpsPort with a resolvable cert is served on the default HTTPS port: `frontend https` binds `*:443 ssl crt-list`."
     fixtures:
       gatewayclasses: *gatewayclassesGatewayclass
       gateways:

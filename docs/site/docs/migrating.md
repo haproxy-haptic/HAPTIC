@@ -350,8 +350,8 @@ Keys missing from the table have no HAPTIC setting. Most tune nginx internals,
 such as hash-table sizes, worker connections, Lua, GeoIP, and Jaeger.
 
 These values restore the ingress-nginx defaults where HAPTIC's default differs.
-`ingressDefaultHTTPS: false` stops HAPTIC from serving hosts without `spec.tls`
-over HTTPS, so only hosts with `spec.tls` redirect, as in ingress-nginx:
+`ingressDefaultHTTPS: false` limits the global redirect to hosts with
+`spec.tls`, as in ingress-nginx:
 
 ```yaml
 controller:

@@ -3159,12 +3159,8 @@ haproxyConfig:
         {#- Extension point for status frontend directives (e.g., Prometheus exporter) #}
         {{- on_own_lines(render_glob "status-extra-*") | indent(2, true) }}
 
-    {#- HTTP routing still needs validation when no plaintext listener exists. -#}
-    {%- var gf = shared.Get("globalFeatures") -%}
-    {%- if gf != nil && tostring(gf.(map[string]any) | dig("needHTTPFrontend")) == "true" %}
-    {%- var httpExtraBinds = on_own_lines(render_glob "http-bind-extra-*") %}
-    {#- Keep invalid non-comment extension output visible to HAProxy validation. -#}
-    {%- if tostring(gf.(map[string]any) | dig("bindHTTPDefault")) == "true" || regex_search(httpExtraBinds, "(?m)^[\\t ]*[^\\t #\\r\\n]") %}
+    {#- The default HTTP port is bound whether or not any route uses it, so the first
+        and last route never open or close a port (which would reload every pod). #}
 
     {# ─────────────────────────────────────────────────────────────────
        HTTP listener architecture: tcp inspector + dual loopback frontends.
@@ -3205,13 +3201,11 @@ haproxyConfig:
         # Abnormal terminations (h2c-preface stalls, client aborts before the
         # loopback hop) still log, and they are the only lines anyone reads here.
         option dontlog-normal{{ render "util-log-format-tcp" }}
-        {%- if tostring(gf.(map[string]any) | dig("bindHTTPDefault")) == "true" %}
         bind *:{{ extraContext | dig("httpPort") | fallback(8080) }}
-        {%- end %}
         {#- Extension point for additional bind directives (Gateway HTTP listener ports).
             Lands on the OUTER tcp frontend so every HTTP port — chart-static and
             Gateway-derived — goes through the same h2c-detection inspector. #}
-        {{- httpExtraBinds | indent(2, true) }}
+        {{- on_own_lines(render_glob "http-bind-extra-*") | indent(2, true) }}
 
         # Wait for the first wire bytes so the h2c-preface ACL can classify the
         # connection (safety net for slow initial sends; fast clients aren't delayed).
@@ -3247,7 +3241,6 @@ haproxyConfig:
            "extra": []any{map[string]any{"name": "send-proxy-v2"}}}},
        }) }}
 
-    {%- end %}
     frontend http_frontend
         guid fe:http_frontend
         mode http
@@ -3288,7 +3281,6 @@ haproxyConfig:
         {{- on_own_lines(render_glob "frontend-switching-*") | indent(2, true) }}
         use_backend %[var(txn.backend_name)] if { var(txn.backend_name) -m found }
         default_backend default_backend
-    {%- end %}
 
     {# Extension point for additional frontends (e.g., custom TCP services) #}
     {# Resource libraries can inject frontends-* snippets #}
@@ -3314,6 +3306,17 @@ haproxyConfig:
           {{- regexp("\\n([ \\t]*\\n)+").ReplaceAll(input, "\n\n") -}}
 
 validationTests:
+  test-default-http-bind-without-routes:
+    description: The default HTTP port is bound and answers 404 even when no resource routes traffic.
+    extraContext: {httpPort: 80}
+    fixtures: {}
+    assertions:
+      - {type: haproxy_valid}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:80$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h1-loopback\b'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h2c-loopback\b'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http_frontend\n(?:[ \t].*\n|\n)*?[ \t]+default_backend default_backend$'}
+
   test-graceful-reload-defaults:
     fixtures:
       ingresses:

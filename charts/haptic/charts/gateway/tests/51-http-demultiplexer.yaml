@@ -1,8 +1,9 @@
 validationTests:
   test-http-demultiplexer-route-without-listener:
     requires: [httproutes]
-    description: Routes without plaintext listeners retain HTTP validation without an unbound TCP frontend.
+    description: Routes without plaintext listeners still get the default HTTP port and its demultiplexer.
     extraContext:
+      httpPort: 80
       proxyProtocol: {enabled: false}
     fixtures:
       httproutes:
@@ -14,15 +15,17 @@ validationTests:
             rules: [{backendRefs: [{name: echo, port: 80}]}]
     assertions:
       - {type: haproxy_valid}
-      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp$'}
-      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^backend http-h[12]c?-loopback\b'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:80$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h1-loopback\b'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h2c-loopback\b'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http_frontend$'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http_frontend_h2c$'}
 
   test-http-demultiplexer-grpc-without-listener:
     requires: [grpcroutes]
-    description: Orphan gRPC routes do not create a plaintext TCP listener.
+    description: Orphan gRPC routes leave the default HTTP port bound.
     extraContext:
+      httpPort: 80
       proxyProtocol: {enabled: false}
     fixtures:
       grpcroutes:
@@ -34,13 +37,13 @@ validationTests:
             rules: [{backendRefs: [{name: echo, port: 9090}]}]
     assertions:
       - {type: haproxy_valid}
-      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:80$'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http_frontend$'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http_frontend_h2c$'}
 
   test-http-demultiplexer-extension-listener:
     requires: [gateways]
-    description: A non-default HTTP listener keeps its TCP demultiplexer and both loopback paths.
+    description: A non-default HTTP listener binds next to the default HTTP port on the same demultiplexer.
     extraContext:
       httpPort: 80
       proxyProtocol: {enabled: false}
@@ -55,14 +58,16 @@ validationTests:
     assertions:
       - {type: haproxy_valid}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t].*\n|\n)*[ \t]+bind \*:8095$'}
-      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^\s+bind \*:80$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:80$'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h1-loopback\b'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h2c-loopback\b'}
 
   test-http-demultiplexer-https-only-route:
     requires: [gateways, httproutes]
-    description: HTTPS-only routes keep TLS and internal HTTP frontends without a plaintext demultiplexer.
+    description: HTTPS-only routes keep TLS and internal HTTP frontends and the default HTTP port.
     extraContext:
+      httpPort: 80
+      httpsPort: 443
       proxyProtocol: {enabled: false}
     fixtures:
       gateways:
@@ -89,15 +94,16 @@ validationTests:
             rules: [{backendRefs: [{name: echo, port: 80}]}]
     assertions:
       - {type: haproxy_valid}
-      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp$'}
-      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^backend http-h[12]c?-loopback\b'}
-      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend https$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:80$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h1-loopback\b'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h2c-loopback\b'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend https\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:443 ssl crt-list \S*certificate-list\.txt '}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http_frontend$'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http_frontend_h2c$'}
 
   test-http-demultiplexer-proxy-listener:
     requires: [httproutes]
-    description: A PROXY-protocol listener keeps both HTTP demultiplexing paths without opening the default port.
+    description: The PROXY-protocol port is an extra bind next to the default HTTP port.
     extraContext:
       httpPort: 80
       proxyProtocol: {enabled: true, httpPort: 8081}
@@ -112,7 +118,7 @@ validationTests:
     assertions:
       - {type: haproxy_valid}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t].*\n|\n)*[ \t]+bind \*:8081 accept-proxy$'}
-      - {type: not_contains, target: haproxy.cfg, pattern: '(?m)^\s+bind \*:80$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t].*\n|\n)*?[ \t]+bind \*:80$'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h1-loopback\b'}
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend http-h2c-loopback\b'}
 
