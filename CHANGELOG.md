@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HAProxy sends access-log records to the Vector sidecar over UDP on `127.0.0.1:9514` instead of a Unix datagram socket, whose 10-record queue dropped records on every reload ([#677](https://github.com/haproxy-haptic/HAPTIC/issues/677)).
 - Vector exports `haptic_access_log_dropped_records_total`, and the `HAProxyAccessLogRecordsDropped` alert fires on it.
 - A WAF policy that leaves out `enforcement` uses `waf.dispatch.defaultEnforcement` instead of `deny`, so a self-service policy no longer starts blocking routes under a `detect` installation ([#693](https://github.com/haproxy-haptic/HAPTIC/issues/693)).
+- WAF policies whose directives differ only in comments share one compiled Core Rule Set, and the base rule set is compiled only when a request can reach Coraza without a policy (coraza plugin v0.11.0, [#698](https://github.com/haproxy-haptic/HAPTIC/issues/698)).
+- A render fails, naming the required size, when the distinct Coraza rule sets need more than `spoaHub.resources.limits.memory`, instead of OOM-killing the `spoa-hub` sidecar in every HAProxy pod on the next reload ([#698](https://github.com/haproxy-haptic/HAPTIC/issues/698)).
 
 #### Security
 
