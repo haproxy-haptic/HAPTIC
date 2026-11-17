@@ -5,6 +5,7 @@
     "braces": "file:./shims/braces",
     "katex": "0.19.1",
     "markdownlint-cli2": "0.24.0",
+    "picomatch": "file:./shims/picomatch",
     "smol-toml": "1.9.1"
   },
   "overrides": {
@@ -13,6 +14,7 @@
     "micromark-extension-math": {
       "katex": "$katex"
     },
+    "picomatch": "$picomatch",
     "smol-toml": "$smol-toml",
     "re2js": "2.9.1"
   }

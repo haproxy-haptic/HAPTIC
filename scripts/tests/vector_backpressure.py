@@ -41,7 +41,7 @@ def prepare(work):
                "--schema-dir", str(ROOT / "tests/schemas"), "--test", "test-vector-omit-empty-log-fields", "--dump-rendered")
     body = []
     for line in dump.split("#### vector.yaml", 1)[1].splitlines():
-        if line.startswith(("#### ", "=== ")):
+        if line.startswith(("### ", "#### ", "=== ")):
             break
         if line and set(line) == {"-"}:
             continue
