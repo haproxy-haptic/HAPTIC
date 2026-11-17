@@ -92,6 +92,7 @@ Start with the smallest change that resolves a false positive:
 | Field | Use it to |
 |-------|-----------|
 | `description` | Explain which applications should select the policy. |
+| `extends` | Build on another policy and state only what differs; see [Extend a policy](#extend-a-policy). |
 | `enforcement` | Block matches with `deny`, or record them with `detect`. Leave it out to use `waf.dispatch.defaultEnforcement`. |
 | `requestBody` | Choose whether to inspect bodies and set their size limit; see below. |
 | `allowedMethods`, `paranoiaLevel`, `anomalyThreshold` | Adjust allowed methods and CRS sensitivity. |
@@ -138,6 +139,53 @@ ruleExclusions:
 Policy authors can't override HAPTIC's body-safety rules. Per-Ingress
 [nginx-compatible custom rules](../libraries/nginx-ingress.md) are subject to
 `waf.customRules.limits`, including when no catalog is configured.
+
+## Extend a policy
+
+Set `extends` to build an application's policy on a shared baseline. The derived
+policy states only what differs, and later changes to the baseline reach it
+without editing it. This policy lets a Git server's upload media types through
+the CRS content-type check and stops rule 930130 from inspecting `.git/` paths:
+
+```yaml
+public-web:
+  enforcement: deny
+  paranoiaLevel: 2
+  requestBody:
+    mode: none
+git-server:
+  extends: public-web
+  crsSettings:
+    allowedRequestContentTypes:
+      - application/x-git-upload-pack-request
+  ruleExclusions:
+    - rules: [930130]
+      excludeTarget: REQUEST_FILENAME
+      onPathContains: ".git/"
+```
+
+`git-server` keeps `enforcement`, `paranoiaLevel`, and `requestBody` from
+`public-web`. The derived policy's fields combine with the base like this:
+
+| Field | Result |
+|-------|--------|
+| `description`, `enforcement`, `paranoiaLevel`, `allowedMethods` | The derived value replaces the base value. |
+| `requestBody` | Replaced as a whole, because `maxBytes` is valid only with the `mode` it belongs to. |
+| `anomalyThreshold` | Merged by key; setting `inbound` keeps the base `outbound`. |
+| `crsSettings` | Merged by key; `allowedRequestContentTypes` entries are added to the base entries, other keys replace the base value. |
+| `ruleExclusions` | The derived entries are added after the base entries. |
+| `secLang` | The derived directives are appended after the base directives. |
+
+A field neither policy sets keeps its usual default; for `enforcement`, that's
+`waf.dispatch.defaultEnforcement`.
+
+`extends` is one level deep: the base must be a policy from your Helm values or a
+trusted ConfigMap catalog, and must not set `extends` itself. A derived policy
+can live in a different catalog from its base. Every validation and limit applies
+to the combined policy. If the base's ConfigMap is missing or invalid, routes
+that select the derived policy return `503` until the base is restored. A Gateway
+route can't select a derived policy whose base comes from a ConfigMap without
+`immutable: true`.
 
 ## Choose request-body inspection
 
@@ -259,12 +307,25 @@ An Ingress in `team-a` selects it with
 `haproxy-haptic.org/waf-policy: app-baseline`. HAPTIC watches ConfigMaps with this
 name and enables Coraza and policy permissions automatically.
 
+To adjust a trusted policy for one application, extend it and narrow what a rule
+inspects rather than removing the rule. This policy keeps every `public-web`
+setting and stops rule 942100 from inspecting the `id` query argument:
+
+```yaml
+search:
+  extends: public-web
+  ruleExclusions:
+    - rules: [942100]
+      excludeTarget: "ARGS:id"
+```
+
 | Boundary | Behavior |
 |----------|----------|
 | Namespace | A team can select its own policies and trusted policies. Cross-namespace names such as `team-a/app-baseline` are rejected. |
 | Name conflicts | A local name that duplicates a trusted policy blocks that namespace's selection; it never silently replaces the trusted policy. |
-| Cluster baseline | `defaultPolicy` resolves only from trusted catalogs. With `default-on`/`deny`, a self-service policy can't weaken enforcement to `detect`. |
-| Enforcement | A self-service policy that sets an `enforcement` other than `waf.dispatch.defaultEnforcement` is rejected unless `waf.ingressPermissions.allowEnforcementOverride` is `true`. |
+| Cluster baseline | `defaultPolicy` resolves only from trusted catalogs. With `default-on`/`deny`, a self-service policy can't weaken enforcement to `detect`, including through a base it extends. |
+| Enforcement | A self-service policy whose `enforcement`, set or inherited from its base, differs from `waf.dispatch.defaultEnforcement` is rejected unless `waf.ingressPermissions.allowEnforcementOverride` is `true`. |
+| Extending | A self-service policy can [extend](#extend-a-policy) a trusted policy, not another namespace policy. It inherits the base's `secLang`, but `selfService.allowSecLang` still governs its own. Limits apply to the combined policy. |
 | Body size and catalog growth | Administrator limits cap body sizes, policies per namespace, and total policies. |
 | Custom rules | `selfService.allowSecLang` defaults to `false`. Count and size limits don't bound rule CPU cost. |
 

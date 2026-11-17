@@ -1,0 +1,67 @@
+validationTests:
+  test-gateway-policy-waf-extends-mutable-base-rejected:
+    _helm_skip_test: '{{ if or (not .Values.spoaHub.plugins.coraza.enabled) (include "haptic.spoaHub.disabled" .) }}true{{ end }}'
+    description: A Gateway rule can't select a policy whose base comes from a mutable ConfigMap; the mutability is inherited.
+    requires: [httproutes, routepolicies]
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata: {namespace: default, name: policy-gateway, generation: 1}
+        spec:
+          gatewayClassName: haptic
+          listeners: [{name: http, port: 80, protocol: HTTP}]
+      services:
+      - {apiVersion: v1, kind: Service, metadata: {namespace: default, name: echo}, spec: {ports: [{port: 80, targetPort: 8080}]}}
+      configmaps:
+      - apiVersion: v1
+        kind: ConfigMap
+        metadata: {namespace: security, name: catalog}
+        data:
+          policies.yaml: "baseline:\n  enforcement: deny\n  requestBody: {mode: none}\n"
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: waf}
+        spec: {waf: {policy: derived}}
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata: {namespace: default, name: waf-route, generation: 1}
+        spec:
+          parentRefs: [{name: policy-gateway}]
+          hostnames: [waf-route.example.com]
+          rules:
+          - backendRefs: [{name: echo, port: 80}]
+            filters:
+            - type: ExtensionRef
+              extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: waf}
+    extraContext:
+      spoaHub:
+        enabled: true
+        plugins:
+        - name: coraza
+          library: libcoraza_plugin.so
+          messages: [check-request]
+          timeoutMs: 15
+          params: ''
+          dependsOn: []
+          directives: |
+            Include @coraza.conf-recommended
+            Include @crs-setup.conf.example
+            Include @owasp_crs/*.conf
+            SecRuleEngine On
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ''
+          inline:
+            __replace__: true
+            derived: {extends: baseline}
+          configMapRefs:
+            __replace__: true
+            central: {namespace: security, name: catalog}
+    assertions:
+    - type: haproxy_valid
+    - {type: contains, target: "map:gw-policy-errors.map", pattern: "(?m)^gateway/h_default_waf-route_0 invalid$"}
+    - {type: contains, target: events, pattern: "Warning RoutePolicyInvalid .*HTTPRoute default/waf-route:.*ConfigMap security/catalog key policies.yaml is mutable"}

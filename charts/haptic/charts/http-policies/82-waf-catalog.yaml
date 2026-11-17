@@ -153,6 +153,7 @@ templateSnippets:
           var trustedCatalogUnavailable = false
           var selfServiceBrokenCatalog = map[string]string{}
           var selfServiceBrokenPolicy = map[string]string{}
+          var trustedRawPolicy = map[string]any{}
           if policyCatalogConfigured || selfServiceEnabled {
             var allowedPolicyFields = map[string]bool{
               "description": true,
@@ -187,7 +188,7 @@ templateSnippets:
             }
             for _, field := range keys(policy) {
               if !allowedPolicyFields[field] {
-                return "WAF policy '" + policyName + "' from " + source + " contains unknown field '" + field + "'. Valid fields: description, enforcement, requestBody, secLang, allowedMethods, paranoiaLevel, anomalyThreshold, crsSettings, ruleExclusions."
+                return "WAF policy '" + policyName + "' from " + source + " contains unknown field '" + field + "'. Valid fields: description, extends, enforcement, requestBody, secLang, allowedMethods, paranoiaLevel, anomalyThreshold, crsSettings, ruleExclusions."
               }
             }
 
@@ -514,10 +515,84 @@ templateSnippets:
             return ""
           }
 
+            var policyBase = func(rawPolicy any) string {
+              var policy, policyOK = rawPolicy.(map[string]any)
+              if !policyOK || policy["extends"] == nil { return "" }
+              var base = scalarText(policy["extends"])
+              if base == "" { return "<empty>" }
+              return base
+            }
+            var derivedPolicies = map[string]bool{}
+            var derivedTrusted = map[string]any{}
+            var concat = func(first []any, second []any) []any {
+              var combined = []any{}
+              for _, item := range first { combined = append(combined, item) }
+              for _, item := range second { combined = append(combined, item) }
+              return combined
+            }
+            // Merge semantics: docs/site/docs/operations/waf-policies.md, "Extend a policy".
+            var extendPolicy = func(policyName string, rawPolicy any, source string) (map[string]any, string) {
+              var derived = rawPolicy.(map[string]any)
+              var baseName = policyBase(derived)
+              var where = "WAF policy '" + policyName + "' from " + source
+              var baseAny = trustedRawPolicy[baseName]
+              if baseName == policyName {
+                return nil, where + " extends itself. Set extends to another policy."
+              }
+              if baseAny == nil {
+                if trustedBrokenPolicy[baseName] != "" {
+                  return nil, where + " extends '" + baseName + "', which is unavailable: " + trustedBrokenPolicy[baseName]
+                }
+                if derivedPolicies[baseName] {
+                  return nil, where + " extends '" + baseName + "', which extends another policy itself. Extend a policy without extends."
+                }
+                return nil, where + " extends unknown policy '" + baseName + "'. Set extends to a policy from the chart values or a trusted ConfigMap catalog."
+              }
+              var base = baseAny.(map[string]any)
+              var merged = map[string]any{}
+              for _, field := range keys(base) { merged[field] = base[field] }
+              for _, field := range keys(derived) {
+                if field == "extends" { continue }
+                var value = derived[field]
+                var baseList, baseListOK = base[field].([]any)
+                var list, listOK = value.([]any)
+                var baseMap, baseMapOK = base[field].(map[string]any)
+                var overrides, overridesOK = value.(map[string]any)
+                var baseText, baseTextOK = base[field].(string)
+                var text, textOK = value.(string)
+                if field == "ruleExclusions" && baseListOK && listOK {
+                  value = concat(baseList, list)
+                } else if (field == "crsSettings" || field == "anomalyThreshold") && baseMapOK && overridesOK {
+                  var combinedMap = map[string]any{}
+                  for _, key := range keys(baseMap) { combinedMap[key] = baseMap[key] }
+                  for _, key := range keys(overrides) {
+                    var baseItems, baseItemsOK = combinedMap[key].([]any)
+                    var items, itemsOK = overrides[key].([]any)
+                    if baseItemsOK && itemsOK {
+                      combinedMap[key] = concat(baseItems, items)
+                    } else {
+                      combinedMap[key] = overrides[key]
+                    }
+                  }
+                  value = combinedMap
+                } else if field == "secLang" && baseTextOK && textOK {
+                  value = baseText + "\n" + text
+                }
+                merged[field] = value
+              }
+              return merged, ""
+            }
+
           var trustedPolicyCount = 0
           for policyName, rawPolicy := range inlinePolicies {
+            if policyBase(rawPolicy) != "" {
+              derivedPolicies[policyName] = true
+              derivedTrusted["extraContext.waf.policies.inline." + policyName] = map[string]any{"name": policyName, "policy": rawPolicy}
+              continue
+            }
             var registerError = registerPolicy(policyName, policyName, rawPolicy, "extraContext.waf.policies.inline." + policyName)
             if registerError != "" { fail(registerError) }
+            trustedRawPolicy[policyName] = rawPolicy
             trustedPolicyCount++
             if trustedPolicyCount > maxPolicies {
               fail("WAF policy catalogs define more than the configured limit " + tostring(maxPolicies) + ".")
@@ -564,6 +639,7 @@ templateSnippets:
             var catalogAny = trustedCatalogs[refName]
             var catalogError = ""
             var parsedPolicies = map[string]any{}
+            var catalogDerived = map[string]any{}
             var immutable = false
             if catalogAny == nil {
               catalogError = "WAF policy " + sourceID + " was not found."
@@ -583,12 +659,18 @@ templateSnippets:
             }
             if catalogError == "" {
               for _, policyName := range keys(parsedPolicies) {
+                if policyBase(parsedPolicies[policyName]) != "" {
+                  derivedPolicies[policyName] = true
+                  catalogDerived[policyName] = parsedPolicies[policyName]
+                  continue
+                }
                 var registerError = registerPolicy(policyName, policyName, parsedPolicies[policyName], sourceID)
                 if registerError != "" {
                   trustedBrokenPolicy[policyName] = registerError
                   catalogError = registerError
                   break
                 }
+                trustedRawPolicy[policyName] = parsedPolicies[policyName]
                 if !immutable { policyMutableSource[policyName] = sourceID }
                 trustedPolicyCount++
                 if trustedPolicyCount > maxPolicies {
@@ -611,6 +693,7 @@ templateSnippets:
                 delete(policyContentMode, policyName)
                 delete(policyMaxBody, policyName)
                 delete(policyEnforcement, policyName)
+                delete(trustedRawPolicy, policyName)
                 trustedPolicyCount--
               }
               diagnostics = append(diagnostics, map[string]any{
@@ -618,7 +701,48 @@ templateSnippets:
                 "scope": sourceID, "reason": "WafPolicyCatalogInvalid", "message": catalogError,
               })
             }
+            for _, policyName := range keys(catalogDerived) {
+              if catalogError != "" {
+                trustedBrokenPolicy[policyName] = catalogError
+                continue
+              }
+              derivedTrusted[sourceID + "/" + policyName] = map[string]any{
+                "name": policyName, "policy": catalogDerived[policyName], "source": sourceID, "mutable": !immutable,
+                "resource": map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"namespace": sourceNamespace, "name": sourceName}},
+              }
+            }
           }
+
+            // A failed derived policy marks the catalog unavailable; that must not excuse an unrelated inline error.
+            var catalogUnavailableBeforeDerived = trustedCatalogUnavailable
+            for _, derivedKey := range keys(derivedTrusted) {
+              var entry = derivedTrusted[derivedKey].(map[string]any)
+              var policyName = entry["name"].(string)
+              var source = dig_string(entry, derivedKey, "source")
+              var baseName = policyBase(entry["policy"])
+              var merged, policyError = extendPolicy(policyName, entry["policy"], source)
+              if policyError == "" && trustedPolicyCount >= maxPolicies {
+                policyError = "WAF policy catalogs define more than the configured limit " + tostring(maxPolicies) + "."
+              }
+              if policyError == "" {
+                policyError = registerPolicy(policyName, policyName, merged, source)
+              }
+              if policyError == "" {
+                trustedPolicyCount++
+                if entry["mutable"] == true {
+                  policyMutableSource[policyName] = source
+                } else if policyMutableSource[baseName] != "" {
+                  policyMutableSource[policyName] = policyMutableSource[baseName]
+                }
+                continue
+              }
+              if entry["resource"] == nil && trustedBrokenPolicy[baseName] == "" && !catalogUnavailableBeforeDerived { fail(policyError) }
+              trustedBrokenPolicy[policyName] = policyError
+              trustedCatalogUnavailable = true
+              if entry["resource"] != nil {
+                diagnostics = append(diagnostics, map[string]any{"resource": entry["resource"], "scope": source, "reason": "WafPolicyInvalid", "message": policyError})
+              }
+            }
             if defaultPolicy != "" && policyConfiguration[defaultPolicy] == "" {
               var available = keys(policySource)
               var availableText = "no policies are configured"
@@ -687,14 +811,31 @@ templateSnippets:
                       policyError = "Self-service WAF policy '" + policyName + "' from " + sourceID + " uses secLang, which is disabled for self-service catalogs (extraContext.waf.policies.selfService.allowSecLang=false). Use the structured fields (enforcement, requestBody, allowedMethods, paranoiaLevel, anomalyThreshold, crsSettings, ruleExclusions), or ask the HAPTIC administrator to move the policy into a trusted catalog."
                     }
                   }
+                  var ssPolicy = parsedPolicies[policyName]
+                  var ssBase = policyBase(ssPolicy)
+                  if policyError == "" && ssBase != "" {
+                    var merged, extendError = extendPolicy(policyName, ssPolicy, sourceID)
+                    ssPolicy = merged
+                    policyError = extendError
+                  }
                   if policyError == "" && !allowEnforcementOverride {
-                    var requestedEnforcement = parsedPolicies[policyName] | dig("enforcement") | scalarText()
+                    var requestedEnforcement = ssPolicy | dig("enforcement") | scalarText()
                     if (requestedEnforcement == "deny" || requestedEnforcement == "detect") && requestedEnforcement != dispatchDefaultEnforcement {
-                      policyError = "Self-service WAF policy '" + policyName + "' from " + sourceID + " sets enforcement '" + requestedEnforcement + "', but the administrator fixed enforcement to '" + dispatchDefaultEnforcement + "'. Routes selecting it fail with 503. Remove enforcement from the policy."
+                      var enforcementOrigin = "sets enforcement '" + requestedEnforcement + "'"
+                      var enforcementFix = "Remove enforcement from the policy."
+                      var ownEnforcement = parsedPolicies[policyName] | dig("enforcement")
+                      if ownEnforcement == nil {
+                        enforcementOrigin = "inherits enforcement '" + requestedEnforcement + "' from '" + ssBase + "'"
+                        enforcementFix = "Set enforcement: " + dispatchDefaultEnforcement + " on the policy."
+                      }
+                      policyError = "Self-service WAF policy '" + policyName + "' from " + sourceID + " " + enforcementOrigin + ", but the administrator fixed enforcement to '" + dispatchDefaultEnforcement + "'. Routes selecting it fail with 503. " + enforcementFix
                     }
                   }
                   if policyError == "" {
-                    policyError = registerPolicy(storeKey, policyName, parsedPolicies[policyName], sourceID)
+                    policyError = registerPolicy(storeKey, policyName, ssPolicy, sourceID)
+                    if policyError == "" && policyMutableSource[ssBase] != "" {
+                      policyMutableSource[storeKey] = policyMutableSource[ssBase]
+                    }
                     if policyError == "" {
                       if !counted {
                         namespaceCounts[ns]++
