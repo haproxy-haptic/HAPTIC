@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adding or removing a TLS certificate updates HAProxy at runtime instead of reloading it, wherever its crt-list line lands. A change to the default certificate, or one that would change which line serves an SNI name two lines share, still reloads.
 - `haptic_rejected_watched_inputs` carries `resource_type`, `namespace`, and `name` labels, one series per rejected resource, so an alert names the resource to fix.
 
+### Security
+
+- Validation output (`haptic validate`, the startup load gate, and admission errors) no longer shows secret-file or SSL certificate content: the determinism check names a differing file without diffing it, and failed `secret:` and `cert:` assertions show no preview ([#675](https://github.com/haproxy-haptic/HAPTIC/issues/675)).
+
 ### Helm chart
 
 #### Added

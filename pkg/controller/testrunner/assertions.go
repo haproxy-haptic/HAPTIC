@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -246,74 +247,80 @@ func compareAuxiliaryFiles(first, second *dataplane.AuxiliaryFiles) string {
 	if diff := compareFileList("general files", extractFileMap(first.GeneralFiles), extractFileMap(second.GeneralFiles)); diff != "" {
 		return diff
 	}
-	if diff := compareFileList("SSL certificates", extractFileMap(first.SSLCertificates), extractFileMap(second.SSLCertificates)); diff != "" {
+	if diff := compareSensitiveFileList("SSL certificates", extractFileMap(first.SSLCertificates), extractFileMap(second.SSLCertificates)); diff != "" {
 		return diff
 	}
 	if diff := compareFileList("crt-list files", extractFileMap(first.CRTListFiles), extractFileMap(second.CRTListFiles)); diff != "" {
 		return diff
 	}
-	if diff := compareFileList("secret files", extractFileMap(first.SecretFiles), extractFileMap(second.SecretFiles)); diff != "" {
+	if diff := compareSensitiveFileList("secret files", extractFileMap(first.SecretFiles), extractFileMap(second.SecretFiles)); diff != "" {
 		return diff
 	}
-	if !slices.Equal(first.SensitiveMapFiles, second.SensitiveMapFiles) {
-		return "sensitive map files differ between renders (content not shown)"
-	}
-
-	return ""
+	return compareSensitiveFileList("sensitive map files", extractFileMap(first.SensitiveMapFiles), extractFileMap(second.SensitiveMapFiles))
 }
 
-// redactSensitiveTarget keeps a sensitive map's content out of an assertion
-// result, which verbose output and the webhook surface.
+// redactSensitiveTarget keeps secret-file, certificate and sensitive-map
+// content out of an assertion result, which verbose output and the webhook surface.
 func redactSensitiveTarget(result *AssertionResult, target string, auxiliaryFiles *dataplane.AuxiliaryFiles) {
-	if auxiliaryFiles == nil || len(auxiliaryFiles.SensitiveMapFiles) == 0 {
-		return
-	}
-	name, ok := strings.CutPrefix(target, "sensitive-map:")
-	if !ok {
-		name, ok = strings.CutPrefix(target, "map:")
-	}
-	if !ok || !slices.ContainsFunc(auxiliaryFiles.SensitiveMapFiles, func(file auxiliaryfiles.SensitiveMapFile) bool {
-		return mapNamed(file.Path, name)
-	}) {
+	if !isSensitiveTarget(target, auxiliaryFiles) {
 		return
 	}
 	result.TargetPreview = ""
 	if !result.Passed && result.Type == "equals" {
-		result.Error = fmt.Sprintf("%s differs from the expected content (sensitive map content is not shown)", target)
+		result.Error = fmt.Sprintf("%s differs from the expected content (content not shown)", target)
 	}
+}
+
+func isSensitiveTarget(target string, auxiliaryFiles *dataplane.AuxiliaryFiles) bool {
+	for _, prefix := range []string{"secret:", "cert:", "sensitive-map:"} {
+		if strings.HasPrefix(target, prefix) {
+			return true
+		}
+	}
+	name, ok := strings.CutPrefix(target, "map:")
+	return ok && auxiliaryFiles != nil && slices.ContainsFunc(auxiliaryFiles.SensitiveMapFiles, func(file auxiliaryfiles.SensitiveMapFile) bool {
+		return mapNamed(file.Path, name)
+	})
 }
 
 // compareFileList compares two maps of filename to content and returns a diff if they differ.
 func compareFileList(fileType string, first, second map[string]string) string {
-	// Check for files only in first
-	for name := range first {
-		if _, ok := second[name]; !ok {
-			return fmt.Sprintf("%s: file %q exists in first render but not in second", fileType, name)
+	name, diff := differingFile(fileType, first, second)
+	if name == "" {
+		return diff
+	}
+	return fmt.Sprintf("%s: %s differs between renders:\n%s", fileType, name,
+		generateUnifiedDiff(name+" (render 1)", name+" (render 2)", first[name], second[name]))
+}
+
+// compareSensitiveFileList is compareFileList that names a differing file but never shows its content.
+func compareSensitiveFileList(fileType string, first, second map[string]string) string {
+	name, diff := differingFile(fileType, first, second)
+	if name == "" {
+		return diff
+	}
+	return fmt.Sprintf("%s: %s differs between renders (content not shown)", fileType, name)
+}
+
+// differingFile reports a file present in only one render as a diff, or
+// names the first file, in sorted order, whose content differs.
+func differingFile(fileType string, first, second map[string]string) (name, diff string) {
+	for _, file := range slices.Sorted(maps.Keys(first)) {
+		if _, ok := second[file]; !ok {
+			return "", fmt.Sprintf("%s: file %q exists in first render but not in second", fileType, file)
 		}
 	}
-
-	// Check for files only in second
-	for name := range second {
-		if _, ok := first[name]; !ok {
-			return fmt.Sprintf("%s: file %q exists in second render but not in first", fileType, name)
+	for _, file := range slices.Sorted(maps.Keys(second)) {
+		if _, ok := first[file]; !ok {
+			return "", fmt.Sprintf("%s: file %q exists in second render but not in first", fileType, file)
 		}
 	}
-
-	// Compare content of each file
-	for name, content1 := range first {
-		content2 := second[name]
-		if content1 != content2 {
-			diff := generateUnifiedDiff(
-				fmt.Sprintf("%s (render 1)", name),
-				fmt.Sprintf("%s (render 2)", name),
-				content1,
-				content2,
-			)
-			return fmt.Sprintf("%s: %s differs between renders:\n%s", fileType, name, diff)
+	for _, file := range slices.Sorted(maps.Keys(first)) {
+		if first[file] != second[file] {
+			return file, ""
 		}
 	}
-
-	return ""
+	return "", ""
 }
 
 // extractFileMap converts a slice of FileItem to an identifier→content map for

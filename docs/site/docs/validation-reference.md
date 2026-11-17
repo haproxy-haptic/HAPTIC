@@ -226,9 +226,9 @@ The `contains`, `not_contains`, `match_count`, `equals`, and `match_order` asser
 | `map:<name>` | Any rendered map file, including sensitive maps. `<name>` matches against either the full path or the basename |
 | `sensitive-map:<name>` | A map declared with `planRegistry.SensitiveMap`. Fails when the map is missing or isn't sensitive, so it also asserts the protection. A failed assertion never shows the content |
 | `file:<name>` | A rendered general file (error pages, etc.), matched by filename |
-| `cert:<name>` | A rendered SSL certificate, matched by basename |
+| `cert:<name>` | A rendered SSL certificate, matched by basename. A failed assertion never shows the content |
 | `crt-list:<name>` | A rendered crt-list file (registered by a template via `fileRegistry.Register("crt-list", …)`), matched by basename |
-| `secret:<name>` | A rendered secret file (registered via `fileRegistry.Register("secret", …)`), matched by basename |
+| `secret:<name>` | A rendered secret file (registered via `fileRegistry.Register("secret", …)`), matched by basename. A failed assertion never shows the content |
 | `k8s:<template-name>` | The rendered YAML of a `spec.k8sResources` template (potentially multi-doc with `---`), so you can assert on emitted Kubernetes resources |
 | `status:<ns>/<name>:<phase>` | The JSON status payload a `statusPatch()` call emitted for resource `<ns>/<name>` in the given pipeline phase (`rendered`, `deployed`, `renderFailed`, or `deployFailed`) — the way to test status-patch templates |
 | `events` | The Kubernetes Events the templates recorded via `recordEvent()`, one per line as `<Type> <Reason> <apiVersion> <Kind> <ns>/<name>: <message>` |
