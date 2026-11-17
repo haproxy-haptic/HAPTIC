@@ -459,8 +459,15 @@ templateSnippets:
                     }
                     pathOp = op
                     pathValue = entry[pathField] | scalarText()
-                    if !regex_search(pathValue, "^[A-Za-z0-9/_.:%~=&?*+@,-]{1,256}$") {
-                      return "WAF policy '" + policyName + "' from " + source + " ruleExclusions " + pathField + " '" + pathValue + "' must be a literal URL path (letters, digits, and /_.:%~=&?*+@,- , max 256 chars)."
+                    if !regex_search(pathValue, "^[A-Za-z0-9/_.:~=&*+@,-]{1,256}$") {
+                      return "WAF policy '" + policyName + "' from " + source + " ruleExclusions " + pathField + " '" + pathValue + "' must be a decoded URL path without a query string (letters, digits, and /_.:~=&*+@,- , max 256 chars)."
+                    }
+                    var unresolvedSegment = "//|/[.][.]?/"
+                    if pathField == "onPathExact" || pathField == "onPathSuffix" {
+                      unresolvedSegment += "|/[.][.]?$"
+                    }
+                    if regex_search(pathValue, unresolvedSegment) {
+                      return "WAF policy '" + policyName + "' from " + source + " ruleExclusions " + pathField + " '" + pathValue + "' never matches, because request paths are matched after //, /./, and /../ are resolved. Write the resolved path."
                     }
                   }
                 }
@@ -489,7 +496,9 @@ templateSnippets:
                   for _, tagAny := range tagNames {
                     ctlActions += ",ctl:ruleRemoveTargetByTag=" + scalarText(tagAny) + ";" + target
                   }
-                  setupDirectives += "SecRule REQUEST_URI \"" + pathOp + " " + pathValue + "\" \"id:" + scalarText(1200000 + exclusionRuleSeq) + ",phase:1,pass,t:none,nolog" + ctlActions + "\"\n"
+                  // REQUEST_FILENAME with CRS 930130's transforms, never REQUEST_URI (#696); see docs/site/docs/operations/waf-policies.md.
+                  setupDirectives += "SecRule REQUEST_FILENAME \"" + pathOp + " " + pathValue + "\" \"id:" + scalarText(1200000 + exclusionRuleSeq) + ",phase:1,pass,t:none,t:utf8toUnicode,t:urlDecodeUni,t:normalizePathWin,nolog,chain\"\n"
+                  setupDirectives += "SecRule REQUEST_FILENAME \"!@rx [^ -~]|[;?%#]\" \"t:none" + ctlActions + "\"\n"
                   exclusionRuleSeq++
                 }
               }

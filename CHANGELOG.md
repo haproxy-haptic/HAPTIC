@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A bare API key in an `api-key-secret` or `HAProxyRoutePolicy` API-key Secret gets the consumer id `key-<first 12 hex digits of its SHA-256>` instead of the key itself, so the key no longer reaches the access log or the forwarded consumer header. Consumer-groups and per-consumer rate limits that named a bare key must use the new id, or give the key an explicit `:<consumer>`.
 - HMAC shared keys (`hmac-secret`) and API keys (`api-key-secret`, `HAProxyRoutePolicy` API keys) are published in Secrets instead of plaintext `HAProxyMapFile` objects.
 - TLS session-ticket keys (`extraContext.tls.sessionTickets`) are published in a Secret instead of a plaintext `HAProxyGeneralFile`, so reading HAPTIC's output objects no longer lets anyone decrypt recorded resumed sessions ([#674](https://github.com/haproxy-haptic/HAPTIC/issues/674)).
+- WAF `ruleExclusions` path selectors match the decoded, normalized request path only, so a client can no longer trigger an exclusion on any path through the query string, `..`, `\`, `;`, double encoding, or control and non-ASCII characters; `onPathExact` now also matches requests that carry a query string, and selectors that can never match are rejected ([#696](https://github.com/haproxy-haptic/HAPTIC/issues/696)).
 
 ## [0.12.0] - 2026-11-10
 
