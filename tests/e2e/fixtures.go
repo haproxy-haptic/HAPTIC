@@ -63,8 +63,10 @@ func NamespaceForTest(ctx context.Context, t *testing.T, client klient.Client) s
 	if err := client.Resources().Create(ctx, ns); err != nil {
 		t.Fatalf("create namespace %q: %v", name, err)
 	}
+	namespaceOwners.Store(name, t)
 
 	t.Cleanup(func() {
+		namespaceOwners.Delete(name)
 		if shouldKeepNamespace() {
 			t.Logf("KEEP_NAMESPACE=true: keeping %s", name)
 			return

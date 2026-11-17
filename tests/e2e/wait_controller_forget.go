@@ -45,17 +45,25 @@ type controllerForgetCleanupKey struct {
 
 var controllerForgetCleanupKeys sync.Map
 
+// namespaceOwners maps a NamespaceForTest namespace to the test that deletes it.
+var namespaceOwners sync.Map
+
 // registerControllerForgetNamespaceCleanup schedules one wait after every Ingress cleanup in the namespace.
+// It runs on the namespace's owner: a subtest's wait would poll while its parent's Ingresses still render.
 func registerControllerForgetNamespaceCleanup(t *testing.T, client klient.Client, namespace string) {
 	t.Helper()
-	key := controllerForgetCleanupKey{test: t, namespace: namespace}
+	owner := t
+	if v, ok := namespaceOwners.Load(namespace); ok {
+		owner = v.(*testing.T)
+	}
+	key := controllerForgetCleanupKey{test: owner, namespace: namespace}
 	if _, loaded := controllerForgetCleanupKeys.LoadOrStore(key, struct{}{}); loaded {
 		return
 	}
 
-	t.Cleanup(func() {
+	owner.Cleanup(func() {
 		defer controllerForgetCleanupKeys.Delete(key)
-		waitForControllerForgetNamespace(context.Background(), t, client, namespace)
+		waitForControllerForgetNamespace(context.Background(), owner, client, namespace)
 	})
 }
 
