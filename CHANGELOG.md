@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Validation output (`haptic validate`, the startup load gate, and admission errors) no longer shows secret-file or SSL certificate content: the determinism check names a differing file without diffing it, and failed `secret:` and `cert:` assertions show no preview ([#675](https://github.com/haproxy-haptic/HAPTIC/issues/675)).
 - Templates can register key material HAProxy reads with `fileRegistry.Register("sensitive-file", …)`. HAPTIC publishes it as a Kubernetes Secret, writes it to `ssl/`, and keeps it out of `HAProxyCfg`, `currentFiles`, and CLI output; templates read it back through `currentSensitiveFiles` ([#674](https://github.com/haproxy-haptic/HAPTIC/issues/674)).
+- `haptic validate --dump-rendered` and `--snapshot-dir` list SSL certificates, secret files, and sensitive maps by name only; they no longer print certificate private keys or other secret content ([#689](https://github.com/haproxy-haptic/HAPTIC/issues/689)).
 
 ### Helm chart
 

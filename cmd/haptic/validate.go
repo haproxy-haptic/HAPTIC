@@ -120,7 +120,8 @@ func init() {
 	validateCmd.Flags().StringVarP(&validateOutputFormat, "output", "o", "summary", "Output format: summary, json, yaml")
 	validateCmd.Flags().BoolVar(&validateVerbose, "verbose", false, "Show rendered content preview for failed assertions")
 	validateCmd.Flags().BoolVar(&validateDumpRendered, "dump-rendered", false,
-		"Dump all rendered content: haproxy.cfg, maps, general files, certificates, k8sResources and status patches")
+		"Dump rendered content: haproxy.cfg, maps, general files, k8sResources and status patches. "+
+			"Certificates, secret files and sensitive maps are listed by name only")
 	validateCmd.Flags().BoolVar(&validateTraceTemplates, "trace-templates", false, "Show template execution trace (top-level only; use with --profile-includes for full call tree)")
 	validateCmd.Flags().BoolVar(&validateDebugFilters, "debug-filters", false, "Show filter operation debugging (sort comparisons, etc.)")
 	validateCmd.Flags().BoolVar(&validateProfileIncludes, "profile-includes", false, "Show include timing statistics (top 20 slowest)")
@@ -584,7 +585,7 @@ func dumpRenderedContent(results *testrunner.TestResults) {
 
 		dumpRenderedNamedContent("Map Files", test.RenderedMaps)
 		dumpRenderedNamedContent("General Files", test.RenderedFiles)
-		dumpRenderedNamedContent("SSL Certificates", test.RenderedCerts)
+		dumpRenderedNames("Secret Files (content not shown)", test.RenderedSecretNames)
 		// Everything the render produces, not just what HAProxy itself reads.
 		// k8sResources carry configuration for other processes — the Varnish VCL,
 		// the rate-limit store — which nothing outside the controller could
@@ -607,6 +608,16 @@ func dumpRenderedNamedContent(label string, items map[string]string) {
 		fmt.Println(separatorSingle)
 		fmt.Println(content)
 		fmt.Println(separatorSingle)
+	}
+}
+
+func dumpRenderedNames(label string, names []string) {
+	if len(names) == 0 {
+		return
+	}
+	fmt.Println("\n### " + label)
+	for _, name := range names {
+		fmt.Println(name)
 	}
 }
 

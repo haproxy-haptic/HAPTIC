@@ -67,7 +67,8 @@ such as TLS session-ticket keys. HAPTIC publishes it as a Kubernetes Secret,
 never in a `HAProxyCfg` or `HAProxyGeneralFile`, and writes it to
 `ssl/<filename>`, which only the HAProxy and agent containers mount. It's checked
 by `haproxy -c`, a change reloads HAProxy, and it's left out of `currentFiles`
-and `haptic validate --dump-rendered`. Read it back with `currentSensitiveFiles`.
+and `haptic validate --dump-rendered` lists it by name only. Read it back with
+`currentSensitiveFiles`.
 
 For `"file"`, an optional fourth argument, `reloadOnPush`, defaults to `true`.
 Pass `false` only for a file read by a sidecar rather than HAProxy; a content
@@ -94,8 +95,8 @@ For the whole render, a sensitive map:
 - Is still written to the maps directory and checked by `haproxy -c`.
 - Is replaced as a whole over the runtime API when it changes, so no key or
   value appears in an individual runtime operation.
-- Is left out of `currentFiles`, `haptic validate --dump-rendered`, and the
-  playground.
+- Is left out of `currentFiles` and the playground, and
+  `haptic validate --dump-rendered` lists it by name only.
 
 The bundled `RegisterMap` macro calls it when you pass
 `map[string]any{"sensitive": true}` in its options. Test the content with the

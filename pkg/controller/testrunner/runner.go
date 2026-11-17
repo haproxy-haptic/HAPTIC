@@ -36,6 +36,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"time"
 
@@ -664,7 +665,9 @@ func currentConfigFromFixture(fixture map[string]map[string]config.ServerAddr) *
 	return &renderplan.CurrentConfig{ServerIndex: index}
 }
 
-// storeAuxiliaryFiles stores rendered auxiliary files in the test result for --dump-rendered flag.
+// storeAuxiliaryFiles stores rendered auxiliary files in the test result for
+// --dump-rendered and --snapshot-dir. Certificates, secret files and sensitive
+// maps keep only their names.
 func (r *Runner) storeAuxiliaryFiles(result *TestResult, auxiliaryFiles *dataplane.AuxiliaryFiles) {
 	if auxiliaryFiles == nil {
 		return
@@ -676,15 +679,29 @@ func (r *Runner) storeAuxiliaryFiles(result *TestResult, auxiliaryFiles *datapla
 	result.RenderedFiles = collectByKey(auxiliaryFiles.GeneralFiles,
 		func(f auxiliaryfiles.GeneralFile) string { return f.Filename },
 		func(f auxiliaryfiles.GeneralFile) string { return f.Content })
-	result.RenderedCerts = collectByKey(auxiliaryFiles.SSLCertificates,
-		func(c auxiliaryfiles.SSLCertificate) string { return c.Path },
-		func(c auxiliaryfiles.SSLCertificate) string { return c.Content })
+	result.RenderedSecretNames = secretFileNames(auxiliaryFiles)
+}
+
+// secretFileNames names every rendered file whose content must not leave the
+// render, each under the assertion target prefix that reads it.
+func secretFileNames(files *dataplane.AuxiliaryFiles) []string {
+	var names []string
+	for _, file := range files.SSLCertificates {
+		names = append(names, "cert:"+file.Path)
+	}
+	for _, file := range files.SecretFiles {
+		names = append(names, "secret:"+file.Path)
+	}
+	for _, file := range files.SensitiveMapFiles {
+		names = append(names, "sensitive-map:"+file.Path)
+	}
+	slices.Sort(names)
+	return names
 }
 
 // collectByKey returns a fresh map keyed by key(item) with values content(item),
 // or nil for empty input so callers can leave their pointer fields unset rather
-// than holding empty maps. The three RenderedMaps/RenderedFiles/RenderedCerts
-// fields all share this "iterate, key by one field, value by another" shape.
+// than holding empty maps.
 func collectByKey[T any](items []T, key, content func(T) string) map[string]string {
 	if len(items) == 0 {
 		return nil
