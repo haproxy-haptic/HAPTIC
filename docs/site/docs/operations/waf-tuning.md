@@ -89,6 +89,18 @@ my-policy:
       excludeTarget: "ARGS:id"
 ```
 
+If other applications share `my-policy`, put the exclusion in a policy that
+[extends](waf-policies.md#extend-a-policy) it, and select that policy on the
+affected route only:
+
+```yaml
+my-app:
+  extends: my-policy
+  ruleExclusions:
+    - rules: [942100]
+      excludeTarget: "ARGS:id"
+```
+
 ## Exclude false positives
 
 Use `ruleExclusions` for specific rules or fields and `allowedMethods` for

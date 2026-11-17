@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
@@ -26,13 +28,16 @@ import (
 // The streaming-search fixture keeps URI/query/header inspection enabled while
 // excluding only its free-form `q` search parameter and leaving request bodies
 // untouched, so large uploads remain streaming-compatible. A second centrally
-// defined policy proves bounded, complete body inspection explicitly.
+// defined policy proves bounded, complete body inspection explicitly. A
+// self-service policy extending streaming-search proves inherited and added
+// exclusions both apply.
 func TestHapticWAFPolicies(t *testing.T) {
 	t.Parallel()
 
 	const (
 		streamingHost = "ingress-haptic-waf-streaming.localdev.me"
 		webHost       = "ingress-haptic-waf-web.localdev.me"
+		extendsHost   = "ingress-haptic-waf-extends.localdev.me"
 	)
 
 	feature := features.New("Ingress: reusable Coraza WAF policies are narrow and body-safe").
@@ -65,14 +70,37 @@ func TestHapticWAFPolicies(t *testing.T) {
 				},
 			})
 
+			if err := client.Resources().Create(ctx, &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "waf-policies"},
+				Data: map[string]string{"policies.yaml": "search-extended:\n" +
+					"  extends: streaming-search\n" +
+					"  ruleExclusions:\n" +
+					"    - tags: [attack-sqli]\n" +
+					"      excludeTarget: \"ARGS:other\"\n"},
+			}); err != nil {
+				t.Fatalf("create self-service WAF catalog: %v", err)
+			}
+			NewIngress(ctx, t, client, ns, &IngressSpec{
+				Name:           "extends",
+				Host:           extendsHost,
+				BackendService: backend.Service,
+				BackendPort:    backend.Port,
+				Annotations: map[string]string{
+					"haproxy-haptic.org/waf-policy": "search-extended",
+				},
+			})
+
 			waitForHaproxyIngressWafMap(ctx, t, []string{
 				ns + "/streaming deny",
 				ns + "/web deny",
+				ns + "/extends deny",
 			})
 			waitForSnippetOnPod(ctx, t, []string{
 				`[plugins.params.applications."policy:streaming-search"]`,
 				`[plugins.params.applications."policy:form-body-inspection"]`,
+				`[plugins.params.applications."policy:` + ns + `/search-extended"]`,
 				`SecRuleUpdateTargetByTag "attack-sqli" "!ARGS:q"`,
+				`SecRuleUpdateTargetByTag "attack-sqli" "!ARGS:other"`,
 			})
 			return ctx
 		}).
@@ -87,6 +115,16 @@ func TestHapticWAFPolicies(t *testing.T) {
 			t.Helper()
 			httpclient.New(t).GET(streamingHost, "/?q=haptic-waf-query-probe").ExpectOK(t)
 			httpclient.New(t).GET(streamingHost, "/?other=haptic-waf-query-probe").ExpectStatus(t, http.StatusForbidden)
+			return ctx
+		}).
+		Assess("extended policy keeps inherited checks and adds its own exclusion", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			httpclient.New(t).GET(extendsHost, "/?q=haptic-waf-query-probe").ExpectOK(t)
+			httpclient.New(t).GET(extendsHost, "/?other=haptic-waf-query-probe").ExpectOK(t)
+			httpclient.New(t).GET(extendsHost, "/?third=haptic-waf-query-probe").ExpectStatus(t, http.StatusForbidden)
+			httpclient.New(t).GET(extendsHost, "/").
+				WithHeader("User-Agent", "haptic-waf-block-probe").
+				ExpectStatus(t, http.StatusForbidden)
 			return ctx
 		}).
 		Assess("streaming uploads are not buffered or body-inspected", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {

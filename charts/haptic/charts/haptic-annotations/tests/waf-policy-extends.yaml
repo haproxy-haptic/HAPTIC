@@ -1,0 +1,366 @@
+_fx:
+  extendsSkip: &extendsSkip '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+  extendsCoraza: &extendsCoraza
+    enabled: true
+    plugins:
+      - name: coraza
+        library: libcoraza_plugin.so
+        messages: [check-request]
+        timeoutMs: 15
+        params: ""
+        dependsOn: []
+        directives: |
+          Include @coraza.conf-recommended
+          Include @crs-setup.conf.example
+          Include @owasp_crs/*.conf
+          SecRuleEngine On
+  extendsBaseline: &extendsBaseline
+    enforcement: detect
+    requestBody: {mode: json, maxBytes: 2048}
+    paranoiaLevel: 2
+    anomalyThreshold: {inbound: 10, outbound: 8}
+    allowedMethods: [GET, POST, PATCH]
+    crsSettings: {maxNumArgs: 500, allowedRequestContentTypes: [application/x-ndjson]}
+    ruleExclusions:
+      - rules: [920350]
+  extendsBody: &extendsBody
+    requestBodyInspection: {haproxyBuffer: {sizeBytes: 65536}}
+  extendsGitIngress: &extendsGitIngress
+    - apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata: { namespace: team-a, name: git, annotations: { haproxy-haptic.org/waf-policy: git } }
+      spec:
+        ingressClassName: haptic
+        rules:
+          - host: git.team-a.example.com
+            http:
+              paths:
+                - { path: /, pathType: Prefix, backend: { service: { name: git, port: { number: 80 } } } }
+
+validationTests:
+  test-haptic-waf-policy-extends-inherits-baseline:
+    _helm_skip_test: *extendsSkip
+    description: A policy that extends the default policy inherits every baseline field it omits; exclusions and CRS lists append.
+    extraContext:
+      <<: *extendsBody
+      spoaHub: *extendsCoraza
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: baseline
+          inline:
+            baseline: *extendsBaseline
+            git:
+              extends: baseline
+              crsSettings: {allowedRequestContentTypes: [application/x-git-upload-pack-request]}
+              ruleExclusions:
+                - rules: [930130]
+                  onPathContains: ".git/"
+          configMapRefs: { __replace__: true }
+    fixtures:
+      ingresses: *extendsGitIngress
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:coraza-app.map", pattern: "(?m)^team-a/git policy:git$" }
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/git detect$" }
+      - { type: contains, target: "map:coraza-body.map", pattern: "(?m)^team-a/git buffered json 2048$" }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.allowed_methods=GET POST PATCH' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.blocking_paranoia_level=2' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.inbound_anomaly_score_threshold=10'',setvar:''tx\.outbound_anomaly_score_threshold=8' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?\|application/x-ndjson\| \|application/x-git-upload-pack-request\|' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.max_num_args=500' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?ctl:ruleRemoveById=930130' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?SecRuleRemoveById 920350' }
+
+  test-haptic-waf-policy-extends-overrides:
+    _helm_skip_test: *extendsSkip
+    description: Fields the derived policy sets override the base; anomalyThreshold merges by key and requestBody replaces as a unit.
+    extraContext:
+      <<: *extendsBody
+      spoaHub: *extendsCoraza
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: baseline
+          inline:
+            baseline: *extendsBaseline
+            git:
+              extends: baseline
+              enforcement: deny
+              requestBody: {mode: none}
+              paranoiaLevel: 1
+              anomalyThreshold: {inbound: 20}
+              allowedMethods: [GET]
+              crsSettings: {maxNumArgs: 100}
+          configMapRefs: { __replace__: true }
+    fixtures:
+      ingresses: *extendsGitIngress
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/git deny$" }
+      - { type: not_contains, target: "map:coraza-body.map", pattern: "team-a/git buffered" }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.allowed_methods=GET''' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.blocking_paranoia_level=1' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.inbound_anomaly_score_threshold=20'',setvar:''tx\.outbound_anomaly_score_threshold=8' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.max_num_args=100' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?\|application/x-ndjson\|' }
+
+  test-haptic-waf-policy-extends-baseline-change-propagates:
+    _helm_skip_test: *extendsSkip
+    description: A derived policy keeps no copy of its base; the base's current content in a trusted ConfigMap reaches it.
+    extraContext:
+      spoaHub: *extendsCoraza
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline:
+            git:
+              extends: baseline
+              ruleExclusions:
+                - rules: [930130]
+                  onPathContains: ".git/"
+          configMapRefs:
+            __replace__: true
+            central: {namespace: security, name: catalog}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: security, name: catalog }
+          immutable: true
+          data:
+            policies.yaml: |
+              baseline:
+                enforcement: deny
+                paranoiaLevel: 3
+      ingresses: *extendsGitIngress
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/git deny$" }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.blocking_paranoia_level=3' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?ctl:ruleRemoveById=930130' }
+
+  test-haptic-waf-policy-extends-unknown-base-rejected:
+    _helm_skip_test: *extendsSkip
+    description: extends must name an existing trusted policy
+    extraContext:
+      renderMode: admission
+      waf:
+        policies:
+          defaultPolicy: ""
+          inline:
+            git: {extends: missing}
+          configMapRefs: { __replace__: true }
+    fixtures: {}
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "WAF policy 'git' from extraContext.waf.policies.inline.git extends unknown policy 'missing'" }
+
+  test-haptic-waf-policy-extends-chain-rejected:
+    _helm_skip_test: *extendsSkip
+    description: extends is one level deep, so a chain or cycle never resolves
+    extraContext:
+      renderMode: admission
+      waf:
+        policies:
+          defaultPolicy: ""
+          inline:
+            baseline: {requestBody: {mode: none}}
+            a: {extends: b}
+            b: {extends: a}
+          configMapRefs: { __replace__: true }
+    fixtures: {}
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "extends '[ab]', which extends another policy itself" }
+
+  test-haptic-waf-policy-extends-self-rejected:
+    _helm_skip_test: *extendsSkip
+    description: a policy cannot extend itself
+    extraContext:
+      renderMode: admission
+      waf:
+        policies:
+          defaultPolicy: ""
+          inline:
+            loop: {extends: loop}
+          configMapRefs: { __replace__: true }
+    fixtures: {}
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "WAF policy 'loop' from extraContext.waf.policies.inline.loop extends itself" }
+
+  test-haptic-waf-policy-extends-selfservice-inherits-trusted:
+    _helm_skip_test: *extendsSkip
+    description: A self-service policy extends a trusted policy, inheriting its admin-authored secLang, while its own fields stay self-service.
+    extraContext:
+      <<: *extendsBody
+      spoaHub: *extendsCoraza
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: baseline
+          inline:
+            baseline:
+              <<: *extendsBaseline
+              secLang: 'SecRuleUpdateTargetById 942100 "!ARGS:admin_note"'
+          configMapRefs: { __replace__: true }
+          selfService: {enabled: true}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              git:
+                extends: baseline
+                ruleExclusions:
+                  - rules: [930130]
+                    excludeTarget: REQUEST_FILENAME
+                    onPathContains: ".git/"
+      ingresses: *extendsGitIngress
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:coraza-app.map", pattern: "(?m)^team-a/git policy:team-a/git$" }
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/git detect$" }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:team-a/git"\][^\[]*?ctl:ruleRemoveTargetById=930130;REQUEST_FILENAME' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:team-a/git"\][^\[]*?SecRuleUpdateTargetById 942100 "!ARGS:admin_note"' }
+
+  test-haptic-waf-policy-extends-selfservice-own-seclang-rejected:
+    _helm_skip_test: *extendsSkip
+    description: Extending a trusted policy doesn't lift the self-service secLang ban for the derived policy's own fields.
+    extraContext:
+      spoaHub: *extendsCoraza
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline:
+            baseline: {enforcement: deny, requestBody: {mode: none}}
+          configMapRefs: { __replace__: true }
+          selfService: {enabled: true}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              git:
+                extends: baseline
+                secLang: 'SecRuleEngine DetectionOnly'
+      ingresses: *extendsGitIngress
+    assertions:
+      - { type: contains, target: events, pattern: "Warning WafPolicyInvalid v1 ConfigMap team-a/waf-policies:.*'git'.*uses secLang" }
+      - { type: not_contains, target: "map:coraza-app.map", pattern: "team-a/git" }
+      - { type: not_contains, target: "file:spoa-hub-config.toml", pattern: "DetectionOnly" }
+
+  test-haptic-waf-policy-extends-selfservice-limits-apply-to-merged:
+    _helm_skip_test: *extendsSkip
+    description: The rule-exclusion limit counts inherited exclusions, so extending can't exceed it.
+    extraContext:
+      spoaHub: *extendsCoraza
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          limits: {maxRuleExclusions: 2}
+          inline:
+            baseline:
+              requestBody: {mode: none}
+              ruleExclusions:
+                - rules: [920350, 920420]
+          configMapRefs: { __replace__: true }
+          selfService: {enabled: true}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              git:
+                extends: baseline
+                ruleExclusions:
+                  - rules: [930130]
+      ingresses: *extendsGitIngress
+    assertions:
+      - { type: contains, target: events, pattern: "Warning WafPolicyInvalid v1 ConfigMap team-a/waf-policies:.*'git'.*exceeds the configured rule-exclusion limit 2" }
+      - { type: not_contains, target: "map:coraza-app.map", pattern: "team-a/git" }
+
+  test-haptic-waf-policy-extends-selfservice-default-on-weakening-rejected:
+    _helm_skip_test: *extendsSkip
+    description: Under default-on deny, a self-service policy that inherits detect from its base still weakens the baseline and is rejected.
+    extraContext:
+      admissionSubject: { store: ingresses, namespace: team-a, name: git }
+      renderMode: admission
+      spoaHub: *extendsCoraza
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: deny}
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline:
+            shadow: {enforcement: detect, requestBody: {mode: none}}
+          configMapRefs: { __replace__: true }
+          selfService: {enabled: true}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              git:
+                extends: shadow
+      ingresses: *extendsGitIngress
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "would weaken the default-on baseline enforcement 'deny'" }
+
+  test-haptic-waf-policy-extends-selfservice-own-namespace-base-rejected:
+    _helm_skip_test: *extendsSkip
+    description: Self-service policies extend trusted policies only, never another namespace policy.
+    extraContext:
+      spoaHub: *extendsCoraza
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          configMapRefs: { __replace__: true }
+          selfService: {enabled: true}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              local:
+                requestBody: {mode: none}
+              git:
+                extends: local
+      ingresses: *extendsGitIngress
+    assertions:
+      - { type: contains, target: events, pattern: "Warning WafPolicyInvalid v1 ConfigMap team-a/waf-policies:.*'git'.*extends unknown policy 'local'" }
+      - { type: not_contains, target: "map:coraza-app.map", pattern: "team-a/git" }
+
+  test-haptic-waf-policy-extends-unavailable-base-fails-closed:
+    _helm_skip_test: *extendsSkip
+    description: A derived policy whose base ConfigMap is missing denies its routes without failing the render.
+    extraContext:
+      spoaHub: *extendsCoraza
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline:
+            git: {extends: baseline}
+          configMapRefs:
+            __replace__: true
+            central: {namespace: security, name: catalog}
+    fixtures:
+      ingresses: *extendsGitIngress
+    assertions:
+      - type: haproxy_valid
+      - { type: not_contains, target: "map:coraza-app.map", pattern: "team-a/git" }
+      - { type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 503 if \{ var\(txn.resource_key\) -m str team-a/git \}' }
+      - { type: contains, target: events, pattern: "Ingress team-a/git.*WAF policy 'git' from extraContext.waf.policies.inline.git extends unknown policy 'baseline'" }

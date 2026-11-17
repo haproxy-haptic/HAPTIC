@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `haproxy-haptic.org/upstream-authorization-secret` replaces the request's `Authorization` header with a value from a Secret in the Ingress's namespace, after every client check ([#672](https://github.com/haproxy-haptic/HAPTIC/issues/672)).
 - `HAProxyRoutePolicy` `spec.upstreamAuthorization.secretRef` does the same for HTTPRoute and GRPCRoute rules, from an immutable Secret in the policy's namespace ([#676](https://github.com/haproxy-haptic/HAPTIC/issues/676)).
+- WAF policies accept `extends: <policy>` to build on a trusted policy, so a per-route exclusion no longer copies the whole baseline; self-service policies can extend trusted ones ([#694](https://github.com/haproxy-haptic/HAPTIC/issues/694)).
 
 #### Changed
 
