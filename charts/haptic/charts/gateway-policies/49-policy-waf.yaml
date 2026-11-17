@@ -41,6 +41,10 @@ templateSnippets:
           if ref != nil { scope = namespace + "/" + dig_string(ref, "", "name") + "/" + dig_string(ref, "policies.yaml", "key") }
           var result = map[string]any{}
           SelectWafPolicy(catalog, scope, dig_string(item, "", "spec", "waf", "policy"), result)
+          var catalogRecord = records[scope]
+          if ref != nil && catalog["selfServiceEnabled"] == true && dig(catalogRecord, "missing") == true && result["error"] == dig_string(catalogRecord, "", "error") {
+            result["pendingCatalogPolicy"] = map[string]any{"apiVersion": dig_string(item, "", "apiVersion"), "kind": dig_string(item, "", "kind"), "metadata": map[string]any{"namespace": namespace, "name": name}}
+          }
           if ref != nil {
             result["dependencies"] = append(toSlice(result["dependencies"]), map[string]any{
               "store": "configmaps", "namespace": namespace, "name": dig_string(ref, "", "name"),

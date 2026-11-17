@@ -319,6 +319,12 @@ search:
       excludeTarget: "ARGS:id"
 ```
 
+You can apply the ConfigMap and the Ingress together, for example in one
+`kubectl apply` or one Argo CD sync. Admission might not see the new ConfigMap
+yet, so it admits an Ingress that names a policy its namespace doesn't define
+and prints a warning. That route returns `503` and gets a `WafPolicyUnavailable`
+Warning Event until the policy exists.
+
 | Boundary | Behavior |
 |----------|----------|
 | Namespace | A team can select its own policies and trusted policies. Cross-namespace names such as `team-a/app-baseline` are rejected. |
@@ -331,9 +337,12 @@ search:
 
 ## Diagnose a rejected policy
 
-Admission rejects invalid definitions and selections. If an invalid selection
-already exists, HAPTIC returns `503` for affected routes and emits a Warning
-Event. For an invalid self-service catalog, only selecting routes in that
+Admission rejects invalid definitions and selections. It admits one exception
+with a warning: a valid policy name that the Ingress's own namespace doesn't
+define yet. Selecting a policy while policy selection is disabled, a malformed
+name, or an unknown name while self-service is disabled is still rejected. If an
+invalid selection exists, HAPTIC returns `503` for affected routes and emits a
+Warning Event. For an invalid self-service catalog, only selecting routes in that
 namespace are affected; other namespaces continue rendering.
 
 Inspect the Ingress and catalog ConfigMap Events. `WafPolicyCatalogInvalid`

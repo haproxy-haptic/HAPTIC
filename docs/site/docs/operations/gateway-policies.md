@@ -314,8 +314,10 @@ The following example uses the `api-access` policy created above.
     ```
 
 Admission validates the new selection against every attached route. Rejected
-changes leave the old reference in place. Catalog creation alone doesn't change
-traffic. Keep the previous version while any policy references it; deleting a
+changes leave the old reference in place. A reference to a catalog that doesn't
+exist yet is admitted with a warning, so you can create the catalog and change
+the reference in one apply; the affected rules return 503 until the catalog
+exists. Catalog creation alone doesn't change traffic. Keep the previous version while any policy references it; deleting a
 referenced catalog makes those rules return 503. Roll back by changing the
 reference to `api-waf-v1`.
 

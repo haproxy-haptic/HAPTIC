@@ -129,11 +129,15 @@ templateSnippets:
             // for an already-broken route are skipped.
             var subjectMatchesStore = tostring(admissionSubject | dig("store") | fallback("")) == "ingresses" || tostring(admissionSubject | dig("stores", "ingresses") | fallback(false)) == "true"
             var underAdmission = renderMode == "admission" && subjectMatchesStore && tostring(admissionSubject | dig("namespace") | fallback("")) == ns && tostring(admissionSubject | dig("name") | fallback("")) == name
-            var rejectRoute = func(reason string, message string) {
-              if underAdmission { fail(message) }
+            // Fails the route closed even under admission, where its Event becomes an admission warning instead of a denial (#703).
+            var breakRoute = func(reason string, message string) {
               if routeBrokenReason != "" { return }
               recordEvent(ingress, reason, message)
               routeBrokenReason = message
+            }
+            var rejectRoute = func(reason string, message string) {
+              if underAdmission { fail(message) }
+              breakRoute(reason, message)
             }
             if requestedPolicy != "" && !allowPolicySelection {
               rejectRoute("WafPermissionDenied", "Ingress " + resourceID + " sets waf-policy, but the HAPTIC administrator disabled Ingress policy selection. Remove the annotation; default policy '" + defaultPolicy + "' applies automatically.")
@@ -179,7 +183,12 @@ templateSnippets:
                 if len(available) > 0 {
                   availableText = "available policies: " + join(available | toStringSlice(), ", ")
                 }
-                rejectRoute("WafPolicyUnavailable", "Unknown WAF policy '" + requestedPolicy + "' on Ingress " + resourceID + "; " + availableText + ". Policy names are exact and case-sensitive.")
+                var unknownMessage = "Unknown WAF policy '" + requestedPolicy + "' on Ingress " + resourceID + "; " + availableText + ". Policy names are exact and case-sensitive."
+                if selfServiceEnabled && regex_search(requestedPolicy, "^[a-z0-9][a-z0-9._-]{0,62}$") {
+                  breakRoute("WafPolicyUnavailable", unknownMessage + " Requests return 503 until namespace " + ns + "'s self-service WAF catalog defines it.")
+                } else {
+                  rejectRoute("WafPolicyUnavailable", unknownMessage)
+                }
               }
             }
             if policy == "" && routeBrokenReason == "" {
@@ -352,11 +361,10 @@ templateSnippets:
       {%- end -%}
 
   # Fail-closed guard for routes whose selected WAF policy could not be
-  # applied (unknown, ambiguous, or failed-validation self-service policy on a
-  # live render). The admission webhook rejects proposed changes that would
-  # introduce these, so this rule only covers breakage that pre-dates the
-  # webhook or raced past it — such routes asked for a WAF and must fail
-  # closed with 503 rather than silently serve unprotected.
+  # applied. Admission rejects most of these; an unknown self-service policy is
+  # admitted with a warning, and pre-existing breakage can't be rejected. Such
+  # routes asked for a WAF and must fail closed with 503 rather than serve
+  # unprotected.
   frontend-filters-113-haptic-waf-fail-closed:
     template: |-
       {{- render "util-waf-haptic-coraza-scan" -}}

@@ -2401,6 +2401,359 @@ validationTests:
     - type: not_contains
       target: map:coraza-app.map
       pattern: gateway/h_default_same-name_0
+  test-gateway-policy-waf-missing-catalog-policy-admission:
+    _helm_skip_test: '{{ if or (not .Values.spoaHub.plugins.coraza.enabled) (include "haptic.spoaHub.disabled" .) }}true{{ end }}'
+    requires:
+    - httproutes
+    - grpcroutes
+    - routepolicies
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          namespace: default
+          name: policy-gateway
+          generation: 1
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            protocol: HTTP
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          namespace: default
+          name: echo
+        spec:
+          ports:
+          - port: 80
+            targetPort: 8080
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata:
+          namespace: default
+          name: jwt
+        spec:
+          waf:
+            policy: tenant
+            catalogRef:
+              name: waf-policies
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          namespace: default
+          name: same-name
+          generation: 2
+        spec:
+          parentRefs:
+          - name: policy-gateway
+          hostnames:
+          - same-name.example.com
+          rules:
+          - backendRefs:
+            - name: echo
+              port: 80
+            matches:
+            - path:
+                type: PathPrefix
+                value: /jwt
+            filters:
+            - type: ExtensionRef
+              extensionRef:
+                group: haproxy-haptic.org
+                kind: HAProxyRoutePolicy
+                name: jwt
+      grpcroutes: []
+      configmaps: []
+    extraContext:
+      spoaHub:
+        enabled: true
+        haproxy:
+          messages:
+          - check-request
+        plugins:
+        - name: coraza
+          library: libcoraza_plugin.so
+          messages:
+          - check-request
+          timeoutMs: 15
+          params: ''
+          dependsOn: []
+          directives: 'Include @coraza.conf-recommended
+
+            Include @crs-setup.conf.example
+
+            Include @owasp_crs/*.conf
+
+            SecRuleEngine On
+
+            '
+      waf:
+        dispatch:
+          mode: opt-in
+          defaultEnforcement: deny
+        ingressPermissions:
+          allowPolicySelection: true
+        policies:
+          defaultPolicy: ''
+          inline:
+            __replace__: true
+          configMapRefs:
+            __replace__: true
+          selfService:
+            enabled: true
+      renderMode: admission
+      admissionSubject: {store: routepolicies, namespace: default, name: jwt}
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: map:gw-policy-errors.map
+      pattern: (?m)^gateway/h_default_same-name_0 invalid$
+    - type: contains
+      target: events
+      pattern: is missing
+    - type: not_contains
+      target: map:coraza-app.map
+      pattern: gateway/h_default_same-name_0
+    - type: contains
+      target: events
+      pattern: Warning RoutePolicyInvalid haproxy-haptic.org/v1alpha1 HAProxyRoutePolicy default/jwt:.*is missing
+  test-gateway-policy-waf-missing-catalog-route-admission:
+    _helm_skip_test: '{{ if or (not .Values.spoaHub.plugins.coraza.enabled) (include "haptic.spoaHub.disabled" .) }}true{{ end }}'
+    requires:
+    - httproutes
+    - grpcroutes
+    - routepolicies
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          namespace: default
+          name: policy-gateway
+          generation: 1
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            protocol: HTTP
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          namespace: default
+          name: echo
+        spec:
+          ports:
+          - port: 80
+            targetPort: 8080
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata:
+          namespace: default
+          name: jwt
+        spec:
+          waf:
+            policy: tenant
+            catalogRef:
+              name: waf-policies
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          namespace: default
+          name: same-name
+          generation: 2
+        spec:
+          parentRefs:
+          - name: policy-gateway
+          hostnames:
+          - same-name.example.com
+          rules:
+          - backendRefs:
+            - name: echo
+              port: 80
+            matches:
+            - path:
+                type: PathPrefix
+                value: /jwt
+            filters:
+            - type: ExtensionRef
+              extensionRef:
+                group: haproxy-haptic.org
+                kind: HAProxyRoutePolicy
+                name: jwt
+      grpcroutes: []
+      configmaps: []
+    extraContext:
+      spoaHub:
+        enabled: true
+        haproxy:
+          messages:
+          - check-request
+        plugins:
+        - name: coraza
+          library: libcoraza_plugin.so
+          messages:
+          - check-request
+          timeoutMs: 15
+          params: ''
+          dependsOn: []
+          directives: 'Include @coraza.conf-recommended
+
+            Include @crs-setup.conf.example
+
+            Include @owasp_crs/*.conf
+
+            SecRuleEngine On
+
+            '
+      waf:
+        dispatch:
+          mode: opt-in
+          defaultEnforcement: deny
+        ingressPermissions:
+          allowPolicySelection: true
+        policies:
+          defaultPolicy: ''
+          inline:
+            __replace__: true
+          configMapRefs:
+            __replace__: true
+          selfService:
+            enabled: true
+      renderMode: admission
+      admissionSubject: {store: httproutes, namespace: default, name: same-name}
+    assertions:
+    - type: haproxy_valid
+    - type: contains
+      target: map:gw-policy-errors.map
+      pattern: (?m)^gateway/h_default_same-name_0 invalid$
+    - type: contains
+      target: events
+      pattern: is missing
+    - type: not_contains
+      target: map:coraza-app.map
+      pattern: gateway/h_default_same-name_0
+  test-gateway-policy-waf-missing-catalog-selfservice-disabled-admission:
+    _helm_skip_test: '{{ if or (not .Values.spoaHub.plugins.coraza.enabled) (include "haptic.spoaHub.disabled" .) }}true{{ end }}'
+    requires:
+    - httproutes
+    - grpcroutes
+    - routepolicies
+    fixtures:
+      gateways:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: Gateway
+        metadata:
+          namespace: default
+          name: policy-gateway
+          generation: 1
+        spec:
+          gatewayClassName: haptic
+          listeners:
+          - name: http
+            port: 80
+            protocol: HTTP
+      services:
+      - apiVersion: v1
+        kind: Service
+        metadata:
+          namespace: default
+          name: echo
+        spec:
+          ports:
+          - port: 80
+            targetPort: 8080
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata:
+          namespace: default
+          name: jwt
+        spec:
+          waf:
+            policy: tenant
+            catalogRef:
+              name: waf-policies
+      httproutes:
+      - apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          namespace: default
+          name: same-name
+          generation: 2
+        spec:
+          parentRefs:
+          - name: policy-gateway
+          hostnames:
+          - same-name.example.com
+          rules:
+          - backendRefs:
+            - name: echo
+              port: 80
+            matches:
+            - path:
+                type: PathPrefix
+                value: /jwt
+            filters:
+            - type: ExtensionRef
+              extensionRef:
+                group: haproxy-haptic.org
+                kind: HAProxyRoutePolicy
+                name: jwt
+      grpcroutes: []
+      configmaps: []
+    extraContext:
+      spoaHub:
+        enabled: true
+        haproxy:
+          messages:
+          - check-request
+        plugins:
+        - name: coraza
+          library: libcoraza_plugin.so
+          messages:
+          - check-request
+          timeoutMs: 15
+          params: ''
+          dependsOn: []
+          directives: 'Include @coraza.conf-recommended
+
+            Include @crs-setup.conf.example
+
+            Include @owasp_crs/*.conf
+
+            SecRuleEngine On
+
+            '
+      waf:
+        dispatch:
+          mode: opt-in
+          defaultEnforcement: deny
+        ingressPermissions:
+          allowPolicySelection: true
+        policies:
+          defaultPolicy: ''
+          inline:
+            __replace__: true
+          configMapRefs:
+            __replace__: true
+          selfService:
+            enabled: false
+      renderMode: admission
+      admissionSubject: {store: routepolicies, namespace: default, name: jwt}
+    assertions:
+    - type: contains
+      target: rendering_error
+      pattern: WAF catalog references are disabled
   test-gateway-policy-waf-malformed-catalog:
     _helm_skip_test: '{{ if or (not .Values.spoaHub.plugins.coraza.enabled) (include "haptic.spoaHub.disabled" .) }}true{{ end }}'
     requires:

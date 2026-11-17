@@ -11,11 +11,17 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net/http"
+	"os/exec"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
@@ -148,6 +154,92 @@ func TestHapticWAFPolicies(t *testing.T) {
 				WithHeader("Content-Type", "application/x-www-form-urlencoded").
 				WithChunkedBody("payload=benign").
 				ExpectStatus(t, http.StatusLengthRequired)
+			return ctx
+		})
+
+	testEnv.Test(t, feature.Feature())
+}
+
+// TestHapticWAFSelfServiceOneApply applies an Ingress and the waf-policies
+// ConfigMap defining its policy in one manifest, Ingress first (#703).
+func TestHapticWAFSelfServiceOneApply(t *testing.T) {
+	t.Parallel()
+
+	const host = "ingress-haptic-waf-selfservice.localdev.me"
+
+	feature := features.New("Ingress: a self-service WAF policy applies together with its catalog").
+		Assess("one apply admits both and enforces the policy", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			client, err := cfg.NewClient()
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+			ns := NamespaceForTest(ctx, t, client)
+			DumpLogsOnFailure(t, ns)
+			backend := NewEchoServerBackend(ctx, t, client, ns)
+			manifest := []byte(fmt.Sprintf(`apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: %[1]s
+  name: app
+  annotations:
+    haproxy-haptic.org/waf-policy: team-block
+spec:
+  ingressClassName: haptic
+  rules:
+  - host: %[2]s
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: %[3]s
+            port:
+              number: %[4]d
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: %[1]s
+  name: waf-policies
+data:
+  policies.yaml: |
+    team-block:
+      requestBody:
+        mode: none
+      enforcement: deny
+`, ns, host, backend.Service, backend.Port))
+
+			// A server-side dry run never stores the ConfigMap, so admission
+			// always checks the Ingress without it, as an Argo CD diff does.
+			dryRun := exec.CommandContext(ctx, "kubectl", "apply", kubeconfigFlag, kubeconfigPath, "--dry-run=server", "-f", "-")
+			dryRun.Stdin = bytes.NewReader(manifest)
+			out, err := dryRun.CombinedOutput()
+			if err != nil {
+				t.Fatalf("server-side dry run refused the manifest: %v\n%s", err, out)
+			}
+			if !strings.Contains(string(out), "Unknown WAF policy 'team-block'") {
+				t.Fatalf("server-side dry run printed no admission warning:\n%s", out)
+			}
+
+			registerControllerForgetNamespaceCleanup(t, client, ns)
+			t.Cleanup(func() {
+				ing := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "app"}}
+				if err := client.Resources(ns).Delete(context.Background(), ing); err != nil && !apierrors.IsNotFound(err) {
+					t.Logf("delete Ingress %s/app: %v (best-effort)", ns, err)
+				}
+			})
+			if err := kubectlApplyStdin(ctx, manifest); err != nil {
+				t.Fatalf("apply Ingress and catalog: %v", err)
+			}
+			waitForIngressDeployed(ctx, t, client, ns, "app")
+			waitForHaproxyIngressWafMap(ctx, t, []string{ns + "/app deny"})
+
+			httpclient.New(t).GET(host, "/").ExpectOK(t)
+			httpclient.New(t).GET(host, "/").
+				WithHeader("User-Agent", "haptic-waf-block-probe").
+				ExpectStatus(t, http.StatusForbidden)
 			return ctx
 		})
 

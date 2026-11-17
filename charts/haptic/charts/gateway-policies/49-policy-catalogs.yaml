@@ -28,7 +28,7 @@ templateSnippets:
           }
           show shared.Publish("catalogs", namespace + "/" + dig_string(item, "", "metadata", "name"), map[string]any{
             "namespace": namespace, "name": name, "key": key, "scope": namespace + "/" + name + "/" + key,
-            "policyYAML": dig_string(cm, "", "data", key), "error": message,
+            "policyYAML": dig_string(cm, "", "data", key), "error": message, "missing": cm == nil,
             "resource": map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"namespace": namespace, "name": name}},
           })
         %%}
