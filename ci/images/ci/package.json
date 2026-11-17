@@ -4,7 +4,7 @@
   "dependencies": {
     "braces": "file:./shims/braces",
     "katex": "0.19.1",
-    "markdownlint-cli2": "0.24.0",
+    "markdownlint-cli2": "0.24.1",
     "picomatch": "file:./shims/picomatch",
     "smol-toml": "1.9.1"
   },
@@ -16,6 +16,6 @@
     },
     "picomatch": "$picomatch",
     "smol-toml": "$smol-toml",
-    "re2js": "2.9.1"
+    "re2js": "2.10.0"
   }
 }
