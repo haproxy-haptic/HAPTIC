@@ -195,6 +195,7 @@ validationTests:
       <<: *extendsBody
       spoaHub: *extendsCoraza
       waf:
+        dispatch: {defaultEnforcement: detect}
         ingressPermissions: {allowPolicySelection: true}
         policies:
           defaultPolicy: baseline
@@ -296,7 +297,7 @@ validationTests:
       spoaHub: *extendsCoraza
       waf:
         dispatch: {mode: default-on, defaultEnforcement: deny}
-        ingressPermissions: {allowPolicySelection: true}
+        ingressPermissions: {allowPolicySelection: true, allowEnforcementOverride: true}
         policies:
           defaultPolicy: ""
           inline:
@@ -364,3 +365,68 @@ validationTests:
       - { type: not_contains, target: "map:coraza-app.map", pattern: "team-a/git" }
       - { type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 503 if \{ var\(txn.resource_key\) -m str team-a/git \}' }
       - { type: contains, target: events, pattern: "Ingress team-a/git.*WAF policy 'git' from extraContext.waf.policies.inline.git extends unknown policy 'baseline'" }
+
+  test-haptic-waf-policy-extends-selfservice-inherited-enforcement-capped:
+    _helm_skip_test: *extendsSkip
+    description: The self-service enforcement cap applies to enforcement inherited from the base.
+    extraContext:
+      spoaHub: *extendsCoraza
+      waf:
+        dispatch: {defaultEnforcement: deny}
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline:
+            shadow: {enforcement: detect, requestBody: {mode: none}}
+          configMapRefs: { __replace__: true }
+          selfService: {enabled: true}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              git:
+                extends: shadow
+              pinned:
+                extends: shadow
+                enforcement: deny
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-a, name: git, annotations: { haproxy-haptic.org/waf-policy: git } }
+          spec:
+            ingressClassName: haptic
+            rules: [{host: git.team-a.example.com, http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: git, port: {number: 80}}}}]}}]
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-a, name: pinned, annotations: { haproxy-haptic.org/waf-policy: pinned } }
+          spec:
+            ingressClassName: haptic
+            rules: [{host: pinned.team-a.example.com, http: {paths: [{path: /, pathType: Prefix, backend: {service: {name: git, port: {number: 80}}}}]}}]
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: events, pattern: "Warning WafPolicyInvalid v1 ConfigMap team-a/waf-policies:.*'git'.* inherits enforcement 'detect' from 'shadow', but the administrator fixed enforcement to 'deny'" }
+      - { type: not_contains, target: "map:coraza-app.map", pattern: "team-a/git" }
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/pinned deny$" }
+
+  test-haptic-waf-policy-extends-omitted-enforcement-uses-default:
+    _helm_skip_test: *extendsSkip
+    description: When neither the derived policy nor its base sets enforcement, the installation default applies.
+    extraContext:
+      spoaHub: *extendsCoraza
+      waf:
+        dispatch: {defaultEnforcement: detect}
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline:
+            baseline: {requestBody: {mode: none}, paranoiaLevel: 2}
+            git: {extends: baseline}
+          configMapRefs: { __replace__: true }
+    fixtures:
+      ingresses: *extendsGitIngress
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/git detect$" }
