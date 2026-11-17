@@ -652,8 +652,9 @@ spec:
                       description: |-
                         CurrentFiles are the currently-deployed general auxiliary files
                         (filename → content), exposed to templates under `currentFiles`. Used to
-                        test templates that read their own prior output — e.g. self-rotating TLS
-                        session-ticket keys inspecting the current key file's embedded date marker.
+                        test templates that read their own prior output. A key prefixed with
+                        `sensitive-file/` seeds `currentSensitiveFiles` instead — e.g. the
+                        self-rotating TLS session-ticket keys.
                       type: object
                     currentServers:
                       additionalProperties:

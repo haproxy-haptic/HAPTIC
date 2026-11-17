@@ -22,7 +22,7 @@ Each test consists of:
 | **Extra context** (`extraContext`) | Optional — per-test values deep-merged over the test baseline (see [Extra context](#extra-context)): nested maps merge key by key with per-test leaves winning, so overriding one key keeps its siblings. To pin an exact key set instead of merging, give the nested map `__replace__: true`: it replaces the baseline's map at that key wholesale, and the sentinel is stripped from the result |
 | **Current servers** (`currentServers`) | Optional — the servers a previous deployment had, keyed by backend and server name, exposed to templates as `currentConfig.ServerIndex`; use it to exercise slot-preservation logic (see [Current servers](#current-servers)) |
 | **Current config** (`currentConfig`) | Deprecated — a raw `haproxy.cfg` the runner parses down to the same server index. Use `currentServers` |
-| **Current files** (`currentFiles`) | Optional — filename → content of the general files already deployed, exposed to templates as `currentFiles`; use it for templates that read their own prior output, such as self-rotating TLS session-ticket keys |
+| **Current files** (`currentFiles`) | Optional — filename → content of the general files already deployed, exposed to templates as `currentFiles`; use it for templates that read their own prior output. A key prefixed with `sensitive-file/` seeds `currentSensitiveFiles` instead, as the self-rotating TLS session-ticket keys need |
 | **Requires** (`requires` / `requiresFields`) | Optional — strip the test when a watched resource or schema field is unavailable (see [Conditional Tests](#conditional-tests-requires-and-requiresfields)) |
 
 ### Fixtures
@@ -228,7 +228,7 @@ The `contains`, `not_contains`, `match_count`, `equals`, and `match_order` asser
 | `file:<name>` | A rendered general file (error pages, etc.), matched by filename |
 | `cert:<name>` | A rendered SSL certificate, matched by basename. A failed assertion never shows the content |
 | `crt-list:<name>` | A rendered crt-list file (registered by a template via `fileRegistry.Register("crt-list", …)`), matched by basename |
-| `secret:<name>` | A rendered secret file (registered via `fileRegistry.Register("secret", …)`), matched by basename. A failed assertion never shows the content |
+| `secret:<name>` | A rendered secret file (registered via `fileRegistry.Register("secret", …)` or `"sensitive-file"`), matched by basename. A failed assertion never shows the content |
 | `k8s:<template-name>` | The rendered YAML of a `spec.k8sResources` template (potentially multi-doc with `---`), so you can assert on emitted Kubernetes resources |
 | `status:<ns>/<name>:<phase>` | The JSON status payload a `statusPatch()` call emitted for resource `<ns>/<name>` in the given pipeline phase (`rendered`, `deployed`, `renderFailed`, or `deployFailed`) — the way to test status-patch templates |
 | `events` | The Kubernetes Events the templates recorded via `recordEvent()`, one per line as `<Type> <Reason> <apiVersion> <Kind> <ns>/<name>: <message>` |

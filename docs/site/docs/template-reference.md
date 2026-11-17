@@ -15,6 +15,7 @@ All templates have access to the following top-level variables:
 | `capabilities` | map (bool values) | Feature flags for the lowest HAProxy version in the fleet. See [version checks](#check-haproxy-features). |
 | `currentConfig` | server index (or nil) | The servers the running configuration has: `currentConfig.ServerIndex["<backend>"]["<server>"].Address` and `.Port` (a pointer — check it for nil before you read it). **Nil on first deployment** — guard with `{% if !isNil(currentConfig) %}`. |
 | `currentFiles` | `map[string]string` | Last validated map, general-file, and crt-list contents, keyed by base filename. Empty on first deployment; excludes Secret data. See [previous output](#read-previous-output). |
+| `currentSensitiveFiles` | `map[string]string` | Last validated content of files registered as `"sensitive-file"`, keyed by base filename. Empty on first deployment. See [previous output](#read-previous-output). |
 | `dataplane` | `config.Dataplane` block | The CRD's `spec.dataplane` block — the agent port, timeouts, and the auxiliary paths |
 | `shared` | `*SharedContext` | Thread-safe compute-once cache for expensive computations (`shared.ComputeIfAbsent(key, factory)` + `shared.Get(key)`; no `Set` — prevents racy check-then-act patterns) |
 | `templateSnippets` | list | Names of all available template snippets — useful for dynamic `render_glob` patterns |
@@ -41,9 +42,10 @@ for feature checks, since a fleet can temporarily contain mixed versions.
 
 ### Read previous output
 
-Use `currentFiles["filename"]` to read a previously validated auxiliary file.
-The map is always non-nil; `len(currentFiles) == 0` covers the first deployment.
-The controller sets this variable; `extraContext.currentFiles` can't override it.
+Use `currentFiles["filename"]` to read a previously validated auxiliary file,
+and `currentSensitiveFiles["filename"]` to read a previously validated
+`"sensitive-file"`. Both maps are always non-nil; a length of zero covers the
+first deployment. The controller sets both; `extraContext` can't override them.
 
 The files come from the last complete, validated configuration. If that
 published set is incomplete, rendering fails until it's available.
@@ -52,13 +54,20 @@ published set is incomplete, rendering fails until it's available.
 
 `fileRegistry.Register(kind, filename, content)` registers a file during rendering
 and returns `(path, error)`. Handle the error before using the path. `kind` can be `"file"`, `"cert"`, `"map"`,
-`"crt-list"`, `"ca-file"`, or `"secret"`. For example, the bundled libraries use it to
+`"crt-list"`, `"ca-file"`, `"secret"`, or `"sensitive-file"`. For example, the bundled libraries use it to
 assemble CA bundles and client certificates from Secrets.
 
 Use `"secret"` for a credential a sidecar reads and HAProxy never does, such as
 an OAuth client secret. HAPTIC publishes it as a Kubernetes Secret, never in a
 `HAProxyCfg`, and writes it to `secrets/<filename>` without reloading HAProxy.
 The bundled pod mounts that directory in the agent and SPOA hub containers only.
+
+Use `"sensitive-file"` for key material HAProxy reads that isn't a certificate,
+such as TLS session-ticket keys. HAPTIC publishes it as a Kubernetes Secret,
+never in a `HAProxyCfg` or `HAProxyGeneralFile`, and writes it to
+`ssl/<filename>`, which only the HAProxy and agent containers mount. It's checked
+by `haproxy -c`, a change reloads HAProxy, and it's left out of `currentFiles`
+and `haptic validate --dump-rendered`. Read it back with `currentSensitiveFiles`.
 
 For `"file"`, an optional fourth argument, `reloadOnPush`, defaults to `true`.
 Pass `false` only for a file read by a sidecar rather than HAProxy; a content
@@ -306,7 +315,7 @@ rendered `HAProxyCfg`, so don't use it for secrets.
 
 `pathResolver` is available in every template. Its `GetPath(filename, type)` method returns the path that HAProxy should use to reference an auxiliary file (map, error file, certificate, crt-list). Use it instead of writing paths by hand so the controller and HAProxy agree on where files live.
 
-**Arguments**: `filename` (string), `type` (one of `"map"`, `"file"`, `"cert"`, `"crt-list"`, `"secret"`)
+**Arguments**: `filename` (string), `type` (one of `"map"`, `"file"`, `"cert"`, `"crt-list"`, `"secret"`, `"sensitive-file"`)
 
 ```go
 {# Map files — resolves to maps/host.map #}

@@ -82,3 +82,50 @@ func TestSecretFileArtifactRequiresASeal(t *testing.T) {
 	_, err := BuildAuxiliaryFileSnapshot(renderartifact.NewAuthority(), nil, secretFiles("a", ""))
 	require.Error(t, err)
 }
+
+func sensitiveFiles() *AuxiliaryFiles {
+	return &AuxiliaryFiles{SecretFiles: []auxiliaryfiles.SecretFile{
+		{Path: "ssl/tls-ticket-keys", Content: "k1\n", Seal: "s", HAProxyReads: true},
+		{Path: "secrets/sidecar", Content: "hunter2", Seal: "t"},
+	}}
+}
+
+// Only a file HAProxy reads is read back, and never under a currentFiles name.
+func TestSensitiveFilesAreReadBackApartFromCurrentFiles(t *testing.T) {
+	want := map[string]string{SensitiveFileKeyPrefix + "tls-ticket-keys": "k1\n"}
+	assert.Equal(t, want, sensitiveFiles().CurrentFiles())
+
+	snapshot := buildForeignSnapshot(t, sensitiveFiles())
+	current, err := SnapshotCurrentFiles(snapshot)
+	require.NoError(t, err)
+	assert.Equal(t, want, current)
+
+	materialized, err := MaterializeAuxiliaryFileSnapshot(snapshot)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, sensitiveFiles().SecretFiles, materialized.SecretFiles)
+}
+
+func TestSensitiveFileIsWrittenForTheCheck(t *testing.T) {
+	var written []string
+	err := eachAuxiliaryFile(sensitiveFiles(), &ValidationPaths{ConfigFile: "/v/haproxy.cfg", SSLCertsDir: "/v/ssl"},
+		func(resolved, _, _ string) error {
+			written = append(written, resolved)
+			return nil
+		})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/v/ssl/tls-ticket-keys"}, written)
+}
+
+func TestCanonicalizeRejectsSensitiveFileOverCertificate(t *testing.T) {
+	files := sensitiveFiles()
+	files.SSLCertificates = []auxiliaryfiles.SSLCertificate{{Path: "ssl/tls-ticket-keys", Content: "pem"}}
+	_, err := CanonicalizeAuxiliaryFiles(files)
+	require.ErrorContains(t, err, `sensitive file "ssl/tls-ticket-keys" has the path of a certificate`)
+}
+
+func TestCanonicalizeRejectsSensitiveFileOverCertificateWithOtherDirectory(t *testing.T) {
+	files := sensitiveFiles()
+	files.CRTListFiles = []auxiliaryfiles.CRTListFile{{Path: "/etc/haproxy/ssl/tls-ticket-keys", Content: "x.pem"}}
+	_, err := CanonicalizeAuxiliaryFiles(files)
+	require.ErrorContains(t, err, `sensitive file "ssl/tls-ticket-keys" has the path of a certificate`)
+}

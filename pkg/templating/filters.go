@@ -109,11 +109,12 @@ func (pr *PathResolver) GetBaseDir() string {
 //	{{ pathResolver.GetPath("cert.pem", "cert") }}             → ssl/cert.pem (relative) or /etc/haproxy/ssl/cert.pem (absolute)
 //	{{ pathResolver.GetPath("certificate-list.txt", "crt-list") }} → ssl/certificate-list.txt (relative)
 //	{{ pathResolver.GetPath("sso.client-secret", "secret") }} → secrets/sso.client-secret (relative)
+//	{{ pathResolver.GetPath("tls-ticket-keys", "sensitive-file") }} → ssl/tls-ticket-keys (relative)
 //	{{ pathResolver.GetPath("", "cert") }}                     → ssl (directory only)
 //
 // Parameters:
 //   - args[0]: filename (string) - The base filename (without directory path), or empty string for directory only
-//   - args[1]: fileType (string) - File type: "map", "file", "cert", "crt-list", or "secret"
+//   - args[1]: fileType (string) - File type: "map", "file", "cert", "crt-list", "secret", or "sensitive-file"
 //
 // Returns:
 //   - Path to the file (relative or absolute depending on PathResolver configuration)
@@ -146,7 +147,7 @@ func (pr *PathResolver) GetPath(args ...any) (any, error) {
 		basePath = pr.MapsDir
 	case "file":
 		basePath = pr.GeneralDir
-	case "cert":
+	case "cert", "sensitive-file":
 		basePath = pr.SSLDir
 	case "crt-list":
 		basePath = pr.CRTListDir
@@ -156,7 +157,7 @@ func (pr *PathResolver) GetPath(args ...any) (any, error) {
 		}
 		basePath = pr.SecretDir
 	default:
-		return nil, fmt.Errorf("GetPath: invalid file type %q, must be \"map\", \"file\", \"cert\", \"crt-list\", or \"secret\"", fileTypeStr)
+		return nil, fmt.Errorf("GetPath: invalid file type %q, must be \"map\", \"file\", \"cert\", \"crt-list\", \"secret\", or \"sensitive-file\"", fileTypeStr)
 	}
 
 	// If filename is empty, return just the base directory

@@ -77,8 +77,8 @@ func TestBuildAdditionalDeclarationsHasNoTopLevelFunctions(t *testing.T) {
 		Errors: map[string]error{},
 	}
 	declarations := BuildAdditionalDeclarations(&config.Config{}, result)
-	require.Len(t, declarations, 3)
-	for _, name := range []string{"currentConfig", "currentFiles", "resources"} {
+	require.Len(t, declarations, 4)
+	for _, name := range []string{"currentConfig", "currentFiles", "currentSensitiveFiles", "resources"} {
 		require.Contains(t, declarations, name)
 	}
 	for name, declaration := range declarations {

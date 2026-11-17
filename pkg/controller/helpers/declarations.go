@@ -65,6 +65,8 @@ func BuildAdditionalDeclarations(cfg *config.Config, result *typebootstrap.Resul
 		// declarations, like currentConfig); the engine derefs it, so templates
 		// index it directly as a map. Always injected non-nil (empty map).
 		"currentFiles": (*map[string]string)(nil),
+		// Previous content of "sensitive-file" files, kept out of currentFiles.
+		"currentSensitiveFiles": (*map[string]string)(nil),
 	}
 	// Surface every watched resource as a field on the `resources`
 	// declared struct, even ones typebootstrap had no schema for

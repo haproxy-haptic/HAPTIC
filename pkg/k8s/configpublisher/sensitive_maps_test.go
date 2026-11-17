@@ -220,7 +220,7 @@ func TestUnkeyedSensitiveMapIsNotPublished(t *testing.T) {
 	req := basePublishRequest()
 	req.Force = true
 	unkeyed := testSensitiveMap
-	unkeyed.Seal = auxiliaryfiles.SealSensitiveMap(nil, unkeyed.Content)
+	unkeyed.Seal = auxiliaryfiles.SealSensitive(nil, unkeyed.Content)
 	req.AuxiliaryFiles = &AuxiliaryFiles{SensitiveMapFiles: []auxiliaryfiles.SensitiveMapFile{unkeyed}}
 	_, err := publisher.PublishConfig(ctx, &req)
 	require.ErrorContains(t, err, "has no keyed seal")

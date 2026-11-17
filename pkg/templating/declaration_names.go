@@ -33,6 +33,9 @@ const (
 	declPathResolver  = "pathResolver"
 	declRegexp        = "regexp"
 	declInput         = "input"
+
+	// declCurrentSensitiveFiles shares currentFiles' source and replay identity.
+	declCurrentSensitiveFiles = "currentSensitiveFiles"
 )
 
 // Render-mode values carried by the renderMode global; see

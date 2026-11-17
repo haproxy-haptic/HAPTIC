@@ -329,6 +329,20 @@ func eachAuxiliaryFile(auxFiles *AuxiliaryFiles, paths *ValidationPaths, visit f
 		}
 	}
 
+	return eachSensitiveFile(auxFiles, paths, each)
+}
+
+// eachSensitiveFile visits the secret files HAProxy reads; a sidecar's never
+// reach the check.
+func eachSensitiveFile(auxFiles *AuxiliaryFiles, paths *ValidationPaths, each func(filePath, content, fallbackDir, label string) error) error {
+	for _, secret := range auxFiles.SecretFiles {
+		if !secret.HAProxyReads {
+			continue
+		}
+		if err := each(secret.Path, secret.Content, paths.SSLCertsDir, "sensitive file "+secret.Path); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

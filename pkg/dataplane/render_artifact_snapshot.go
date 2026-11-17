@@ -70,6 +70,7 @@ func BuildAuxiliaryFileSnapshotWithRuntimePaths(
 	for _, file := range files.SecretFiles {
 		if err := addAuxiliaryArtifact(builder, renderartifact.Descriptor{
 			Family: renderartifact.Secret, Path: file.Path, RuntimePath: file.Path, Seal: file.Seal,
+			ReloadOnChange: file.HAProxyReads,
 		}, file.Content); err != nil {
 			return nil, err
 		}
@@ -228,6 +229,7 @@ func appendMaterializedArtifact(files *AuxiliaryFiles, artifact *renderartifact.
 	case renderartifact.Secret:
 		files.SecretFiles = append(files.SecretFiles, auxiliaryfiles.SecretFile{
 			Path: strings.Clone(descriptor.Path), Content: content, Seal: descriptor.Seal,
+			HAProxyReads: descriptor.ReloadOnChange,
 		})
 	case renderartifact.SensitiveMap:
 		files.SensitiveMapFiles = append(files.SensitiveMapFiles, auxiliaryfiles.SensitiveMapFile{
@@ -360,7 +362,7 @@ func compareSnapshotChecksumItems(left, right snapshotChecksumItem) int {
 type snapshotCurrentFile struct {
 	order   int
 	sortKey string
-	path    string
+	key     string
 	content string
 }
 
@@ -391,7 +393,7 @@ func SnapshotCurrentFiles(snapshot *renderartifact.Snapshot) (map[string]string,
 	})
 	current := make(map[string]string, len(files))
 	for _, file := range files {
-		current[path.Base(file.path)] = file.content
+		current[file.key] = file.content
 	}
 	return current, nil
 }
@@ -412,8 +414,13 @@ func snapshotCurrentFileFor(artifact *renderartifact.Artifact) (snapshotCurrentF
 	case renderartifact.CRTList:
 		order = 2
 		sortKey = descriptor.Path
-	case renderartifact.Certificate, renderartifact.CA, renderartifact.GeneralCA, renderartifact.Secret,
-		renderartifact.SensitiveMap:
+	case renderartifact.Secret:
+		if !descriptor.ReloadOnChange {
+			return snapshotCurrentFile{}, false, nil
+		}
+		order = 3
+		sortKey = descriptor.Path
+	case renderartifact.Certificate, renderartifact.CA, renderartifact.GeneralCA, renderartifact.SensitiveMap:
 		return snapshotCurrentFile{}, false, nil
 	default:
 		return snapshotCurrentFile{}, false,
@@ -427,5 +434,9 @@ func snapshotCurrentFileFor(artifact *renderartifact.Artifact) (snapshotCurrentF
 	if err != nil {
 		return snapshotCurrentFile{}, false, err
 	}
-	return snapshotCurrentFile{order: order, sortKey: sortKey, path: descriptor.Path, content: value}, true, nil
+	key := path.Base(descriptor.Path)
+	if descriptor.Family == renderartifact.Secret {
+		key = SensitiveFileKeyPrefix + key
+	}
+	return snapshotCurrentFile{order: order, sortKey: sortKey, key: key, content: value}, true, nil
 }

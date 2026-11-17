@@ -54,7 +54,7 @@ const (
 // Descriptor is the deployment-relevant identity and metadata of one artifact.
 type Descriptor struct {
 	Family Family
-	// ReloadOnChange is effective General metadata; every other family normalizes false.
+	// ReloadOnChange is effective General and Secret metadata; every other family normalizes false.
 	ReloadOnChange bool
 	// Name is Filename for general families and the canonical path identity otherwise.
 	Name string
@@ -115,7 +115,7 @@ func canonicalizeDescriptor(descriptor Descriptor) (Descriptor, artifactKey, err
 	if !descriptor.Family.valid() {
 		return Descriptor{}, artifactKey{}, errInvalidFamily
 	}
-	if descriptor.Family != General {
+	if descriptor.Family != General && descriptor.Family != Secret {
 		descriptor.ReloadOnChange = false
 	}
 	if descriptor.Family != Secret && descriptor.Family != SensitiveMap {

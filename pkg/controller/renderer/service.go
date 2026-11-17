@@ -516,8 +516,9 @@ func NewRenderService(cfg *RenderServiceConfig) *RenderService {
 		currentAuxFilesProvider:     cfg.CurrentAuxFilesProvider,
 		typedResourceTypes:          cfg.TypedResourceTypes,
 		skipCurrentConfigProjection: engineProvesGlobalUnused(cfg.Engine, "currentConfig"),
-		skipCurrentFilesProjection:  engineProvesGlobalUnused(cfg.Engine, "currentFiles"),
-		namespaceScopes:             rendercontext.NamespaceScopes(cfg.Config),
+		skipCurrentFilesProjection: engineProvesGlobalUnused(cfg.Engine, "currentFiles") &&
+			engineProvesGlobalUnused(cfg.Engine, "currentSensitiveFiles"),
+		namespaceScopes: rendercontext.NamespaceScopes(cfg.Config),
 	}
 	service.incremental = newIncrementalRenderState(cfg.Config, cfg.Engine)
 	if service.incremental != nil {
