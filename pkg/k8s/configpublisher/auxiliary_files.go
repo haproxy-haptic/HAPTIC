@@ -307,6 +307,7 @@ func (p *Publisher) createOrUpdateSSLFileSecret(
 // would be readable without Secret access.
 const (
 	secretFileType            = "secret-file"
+	sensitiveFileType         = "sensitive-file"
 	secretFileDataKey         = "file"
 	secretFileChecksumDataKey = "checksum"
 	secretPathDataKey         = "path"
@@ -316,8 +317,15 @@ func (p *Publisher) createOrUpdateSecretFileSecret(ctx context.Context, req *Pub
 	if file.Seal == "" {
 		return "", fmt.Errorf("secret file %s has no seal; refusing to publish it", file.Path)
 	}
+	fileType := secretFileType
+	if file.HAProxyReads {
+		if !auxiliaryfiles.IsKeyedSeal(file.Seal) {
+			return "", fmt.Errorf("sensitive file %s has no keyed seal; refusing to publish it", file.Path)
+		}
+		fileType = sensitiveFileType
+	}
 	result := p.compressIfNeeded(file.Content, req.CompressionThreshold, "Secret/"+name)
-	return p.createOrUpdateFileSecret(ctx, req, owner, name, file.Path, secretFileType, identityChecksum(file), result.compressed,
+	return p.createOrUpdateFileSecret(ctx, req, owner, name, file.Path, fileType, identityChecksum(file), result.compressed,
 		map[string][]byte{
 			secretFileDataKey:         []byte(result.content),
 			secretPathDataKey:         []byte(file.Path),

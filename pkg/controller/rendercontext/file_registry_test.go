@@ -402,3 +402,38 @@ func TestMergeAuxiliaryFiles_RejectsStaticDynamicConflict(t *testing.T) {
 
 	require.ErrorContains(t, err, `Map file "routes.map" has conflicting definitions`)
 }
+
+func TestFileRegistry_SensitiveFiles(t *testing.T) {
+	newRegistry := func(key []byte) *FileRegistry {
+		return NewFileRegistry(&templating.PathResolver{SSLDir: "ssl", GeneralDir: "general"}, key)
+	}
+
+	t.Run("maps to a sealed secret file HAProxy reads", func(t *testing.T) {
+		path, err := newRegistry([]byte("key")).Register("sensitive-file", "tls-ticket-keys", "k1\n")
+		require.NoError(t, err)
+		assert.Equal(t, "ssl/tls-ticket-keys", path)
+		r := newRegistry([]byte("key"))
+		_, err = r.Register("sensitive-file", "tls-ticket-keys", "k1\n")
+		require.NoError(t, err)
+		files := r.GetFiles()
+		assert.Empty(t, files.GeneralFiles)
+		assert.Equal(t, []auxiliaryfiles.SecretFile{{
+			Path: "ssl/tls-ticket-keys", Content: "k1\n", HAProxyReads: true,
+			Seal: auxiliaryfiles.SealContent([]byte("key"), "k1\n"),
+		}}, files.SecretFiles)
+		assert.Equal(t, map[string]string{dataplane.SensitiveFileKeyPrefix + "tls-ticket-keys": "k1\n"}, files.CurrentFiles())
+	})
+
+	t.Run("without a key the seal is never publishable", func(t *testing.T) {
+		r := newRegistry(nil)
+		_, err := r.Register("sensitive-file", "tls-ticket-keys", "k1\n")
+		require.NoError(t, err)
+		assert.False(t, auxiliaryfiles.IsKeyedSeal(r.GetFiles().SecretFiles[0].Seal))
+	})
+
+	t.Run("matches pathResolver.GetPath", func(t *testing.T) {
+		resolved, err := (&templating.PathResolver{SSLDir: "ssl"}).GetPath("tls-ticket-keys", "sensitive-file")
+		require.NoError(t, err)
+		assert.Equal(t, "ssl/tls-ticket-keys", resolved)
+	})
+}

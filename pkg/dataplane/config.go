@@ -62,7 +62,8 @@ type AuxiliaryFiles struct {
 	// CRTListFiles contains crt-list files for SSL certificate lists with per-certificate options
 	CRTListFiles []auxiliaryfiles.CRTListFile
 
-	// SecretFiles contains sidecar files that are published as Kubernetes Secrets
+	// SecretFiles contains sidecar files and files HAProxy reads that are
+	// published as Kubernetes Secrets
 	SecretFiles []auxiliaryfiles.SecretFile
 
 	// SensitiveMapFiles are map files delivered like MapFiles but published as
@@ -70,8 +71,15 @@ type AuxiliaryFiles struct {
 	SensitiveMapFiles []auxiliaryfiles.SensitiveMapFile
 }
 
-// CurrentFiles projects CRD-backed auxiliary output into the currentFiles map.
-// Secret-backed certificate, CA, secret-file and sensitive-map content is deliberately excluded.
+// SensitiveFileKeyPrefix keys a sensitive file in a previous-files map. A
+// currentFiles key is a base name, which never contains "/", so the two can't
+// collide; the renderer splits the map into currentFiles and
+// currentSensitiveFiles.
+const SensitiveFileKeyPrefix = "sensitive-file/"
+
+// CurrentFiles projects the auxiliary output templates read back: CRD-backed
+// files under their base name, sensitive files under SensitiveFileKeyPrefix.
+// Certificate, CA, sidecar secret-file and sensitive-map content is excluded.
 func (af *AuxiliaryFiles) CurrentFiles() map[string]string {
 	if af == nil {
 		return nil
@@ -88,6 +96,11 @@ func (af *AuxiliaryFiles) CurrentFiles() map[string]string {
 	}
 	for _, f := range af.CRTListFiles {
 		m[path.Base(f.Path)] = f.Content
+	}
+	for _, f := range af.SecretFiles {
+		if f.HAProxyReads {
+			m[SensitiveFileKeyPrefix+path.Base(f.Path)] = f.Content
+		}
 	}
 	return m
 }

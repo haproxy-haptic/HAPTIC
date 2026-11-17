@@ -16,7 +16,10 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/compression"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/store"
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/types"
 )
@@ -610,4 +614,50 @@ func TestPublishedAuxFilesAllowsInitialMissingParent(t *testing.T) {
 
 	require.NoError(t, published.readinessError())
 	assert.Empty(t, publishedSnapshot(t, published))
+}
+
+// A sensitive file is read back from its Secret's data, under its own key, so
+// a new leader keeps rotating the keys the fleet runs.
+func TestPublishedAuxFilesReadsSensitiveFilesApart(t *testing.T) {
+	published := newPublishedAuxFiles("haptic")
+	published.setForGVR(secretGVR.String(), map[string]publishedAuxFile{
+		"tickets": {setID: "sha256:set-a", path: "ssl/tls-ticket-keys", sensitive: true},
+	})
+	published.setCommit(&publishedAuxCommit{setID: "sha256:set-a", refs: map[string][]publishedAuxRef{
+		"secretFiles": {{name: "tickets"}},
+	}})
+	require.ErrorContains(t, published.readinessError(), "committed sensitive file haptic/tickets is unavailable")
+
+	published.setSensitive(map[string]string{"tickets": "k1\n"})
+	require.NoError(t, published.readinessError())
+	assert.Equal(t, map[string]string{dataplane.SensitiveFileKeyPrefix + "tls-ticket-keys": "k1\n"}, publishedSnapshot(t, published))
+}
+
+func TestPublishedSensitiveFilesFromStoreChecksContent(t *testing.T) {
+	secret := func(content, checksum string) *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "v1", "kind": "Secret",
+			"metadata": map[string]any{
+				"name":        "tickets",
+				"labels":      map[string]any{"haproxy-haptic.org/type": "sensitive-file"},
+				"annotations": map[string]any{"haproxy-haptic.org/compressed": "false"},
+			},
+			"data": map[string]any{
+				"file":     base64.StdEncoding.EncodeToString([]byte(content)),
+				"checksum": base64.StdEncoding.EncodeToString([]byte(checksum)),
+			},
+		}}
+	}
+	sum := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("k1\n")))
+
+	s := store.NewMemoryStore(1)
+	require.NoError(t, s.Add(secret("k1\n", sum), []string{"tickets"}))
+	got, err := publishedSensitiveFilesFromStore(s)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"tickets": "k1\n"}, got)
+
+	tampered := store.NewMemoryStore(1)
+	require.NoError(t, tampered.Add(secret("k2\n", sum), []string{"tickets"}))
+	_, err = publishedSensitiveFilesFromStore(tampered)
+	require.Error(t, err)
 }

@@ -107,6 +107,9 @@ func CanonicalizeAuxiliaryFiles(files *AuxiliaryFiles) (*AuxiliaryFiles, error) 
 	if err := rejectSharedGeneralStorageName(result.GeneralFiles, result.CRTListFiles); err != nil {
 		return nil, err
 	}
+	if err := rejectSharedSSLStoragePath(result); err != nil {
+		return nil, err
+	}
 	result.Sort()
 	return result, nil
 }
@@ -162,6 +165,27 @@ func rejectSharedGeneralStorageName(
 		name := path.Base(file.Path)
 		if _, exists := generalNames[name]; exists {
 			return fmt.Errorf("general file and CRT-list %q use the same storage name; rename one file", name)
+		}
+	}
+	return nil
+}
+
+// rejectSharedSSLStoragePath refuses a sensitive file written over a
+// certificate, CA file or crt-list in the same directory.
+func rejectSharedSSLStoragePath(files *AuxiliaryFiles) error {
+	taken := make(map[string]bool, len(files.SSLCertificates)+len(files.SSLCaFiles)+len(files.CRTListFiles))
+	for _, file := range files.SSLCertificates {
+		taken[file.Path] = true
+	}
+	for _, file := range files.SSLCaFiles {
+		taken[file.Path] = true
+	}
+	for _, file := range files.CRTListFiles {
+		taken[file.Path] = true
+	}
+	for _, file := range files.SecretFiles {
+		if file.HAProxyReads && taken[file.Path] {
+			return fmt.Errorf("sensitive file %q has the path of a certificate, CA file or crt-list; rename one of them", file.Path)
 		}
 	}
 	return nil

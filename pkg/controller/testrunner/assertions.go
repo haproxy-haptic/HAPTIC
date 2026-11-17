@@ -164,7 +164,7 @@ func compareRenderedK8sResources(first, second map[string]string) string {
 	return ""
 }
 
-// mergeRenderedFiles overlays a render's own general files onto the test's
+// mergeRenderedFiles overlays a render's own general and sensitive files onto the test's
 // declared currentFiles, keyed the way templates read them back
 // (currentFiles["tls-ticket-keys"]). The test's own entries lose to the
 // rendered ones: a test that declares a file is describing what was deployed
@@ -178,6 +178,11 @@ func mergeRenderedFiles(declared map[string]string, rendered *dataplane.Auxiliar
 	if rendered != nil {
 		for _, f := range rendered.GeneralFiles {
 			merged[f.Filename] = f.Content
+		}
+		for key, content := range rendered.CurrentFiles() {
+			if strings.HasPrefix(key, dataplane.SensitiveFileKeyPrefix) {
+				merged[key] = content
+			}
 		}
 	}
 	return merged

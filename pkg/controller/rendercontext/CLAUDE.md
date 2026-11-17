@@ -71,6 +71,7 @@ marked "optional"):
 | `shared` | `*templating.SharedContext` | Per-render compute-once cache (`ComputeIfAbsent` etc.) |
 | `runtimeEnvironment` | `*templating.RuntimeEnvironment` | GOMAXPROCS and related runtime info |
 | `currentConfig` | `*renderplan.CurrentConfig` | Servers of the running config (`currentConfig.ServerIndex[backend][server].Address/.Port`) — *optional*, omitted when nil (first deploy) to dodge a Scriggo nil-pointer-initializer panic |
+| `currentFiles` / `currentSensitiveFiles` | `*map[string]string` | Previous output read back by templates. One source feeds both: keys prefixed `dataplane.SensitiveFileKeyPrefix` go to `currentSensitiveFiles`, the rest to `currentFiles`, so Secret-backed content never reaches `currentFiles` |
 | `http` | `templating.HTTPFetcher` | HTTP resource fetching — *optional*, omitted when no fetcher passed |
 | `extraContext` | `map[string]any` | User-defined variables from `cfg.TemplatingSettings.ExtraContext` (always set, possibly empty map). The same map's *top-level keys* are also merged into the context (`maps.Copy(renderCtx, cfg.TemplatingSettings.ExtraContext)` in `MergeExtraContextInto`), so templates can write `{{ debug.enabled }}` directly *and* `{{ extraContext | dig("debug", "enabled") }}` for the Scriggo-safe variant. |
 

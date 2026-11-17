@@ -26,10 +26,13 @@ import (
 	"strings"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/compression"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/client"
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/configpublisher"
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/types"
@@ -65,6 +68,7 @@ type publishedAuxFile struct {
 	checksum        string
 	resourceVersion string
 	caFile          bool
+	sensitive       bool
 }
 
 type publishedAuxRef struct {
@@ -86,9 +90,12 @@ type publishedStoreSyncer interface {
 type publishedAuxFiles struct {
 	mu sync.RWMutex
 
-	namespace       string
-	commit          *publishedAuxCommit
-	byGVR           map[string]map[string]publishedAuxFile
+	namespace string
+	commit    *publishedAuxCommit
+	byGVR     map[string]map[string]publishedAuxFile
+	// sensitive holds sensitive-file content by Secret name; the Secret
+	// watcher above drops every Secret's data.
+	sensitive       map[string]string
 	current         map[string]string
 	currentRoot     *currentAuxFilesMapRoot
 	ready           bool
@@ -138,6 +145,13 @@ func (p *publishedAuxFiles) setForGVR(gvr string, files map[string]publishedAuxF
 		p.markLegacyUnavailable()
 		return
 	}
+	p.advanceLocked()
+}
+
+func (p *publishedAuxFiles) setSensitive(content map[string]string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.sensitive = content
 	p.advanceLocked()
 }
 
@@ -294,13 +308,29 @@ func (p *publishedAuxFiles) resolveCommitLocked() (map[string]string, error) {
 				if err := validatePublishedFileIdentity(p.commit.setID, &legacySetID, kind, referenceField, ref, &file); err != nil {
 					return nil, fmt.Errorf("committed %s %s/%s: %w", kind.kind, p.namespace, ref.name, err)
 				}
-				if kind.contentField != "" && !file.caFile {
-					next[path.Base(file.path)] = file.content
+				if err := p.addCurrentFile(next, kind, ref, &file); err != nil {
+					return nil, err
 				}
 			}
 		}
 	}
 	return next, nil
+}
+
+// addCurrentFile records the content templates read back: a sensitive file
+// under dataplane.SensitiveFileKeyPrefix, a CRD-backed file under its name.
+func (p *publishedAuxFiles) addCurrentFile(next map[string]string, kind *publishedAuxCRD, ref publishedAuxRef, file *publishedAuxFile) error {
+	switch {
+	case file.sensitive:
+		content, ok := p.sensitive[ref.name]
+		if !ok {
+			return fmt.Errorf("committed sensitive file %s/%s is unavailable", p.namespace, ref.name)
+		}
+		next[dataplane.SensitiveFileKeyPrefix+path.Base(file.path)] = content
+	case kind.contentField != "" && !file.caFile:
+		next[path.Base(file.path)] = file.content
+	}
+	return nil
 }
 
 func (p *publishedAuxFiles) aliasedSecretReference() (publishedAuxRef, bool) {
@@ -443,6 +473,10 @@ func setupPublishedAuxFilesStore(
 		}
 	}
 
+	if err := watchPublishedSensitiveFiles(setup, k8sClient, store, runtimeConfigName, logger); err != nil {
+		return nil, err
+	}
+
 	refreshCommit := func(s types.Store, _ types.ChangeStats) {
 		commit, found, err := publishedAuxCommitFromStore(s, runtimeConfigName)
 		if err != nil {
@@ -477,6 +511,70 @@ func setupPublishedAuxFilesStore(
 	}
 
 	return store, nil
+}
+
+// watchPublishedSensitiveFiles keeps the content of the sensitive-file Secrets,
+// so a new leader's templates read back what the fleet runs.
+func watchPublishedSensitiveFiles(
+	setup *componentSetup,
+	k8sClient *client.Client,
+	store *publishedAuxFiles,
+	runtimeConfigName string,
+	logger *slog.Logger,
+) error {
+	refresh := func(s types.Store, _ types.ChangeStats) {
+		content, err := publishedSensitiveFilesFromStore(s)
+		if err != nil {
+			logger.Warn("Reading published sensitive files failed", "error", err)
+			store.setError(err)
+			return
+		}
+		store.setSensitive(content)
+	}
+	w, err := watcher.New(types.WatcherConfig{
+		GVR:           secretGVR,
+		Namespaces:    []string{k8sClient.Namespace()},
+		IndexBy:       []string{metadataNameIndex},
+		StoreType:     types.StoreTypeMemory,
+		LabelSelector: configpublisher.SensitiveFileLabelSelector(runtimeConfigName),
+		IgnoreFields:  []string{"metadata.managedFields"},
+		OnChange:      refresh,
+		OnSyncComplete: func(s types.Store, _ int) {
+			refresh(s, types.ChangeStats{})
+		},
+	}, k8sClient, logger)
+	if err != nil {
+		return fmt.Errorf("creating sensitive-file Secret watcher: %w", err)
+	}
+	startInErrGroup(setup.ErrGroup, setup.IterCtx, logger, setup.CancelCause, "sensitive-file secrets watcher", w.Start)
+	if err := syncAndRefreshPublishedStore(setup.IterCtx, w, refresh); err != nil {
+		return fmt.Errorf("sensitive-file Secret watcher sync failed: %w", err)
+	}
+	return nil
+}
+
+func publishedSensitiveFilesFromStore(s types.Store) (map[string]string, error) {
+	items, err := s.List()
+	if err != nil {
+		return nil, fmt.Errorf("listing sensitive-file Secrets: %w", err)
+	}
+	content := make(map[string]string, len(items))
+	for _, item := range items {
+		obj, ok := unstructuredMap(item)
+		if !ok {
+			continue
+		}
+		var secret corev1.Secret
+		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj, &secret); err != nil {
+			return nil, fmt.Errorf("decoding sensitive-file Secret: %w", err)
+		}
+		file, err := configpublisher.SensitiveFileContent(&secret)
+		if err != nil {
+			return nil, fmt.Errorf("sensitive-file Secret %s: %w", secret.Name, err)
+		}
+		content[secret.Name] = file
+	}
+	return content, nil
 }
 
 func syncAndRefreshPublishedStore(
@@ -547,6 +645,7 @@ func publishedAuxFileFromObject(obj map[string]any, kind *publishedAuxCRD) (name
 		return name, publishedAuxFile{
 			path:            filePath,
 			caFile:          fileType == "ssl-ca",
+			sensitive:       configpublisher.IsSensitiveFileSecret(map[string]string{"haproxy-haptic.org/type": fileType}),
 			setID:           setID,
 			checksum:        checksum,
 			resourceVersion: resourceVersion,

@@ -67,6 +67,7 @@ var incrementalBindingContextNames = [...]string{
 	"capabilities",
 	declCurrentConfig,
 	declCurrentFiles,
+	declCurrentSensitiveFiles,
 	declPathResolver,
 	"runtimeEnvironment",
 	"templateSnippets",

@@ -380,7 +380,7 @@ func (r *PlanRegistry) SealSensitiveMaps(files *dataplane.AuxiliaryFiles, key []
 			continue
 		}
 		sealed.SensitiveMapFiles = append(sealed.SensitiveMapFiles, auxiliaryfiles.SensitiveMapFile{
-			Path: file.Path, Content: file.Content, Seal: auxiliaryfiles.SealSensitiveMap(key, file.Content),
+			Path: file.Path, Content: file.Content, Seal: auxiliaryfiles.SealSensitive(key, file.Content),
 		})
 	}
 	return dataplane.CanonicalizeAuxiliaryFiles(&sealed)

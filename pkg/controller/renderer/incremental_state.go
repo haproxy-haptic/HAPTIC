@@ -565,7 +565,7 @@ func bindingPreviousOutputUsage(
 	for _, entryPoint := range entryPoints {
 		for _, global := range introspector.EntryPointUsedGlobals(entryPoint) {
 			usesConfig = usesConfig || global == "currentConfig"
-			usesFiles = usesFiles || global == "currentFiles"
+			usesFiles = usesFiles || global == "currentFiles" || global == "currentSensitiveFiles"
 		}
 	}
 	return usesConfig, usesFiles

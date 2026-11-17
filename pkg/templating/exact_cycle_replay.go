@@ -30,6 +30,7 @@ var exactCycleReplayProtocolGlobals = map[string]struct{}{
 	declController:             {},
 	declCurrentConfig:          {},
 	declCurrentFiles:           {},
+	declCurrentSensitiveFiles:  {},
 	declFileRegistry:           {},
 	declHTTP:                   {},
 	declPlanRegistry:           {},
@@ -50,9 +51,13 @@ var exactCycleReplayAmbientGlobals = map[string]struct{}{
 	"templateSnippets":   {},
 }
 
+// previousFilesGlobals are the projections of one previous-files source.
+var previousFilesGlobals = []string{declCurrentFiles, declCurrentSensitiveFiles}
+
 var exactCycleReplayPreviousOutputGlobals = map[string]struct{}{
-	declCurrentConfig: {},
-	declCurrentFiles:  {},
+	declCurrentConfig:         {},
+	declCurrentFiles:          {},
+	declCurrentSensitiveFiles: {},
 }
 
 var exactCycleReplayPureFunctions = map[string]struct{}{
@@ -327,8 +332,10 @@ func (p *ExactCycleReplayProgram) immutableRootInputs(templateContext map[string
 		}
 	}
 	if p.usesCurrentFiles {
-		if value, found := templateContext[declCurrentFiles]; found {
-			values = append(values, value)
+		for _, name := range previousFilesGlobals {
+			if value, found := templateContext[name]; found {
+				values = append(values, value)
+			}
 		}
 	}
 	return values
@@ -473,7 +480,7 @@ func collectExactCycleAmbientGlobals(
 		}
 		if _, protocol := exactCycleReplayProtocolGlobals[global]; protocol {
 			usesCurrentConfig = usesCurrentConfig || global == declCurrentConfig
-			usesCurrentFiles = usesCurrentFiles || global == declCurrentFiles
+			usesCurrentFiles = usesCurrentFiles || slices.Contains(previousFilesGlobals, global)
 			continue
 		}
 		ambient[global] = struct{}{}
@@ -493,9 +500,11 @@ func (e *ScriggoEngine) validateExactCycleReplayDeclarations() error {
 			return fmt.Errorf("exact cycle replay custom declaration %q shadows an engine declaration", name)
 		}
 	}
-	if declaration, found := e.globals[declCurrentFiles]; found &&
-		reflect.TypeOf(declaration) != reflect.TypeFor[*map[string]string]() {
-		return errors.New("exact cycle replay currentFiles declaration has an unsupported type")
+	for _, name := range previousFilesGlobals {
+		if declaration, found := e.globals[name]; found &&
+			reflect.TypeOf(declaration) != reflect.TypeFor[*map[string]string]() {
+			return fmt.Errorf("exact cycle replay %s declaration has an unsupported type", name)
+		}
 	}
 	if declaration, found := e.globals[declCurrentConfig]; found && !exactCycleCurrentConfigDeclaration(declaration) {
 		return errors.New("exact cycle replay currentConfig declaration has an unsupported type")
@@ -662,7 +671,7 @@ func (p *ExactCycleReplayProgram) UsesPreviousOutput(name string) (bool, error) 
 	switch name {
 	case declCurrentConfig:
 		return p.usesCurrentConfig, nil
-	case declCurrentFiles:
+	case declCurrentFiles, declCurrentSensitiveFiles:
 		return p.usesCurrentFiles, nil
 	default:
 		return false, fmt.Errorf("exact cycle replay previous output %q is unknown", name)

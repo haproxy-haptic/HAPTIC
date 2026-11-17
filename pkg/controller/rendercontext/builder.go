@@ -530,19 +530,13 @@ func (b *Builder) Build() *BuildResult {
 		templateContext["currentConfig"] = b.currentConfig
 	}
 
-	// Current general aux files (filename → content), for templates that read
-	// their own prior output (e.g. self-rotating TLS session-ticket keys).
-	// Injected as a *map[string]string (Scriggo variable declarations are
-	// pointers, like currentConfig; the engine derefs it so templates index the
-	// map directly). Always non-nil — an empty map on first deployment — so
-	// templates can index it without a nil guard.
-	var auxFiles map[string]string
+	// Previous aux files (filename → content), for templates that read their
+	// own prior output (e.g. self-rotating TLS session-ticket keys). Injected
+	// as *map[string]string (Scriggo variable declarations are pointers, like
+	// currentConfig; the engine derefs it so templates index the map directly).
+	// Always non-nil so templates can index it without a nil guard.
 	if b.currentAuxFilesSource == nil {
-		auxFiles = b.currentAuxFiles
-		if auxFiles == nil {
-			auxFiles = map[string]string{}
-		}
-		templateContext["currentFiles"] = &auxFiles
+		setPreviousFiles(templateContext, b.currentAuxFiles)
 	}
 
 	// Add HTTP fetcher if provided
@@ -567,7 +561,7 @@ func (b *Builder) Build() *BuildResult {
 
 	// These values carry controller state and cannot be replaced by extraContext.
 	if b.currentAuxFilesSource == nil {
-		templateContext["currentFiles"] = &auxFiles
+		setPreviousFiles(templateContext, b.currentAuxFiles)
 	}
 	templateContext["renderMode"] = string(cmp.Or(b.renderMode, RenderModeReconcile))
 	templateContext["admissionSubject"] = b.admissionSubjectOrEmpty()
@@ -625,15 +619,12 @@ func (r *BuildResult) MaterializeUsedPreviousOutputs(useCurrentConfig, useCurren
 			r.previousOutputsErr = fmt.Errorf("authenticating currentFiles: %w", err)
 			return r.previousOutputsErr
 		}
-		files, err := r.currentAuxFilesSource.MaterializeCurrentAuxFiles()
+		previous, err := r.currentAuxFilesSource.MaterializeCurrentAuxFiles()
 		if err != nil {
 			r.previousOutputsErr = fmt.Errorf("materializing currentFiles: %w", err)
 			return r.previousOutputsErr
 		}
-		if files == nil {
-			files = map[string]string{}
-		}
-		r.Context["currentFiles"] = &files
+		setPreviousFiles(r.Context, previous)
 		r.currentAuxFilesReady = true
 	}
 	return nil
@@ -2057,4 +2048,21 @@ func CapabilitiesToMap(caps *dataplane.Capabilities) map[string]any {
 		"supports_runtime_maps":    caps.SupportsRuntimeMaps,
 		"supports_runtime_servers": caps.SupportsRuntimeServers,
 	}
+}
+
+// setPreviousFiles splits a previous-files map into the currentFiles and
+// currentSensitiveFiles globals, so Secret-backed content never reaches the
+// former.
+func setPreviousFiles(templateContext map[string]any, previous map[string]string) {
+	files := make(map[string]string, len(previous))
+	sensitive := map[string]string{}
+	for key, content := range previous {
+		if name, ok := strings.CutPrefix(key, dataplane.SensitiveFileKeyPrefix); ok {
+			sensitive[name] = content
+			continue
+		}
+		files[key] = content
+	}
+	templateContext["currentFiles"] = &files
+	templateContext["currentSensitiveFiles"] = &sensitive
 }

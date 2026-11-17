@@ -16,7 +16,7 @@ templateSnippets:
         {{- " ssl crt-list " + certificatePath + " alpn h2,http/1.1" -}}
         {{- dig_string(certificate, "", "ignoreErr") + dig_string(certificate, "", "tlsSuffix") -}}
         {%- if extraContext | dig("tls", "sessionTickets", "enabled") | fallback(false) %}
-          {%- var ticketPath, _ = pathResolver.GetPath("tls-ticket-keys", "file") %}
+          {%- var ticketPath, _ = pathResolver.GetPath("tls-ticket-keys", "sensitive-file") %}
           {{- " tls-ticket-keys " + ticketPath -}}
         {%- end %}
       {%- end %}

@@ -35,8 +35,7 @@ type GeneralFile struct {
 
 	// Content is the file contents as a string. This maps to the 'file' field in
 	// multipart parts of an apply.
-	// json:"-" on every aux Content keeps key material out of /debug/vars; the
-	// tls-ticket-keys STEK file is a general file, so this is not SSL-only.
+	// json:"-" on every aux Content keeps file content out of /debug/vars.
 	Content string `json:"-"`
 
 	// IsCaFile marks this general file as an SSL CA / trust bundle referenced by
@@ -161,10 +160,12 @@ func (s SSLCaFile) GetContent() string {
 	return s.Content
 }
 
-// SecretFile is a file for a sidecar that HAProxy never reads. It is published
-// as a Kubernetes Secret and written by the agent without a reload.
+// SecretFile is a file published as a Kubernetes Secret. A sidecar file
+// (HAProxyReads false) is written by the agent without a reload; a file
+// HAProxy reads is checked by haproxy -c and reloads it when it changes.
 type SecretFile struct {
-	// Path is the plan path, e.g. "secrets/sso.client-secret".
+	// Path is the plan path, e.g. "secrets/sso.client-secret" or
+	// "ssl/tls-ticket-keys".
 	Path string
 
 	Content string `json:"-"`
@@ -172,6 +173,8 @@ type SecretFile struct {
 	// Seal is SealContent of Content. Every identity a reader without Secret
 	// access can see hashes the seal, never the content.
 	Seal string
+
+	HAProxyReads bool
 }
 
 // GetIdentifier implements the FileItem interface.
@@ -221,10 +224,10 @@ func SealContent(key []byte, content string) string {
 
 const unkeyedSealPrefix = "unkeyed-sha256:"
 
-// SealSensitiveMap is SealContent, except that without a key it returns an
+// SealSensitive is SealContent, except that without a key it returns an
 // unkeyed digest marked as such: an offline render still needs a change
 // identity, and IsKeyedSeal lets every publisher refuse it.
-func SealSensitiveMap(key []byte, content string) string {
+func SealSensitive(key []byte, content string) string {
 	if len(key) == 0 {
 		sum := sha256.Sum256([]byte(content))
 		return unkeyedSealPrefix + hex.EncodeToString(sum[:])

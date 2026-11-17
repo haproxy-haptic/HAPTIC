@@ -46,7 +46,7 @@ type FileRegistry struct {
 
 // registeredFile tracks a dynamically-registered file.
 type registeredFile struct {
-	Type         string // "cert", "map", "file", "crt-list", "ca-file", "secret"
+	Type         string // "cert", "map", "file", "crt-list", "ca-file", "secret", "sensitive-file"
 	Filename     string // Base filename
 	Content      string // File content
 	Path         string // Predicted full path
@@ -61,7 +61,7 @@ func reloadsOnPush(flag *bool) bool {
 // NewFileRegistry creates a new FileRegistry with the given path resolver.
 // The path resolver is used to compute full paths for registered files,
 // ensuring they match the paths used by pathResolver.GetPath() method.
-// sealKey keys the seal of every "secret" file (auxiliaryfiles.SealContent).
+// sealKey keys the seal of every "secret" and "sensitive-file" file.
 func NewFileRegistry(pathResolver *templating.PathResolver, sealKey []byte) *FileRegistry {
 	return &FileRegistry{
 		registered:   make(map[string]registeredFile),
@@ -75,7 +75,8 @@ func NewFileRegistry(pathResolver *templating.PathResolver, sealKey []byte) *Fil
 // or file_registry.Register("file", filename, content, reloadOnPush).
 //
 // Parameters:
-//   - fileType: "cert", "map", "file", "crt-list", "ca-file", or "secret"
+//   - fileType: "cert", "map", "file", "crt-list", "ca-file", "secret", or
+//     "sensitive-file" (key material HAProxy reads, published as a Secret)
 //   - filename: Base filename (e.g., "ca.pem", "domains.map", "certificate-list.txt")
 //   - content: File content as a string
 //   - reloadOnPush: optional, "file" only. Defaults to true. Pass false for a
@@ -117,10 +118,10 @@ func (r *FileRegistry) Register(args ...any) (string, error) {
 
 	// Validate file type
 	switch fileType {
-	case "cert", "map", "file", "crt-list", "ca-file", "secret":
+	case "cert", "map", "file", "crt-list", "ca-file", "secret", "sensitive-file":
 		// Valid types
 	default:
-		return "", fmt.Errorf("file_registry.Register: invalid file type %q, must be \"cert\", \"map\", \"file\", \"crt-list\", \"ca-file\", or \"secret\"", fileType)
+		return "", fmt.Errorf("file_registry.Register: invalid file type %q, must be \"cert\", \"map\", \"file\", \"crt-list\", \"ca-file\", \"secret\", or \"sensitive-file\"", fileType)
 	}
 
 	// Extract the optional reloadOnPush flag. Only "file" honours it: a cert,
@@ -239,6 +240,14 @@ func (r *FileRegistry) GetFiles() *dataplane.AuxiliaryFiles {
 				Path:    reg.Path,
 				Content: reg.Content,
 				Seal:    auxiliaryfiles.SealContent(r.sealKey, reg.Content),
+			})
+
+		case "sensitive-file":
+			files.SecretFiles = append(files.SecretFiles, auxiliaryfiles.SecretFile{
+				Path:         reg.Path,
+				Content:      reg.Content,
+				Seal:         auxiliaryfiles.SealSensitive(r.sealKey, reg.Content),
+				HAProxyReads: true,
 			})
 
 		case "ca-file":

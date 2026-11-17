@@ -286,7 +286,7 @@ incremental:
 ```
 
 Binding templates can read `extraContext`, `capabilities`,
-`currentConfig`, `currentFiles`, `pathResolver`, `runtimeEnvironment`, and
+`currentConfig`, `currentFiles`, `currentSensitiveFiles`, `pathResolver`, `runtimeEnvironment`, and
 `templateSnippets` and pure helper functions. It can't read watched or
 controller resources, HTTP content, admission state, or shared state. Only the
 values it emits become component props, so changing an unselected ambient value
@@ -696,7 +696,7 @@ Embedded validation tests (optional; run by the pre-rollout validation Job, the 
 | `httpResources` | `[]object` | No | — (mocked responses for `http.Fetch()` calls) |
 | `currentServers` | `map[string]map[string]object` | No | — (backend → server → `{address, port}` of a previous deployment, exposed to templates as `currentConfig.ServerIndex`) |
 | `currentConfig` | string | No | — (deprecated: a raw HAProxy config parsed down to the same server index as `currentServers`) |
-| `currentFiles` | `map[string]string` | No | — (filename → content of the general files currently deployed, exposed to templates as `currentFiles`) |
+| `currentFiles` | `map[string]string` | No | — (filename → content of the general files currently deployed, exposed to templates as `currentFiles`; a key prefixed with `sensitive-file/` seeds `currentSensitiveFiles`) |
 | `extraContext` | object | No | — (per-test overrides of `templatingSettings.extraContext`) |
 | `useDeploymentWatchScopes` | bool | No | `false`; apply configured watch namespaces to fixtures and lookups for this test; can't be `true` on `_global` |
 | `minHAProxyVersion` | string | No | — (skip the test on older HAProxy) |

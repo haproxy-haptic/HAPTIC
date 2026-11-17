@@ -351,6 +351,35 @@ func TestRenderService_Render_CallCurrentFilesOverridesDefault(t *testing.T) {
 	assert.Equal(t, "term\n", result.HAProxyConfig)
 }
 
+// A sensitive file is read back through currentSensitiveFiles only, and a
+// changed one renders again rather than replaying the previous output.
+func TestRenderService_Render_CurrentSensitiveFiles(t *testing.T) {
+	cfg := &config.Config{
+		HAProxyConfig: config.HAProxyConfig{Template: `{{ currentSensitiveFiles["k"] }}|{{ len(currentFiles) }}`},
+		Dataplane:     testDataplaneConfig(),
+	}
+	engine, err := templating.New(
+		map[string]string{"haproxy.cfg": cfg.HAProxyConfig.Template},
+		&templating.Options{Declarations: map[string]any{
+			"currentFiles":          (*map[string]string)(nil),
+			"currentSensitiveFiles": (*map[string]string)(nil),
+		}},
+	)
+	require.NoError(t, err)
+	service := NewRenderService(&RenderServiceConfig{
+		Engine: engine, Config: cfg, Logger: slog.Default(), Capabilities: defaultCapabilities(),
+	})
+	provider := &mockStoreProvider{storeMap: map[string]stores.Store{}}
+
+	for _, content := range []string{"a", "b"} {
+		result, err := service.Render(t.Context(), provider, rendercontext.RenderModeReconcile,
+			rendercontext.WithCurrentAuxFiles(map[string]string{dataplane.SensitiveFileKeyPrefix + "k": content}))
+		require.NoError(t, err)
+		assert.Equal(t, content+"|0\n", result.HAProxyConfig)
+		require.NoError(t, result.InputTransaction.Commit(t.Context()))
+	}
+}
+
 func TestRenderService_Render_WithStores(t *testing.T) {
 	cfg := &config.Config{
 		HAProxyConfig: config.HAProxyConfig{

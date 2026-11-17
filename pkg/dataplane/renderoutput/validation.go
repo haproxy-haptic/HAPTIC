@@ -342,10 +342,8 @@ func artifactPlanMetadata(descriptor renderartifact.Descriptor) (string, bool) {
 	switch descriptor.Family {
 	case renderartifact.Map, renderartifact.SensitiveMap:
 		return renderplan.FileKindMap, false
-	case renderartifact.General:
+	case renderartifact.General, renderartifact.Secret:
 		return renderplan.FileKindGeneral, descriptor.ReloadOnChange
-	case renderartifact.Secret:
-		return renderplan.FileKindGeneral, false
 	case renderartifact.Certificate:
 		return renderplan.FileKindCert, false
 	case renderartifact.CA, renderartifact.GeneralCA:

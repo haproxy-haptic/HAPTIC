@@ -137,8 +137,9 @@ type ValidationTest struct {
 
 	// CurrentFiles are the currently-deployed general auxiliary files
 	// (filename → content) exposed to templates under `currentFiles`. Used to
-	// test templates that read their own prior output — e.g. self-rotating TLS
-	// session-ticket keys inspecting the current key file's date marker.
+	// test templates that read their own prior output. A key prefixed with
+	// `sensitive-file/` seeds `currentSensitiveFiles` instead — e.g. the
+	// self-rotating TLS session-ticket keys.
 	CurrentFiles map[string]string `yaml:"currentFiles,omitempty" json:"currentFiles,omitempty"`
 
 	// ExtraContext provides custom variables that override the global extraContext for this test.

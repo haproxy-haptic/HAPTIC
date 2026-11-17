@@ -433,6 +433,12 @@ and all three to decrypt them, as described in the
 Rotation takes effect through a configuration reload. Whether a client can
 resume also depends on its ticket lifetime and the server's session settings.
 
+Anyone who holds the keys can decrypt resumed sessions recorded from the
+network. HAPTIC publishes them only as a Kubernetes Secret in the controller
+namespace, labelled `haproxy-haptic.org/type: sensitive-file`, and never in a
+`HAProxyCfg` or `HAProxyGeneralFile`. Restrict read access to Secrets in that
+namespace accordingly.
+
 ## Webhook certificates
 
 <a id="supply-your-own-webhook-certificate"></a>

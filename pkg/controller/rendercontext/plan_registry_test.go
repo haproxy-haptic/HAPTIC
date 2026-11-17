@@ -522,3 +522,17 @@ func TestNearestKey(t *testing.T) {
 		})
 	}
 }
+
+// A sensitive file deploys as a sealed general file whose change reloads HAProxy.
+func TestPlanRegistryPlanReloadsOnSensitiveFile(t *testing.T) {
+	registry := NewPlanRegistry(&templating.PathResolver{BaseDir: "/etc/haproxy", SSLDir: "ssl"})
+	plan, err := registry.Plan("global\n", &dataplane.AuxiliaryFiles{
+		SecretFiles: []auxiliaryfiles.SecretFile{{Path: "ssl/k", Content: "hunter2", Seal: "seal", HAProxyReads: true}},
+	})
+	require.NoError(t, err)
+	require.Len(t, plan.Files, 2)
+	assert.Equal(t, renderplan.File{
+		Path: "ssl/k", Kind: renderplan.FileKindGeneral, ReloadOnChange: true, Digest: renderplan.DigestString("hunter2"),
+		Size: 7, Seal: "seal", Content: "hunter2", ContentKnown: true,
+	}, plan.Files[1])
+}

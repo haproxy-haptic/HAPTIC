@@ -116,14 +116,14 @@ templateSnippets:
 
   util-ssl-bind-options:
     template: >-
-      {{- " " -}}ssl crt-list {{ pathResolver.GetPath("certificate-list.txt", "crt-list") }} alpn h2,http/1.1{% if extraContext | dig("tls", "sessionTickets", "enabled") | fallback(false) %} tls-ticket-keys {{ pathResolver.GetPath("tls-ticket-keys", "file") }}{% end %}
+      {{- " " -}}ssl crt-list {{ pathResolver.GetPath("certificate-list.txt", "crt-list") }} alpn h2,http/1.1{% if extraContext | dig("tls", "sessionTickets", "enabled") | fallback(false) %} tls-ticket-keys {{ pathResolver.GetPath("tls-ticket-keys", "sensitive-file") }}{% end %}
 
   # Macro twin of util-ssl-bind-options for per-(Gateway, listener) crt-lists; the
   # bare snippet above stays so the chart-static call site remains a one-liner.
   util-ssl-bind-options-for-crtlist:
     template: |
       {%- macro SSLBindOptionsForCrtlist(crtlistFilename string) string -%}
-        {{- " " -}}ssl crt-list {{ pathResolver.GetPath(crtlistFilename, "crt-list") }} alpn h2,http/1.1{% if extraContext | dig("tls", "sessionTickets", "enabled") | fallback(false) %} tls-ticket-keys {{ pathResolver.GetPath("tls-ticket-keys", "file") }}{% end %}
+        {{- " " -}}ssl crt-list {{ pathResolver.GetPath(crtlistFilename, "crt-list") }} alpn h2,http/1.1{% if extraContext | dig("tls", "sessionTickets", "enabled") | fallback(false) %} tls-ticket-keys {{ pathResolver.GetPath("tls-ticket-keys", "sensitive-file") }}{% end %}
       {%- end -%}
 
   # QUIC twin of a TLS bind: same port over UDP, same certificates, ALPN h3. ""
@@ -138,7 +138,7 @@ templateSnippets:
         var crtlist, _ = pathResolver.GetPath(crtlistFilename, "crt-list")
         var line = "bind quic4@:" + tostring(port) + " ssl crt-list " + crtlist + " alpn h3"
         if tostring(extraContext | dig("tls", "sessionTickets", "enabled") | fallback(false)) == "true" {
-          var ticketKeys, _ = pathResolver.GetPath("tls-ticket-keys", "file")
+          var ticketKeys, _ = pathResolver.GetPath("tls-ticket-keys", "sensitive-file")
           line = line + " tls-ticket-keys " + ticketKeys
         }
         return line + suffix
@@ -305,15 +305,16 @@ templateSnippets:
     template: |
       {%- import "util-ticket-key" for NewTicketKey -%}
       {#- One shared key file per fleet, so a ticket sealed by any pod resumes on any
-          other. Rotation reads the deployed file back from currentFiles and keys off
-          the newest key's date marker; cycleRandomBytes must stay on the seed/rotate paths
-          only, or every render differs and reloads HAProxy. The 3-key window keeps
-          yesterday's tickets resumable. -#}
+          other. A sensitive file: published as a Secret, never a plaintext CR. Rotation
+          reads the deployed keys back from currentSensitiveFiles and keys off the newest
+          key's date marker; cycleRandomBytes must stay on the seed/rotate paths only, or
+          every render differs and reloads HAProxy. The 3-key window keeps yesterday's
+          tickets resumable. -#}
       {%- if extraContext | dig("tls", "sessionTickets", "enabled") | fallback(false) -%}
         {#- sessionTicketsToday pins the marker for tests; production uses the clock. -#}
         {%- var today = tostring(extraContext | dig("tls", "sessionTicketsToday") | fallback("")) -%}
         {%- if today == "" -%}{%- today = cycleTimeBucket(86400, "20060102") -%}{%- end -%}
-        {%- var cur = tostring(currentFiles["tls-ticket-keys"] | fallback("")) -%}
+        {%- var cur = tostring(currentSensitiveFiles["tls-ticket-keys"] | fallback("")) -%}
         {%- var lines = []string{} -%}
         {%- if cur != "" -%}
           {%- for _, ln := range split(trimSpace(cur), "\n") -%}
@@ -337,7 +338,7 @@ templateSnippets:
           {%- end -%}
         {%- end -%}
         {%- var content = join(out, "\n") + "\n" -%}
-        {%- var _, tkErr = fileRegistry.Register("file", "tls-ticket-keys", content) -%}
+        {%- var _, tkErr = fileRegistry.Register("sensitive-file", "tls-ticket-keys", content) -%}
         {%- if tkErr != nil -%}{{ fail("failed to register tls-ticket-keys file: " + tostring(tkErr)) }}{%- end -%}
       {%- end -%}
 
@@ -1452,19 +1453,19 @@ validationTests:
         pattern: 'default\.pem \[ocsp-update on\] \*'
 
   test-ssl-session-tickets-seed:
-    description: Session tickets enabled with no current file → three fresh STEK keys seeded (stamped today) and every HTTPS bind carries tls-ticket-keys; haproxy -c accepts them
+    description: Session tickets enabled with no current file → three fresh STEK keys seeded (stamped today) in a sensitive file, and every HTTPS bind carries tls-ticket-keys; haproxy -c accepts them
     extraContext: *extracontextTlsSessiontickets
     fixtures: *fixturesTlsTriggerDefaultSsl
     assertions:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: 'bind \*:443 ssl crt-list \S+ alpn h2,http/1\.1 tls-ticket-keys \S*general/tls-ticket-keys'
+        pattern: 'bind \*:443 ssl crt-list \S+ alpn h2,http/1\.1 tls-ticket-keys \S*ssl/tls-ticket-keys'
       # MjAyNjA3Mj is the base64 prefix of "20260721".
-      - {type: match_count, target: file:tls-ticket-keys, pattern: 'MjAyNjA3Mj', expected: "3"}
+      - {type: match_count, target: secret:tls-ticket-keys, pattern: 'MjAyNjA3Mj', expected: "3"}
 
-  test-ssl-session-tickets-stable-same-day:
-    description: When the newest current key already carries today's marker, the file is re-emitted unchanged — deterministic, so no spurious reload
+  test-ssl-session-tickets-ignore-current-files:
+    description: Keys in the plaintext currentFiles are never read back, so a deployment that still publishes them there gets fresh keys
     extraContext: *extracontextTlsSessiontickets
     currentFiles:
       tls-ticket-keys: |
@@ -1473,27 +1474,40 @@ validationTests:
         MjAyNjA3MjGrtAkIIsCl/WPGwjgU0w8y6d8ue6eLGA8sKbY+KG3lzHj/1+5f9wRXhqwE691rSVoO5nixjtvP31seO7YnZiZ8inZ34TqSw9o=
     fixtures: *fixturesTlsTriggerDefaultSsl
     assertions:
+      - {type: not_contains, target: secret:tls-ticket-keys, pattern: 'MjAyNjA3MjGrtAkIIsCl'}
+      - {type: match_count, target: secret:tls-ticket-keys, pattern: 'MjAyNjA3Mj', expected: "3"}
+
+  test-ssl-session-tickets-stable-same-day:
+    description: When the newest current key already carries today's marker, the file is re-emitted unchanged — deterministic, so no spurious reload
+    extraContext: *extracontextTlsSessiontickets
+    currentFiles:
+      sensitive-file/tls-ticket-keys: |
+        MjAyNjA3MjF1lg4Ku7QD/4vBgigOpTeyXBWr7YEbfGGtOvJy4F2jN7yqkvzCXyeKIzSddp+/e40yxVVDQG/6K0qKBzhxUY0QUm9ZC10HVVw=
+        MjAyNjA3MjErsIpmS9wItsqQf9wXky/nqJRWDAhc+gzY//LjL4rfJebcDremmtxy07HV6au8uZ5H7uYKgJ8yuUuaIGfnxoV3Kd+7FHNukBs=
+        MjAyNjA3MjGrtAkIIsCl/WPGwjgU0w8y6d8ue6eLGA8sKbY+KG3lzHj/1+5f9wRXhqwE691rSVoO5nixjtvP31seO7YnZiZ8inZ34TqSw9o=
+    fixtures: *fixturesTlsTriggerDefaultSsl
+    assertions:
       - type: haproxy_valid
       - type: deterministic
-      - {type: contains, target: file:tls-ticket-keys, pattern: 'MjAyNjA3MjGrtAkIIsCl'}
-      - {type: match_count, target: file:tls-ticket-keys, pattern: 'MjAyNjA3Mj', expected: "3"}
+      - {type: contains, target: secret:tls-ticket-keys, pattern: 'MjAyNjA3MjGrtAkIIsCl'}
+      - {type: match_count, target: secret:tls-ticket-keys, pattern: 'MjAyNjA3Mj', expected: "3"}
 
   test-ssl-session-tickets-rotate:
     description: When the newest current key's marker is older than today, the 3-key window slides — drop the oldest, keep two, append one fresh key stamped today
     extraContext: *extracontextTlsSessiontickets
     currentFiles:
-      tls-ticket-keys: |
+      sensitive-file/tls-ticket-keys: |
         MjAyMDAxMDEBk+LdT3waWq9/eMXZ/OrL72ywGnk5iFvamSsGg9ROVL23GJJfFM0wesQcVpiLgm1+3Q10nN7UPo8TKVWQi+CH05wl5v1Snu8=
         MjAyMDAxMDE6V2yKRZF80TBhAzp/xBDTh+WvO3rDEAbCuD/4slIZeNSXJxS+YxUls4akNIRICp1poNnNbVgWgxiJC6m/cnISHta0dwkjGQY=
         MjAyMDAxMDEULATG7B3W7hY19QQOMzEr1a0GmjWsfRWtyCvWhGvE4eJL0aqagzZsRgtxWrKhgouiouA9LOSFu9x7/pG8CUn+qvCyJ4tPdu0=
     fixtures: *fixturesTlsTriggerDefaultSsl
     assertions:
       - type: haproxy_valid
-      - {type: not_contains, target: file:tls-ticket-keys, pattern: 'MjAyMDAxMDEBk'}
-      - {type: contains, target: file:tls-ticket-keys, pattern: 'MjAyMDAxMDE6V2yKRZF8'}
-      - {type: contains, target: file:tls-ticket-keys, pattern: 'MjAyMDAxMDEULATG7B3W'}
-      - {type: match_count, target: file:tls-ticket-keys, pattern: 'MjAyMDAxMDE', expected: "2"}
-      - {type: match_count, target: file:tls-ticket-keys, pattern: 'MjAyNjA3Mj', expected: "1"}
+      - {type: not_contains, target: secret:tls-ticket-keys, pattern: 'MjAyMDAxMDEBk'}
+      - {type: contains, target: secret:tls-ticket-keys, pattern: 'MjAyMDAxMDE6V2yKRZF8'}
+      - {type: contains, target: secret:tls-ticket-keys, pattern: 'MjAyMDAxMDEULATG7B3W'}
+      - {type: match_count, target: secret:tls-ticket-keys, pattern: 'MjAyMDAxMDE', expected: "2"}
+      - {type: match_count, target: secret:tls-ticket-keys, pattern: 'MjAyNjA3Mj', expected: "1"}
 
   test-access-log-tls-fields:
     description: >-
@@ -1653,7 +1667,7 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^\s+bind quic4@:443 ssl crt-list \S+ alpn h3 tls-ticket-keys \S*general/tls-ticket-keys$'
+        pattern: '(?m)^\s+bind quic4@:443 ssl crt-list \S+ alpn h3 tls-ticket-keys \S*ssl/tls-ticket-keys$'
 
   test-ssl-http3-proxy-protocol:
     description: >-

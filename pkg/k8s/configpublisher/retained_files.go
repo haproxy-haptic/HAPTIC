@@ -272,10 +272,11 @@ func retainedSecretFileSecret(item *corev1.Secret) (retainedFile, error) {
 	compressed, declared := compressedAnnotation(item)
 	seal, sealed := strings.CutPrefix(checksum, sealChecksumPrefix)
 	family := renderartifact.Secret
-	if item.Labels["haproxy-haptic.org/type"] == sensitiveMapType {
+	fileType := item.Labels["haproxy-haptic.org/type"]
+	if fileType == sensitiveMapType {
 		family = renderartifact.SensitiveMap
 	}
-	if item.Type != corev1.SecretTypeOpaque || family == renderartifact.Secret && item.Labels["haproxy-haptic.org/type"] != secretFileType ||
+	if item.Type != corev1.SecretTypeOpaque || family == renderartifact.Secret && fileType != secretFileType && fileType != sensitiveFileType ||
 		!present || !sealed || !auxiliaryfiles.IsKeyedSeal(seal) || filePath == "" || string(item.Data["path"]) != filePath || len(item.Data) != 3 || !declared {
 		return retainedFile{}, errors.New("retained secret file metadata differs from its payload")
 	}

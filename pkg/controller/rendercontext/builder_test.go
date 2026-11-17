@@ -24,6 +24,7 @@ import (
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/testutil"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/renderplan"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores/storetest"
@@ -524,4 +525,20 @@ func TestBuildResourcesValue_MemoizedTypedPointers(t *testing.T) {
 		go func() { defer wg.Done(); _ = list(inner) }()
 	}
 	wg.Wait()
+}
+
+func TestBuilder_Build_SensitiveFilesStayOutOfCurrentFiles(t *testing.T) {
+	cfg := &config.Config{TemplatingSettings: config.TemplatingSettings{
+		ExtraContext: map[string]any{"currentSensitiveFiles": map[string]string{"k": "override"}},
+	}}
+	previous := map[string]string{"gate": "plain", dataplane.SensitiveFileKeyPrefix + "k": "secret"}
+	ctx := NewBuilder(t.Context(), cfg, &templating.PathResolver{}, testutil.NewTestLogger(),
+		WithCurrentAuxFiles(previous)).Build().Context
+
+	files, ok := ctx["currentFiles"].(*map[string]string)
+	require.True(t, ok)
+	assert.Equal(t, map[string]string{"gate": "plain"}, *files)
+	sensitive, ok := ctx["currentSensitiveFiles"].(*map[string]string)
+	require.True(t, ok)
+	assert.Equal(t, map[string]string{"k": "secret"}, *sensitive)
 }
