@@ -109,8 +109,24 @@ crsSettings:
 ```
 
 Use `ruleExclusions` when changing CRS inputs isn't enough. Path selectors are
-`onPathPrefix`, `onPathSuffix`, `onPathExact`, and `onPathContains`. This exclusion
-allows SQL-like search text in `q` while keeping the tagged checks on other inputs:
+`onPathPrefix`, `onPathSuffix`, `onPathExact`, and `onPathContains`. They match
+the request path the way CRS rules such as 930130 inspect it:
+
+- The query string is never part of the match: `onPathExact: /api/health` matches
+  `/api/health?verbose=1`, and `/.env?x=/api/health` doesn't match.
+- Percent-encoding is decoded once, so `/%61pi/` matches `onPathPrefix: /api/`.
+  Write the selector as a decoded path; `%` and `?` are rejected.
+- `\` counts as `/`, and `//`, `/./`, and `/../` are resolved before matching:
+  `/api/../.env` doesn't match `onPathPrefix: /api/`. A selector containing
+  `//`, `/./`, or `/../` is rejected.
+- Matching is case-sensitive.
+- A request whose decoded path contains `;`, `?`, `%`, `#`, a control character,
+  or a character outside plain English letters, digits, and punctuation (such
+  as `é`) never gets the exclusion. Path parameters such as `/api/..;/.env`,
+  double encoding, and null bytes keep every rule active.
+
+This exclusion allows SQL-like search text in `q` while keeping the tagged
+checks on other inputs:
 
 ```yaml
 ruleExclusions:

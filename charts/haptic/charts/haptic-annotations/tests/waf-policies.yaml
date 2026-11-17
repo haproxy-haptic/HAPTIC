@@ -827,11 +827,11 @@ validationTests:
       # Path-scoped disable: a chart-generated SecRule with a literal @contains and a ctl, before the CRS include.
       - type: contains
         target: "file:spoa-hub-config.toml"
-        pattern: '(?s)SecRule REQUEST_URI "@contains \.git/".*ctl:ruleRemoveById=930130.*Include @owasp_crs'
+        pattern: '(?s)SecRule REQUEST_FILENAME "@contains \.git/" "id:1200000,phase:1,pass,t:none,t:utf8toUnicode,t:urlDecodeUni,t:normalizePathWin,nolog,chain"\nSecRule REQUEST_FILENAME "!@rx \[\^ -~\]\|\[;\?%#\]" "t:none,ctl:ruleRemoveById=930130"\n.*Include @owasp_crs'
       # Path-scoped target exclusion via ctl:ruleRemoveTargetById.
       - type: contains
         target: "file:spoa-hub-config.toml"
-        pattern: '(?s)SecRule REQUEST_URI "@beginsWith /wp-admin/".*ctl:ruleRemoveTargetById=941320;ARGS:wp_post.*Include @owasp_crs'
+        pattern: '(?s)SecRule REQUEST_FILENAME "@beginsWith /wp-admin/" "id:1200001,phase:1,pass,t:none,t:utf8toUnicode,t:urlDecodeUni,t:normalizePathWin,nolog,chain"\nSecRule REQUEST_FILENAME "!@rx \[\^ -~\]\|\[;\?%#\]" "t:none,ctl:ruleRemoveTargetById=941320;ARGS:wp_post"\n.*Include @owasp_crs'
       # Global (no-path) forms land AFTER the CRS include.
       - type: contains
         target: "file:spoa-hub-config.toml"
@@ -878,7 +878,7 @@ validationTests:
       - { type: contains, target: "map:coraza-app.map", pattern: "team-a/git policy:team-a/app" }
       - type: contains
         target: "file:spoa-hub-config.toml"
-        pattern: '(?s)applications\."policy:team-a/app".*SecRule REQUEST_URI "@contains \.git/".*ctl:ruleRemoveById=930130'
+        pattern: '(?s)applications\."policy:team-a/app".*SecRule REQUEST_FILENAME "@contains \.git/" "id:1200000,phase:1,pass,t:none,t:utf8toUnicode,t:urlDecodeUni,t:normalizePathWin,nolog,chain"\nSecRule REQUEST_FILENAME "!@rx \[\^ -~\]\|\[;\?%#\]" "t:none,ctl:ruleRemoveById=930130"'
 
   test-haptic-waf-policy-rule-exclusions-denylist-rejected:
     _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
@@ -896,6 +896,99 @@ validationTests:
     fixtures: {}
     assertions:
       - {type: contains, target: rendering_error, pattern: "may not target rule '949110'"}
+
+  test-haptic-waf-policy-rule-exclusions-path-only:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: Every path selector matches the normalized path without the query string, never REQUEST_URI (#696).
+    extraContext:
+      spoaHub: *spoahubCoraza
+      waf:
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline:
+            paths:
+              enforcement: deny
+              ruleExclusions:
+                - {rules: [930130], onPathPrefix: "/api/"}
+                - {rules: [930130], onPathContains: "/git/"}
+                - {rules: [930130], onPathExact: "/health"}
+                - {rules: [930130], onPathSuffix: "/trace"}
+          configMapRefs: { __replace__: true }
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: default, name: app, annotations: { haproxy-haptic.org/waf-policy: paths } }
+          spec: *specRulesHost
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: "file:spoa-hub-config.toml"
+        pattern: 'SecRule REQUEST_FILENAME "@beginsWith /api/" "id:1200000,phase:1,pass,t:none,t:utf8toUnicode,t:urlDecodeUni,t:normalizePathWin,nolog,chain"\nSecRule REQUEST_FILENAME "!@rx \[\^ -~\]\|\[;\?%#\]" "t:none,ctl:ruleRemoveById=930130"\n'
+      - type: contains
+        target: "file:spoa-hub-config.toml"
+        pattern: 'SecRule REQUEST_FILENAME "@contains /git/" "id:1200001,phase:1,pass,t:none,t:utf8toUnicode,t:urlDecodeUni,t:normalizePathWin,nolog,chain"\nSecRule REQUEST_FILENAME "!@rx \[\^ -~\]\|\[;\?%#\]" "t:none,ctl:ruleRemoveById=930130"\n'
+      - type: contains
+        target: "file:spoa-hub-config.toml"
+        pattern: 'SecRule REQUEST_FILENAME "@streq /health" "id:1200002,phase:1,pass,t:none,t:utf8toUnicode,t:urlDecodeUni,t:normalizePathWin,nolog,chain"\nSecRule REQUEST_FILENAME "!@rx \[\^ -~\]\|\[;\?%#\]" "t:none,ctl:ruleRemoveById=930130"\n'
+      - type: contains
+        target: "file:spoa-hub-config.toml"
+        pattern: 'SecRule REQUEST_FILENAME "@endsWith /trace" "id:1200003,phase:1,pass,t:none,t:utf8toUnicode,t:urlDecodeUni,t:normalizePathWin,nolog,chain"\nSecRule REQUEST_FILENAME "!@rx \[\^ -~\]\|\[;\?%#\]" "t:none,ctl:ruleRemoveById=930130"\n'
+      - type: not_contains
+        target: "file:spoa-hub-config.toml"
+        pattern: 'SecRule REQUEST_URI "[^"]*" "id:120000'
+
+  test-haptic-waf-policy-rule-exclusions-path-query-rejected:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: A path selector with a query string can never match the path and is rejected.
+    extraContext:
+      renderMode: admission
+      waf:
+        policies:
+          defaultPolicy: ""
+          inline:
+            bad:
+              ruleExclusions:
+                - {rules: [930130], onPathExact: "/search?q=1"}
+          configMapRefs: { __replace__: true }
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "onPathExact '/search\\?q=1' must be a decoded URL path without a query string"}
+
+  test-haptic-waf-policy-rule-exclusions-path-encoded-rejected:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: A percent-encoded path selector can never match the decoded path and is rejected.
+    extraContext:
+      renderMode: admission
+      waf:
+        policies:
+          defaultPolicy: ""
+          inline:
+            bad:
+              ruleExclusions:
+                - {rules: [930130], onPathPrefix: "/caf%C3%A9/"}
+          configMapRefs: { __replace__: true }
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "onPathPrefix '/caf%C3%A9/' must be a decoded URL path without a query string"}
+
+  test-haptic-waf-policy-rule-exclusions-path-unresolved-rejected:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: A path selector with //, /./, or /../ can never match the resolved path and is rejected.
+    extraContext:
+      renderMode: admission
+      waf:
+        policies:
+          defaultPolicy: ""
+          inline:
+            bad:
+              ruleExclusions:
+                - {rules: [930130], onPathSuffix: "/api/.."}
+          configMapRefs: { __replace__: true }
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "onPathSuffix '/api/\\.\\.' never matches"}
 
   test-haptic-waf-policy-rule-exclusions-regex-target-rejected:
     _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
