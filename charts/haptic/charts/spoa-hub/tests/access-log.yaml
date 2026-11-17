@@ -86,6 +86,12 @@ validationTests:
           the need for Coraza's audit log to answer "on what did it fire" — and
           that log writes the client IP, all request headers and the matched
           bytes to the sidecar's stdout.
+      - type: contains
+        target: haproxy.cfg
+        pattern: '%\(waf_rule_ids\)\[var\(txn\.hub\.coraza\.rule_ids\)\]'
+        description: >-
+          The scoring rules behind the verdict: in CRS's anomaly mode
+          waf_rule_id is 949110 for every request over the threshold.
       - type: not_contains
         target: haproxy.cfg
         pattern: 'waf_matched_var:sint'

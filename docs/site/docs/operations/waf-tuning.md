@@ -58,6 +58,7 @@ Rule-hit metrics tell you *which* rules fire. To tie a rule hit to one request, 
 | `waf_rule_id` | which Core Rule Set (CRS) rule interrupted, for the one 403 a user complained about |
 | `waf_score` | The request's anomaly score compared with the policy threshold |
 | `waf_rules_hit` | how many rules matched on this request — one noisy rule, or twenty |
+| `waf_rule_ids` | **which rules** put the request over the threshold, most severe first: `930130,920420`. In anomaly mode `waf_rule_id` is the scoring rule `949110` |
 | `waf_matched_var` | **which request fields** the rules matched on, as names: `ARGS_GET:id,REQUEST_LINE`. Never the values |
 | `waf_action` | `allow` or `deny`, so detect-mode traffic is distinguishable |
 | `denied_by` | `waf` when the WAF blocked the request |

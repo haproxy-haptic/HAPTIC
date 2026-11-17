@@ -101,6 +101,12 @@ templateSnippets:
         every request header and the matched bytes to the sidecar's stdout. Names
         are safe to log where values are not, so this needs no opt-in.
 
+        waf_rule_ids names the scoring rules behind the verdict — e.g.
+        `930130,920420`, most severe first (coraza plugin >= the release with
+        `rule_ids`). In CRS's anomaly mode waf_rule_id is the scoring rule 949110
+        for every request over the threshold, so this is what says which rules
+        to look at or to exclude. Rule IDs only, no request content.
+
         txn.hub.coraza.data is deliberately never logged here — it echoes request
         payload fragments and is off by default (expose_matched_data=false). An
         operator who needs the matched target for false-positive triage opts into
@@ -114,6 +120,7 @@ templateSnippets:
       %(waf_score)[var(txn.hub.coraza.anomaly_score)]
       %(waf_rules_hit)[var(txn.hub.coraza.rules_hit)]
       %(waf_matched_var)[var(txn.hub.coraza.matched_var)]
+      %(waf_rule_ids)[var(txn.hub.coraza.rule_ids)]
       {%- end %}
 
   log-fields-310-rate-limit:
