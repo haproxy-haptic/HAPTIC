@@ -45,11 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backends without an explicit algorithm use `balance random` (power of two choices) instead of `roundrobin`, steering requests away from loaded pods. Set `haproxy-haptic.org/load-balance: roundrobin` to keep the previous distribution.
 - **BREAKING:** `haproxy-haptic.org/auth-secret`, `api-key-secret`, `hmac-secret`, `consumer-groups-secret`, `backend-crt-secret`, and `request-schema-secret` read Secrets only from the Ingress's namespace. Admission rejects a reference to another namespace, and an existing Ingress with one answers `503` with a Warning Event. To migrate, copy the Secret into the Ingress's namespace and reference it by name. `backend-ca-secret`, `auth-tls-secret`, and `jwt-secret` still accept other namespaces.
 - HAProxy always listens on `haproxy.ports.http` and `haproxy.ports.https`, even with no Ingress or Gateway; a request that matches no route gets `404` and HTTPS uses the default certificate. Adding the first route or removing the last no longer reloads HAProxy. `ingressDefaultHTTPS: false` now only keeps hosts without `spec.tls` out of the global HTTPS redirect.
+- **BREAKING:** while `waf.ingressPermissions.allowEnforcementOverride` is `false` (the default), a self-service WAF policy whose `enforcement` differs from `waf.dispatch.defaultEnforcement` is rejected with a `WafPolicyInvalid` Event, and routes selecting it answer `503`. Remove `enforcement` from the policy, or set `allowEnforcementOverride: true` ([#693](https://github.com/haproxy-haptic/HAPTIC/issues/693)).
 
 #### Fixed
 
 - HAProxy sends access-log records to the Vector sidecar over UDP on `127.0.0.1:9514` instead of a Unix datagram socket, whose 10-record queue dropped records on every reload ([#677](https://github.com/haproxy-haptic/HAPTIC/issues/677)).
 - Vector exports `haptic_access_log_dropped_records_total`, and the `HAProxyAccessLogRecordsDropped` alert fires on it.
+- A WAF policy that leaves out `enforcement` uses `waf.dispatch.defaultEnforcement` instead of `deny`, so a self-service policy no longer starts blocking routes under a `detect` installation ([#693](https://github.com/haproxy-haptic/HAPTIC/issues/693)).
 
 #### Security
 
@@ -60,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A bare API key in an `api-key-secret` or `HAProxyRoutePolicy` API-key Secret gets the consumer id `key-<first 12 hex digits of its SHA-256>` instead of the key itself, so the key no longer reaches the access log or the forwarded consumer header. Consumer-groups and per-consumer rate limits that named a bare key must use the new id, or give the key an explicit `:<consumer>`.
 - HMAC shared keys (`hmac-secret`) and API keys (`api-key-secret`, `HAProxyRoutePolicy` API keys) are published in Secrets instead of plaintext `HAProxyMapFile` objects.
 - TLS session-ticket keys (`extraContext.tls.sessionTickets`) are published in a Secret instead of a plaintext `HAProxyGeneralFile`, so reading HAPTIC's output objects no longer lets anyone decrypt recorded resumed sessions ([#674](https://github.com/haproxy-haptic/HAPTIC/issues/674)).
+- WAF `ruleExclusions` path selectors match the decoded, normalized request path only, so a client can no longer trigger an exclusion on any path through the query string, `..`, `\`, `;`, double encoding, or control and non-ASCII characters; `onPathExact` now also matches requests that carry a query string, and selectors that can never match are rejected ([#696](https://github.com/haproxy-haptic/HAPTIC/issues/696)).
 
 ## [0.12.0] - 2026-11-10
 

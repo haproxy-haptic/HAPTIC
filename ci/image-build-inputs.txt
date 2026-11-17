@@ -8,6 +8,15 @@ ci/images/ci/requirements.lock
 ci/images/ci/shims/braces/index.js
 ci/images/ci/shims/braces/index.test.js
 ci/images/ci/shims/braces/package.json
+ci/images/ci/shims/picomatch/LICENSE
+ci/images/ci/shims/picomatch/index.js
+ci/images/ci/shims/picomatch/index.test.js
+ci/images/ci/shims/picomatch/lib/constants.js
+ci/images/ci/shims/picomatch/lib/parse.js
+ci/images/ci/shims/picomatch/lib/picomatch.js
+ci/images/ci/shims/picomatch/lib/scan.js
+ci/images/ci/shims/picomatch/lib/utils.js
+ci/images/ci/shims/picomatch/package.json
 ci/images/ci/tools/go.mod
 ci/images/ci/tools/go.sum
 ci/images/python-docs/Dockerfile

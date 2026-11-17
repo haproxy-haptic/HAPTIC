@@ -274,7 +274,6 @@ The following example uses the `api-access` policy created above.
     data:
       policies.yaml: |
         api-headers:
-          enforcement: deny
           requestBody:
             mode: none
           allowedMethods: [GET, HEAD]
@@ -301,7 +300,6 @@ The following example uses the `api-access` policy created above.
     data:
       policies.yaml: |
         api-headers:
-          enforcement: deny
           requestBody:
             mode: none
           allowedMethods: [GET, HEAD, POST]

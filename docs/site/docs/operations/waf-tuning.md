@@ -4,6 +4,11 @@ Start a [WAF policy](waf-policies.md) in `enforcement: detect` mode to observe
 rule matches before blocking requests. Review legitimate traffic, narrow any
 false-positive exclusions, then switch to `deny`.
 
+A policy without `enforcement` uses `waf.dispatch.defaultEnforcement`. A
+self-service catalog can set a different enforcement only when
+`waf.ingressPermissions.allowEnforcementOverride` is `true`; otherwise leave
+`enforcement` out of self-service policies.
+
 You need a configured policy, access logs, and [Prometheus monitoring](monitoring.md).
 The examples use policy `my-policy`; select your policy in the queries. Apply
 changes through the [catalog that defines it](waf-policies.md#configure-a-trusted-catalog).
@@ -88,13 +93,14 @@ my-policy:
 ## Exclude false positives
 
 Use `ruleExclusions` for specific rules or fields and `allowedMethods` for
-legitimate HTTP methods. Both work in self-service catalogs.
+legitimate HTTP methods. Both work in self-service catalogs. Prefer excluding
+the request field or path that triggers a rule over disabling the whole rule,
+which removes its check from every input.
 
 `ruleExclusions` covers the full range from a whole attack category down to a single rule on a single path. You supply only rule IDs or CRS tags, an exact target variable, and a literal path; the chart writes the CRS directive:
 
 ```yaml
 my-policy:
-  enforcement: detect
   ruleExclusions:
     # drop a request field from a whole attack category (a search box
     # tripping SQL-injection and XSS):

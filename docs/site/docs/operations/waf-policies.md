@@ -79,8 +79,9 @@ To keep the trusted catalog in your Helm values, use `policies.inline` instead
 of a ConfigMap.
 
 The default dispatch mode, `opt-in`, inspects annotated routes. Set
-`waf.dispatch.mode: default-on` to inspect every route; its
-`defaultEnforcement` applies where no policy or permitted override sets a mode.
+`waf.dispatch.mode: default-on` to inspect every route. In either mode,
+`waf.dispatch.defaultEnforcement` sets the enforcement of every policy that
+leaves out `enforcement`, and of `default-on` routes without a policy.
 See the [WAF settings reference](../reference.md#coraza-waf)
 for all defaults and limits.
 
@@ -91,7 +92,7 @@ Start with the smallest change that resolves a false positive:
 | Field | Use it to |
 |-------|-----------|
 | `description` | Explain which applications should select the policy. |
-| `enforcement` | Block matches with `deny`, or record them with `detect`. |
+| `enforcement` | Block matches with `deny`, or record them with `detect`. Leave it out to use `waf.dispatch.defaultEnforcement`. |
 | `requestBody` | Choose whether to inspect bodies and set their size limit; see below. |
 | `allowedMethods`, `paranoiaLevel`, `anomalyThreshold` | Adjust allowed methods and CRS sensitivity. |
 | `crsSettings` | Extend allowed content types or set `maxFileSize`, `maxNumArgs`, and `totalArgLength`. |
@@ -109,8 +110,24 @@ crsSettings:
 ```
 
 Use `ruleExclusions` when changing CRS inputs isn't enough. Path selectors are
-`onPathPrefix`, `onPathSuffix`, `onPathExact`, and `onPathContains`. This exclusion
-allows SQL-like search text in `q` while keeping the tagged checks on other inputs:
+`onPathPrefix`, `onPathSuffix`, `onPathExact`, and `onPathContains`. They match
+the request path the way CRS rules such as 930130 inspect it:
+
+- The query string is never part of the match: `onPathExact: /api/health` matches
+  `/api/health?verbose=1`, and `/.env?x=/api/health` doesn't match.
+- Percent-encoding is decoded once, so `/%61pi/` matches `onPathPrefix: /api/`.
+  Write the selector as a decoded path; `%` and `?` are rejected.
+- `\` counts as `/`, and `//`, `/./`, and `/../` are resolved before matching:
+  `/api/../.env` doesn't match `onPathPrefix: /api/`. A selector containing
+  `//`, `/./`, or `/../` is rejected.
+- Matching is case-sensitive.
+- A request whose decoded path contains `;`, `?`, `%`, `#`, a control character,
+  or a character outside plain English letters, digits, and punctuation (such
+  as `é`) never gets the exclusion. Path parameters such as `/api/..;/.env`,
+  double encoding, and null bytes keep every rule active.
+
+This exclusion allows SQL-like search text in `q` while keeping the tagged
+checks on other inputs:
 
 ```yaml
 ruleExclusions:
@@ -228,8 +245,15 @@ data:
     app-baseline:
       requestBody:
         mode: none
-      enforcement: deny
+      ruleExclusions:
+        - tags: [attack-sqli]
+          excludeTarget: "ARGS:q"
 ```
+
+The policy leaves out `enforcement`, so it uses the administrator's
+`waf.dispatch.defaultEnforcement`. To resolve a false positive, exclude the
+request field that triggers a rule, as above, rather than disabling the whole
+rule.
 
 An Ingress in `team-a` selects it with
 `haproxy-haptic.org/waf-policy: app-baseline`. HAPTIC watches ConfigMaps with this
@@ -240,6 +264,7 @@ name and enables Coraza and policy permissions automatically.
 | Namespace | A team can select its own policies and trusted policies. Cross-namespace names such as `team-a/app-baseline` are rejected. |
 | Name conflicts | A local name that duplicates a trusted policy blocks that namespace's selection; it never silently replaces the trusted policy. |
 | Cluster baseline | `defaultPolicy` resolves only from trusted catalogs. With `default-on`/`deny`, a self-service policy can't weaken enforcement to `detect`. |
+| Enforcement | A self-service policy that sets an `enforcement` other than `waf.dispatch.defaultEnforcement` is rejected unless `waf.ingressPermissions.allowEnforcementOverride` is `true`. |
 | Body size and catalog growth | Administrator limits cap body sizes, policies per namespace, and total policies. |
 | Custom rules | `selfService.allowSecLang` defaults to `false`. Count and size limits don't bound rule CPU cost. |
 
