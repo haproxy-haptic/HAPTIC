@@ -461,6 +461,13 @@ spec:
                         - type
                         type: object
                       type: array
+                    sensitive:
+                      description: |-
+                        Sensitive keeps this template's rendered output out of validation
+                        diagnostics: the determinism report and failed `k8s:` assertions name
+                        the template and say its content is not shown. Set it on templates
+                        that render credentials or keys, such as a Secret manifest.
+                      type: boolean
                     template:
                       description: |-
                         Template is the template for generating the resource YAML.

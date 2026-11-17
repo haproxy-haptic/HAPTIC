@@ -178,6 +178,7 @@ func ConvertSpec(spec *v1alpha1.HAProxyTemplateConfigSpec) (*config.Config, erro
 			Template:         crdRes.Template,
 			PostProcessing:   convertPostProcessors(crdRes.PostProcessing),
 			CreateOnlyFields: slices.Clone(crdRes.CreateOnlyFields),
+			Sensitive:        crdRes.Sensitive,
 		}
 	}
 

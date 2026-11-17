@@ -229,7 +229,7 @@ The `contains`, `not_contains`, `match_count`, `equals`, and `match_order` asser
 | `cert:<name>` | A rendered SSL certificate, matched by basename. A failed assertion never shows the content |
 | `crt-list:<name>` | A rendered crt-list file (registered by a template via `fileRegistry.Register("crt-list", …)`), matched by basename |
 | `secret:<name>` | A rendered secret file (registered via `fileRegistry.Register("secret", …)` or `"sensitive-file"`), matched by basename. A failed assertion never shows the content |
-| `k8s:<template-name>` | The rendered YAML of a `spec.k8sResources` template (potentially multi-doc with `---`), so you can assert on emitted Kubernetes resources |
+| `k8s:<template-name>` | The rendered YAML of a `spec.k8sResources` template (potentially multi-doc with `---`), so you can assert on emitted Kubernetes resources. A failed assertion never shows the content of a template marked [`sensitive: true`](crd-reference.md#sensitive) |
 | `status:<ns>/<name>:<phase>` | The JSON status payload a `statusPatch()` call emitted for resource `<ns>/<name>` in the given pipeline phase (`rendered`, `deployed`, `renderFailed`, or `deployFailed`) — the way to test status-patch templates |
 | `events` | The Kubernetes Events the templates recorded via `recordEvent()`, one per line as `<Type> <Reason> <apiVersion> <Kind> <ns>/<name>: <message>` |
 | `rendering_error` | The simplified render error string, populated only when the render itself failed. Use this on negative tests where you expect rendering to be rejected |
@@ -338,3 +338,5 @@ Renders the templates a second time with the same inputs and asserts the output 
 ```
 
 The check covers `haproxy.cfg` and every auxiliary file the template produced; no `target` or `pattern` is needed.
+
+A differing file gets a diff in the failure message. Secret files, SSL certificates, sensitive maps, and `k8sResources` templates marked [`sensitive: true`](crd-reference.md#sensitive) are named instead, with `content not shown`; the test still fails.

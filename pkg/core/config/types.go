@@ -615,6 +615,9 @@ type K8sResource struct {
 	// created and omitted from every apply after that, leaving them to
 	// whoever runs the object.
 	CreateOnlyFields []string `yaml:"create_only_fields,omitempty"`
+
+	// Sensitive keeps the rendered output out of validation diagnostics.
+	Sensitive bool `yaml:"sensitive,omitempty"`
 }
 
 // SSLCertificate is an SSL certificate file template.

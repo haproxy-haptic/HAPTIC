@@ -548,6 +548,7 @@ Templates that emit Kubernetes resources for the controller to apply via Server-
 | `template` | string | Yes | — |
 | `postProcessing` | `[]PostProcessor` | No | — (see [`postProcessing`](#postprocessing-all-template-entries)) |
 | `createOnlyFields` | `[]string` | No | Dotted field paths whose initial values come from the template; subsequent applies preserve the live values |
+| `sensitive` | bool | No | `false`. Keeps the rendered output out of validation diagnostics (see [`sensitive`](#sensitive)) |
 
 By default, HAPTIC owns rendered resources: it adds a controller `OwnerReference`
 to the `HAProxyTemplateConfig`, prunes resources removed from the rendered set,
@@ -619,6 +620,30 @@ k8sResources:
 Change the value in your configuration and it takes effect only on a workload that doesn't exist yet; to resize a running one, scale it directly. A path the rendered object doesn't set is ignored, and each path must name a field the template itself sets — the controller keeps ownership of it, so a path it never sends would be deleted from the object.
 
 The bundled chart declares this on the two workloads it manages whose size is operational rather than structural: the Varnish cache and the shared rate-limit Valkey store.
+
+#### `sensitive`
+
+Set `sensitive: true` on a template that renders credentials or keys, such as a Secret manifest. Validation output then never shows its rendered content:
+
+- When the template renders differently on two passes, the [`deterministic`](validation-reference.md#deterministic) check names it and says `content not shown` instead of printing a diff. The test still fails.
+- A failed assertion on `target: k8s:<template-name>` shows no content preview, and a failed `equals` doesn't quote the content.
+
+This covers `haptic validate`, the controller's startup check, and admission webhook errors. `haptic validate --dump-rendered` and `--snapshot-dir` list the template by name only, and a marked template isn't checked by the sidecar preflight. The flag doesn't change how the controller applies the resource.
+
+```yaml
+k8sResources:
+  api-credentials:
+    sensitive: true
+    template: |
+      {%- var source = resources.secrets.GetSingle("default", "upstream-credentials") %}
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: api-credentials
+        namespace: {{ extraContext["controllerNamespace"] }}
+      data:
+        token: {{ source.data["token"] }}
+```
 
 Use this when the resource shape derives from observed cluster state (Ingresses, Gateways, Endpoints, …); use the chart's own static `templates/*.yaml` for fixed install-time wiring (RBAC, the internal agent Service, etc.). The chart's `charts/haptic/charts/base/library.yaml` ships a canonical example: the `haproxy-service` entry that renders the user-facing HAProxy LoadBalancer Service from listener state.
 
