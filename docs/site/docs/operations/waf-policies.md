@@ -346,12 +346,12 @@ Budget the `spoa-hub` sidecar's memory limit with this estimate:
 | Hub, plugins, and shared CRS patterns | 64 MiB |
 | Each distinct rule set, held twice while a reload swaps generations | 5 MiB |
 
-The default `spoaHub.resources.limits.memory: 256Mi` fits 38 rule sets. If you
-enable self-service policies, the default `selfService.limits.maxTotalPolicies:
-64` allows 64 distinct policies, which need 384Mi. A render that needs more than
-the limit fails with a message that names the required size, so a new policy
+The default `spoaHub.resources.limits.memory: 384Mi` fits 64 rule sets, the
+most the default `selfService.limits.maxTotalPolicies: 64` allows. If you raise
+that limit, or set a lower memory limit, a render that needs more than the
+memory limit fails with a message that names the required size, so a new policy
 can't OOM-kill the sidecar in every HAProxy pod. When the render fails, raise
-the limit to the size the message names:
+the memory limit to the size the message names:
 
 ```yaml
 spoaHub:

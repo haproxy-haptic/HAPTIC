@@ -2213,7 +2213,7 @@ spoaHub:
       cpu: 50m
       memory: 128Mi
     limits:
-      memory: 256Mi
+      memory: 384Mi
 
   # Hub-side runtime knobs (rendered into /etc/haproxy-spoa-hub/config.toml).
   hub:
