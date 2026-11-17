@@ -30,7 +30,7 @@ def run(*arguments, **kwargs):
 def rendered_section(dump, name):
     body = []
     for line in dump.split(f"{name}\n", 1)[1].splitlines():
-        if line.startswith(("#### ", "=== ")):
+        if line.startswith(("### ", "#### ", "=== ")):
             break
         if line and set(line) == {"-"}:
             continue
