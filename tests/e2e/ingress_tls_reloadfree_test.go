@@ -84,9 +84,12 @@ func TestIngressTLSHostRemovalIsReloadFree(t *testing.T) {
 					t.Fatalf("cycle %d: running crt-list lacks %s:\n%s", cycle, certFile, list)
 				}
 
-				// The add may land mid-list and reload; only the removal is measured.
-				waitFleetQuiescent(ctx, t, client, cs)
-				before := captureReloadFingerprint(ctx, t, cs)
+				var before reloadFingerprint
+				if dynamicBackendsSupported() {
+					// The add may land mid-list and reload; only the removal is measured.
+					waitFleetQuiescent(ctx, t, client, cs)
+					before = captureReloadFingerprint(ctx, t, cs)
+				}
 				deleteRouteByName(ctx, t, mustDynamic(t, client), ingressGVR, namespace, cycleName)
 				waitForRouteGone(ctx, t, cs, http, cycleHost, "/")
 				reloadFreeReaction(ctx, t, cs, certFile+" leaves the running crt-list",
@@ -160,8 +163,11 @@ func TestIngressTLSHostMidListAddIsReloadFree(t *testing.T) {
 		}).
 		Assess("a TLS host rendered ahead of an existing line is added without a reload", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
-			waitFleetQuiescent(ctx, t, client, cs)
-			before := captureReloadFingerprint(ctx, t, cs)
+			var before reloadFingerprint
+			if dynamicBackendsSupported() {
+				waitFleetQuiescent(ctx, t, client, cs)
+				before = captureReloadFingerprint(ctx, t, cs)
+			}
 
 			secret := NewTLSSecret(ctx, t, client, namespace, "tls-mid-a", []string{addedHost})
 			NewIngress(ctx, t, client, namespace, &IngressSpec{
