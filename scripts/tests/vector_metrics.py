@@ -56,7 +56,7 @@ if len(images) != 1:
 rendered = (work / "rendered.txt").read_text()
 body = []
 for line in rendered.split("#### vector.yaml", 1)[1].splitlines():
-    if line.startswith(("#### ", "=== ")):
+    if line.startswith(("### ", "#### ", "=== ")):
         break
     if line and set(line) == {"-"}:
         continue

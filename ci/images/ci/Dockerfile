@@ -96,9 +96,9 @@ RUN pip3 install --break-system-packages --require-hashes -r /tmp/requirements.l
     && rm /tmp/requirements.lock
 
 COPY package.json package-lock.json /opt/markdownlint/
-# braces has no fixed release for GHSA-vfj7-8cjw-p6xm (#266); drop the shim once one ships.
+# braces (GHSA-vfj7-8cjw-p6xm, #266) and picomatch (GHSA-fc5q-39xc-vjpf) have no fixed release; drop each shim once one ships.
 COPY shims /opt/markdownlint/shims
-RUN node --test /opt/markdownlint/shims/braces/index.test.js \
+RUN node --test /opt/markdownlint/shims/braces/index.test.js /opt/markdownlint/shims/picomatch/index.test.js \
     && npm ci --omit=dev --ignore-scripts --prefix /opt/markdownlint \
     && ln -s /opt/markdownlint/node_modules/.bin/markdownlint-cli2 /usr/local/bin/markdownlint-cli2
 
