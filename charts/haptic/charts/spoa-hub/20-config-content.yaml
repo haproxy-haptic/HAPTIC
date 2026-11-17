@@ -46,7 +46,8 @@ templateSnippets:
         {%%
           var requiredMiB = 64 + 5*ruleSets
           if memoryLimitMiB > 0 && requiredMiB > memoryLimitMiB {
-            fail(sprintf("The coraza plugin compiles %d distinct WAF rule sets, which need about %d MiB, above the spoa-hub sidecar's %d MiB memory limit. The sidecar would be OOM-killed in every HAProxy pod. Raise spoaHub.resources.limits.memory to at least %dMi or merge WAF policies that differ only in exclusions.", ruleSets, requiredMiB, memoryLimitMiB, requiredMiB))
+            // Not sprintf: exact-cycle replay rejects it, so every warm render would go cold.
+            fail("The coraza plugin compiles " + tostring(ruleSets) + " distinct WAF rule sets, which need about " + tostring(requiredMiB) + " MiB, above the spoa-hub sidecar's " + tostring(memoryLimitMiB) + " MiB memory limit. The sidecar would be OOM-killed in every HAProxy pod. Raise spoaHub.resources.limits.memory to at least " + tostring(requiredMiB) + "Mi or merge WAF policies that differ only in exclusions.")
           }
         %%}
       {%- end macro -%}
