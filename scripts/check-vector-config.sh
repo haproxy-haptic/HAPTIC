@@ -46,7 +46,7 @@ if marker not in dump:
 
 body = []
 for line in dump[dump.index(marker) + len(marker):].split("\n"):
-    if line.startswith("#### ") or line.startswith("=== "):
+    if line.startswith(("### ", "#### ", "=== ")):
         break
     if line and set(line) == {"-"}:      # the dump's own section rules
         continue
@@ -88,7 +88,7 @@ for name in toml_sections:
     start = dump.index(f"#### {name}") + len(f"#### {name}")
     body = []
     for line in dump[start:].split("\n"):
-        if line.startswith("#### ") or line.startswith("=== "):
+        if line.startswith(("### ", "#### ", "=== ")):
             break
         if line and set(line) == {"-"}:
             continue
