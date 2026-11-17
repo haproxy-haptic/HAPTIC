@@ -64,13 +64,13 @@ validationTests:
       - { type: contains, target: "map:coraza-app.map", pattern: "(?m)^team-a/git policy:git$" }
       - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/git detect$" }
       - { type: contains, target: "map:coraza-body.map", pattern: "(?m)^team-a/git buffered json 2048$" }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.allowed_methods=GET POST PATCH' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.blocking_paranoia_level=2' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.inbound_anomaly_score_threshold=10'',setvar:''tx\.outbound_anomaly_score_threshold=8' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?\|application/x-ndjson\| \|application/x-git-upload-pack-request\|' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.max_num_args=500' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?ctl:ruleRemoveById=930130' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?SecRuleRemoveById 920350' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?tx\.allowed_methods=GET POST PATCH' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?tx\.blocking_paranoia_level=2' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?tx\.inbound_anomaly_score_threshold=10'',setvar:''tx\.outbound_anomaly_score_threshold=8' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?\|application/x-ndjson\| \|application/x-git-upload-pack-request\|' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?tx\.max_num_args=500' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?ctl:ruleRemoveById=930130' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?SecRuleRemoveById 920350' }
 
   test-haptic-waf-policy-extends-overrides:
     _helm_skip_test: *extendsSkip
@@ -99,11 +99,11 @@ validationTests:
       - type: haproxy_valid
       - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/git deny$" }
       - { type: not_contains, target: "map:coraza-body.map", pattern: "team-a/git buffered" }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.allowed_methods=GET''' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.blocking_paranoia_level=1' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.inbound_anomaly_score_threshold=20'',setvar:''tx\.outbound_anomaly_score_threshold=8' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.max_num_args=100' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?\|application/x-ndjson\|' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?tx\.allowed_methods=GET''' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?tx\.blocking_paranoia_level=1' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?tx\.inbound_anomaly_score_threshold=20'',setvar:''tx\.outbound_anomaly_score_threshold=8' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?tx\.max_num_args=100' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?\|application/x-ndjson\|' }
 
   test-haptic-waf-policy-extends-baseline-change-propagates:
     _helm_skip_test: *extendsSkip
@@ -138,8 +138,8 @@ validationTests:
     assertions:
       - type: haproxy_valid
       - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/git deny$" }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?tx\.blocking_paranoia_level=3' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\][^\[]*?ctl:ruleRemoveById=930130' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?tx\.blocking_paranoia_level=3' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?ctl:ruleRemoveById=930130' }
 
   test-haptic-waf-policy-extends-unknown-base-rejected:
     _helm_skip_test: *extendsSkip
@@ -223,8 +223,8 @@ validationTests:
       - type: haproxy_valid
       - { type: contains, target: "map:coraza-app.map", pattern: "(?m)^team-a/git policy:team-a/git$" }
       - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/git detect$" }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:team-a/git"\][^\[]*?ctl:ruleRemoveTargetById=930130;REQUEST_FILENAME' }
-      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:team-a/git"\][^\[]*?SecRuleUpdateTargetById 942100 "!ARGS:admin_note"' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:team-a/git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?ctl:ruleRemoveTargetById=930130;REQUEST_FILENAME' }
+      - { type: contains, target: "file:spoa-hub-config.toml", pattern: '(?s)applications\."policy:team-a/git"\]\n(?:[^\[\n][^\n]*\n|\n)*?[^\n]*?SecRuleUpdateTargetById 942100 "!ARGS:admin_note"' }
 
   test-haptic-waf-policy-extends-selfservice-own-seclang-rejected:
     _helm_skip_test: *extendsSkip
