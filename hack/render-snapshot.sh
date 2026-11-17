@@ -9,7 +9,7 @@ set -euo pipefail
 #     <dir>/<test-name>/haproxy.cfg
 #     <dir>/<test-name>/maps/<name>
 #     <dir>/<test-name>/files/<name>
-#     <dir>/<test-name>/certs/<name>
+#     <dir>/<test-name>/secret-files.txt   (names only, never content)
 #
 # so a change that is meant to leave the rendered configuration alone can be
 # proven to: snapshot two checkouts and compare the trees.
@@ -17,12 +17,11 @@ set -euo pipefail
 #     git worktree add /tmp/base origin/main
 #     (cd /tmp/base && make build && hack/render-snapshot.sh /tmp/snap-base)
 #     make build && hack/render-snapshot.sh /tmp/snap-head
-#     diff -rw -x tls-ticket-keys /tmp/snap-base /tmp/snap-head
+#     diff -rw /tmp/snap-base /tmp/snap-head
 #
 # `-w` because a refactor is allowed to move whitespace inside a directive;
-# drop it to hold the output byte-identical. `tls-ticket-keys` is excluded
-# because the SSL library mints it from crypto/rand on every render, so it
-# differs between two runs of the same checkout.
+# drop it to hold the output byte-identical. A content-only change to a
+# certificate, secret file or sensitive map doesn't show in the diff.
 #
 # Usage: hack/render-snapshot.sh <output-dir>
 #
@@ -39,7 +38,7 @@ CHART_DIR="${PROJECT_ROOT}/charts/haptic"
 CONTROLLER_BIN="${CONTROLLER_BIN:-${PROJECT_ROOT}/bin/haptic}"
 
 if [[ $# -ne 1 || "$1" == "-h" || "$1" == "--help" ]]; then
-    sed -n '3,33p' "${BASH_SOURCE[0]}" >&2
+    sed -n '3,32p' "${BASH_SOURCE[0]}" >&2
     exit 1
 fi
 OUT_DIR="$1"

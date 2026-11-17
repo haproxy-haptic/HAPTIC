@@ -160,7 +160,7 @@ haptic validate -f config.yaml [flags]
 # Show rendered content preview for failed assertions (first 200 chars)
 haptic validate -f config.yaml --verbose
 
-# Dump complete rendered content (haproxy.cfg, maps, files, certs)
+# Dump rendered content (haproxy.cfg, maps, files; certs and secret files by name)
 haptic validate -f config.yaml --dump-rendered
 
 # Show template execution trace with timing
@@ -182,9 +182,14 @@ haptic validate -f config.yaml --verbose --dump-rendered --trace-templates
     - HAProxy configuration (haproxy.cfg)
     - Map files with full content
     - General files with full content
-    - SSL certificates with full content
+    - Certificates, secret files and sensitive maps by name only
+      (`TestResult.RenderedSecretNames`); their content never enters a `TestResult`
     - Shown after test results
     - Default: false
+
+- `--snapshot-dir <dir>` - Writes each test's `haproxy.cfg`, `maps/` and `files/`
+  to `<dir>/<test>/` for `diff -r`; certificates, secret files and sensitive maps
+  are only named, in `secret-files.txt`
 
 - `--trace-templates` - Shows template execution trace
     - Template names and render order

@@ -32,7 +32,11 @@ func TestWriteSnapshot(t *testing.T) {
 			TestName:       "test-a",
 			RenderedConfig: "backend b\n  server s1 " + tempRoot + "/worker-3/test-7/x\n",
 			RenderedMaps:   map[string]string{"routes/host.map": "example.com be\n"},
-			RenderedCerts:  map[string]string{tempRoot + "/worker-3/test-7/ssl/tls.pem": "PEM"},
+			RenderedSecretNames: []string{
+				"cert:" + tempRoot + "/worker-3/test-7/ssl/tls.pem",
+				"secret:ssl/tls-ticket-keys",
+				"sensitive-map:haptic-apikeys.map",
+			},
 			// Never rendered, never snapshotted — its absence is the signal.
 			RenderedK8sResources: map[string]string{"varnish-cache": "kind: ConfigMap"},
 		},
@@ -51,10 +55,11 @@ func TestWriteSnapshot(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "example.com be\n", string(mapFile))
 
-	certName := snapshotName(snapshotRenderRoot + "/ssl/tls.pem")
-	cert, err := os.ReadFile(filepath.Join(dir, "test-a", "certs", certName))
+	secretNames, err := os.ReadFile(filepath.Join(dir, "test-a", snapshotSecretNamesFile))
 	require.NoError(t, err)
-	assert.Equal(t, "PEM", string(cert))
+	assert.Equal(t, "cert:"+snapshotRenderRoot+"/ssl/tls.pem\nsecret:ssl/tls-ticket-keys\nsensitive-map:haptic-apikeys.map\n", string(secretNames),
+		"certificates, secret files and sensitive maps are listed by name only")
+	assert.NoDirExists(t, filepath.Join(dir, "test-a", "certs"))
 
 	assert.NoDirExists(t, filepath.Join(dir, "test-a", "k8s"),
 		"Kubernetes-side output carries wall-clock timestamps and must stay out of the snapshot")

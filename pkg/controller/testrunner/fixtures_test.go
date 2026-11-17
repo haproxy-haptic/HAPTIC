@@ -16,6 +16,7 @@ package testrunner
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -815,7 +816,7 @@ func TestStoreAuxiliaryFiles(t *testing.T) {
 
 		assert.Nil(t, result.RenderedMaps)
 		assert.Nil(t, result.RenderedFiles)
-		assert.Nil(t, result.RenderedCerts)
+		assert.Nil(t, result.RenderedSecretNames)
 	})
 
 	t.Run("empty auxiliary files", func(t *testing.T) {
@@ -825,7 +826,7 @@ func TestStoreAuxiliaryFiles(t *testing.T) {
 
 		assert.Nil(t, result.RenderedMaps)
 		assert.Nil(t, result.RenderedFiles)
-		assert.Nil(t, result.RenderedCerts)
+		assert.Nil(t, result.RenderedSecretNames)
 	})
 
 	t.Run("stores map files", func(t *testing.T) {
@@ -858,18 +859,34 @@ func TestStoreAuxiliaryFiles(t *testing.T) {
 		assert.Equal(t, "192.168.1.0/24\n10.0.0.0/8", result.RenderedFiles["blocklist.txt"])
 	})
 
-	t.Run("stores SSL certificates", func(t *testing.T) {
+	t.Run("lists certificates, secret files and sensitive maps by name only", func(t *testing.T) {
 		result := &TestResult{}
 		aux := &dataplane.AuxiliaryFiles{
 			SSLCertificates: []auxiliaryfiles.SSLCertificate{
-				{Path: "/certs/server.pem", Content: "-----BEGIN CERTIFICATE-----\nMIIB..."},
+				{Path: "/certs/server.pem", Content: "-----BEGIN PRIVATE KEY-----\nMIIB..."},
+			},
+			SecretFiles: []auxiliaryfiles.SecretFile{
+				{Path: "secrets/sso.client-secret", Content: "client-secret-value"},
+				{Path: "ssl/tls-ticket-keys", Content: "ticket-key-value", HAProxyReads: true},
+			},
+			SensitiveMapFiles: []auxiliaryfiles.SensitiveMapFile{
+				{Path: "haptic-apikeys.map", Content: "api-key-value route"},
 			},
 		}
 		runner.storeAuxiliaryFiles(result, aux)
 
-		require.NotNil(t, result.RenderedCerts)
-		assert.Len(t, result.RenderedCerts, 1)
-		assert.Equal(t, "-----BEGIN CERTIFICATE-----\nMIIB...", result.RenderedCerts["/certs/server.pem"])
+		assert.Equal(t, []string{
+			"cert:/certs/server.pem",
+			"secret:secrets/sso.client-secret",
+			"secret:ssl/tls-ticket-keys",
+			"sensitive-map:haptic-apikeys.map",
+		}, result.RenderedSecretNames)
+		assert.Nil(t, result.RenderedMaps)
+		assert.Nil(t, result.RenderedFiles)
+		stored := fmt.Sprintf("%+v", *result)
+		for _, secret := range []string{"PRIVATE KEY", "client-secret-value", "ticket-key-value", "api-key-value"} {
+			assert.NotContains(t, stored, secret)
+		}
 	})
 
 	t.Run("stores all types together", func(t *testing.T) {
@@ -889,10 +906,9 @@ func TestStoreAuxiliaryFiles(t *testing.T) {
 
 		require.NotNil(t, result.RenderedMaps)
 		require.NotNil(t, result.RenderedFiles)
-		require.NotNil(t, result.RenderedCerts)
 		assert.Len(t, result.RenderedMaps, 1)
 		assert.Len(t, result.RenderedFiles, 1)
-		assert.Len(t, result.RenderedCerts, 1)
+		assert.Equal(t, []string{"cert:/certs/tls.pem"}, result.RenderedSecretNames)
 	})
 }
 

@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/testrunner"
@@ -28,6 +29,8 @@ import (
 // their file paths at. Without the substitution every rendered path differs
 // between two runs of the same checkout and the comparison says nothing.
 const snapshotRenderRoot = "/haptic-render"
+
+const snapshotSecretNamesFile = "secret-files.txt"
 
 // writeSnapshot lays every test's rendered output out as a directory tree, so
 // the same corpus rendered from two checkouts can be compared with `diff -r`.
@@ -55,11 +58,13 @@ func writeSnapshot(dir, tempRoot string, results *testrunner.TestResults) error 
 		for label, items := range map[string]map[string]string{
 			"maps":  test.RenderedMaps,
 			"files": test.RenderedFiles,
-			"certs": test.RenderedCerts,
 		} {
 			if err := writeSnapshotDir(filepath.Join(testDir, label), items, normalise); err != nil {
 				return err
 			}
+		}
+		if err := writeSnapshotNames(filepath.Join(testDir, snapshotSecretNamesFile), test.RenderedSecretNames, normalise); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -73,13 +78,24 @@ func writeSnapshotDir(dir string, items map[string]string, normalise func(string
 		return fmt.Errorf("creating snapshot directory %s: %w", dir, err)
 	}
 	for name, content := range items {
-		// The name is normalised too: certificates are keyed by their absolute
-		// render path, which carries the temp directory.
+		// Names are normalised too: some are absolute render paths.
 		if err := writeSnapshotFile(filepath.Join(dir, snapshotName(normalise(name))), normalise(content)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func writeSnapshotNames(path string, names []string, normalise func(string) string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	normalised := make([]string, len(names))
+	for i, name := range names {
+		normalised[i] = normalise(name)
+	}
+	slices.Sort(normalised)
+	return writeSnapshotFile(path, strings.Join(normalised, "\n")+"\n")
 }
 
 func writeSnapshotFile(path, content string) error {

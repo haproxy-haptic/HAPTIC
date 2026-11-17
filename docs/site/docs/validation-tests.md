@@ -284,6 +284,11 @@ Shows all rendered content after test results:
 haptic validate -f config.yaml --schema-dir ./schemas --dump-rendered
 ```
 
+SSL certificates, secret files, and sensitive maps are listed by name under
+`Secret Files (content not shown)`, each prefixed with the assertion target
+type that reads it: `cert:`, `secret:`, or `sensitive-map:`. To check their
+content, write an assertion against that target.
+
 ### `--trace-templates`
 
 Shows top-level template execution order and timing:

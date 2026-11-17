@@ -274,7 +274,7 @@ type TestResult struct {
     RenderedConfig string              // HAProxy configuration
     RenderedMaps   map[string]string   // Map files (path → content)
     RenderedFiles  map[string]string   // General files (filename → content)
-    RenderedCerts  map[string]string   // SSL certificates (path → content)
+    RenderedSecretNames []string       // "cert:<path>", "secret:<path>", "sensitive-map:<path>"; never content
 }
 ```
 

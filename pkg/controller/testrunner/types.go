@@ -182,8 +182,10 @@ type TestResult struct {
 	// RenderedFiles contains rendered general files (for --dump-rendered).
 	RenderedFiles map[string]string `json:"renderedFiles,omitempty" yaml:"renderedFiles,omitempty"`
 
-	// RenderedCerts contains rendered SSL certificates (for --dump-rendered).
-	RenderedCerts map[string]string `json:"renderedCerts,omitempty" yaml:"renderedCerts,omitempty"`
+	// RenderedSecretNames lists the rendered certificates, secret files and
+	// sensitive maps as target-prefixed names, e.g. "cert:<path>". Their
+	// content is never stored.
+	RenderedSecretNames []string `json:"renderedSecretNames,omitempty" yaml:"renderedSecretNames,omitempty"`
 
 	// RenderedK8sResources contains rendered output of every
 	// `spec.k8sResources` template (template name → rendered YAML).
