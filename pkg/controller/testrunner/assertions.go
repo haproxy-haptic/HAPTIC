@@ -118,7 +118,7 @@ func (r *Runner) assertDeterministic(
 
 	// Status patches are deliberately not compared: their lastTransitionTime
 	// is stamped from the clock, so two renders legitimately differ.
-	if diffResult := compareRenderedK8sResources(first.K8sResources, second.K8sResources); diffResult != "" {
+	if diffResult := compareRenderedK8sResources(first.K8sResources, second.K8sResources, r.config.K8sResources); diffResult != "" {
 		result.Passed = false
 		result.ConfigRejected = true
 		result.Error = diffResult
@@ -137,7 +137,7 @@ func (r *Runner) assertDeterministic(
 
 // compareRenderedK8sResources reports the first k8sResource whose rendered text
 // differs between two renders, or one present in only one of them.
-func compareRenderedK8sResources(first, second map[string]string) string {
+func compareRenderedK8sResources(first, second map[string]string, templates map[string]config.K8sResource) string {
 	rendered := make([]string, 0, len(first)+len(second))
 	for name := range first {
 		rendered = append(rendered, name)
@@ -156,6 +156,8 @@ func compareRenderedK8sResources(first, second map[string]string) string {
 			return fmt.Sprintf("k8sResource %s is rendered once and then not at all", name)
 		case !hadBefore && hadAfter:
 			return fmt.Sprintf("k8sResource %s appears only on the second render", name)
+		case before != after && templates[name].Sensitive:
+			return fmt.Sprintf("k8sResource %s differs between renders (content not shown)", name)
 		case before != after:
 			return fmt.Sprintf("k8sResource %s differs between renders:\n%s", name,
 				generateUnifiedDiff(name+" (render 1)", name+" (render 2)", before, after))
@@ -264,10 +266,11 @@ func compareAuxiliaryFiles(first, second *dataplane.AuxiliaryFiles) string {
 	return compareSensitiveFileList("sensitive map files", extractFileMap(first.SensitiveMapFiles), extractFileMap(second.SensitiveMapFiles))
 }
 
-// redactSensitiveTarget keeps secret-file, certificate and sensitive-map
-// content out of an assertion result, which verbose output and the webhook surface.
-func redactSensitiveTarget(result *AssertionResult, target string, auxiliaryFiles *dataplane.AuxiliaryFiles) {
-	if !isSensitiveTarget(target, auxiliaryFiles) {
+// redactSensitiveTarget keeps secret-file, certificate, sensitive-map and
+// sensitive k8sResource content out of an assertion result, which verbose
+// output and the webhook surface.
+func (r *Runner) redactSensitiveTarget(result *AssertionResult, target string, auxiliaryFiles *dataplane.AuxiliaryFiles) {
+	if !r.isSensitiveTarget(target, auxiliaryFiles) {
 		return
 	}
 	result.TargetPreview = ""
@@ -276,7 +279,10 @@ func redactSensitiveTarget(result *AssertionResult, target string, auxiliaryFile
 	}
 }
 
-func isSensitiveTarget(target string, auxiliaryFiles *dataplane.AuxiliaryFiles) bool {
+func (r *Runner) isSensitiveTarget(target string, auxiliaryFiles *dataplane.AuxiliaryFiles) bool {
+	if name, ok := strings.CutPrefix(target, "k8s:"); ok {
+		return r.config.K8sResources[name].Sensitive
+	}
 	for _, prefix := range []string{"secret:", "cert:", "sensitive-map:"} {
 		if strings.HasPrefix(target, prefix) {
 			return true
@@ -359,7 +365,7 @@ func (r *Runner) executeAssertions(
 			return true
 		}
 		assertionResult := r.runAssertion(ctx, &test.Assertions[i], haproxyConfig, auxiliaryFiles, k8sResources, statusPatches, renderedEvents, templateContext, result.RenderError, validationPaths, renderDeps)
-		redactSensitiveTarget(&assertionResult, test.Assertions[i].Target, auxiliaryFiles)
+		r.redactSensitiveTarget(&assertionResult, test.Assertions[i].Target, auxiliaryFiles)
 		if appendAssertionResult(ctx, result, &assertionResult) {
 			return true
 		}

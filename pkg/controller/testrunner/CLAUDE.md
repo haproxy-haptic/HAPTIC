@@ -133,7 +133,7 @@ Implements 8 assertion types (see the dispatch switch in `assertions.go`):
 5. **equals** - Exact string comparison against `expected`
 6. **jsonpath** - JSONPath query against the template context evaluated to `expected`
 7. **match_order** - Sequence of regexes must match in order within the target
-8. **deterministic** - Renders the template a second time and verifies the output (config + every auxiliary file) is byte-identical to the first render. **The runner appends this to every rendering test automatically**, so declaring it is only needed to attach a custom description; a test that declares it is not checked twice. It is skipped for tests whose render failed, and for `rendering_error` tests. A differing secret file, certificate, or sensitive map is named, never diffed.
+8. **deterministic** - Renders the template a second time and verifies the output (config + every auxiliary file) is byte-identical to the first render. **The runner appends this to every rendering test automatically**, so declaring it is only needed to attach a custom description; a test that declares it is not checked twice. It is skipped for tests whose render failed, and for `rendering_error` tests. A differing secret file, certificate, sensitive map, or `sensitive` k8sResource template is named, never diffed.
 
    The second render is fed the first render's general and sensitive files as `currentFiles` / `currentSensitiveFiles`, which is what the controller does on every reconcile after the first. Without that, a template that mints state on first sight of an empty input (the TLS session-ticket keys) reads as nondeterministic while being correct. The property asserted is therefore a fixed point: a render fed its own output does not churn, because churn is a spurious sync and reload.
 
@@ -152,6 +152,7 @@ change the inputs to the determinism assertion.
 - `crt-list:<name>` - CRT-list file content (matched against the rendered file's basename or full path; works on any HAProxy version because crt-list files always render into the auxiliary files irrespective of how they're synced — see `pkg/dataplane/auxiliaryfiles/crtlist.go`)
 - `secret:<name>` - Secret or sensitive file content; matches by basename. Failed results never preview it
 - `sensitive-map:<name>` - Content of a map declared with `planRegistry.SensitiveMap`; fails for a plain or missing map. Failed results never preview its content
+- `k8s:<template-name>` - Rendered k8sResources YAML; failed results never preview a `sensitive` template
 - `rendering_error` - The simplified template error string when rendering fails; resource-input failures always fail the test except expected namespace-scope rejections in opted-in tests
 
 Unknown targets fall back to the main HAProxy config silently.

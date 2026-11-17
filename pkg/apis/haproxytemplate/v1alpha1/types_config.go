@@ -843,6 +843,13 @@ type K8sResource struct {
 	// itself sets. A path absent from the rendered object is ignored.
 	// +optional
 	CreateOnlyFields []string `json:"createOnlyFields,omitempty"`
+
+	// Sensitive keeps this template's rendered output out of validation
+	// diagnostics: the determinism report and failed `k8s:` assertions name
+	// the template and say its content is not shown. Set it on templates
+	// that render credentials or keys, such as a Secret manifest.
+	// +optional
+	Sensitive bool `json:"sensitive,omitempty"`
 }
 
 // SSLCertificate defines an SSL certificate generated from a template.
