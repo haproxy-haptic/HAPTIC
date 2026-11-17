@@ -125,6 +125,9 @@ templateSnippets:
           var allowEnforcementOverride = gov["allowEnforcementOverride"].(bool)
           var selfServiceEnabled = gov["selfServiceEnabled"].(bool)
           var dispatchDefaultEnforcement = dispatch | dig("defaultEnforcement") | fallback("deny") | tostring()
+          if dispatchDefaultEnforcement != "deny" && dispatchDefaultEnforcement != "detect" {
+            fail("extraContext.waf.dispatch.defaultEnforcement must be one of: deny, detect.")
+          }
           var limitsAny = policies | dig("limits")
           if limitsAny == nil { limitsAny = map[string]any{} }
           var limits, limitsOK = limitsAny.(map[string]any)
@@ -231,7 +234,7 @@ templateSnippets:
               contentMode = "json"
             }
 
-            var enforcement = "deny"
+            var enforcement = dispatchDefaultEnforcement
             if policy["enforcement"] != nil {
               enforcement = policy["enforcement"] | scalarText()
             }
@@ -673,6 +676,12 @@ templateSnippets:
                     var rawPolicyMap, rawPolicyMapOK = parsedPolicies[policyName].(map[string]any)
                     if rawPolicyMapOK && rawPolicyMap["secLang"] != nil {
                       policyError = "Self-service WAF policy '" + policyName + "' from " + sourceID + " uses secLang, which is disabled for self-service catalogs (extraContext.waf.policies.selfService.allowSecLang=false). Use the structured fields (enforcement, requestBody, allowedMethods, paranoiaLevel, anomalyThreshold, crsSettings, ruleExclusions), or ask the HAPTIC administrator to move the policy into a trusted catalog."
+                    }
+                  }
+                  if policyError == "" && !allowEnforcementOverride {
+                    var requestedEnforcement = parsedPolicies[policyName] | dig("enforcement") | scalarText()
+                    if (requestedEnforcement == "deny" || requestedEnforcement == "detect") && requestedEnforcement != dispatchDefaultEnforcement {
+                      policyError = "Self-service WAF policy '" + policyName + "' from " + sourceID + " sets enforcement '" + requestedEnforcement + "', but the administrator fixed enforcement to '" + dispatchDefaultEnforcement + "'. Routes selecting it fail with 503. Remove enforcement from the policy."
                     }
                   }
                   if policyError == "" {

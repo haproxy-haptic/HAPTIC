@@ -150,7 +150,9 @@ catalogs fail closed, including after deletion and recreation under the same nam
 Existing WAF permissions and limits apply, including
 `waf.ingressPermissions.allowPolicySelection`. Distinct catalog entries share the
 namespace and cluster budgets with Ingress catalogs. A self-service policy can't
-weaken a `default-on` deny baseline. The route policy doesn't override enforcement
+weaken a `default-on` deny baseline, and unless
+`waf.ingressPermissions.allowEnforcementOverride` is `true` it must use
+`waf.dispatch.defaultEnforcement`. The route policy doesn't override enforcement
 mode.
 
 Requires `spoaHub.plugins.coraza.enabled=true`. GRPCRoute requires the selected
