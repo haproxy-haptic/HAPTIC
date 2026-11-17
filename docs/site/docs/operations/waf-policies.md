@@ -92,6 +92,7 @@ Start with the smallest change that resolves a false positive:
 | Field | Use it to |
 |-------|-----------|
 | `description` | Explain which applications should select the policy. |
+| `extends` | Build on another policy and state only what differs; see [Extend a policy](#extend-a-policy). |
 | `enforcement` | Block matches with `deny`, or record them with `detect`. Leave it out to use `waf.dispatch.defaultEnforcement`. |
 | `requestBody` | Choose whether to inspect bodies and set their size limit; see below. |
 | `allowedMethods`, `paranoiaLevel`, `anomalyThreshold` | Adjust allowed methods and CRS sensitivity. |
@@ -134,9 +135,6 @@ ruleExclusions:
   - tags: [attack-sqli]
     excludeTarget: "ARGS:q"
 ```
-
-To tune a policy for one application, extend it instead of copying it; see the
-next section.
 
 Policy authors can't override HAPTIC's body-safety rules. Per-Ingress
 [nginx-compatible custom rules](../libraries/nginx-ingress.md) are subject to
