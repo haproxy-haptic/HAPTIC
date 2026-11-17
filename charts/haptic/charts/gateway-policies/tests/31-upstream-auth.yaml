@@ -1,0 +1,228 @@
+_fx:
+  gateway: &uaGateway
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: Gateway
+    metadata: {namespace: default, name: policy-gateway, generation: 1}
+    spec:
+      gatewayClassName: haptic
+      listeners: [{name: http, port: 80, protocol: HTTP}]
+  service: &uaService
+    {apiVersion: v1, kind: Service, metadata: {namespace: default, name: echo}, spec: {ports: [{port: 80, targetPort: 8080}]}}
+  secret: &uaSecret
+    apiVersion: v1
+    kind: Secret
+    immutable: true
+    metadata: {namespace: default, name: git-deploy}
+    data:
+      authorization: QmFzaWMgWjJsMGJHRmlLMlJsY0d4dmVTMTBiMnRsYmkwME1qcG5iR1IwTFhoNGVBPT0=   # Basic Z2l0bGFiK2RlcGxveS10b2tlbi00MjpnbGR0LXh4eA==
+  policy: &uaPolicy
+    apiVersion: haproxy-haptic.org/v1alpha1
+    kind: HAProxyRoutePolicy
+    metadata: {namespace: default, name: private}
+    spec:
+      upstreamAuthorization:
+        secretRef: {name: git-deploy}
+  httpRoute: &uaHTTPRoute
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata: {namespace: default, name: git, generation: 1}
+    spec:
+      parentRefs: [{name: policy-gateway}]
+      hostnames: [git.example.com]
+      rules:
+      - backendRefs: [{name: echo, port: 80}]
+        matches: [{path: {type: PathPrefix, value: /}}]
+        filters:
+        - type: ExtensionRef
+          extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: private}
+      - backendRefs: [{name: echo, port: 80}]
+        matches: [{path: {type: PathPrefix, value: /public}}]
+  grpcRoute: &uaGRPCRoute
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: GRPCRoute
+    metadata: {namespace: default, name: git, generation: 1}
+    spec:
+      parentRefs: [{name: policy-gateway}]
+      hostnames: [grpc.example.com]
+      rules:
+      - backendRefs: [{name: echo, port: 80}]
+        filters:
+        - type: ExtensionRef
+          extensionRef: {group: haproxy-haptic.org, kind: HAProxyRoutePolicy, name: private}
+
+validationTests:
+  test-gateway-policy-upstream-auth:
+    description: >-
+      The Secret's authorization value replaces Authorization for HTTPRoute and
+      GRPCRoute rules; it travels only in the sensitive map.
+    requires: [httproutes, grpcroutes, routepolicies]
+    fixtures:
+      gateways: [*uaGateway]
+      services: [*uaService]
+      secrets: [*uaSecret]
+      routepolicies: [*uaPolicy]
+      httproutes: [*uaHTTPRoute]
+      grpcroutes: [*uaGRPCRoute]
+    assertions:
+    - type: haproxy_valid
+    - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^gateway/h_default_git_0 ok$'}
+    - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^gateway/g_default_git_0 ok$'}
+    - {type: not_contains, target: "map:haptic-upstream-auth-routes.map", pattern: 'h_default_git_1'}
+    - {type: contains, target: "sensitive-map:haptic-upstream-auth.map", pattern: '(?m)^gateway/h_default_git_0 Basic Z2l0bGFiK2RlcGxveS10b2tlbi00MjpnbGR0LXh4eA==$'}
+    - {type: contains, target: "sensitive-map:haptic-upstream-auth.map", pattern: '(?m)^gateway/g_default_git_0 Basic Z2l0bGFiK2RlcGxveS10b2tlbi00MjpnbGR0LXh4eA==$'}
+    - {type: not_contains, target: haproxy.cfg, pattern: 'Z2l0bGFiK2RlcGxveS10b2tlbi00Mj'}
+    - {type: not_contains, target: "map:haptic-upstream-auth-routes.map", pattern: 'Z2l0bGFiK2RlcGxveS10b2tlbi00Mj'}
+    - {type: not_contains, target: "map:gw-policy-errors.map", pattern: invalid}
+    - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 405 if \{ var\(txn\.ua_state\) -m found \} METH_TRACE'}
+    - {type: contains, target: haproxy.cfg, pattern: 'http-request set-header Authorization %\[var\(txn\.resource_key\),map\([^)]*/haptic-upstream-auth\.map\)\] if \{ var\(txn\.ua_state\) -m str ok \}'}
+
+  test-gateway-policy-upstream-auth-after-client-auth:
+    description: The credential replaces Authorization only after JWT and API-key checks read the caller's headers.
+    requires: [httproutes, routepolicies]
+    fixtures:
+      gateways: [*uaGateway]
+      services: [*uaService]
+      secrets:
+      - *uaSecret
+      - apiVersion: v1
+        kind: Secret
+        immutable: true
+        metadata: {namespace: default, name: jwt-keys}
+        data:
+          pubkey.pem: LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF1NlJodWp4Vi8xSG41dmF5bjA2Wgpubzhid0NIOFdTb05KTGRaWGJIYVBHM1doYnB5WGdVdk1IKzU1dWRiVGVwcVl3dTl5TmlINHNtQVVsNFJsanNGClZvVVE2VnBFK043dmJqM2FZMUdLWnV5MHhrUzM1ZjVLcW9VVGora3JjdEVEVStKSnJnamU3VHZRZEpRT3JGV0kKbnlVdHNhalF2a3RNdjVVSkVyazJuVmQwZTRJci9TWWQ4Y0tOeHdEejY4SDNXOWdnbWZLSm9Xd2xqUGJsUTJCOQpaVWdDNUZlZWpkaS9TYXZBWUNPcGpzSGNlRm80QXlZd25PVDhqMEdVTzF2Uk02M1NMUGdHUk5tclQ0SFFva0tSCi9LZFprRDVDWHZEdFBJZ1RsQTlvR25XdWVIQk5wWlB1SmpibWV5N2IyRS9wWmRhd0pyVjd3U25HL1FQSkoxMlgKd1FJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==
+      - apiVersion: v1
+        kind: Secret
+        immutable: true
+        metadata: {namespace: default, name: api-keys}
+        data:
+          keys: a2V5LW9uZTphbGljZQo=
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: private}
+        spec:
+          authentication:
+            jwt: {secretRef: {name: jwt-keys}}
+            apiKey: {secretRef: {name: api-keys}}
+          upstreamAuthorization:
+            secretRef: {name: git-deploy}
+      httproutes: [*uaHTTPRoute]
+    assertions:
+    - type: haproxy_valid
+    - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^gateway/h_default_git_0 ok$'}
+    - type: match_order
+      target: haproxy.cfg
+      patterns:
+      - str\(jwt_missing\)
+      - str\(api_key\)
+      - 'http-request set-header Authorization %\[var\(txn\.resource_key\),map\([^)]*/haptic-upstream-auth\.map\)\]'
+
+  test-gateway-policy-upstream-auth-missing-secret:
+    description: >-
+      A missing Secret leaves the rule `missing`: requests return 503 and a Warning
+      Event names the Secret, as for the Ingress annotation.
+    requires: [httproutes, routepolicies]
+    fixtures: &uaMissingFixtures
+      gateways: [*uaGateway]
+      services: [*uaService]
+      routepolicies: [*uaPolicy]
+      httproutes: [*uaHTTPRoute]
+    assertions:
+    - type: haproxy_valid
+    - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^gateway/h_default_git_0 missing$'}
+    - {type: not_contains, target: "sensitive-map:haptic-upstream-auth.map", pattern: 'h_default_git_0'}
+    - {type: not_contains, target: "map:gw-policy-errors.map", pattern: invalid}
+    - {type: contains, target: events, pattern: "UpstreamAuthSecretMissing.*'default/git-deploy'"}
+    - {type: contains, target: haproxy.cfg, pattern: 'http-request deny deny_status 503 if \{ var\(txn\.ua_state\) -m found \} !\{ var\(txn\.ua_state\) -m str ok \}'}
+
+  test-gateway-policy-upstream-auth-missing-secret-admitted:
+    description: Admission accepts a policy whose Secret doesn't exist yet.
+    requires: [httproutes, routepolicies]
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: routepolicies, namespace: default, name: private}
+    fixtures: *uaMissingFixtures
+    assertions:
+    - type: haproxy_valid
+
+  test-gateway-policy-upstream-auth-missing-key:
+    description: A Secret without an `authorization` key leaves the rule `invalid` with a Warning Event.
+    requires: [httproutes, routepolicies]
+    fixtures:
+      gateways: [*uaGateway]
+      services: [*uaService]
+      secrets:
+      - apiVersion: v1
+        kind: Secret
+        immutable: true
+        metadata: {namespace: default, name: git-deploy}
+        data:
+          token: c2VjcmV0
+      routepolicies: [*uaPolicy]
+      httproutes: [*uaHTTPRoute]
+    assertions:
+    - type: haproxy_valid
+    - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^gateway/h_default_git_0 invalid$'}
+    - {type: not_contains, target: "sensitive-map:haptic-upstream-auth.map", pattern: 'h_default_git_0'}
+    - {type: contains, target: events, pattern: 'UpstreamAuthSecretInvalid'}
+
+  test-gateway-policy-upstream-auth-foreign-namespace:
+    description: >-
+      secretRef has no namespace field: a namespace is pruned, so the reference
+      resolves only in the policy's namespace and never reads the foreign Secret.
+    requires: [httproutes, routepolicies]
+    fixtures:
+      gateways: [*uaGateway]
+      services: [*uaService]
+      secrets:
+      - apiVersion: v1
+        kind: Secret
+        immutable: true
+        metadata: {namespace: platform, name: git-deploy}
+        data:
+          authorization: QmVhcmVyIHRvcHNlY3JldA==   # Bearer topsecret
+      routepolicies:
+      - apiVersion: haproxy-haptic.org/v1alpha1
+        kind: HAProxyRoutePolicy
+        metadata: {namespace: default, name: private}
+        spec:
+          upstreamAuthorization:
+            secretRef: {name: git-deploy, namespace: platform}
+      httproutes: [*uaHTTPRoute]
+    assertions:
+    - type: haproxy_valid
+    - {type: contains, target: "map:haptic-upstream-auth-routes.map", pattern: '(?m)^gateway/h_default_git_0 missing$'}
+    - {type: not_contains, target: "sensitive-map:haptic-upstream-auth.map", pattern: 'topsecret'}
+    - {type: not_contains, target: haproxy.cfg, pattern: 'topsecret'}
+    - {type: contains, target: events, pattern: "UpstreamAuthSecretMissing.*'default/git-deploy'"}
+
+  test-gateway-policy-upstream-auth-mutable-secret:
+    description: A mutable Secret can't supply the credential, like other policy credentials.
+    requires: [httproutes, routepolicies]
+    fixtures: &uaMutableFixtures
+      gateways: [*uaGateway]
+      services: [*uaService]
+      secrets:
+      - apiVersion: v1
+        kind: Secret
+        metadata: {namespace: default, name: git-deploy}
+        data:
+          authorization: QmVhcmVyIHRvcHNlY3JldA==   # Bearer topsecret
+      routepolicies: [*uaPolicy]
+      httproutes: [*uaHTTPRoute]
+    assertions:
+    - type: haproxy_valid
+    - {type: contains, target: "map:gw-policy-errors.map", pattern: '(?m)^gateway/h_default_git_0 invalid$'}
+    - {type: not_contains, target: "map:haptic-upstream-auth.map", pattern: 'topsecret'}
+    - {type: not_contains, target: haproxy.cfg, pattern: 'topsecret'}
+    - {type: contains, target: "status:default/git:deployed", pattern: is mutable and cannot supply policy credentials}
+
+  test-gateway-policy-upstream-auth-mutable-secret-rejected:
+    description: Admission rejects a policy that references a mutable Secret.
+    requires: [httproutes, routepolicies]
+    extraContext:
+      renderMode: admission
+      admissionSubject: {store: routepolicies, namespace: default, name: private}
+    fixtures: *uaMutableFixtures
+    assertions:
+    - {type: contains, target: rendering_error, pattern: 'Secret default/git-deploy is mutable and cannot supply policy credentials'}

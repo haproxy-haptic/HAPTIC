@@ -1,0 +1,121 @@
+# HAProxyRoutePolicy spec.upstreamAuthorization: feeds the shared upstream
+# credential maps and frontend rules (http-policies/64-upstream-auth.yaml),
+# keyed by the rule's txn.resource_key (gateway/<rule id>). A missing or
+# unusable Secret leaves the rule 503 with a Warning Event, like the annotation.
+templateSnippets:
+  util-gateway-upstream-auth:
+    template: |-
+      {%- import "util-gateway-policy-decision" for GatewayPolicyDecision -%}
+      {%- import "util-upstream-auth-secret" for ReadUpstreamAuthSecret -%}
+      {%- var GatewayUpstreamAuthRules = func(route any, kind string) []any {
+        var rules = []any{}
+        var namespace = dig_string(route, "", "metadata", "namespace")
+        for index, rule := range toSlice(dig(route, "spec", "rules")) {
+          var record = map[string]any{}
+          GatewayPolicyDecision(route, kind, rule, index, record)
+          if record["attached"] != true || record["error"] != "" || dig(record, "upstreamAuthorization") == nil { continue }
+          var secret = map[string]any{}
+          var name = dig_string(record, "", "upstreamAuthorization", "secret")
+          ReadUpstreamAuthSecret(namespace, name, secret)
+          rules = append(rules, map[string]any{
+            "id": record["id"], "policy": record["name"], "secret": namespace + "/" + name,
+            "state": secret["state"], "value": secret["value"],
+          })
+        }
+        return rules
+      } -%}
+      {%- macro GatewayUpstreamAuthRoutesMap(route any, kind string) -%}
+        {%- for _, rule := range GatewayUpstreamAuthRules(route, kind) -%}
+          {{- "\n" + tostring(dig(rule, "id")) + " " + tostring(dig(rule, "state")) -}}
+        {%- end -%}
+      {%- end macro -%}
+      {%- macro GatewayUpstreamAuthValuesMap(route any, kind string) -%}
+        {%- for _, rule := range GatewayUpstreamAuthRules(route, kind) -%}
+          {%- if dig(rule, "state") == "ok" -%}
+            {{- "\n" + tostring(dig(rule, "id")) + " " + tostring(dig(rule, "value")) -}}
+          {%- end -%}
+        {%- end -%}
+      {%- end macro -%}
+      {%- macro PublishGatewayUpstreamAuth(route any, kind string) -%}
+        {%%
+          var name = dig_string(route, "", "metadata", "namespace") + "/" + dig_string(route, "", "metadata", "name")
+          var reported = map[string]bool{}
+          for _, rule := range GatewayUpstreamAuthRules(route, kind) {
+            show shared.Publish("any", "any", "any")
+            var state = tostring(dig(rule, "state"))
+            var secret = tostring(dig(rule, "secret"))
+            if state == "ok" || reported[secret] { continue }
+            reported[secret] = true
+            var policy = "HAProxyRoutePolicy '" + tostring(dig(rule, "policy")) + "'"
+            if state == "missing" {
+              recordEvent(route, "UpstreamAuthSecretMissing", kind + " " + name + " uses " + policy + ", whose upstreamAuthorization Secret '" + secret + "' can't be found. Requests for its rules return 503 until it exists.")
+            } else {
+              recordEvent(route, "UpstreamAuthSecretInvalid", "Secret '" + secret + "' referenced by upstreamAuthorization in " + policy + " on " + kind + " " + name + " has no usable 'authorization' value. Requests for its rules return 503. Set it to printable ASCII without line breaks, at most 8192 bytes.")
+            }
+          }
+        %%}
+      {%- end macro -%}
+
+  map-haptic-upstream-auth-routes-866-gateway-http:
+    requires: [httproutes]
+    incremental:
+      whenAnyPathExists: ["spec.rules[*].filters"]
+      source: httproutes
+      consumes: [gateway-policy-records]
+    template: |-
+      {%- import "util-gateway-upstream-auth" for GatewayUpstreamAuthRoutesMap -%}
+      {{- GatewayUpstreamAuthRoutesMap(item, "HTTPRoute") -}}
+
+  map-haptic-upstream-auth-values-866-gateway-http:
+    requires: [httproutes]
+    incremental:
+      whenAnyPathExists: ["spec.rules[*].filters"]
+      source: httproutes
+      consumes: [gateway-policy-records]
+    template: |-
+      {%- import "util-gateway-upstream-auth" for GatewayUpstreamAuthValuesMap -%}
+      {{- GatewayUpstreamAuthValuesMap(item, "HTTPRoute") -}}
+
+  features-866-gateway-upstream-auth-http:
+    requires: [httproutes]
+    incremental:
+      whenAnyPathExists: ["spec.rules[*].filters"]
+      source: httproutes
+      consumes: [gateway-policy-records]
+      group: haptic-upstream-auth
+      effects: [publishValue, recordEvent]
+    template: |-
+      {%- import "util-gateway-upstream-auth" for PublishGatewayUpstreamAuth -%}
+      {{- PublishGatewayUpstreamAuth(item, "HTTPRoute") -}}
+
+  map-haptic-upstream-auth-routes-866-gateway-grpc:
+    requires: [grpcroutes]
+    incremental:
+      whenAnyPathExists: ["spec.rules[*].filters"]
+      source: grpcroutes
+      consumes: [gateway-policy-records]
+    template: |-
+      {%- import "util-gateway-upstream-auth" for GatewayUpstreamAuthRoutesMap -%}
+      {{- GatewayUpstreamAuthRoutesMap(item, "GRPCRoute") -}}
+
+  map-haptic-upstream-auth-values-866-gateway-grpc:
+    requires: [grpcroutes]
+    incremental:
+      whenAnyPathExists: ["spec.rules[*].filters"]
+      source: grpcroutes
+      consumes: [gateway-policy-records]
+    template: |-
+      {%- import "util-gateway-upstream-auth" for GatewayUpstreamAuthValuesMap -%}
+      {{- GatewayUpstreamAuthValuesMap(item, "GRPCRoute") -}}
+
+  features-866-gateway-upstream-auth-grpc:
+    requires: [grpcroutes]
+    incremental:
+      whenAnyPathExists: ["spec.rules[*].filters"]
+      source: grpcroutes
+      consumes: [gateway-policy-records]
+      group: haptic-upstream-auth
+      effects: [publishValue, recordEvent]
+    template: |-
+      {%- import "util-gateway-upstream-auth" for PublishGatewayUpstreamAuth -%}
+      {{- PublishGatewayUpstreamAuth(item, "GRPCRoute") -}}

@@ -124,3 +124,13 @@ maps:
   haptic-jwks.map:
     template: |
       {{ on_own_lines(render_glob "map-haptic-jwks-*") -}}
+  haptic-upstream-auth-routes.map:
+    ordered: false
+    template: |
+      # <resource key> → ok | missing | invalid for every route with an upstream credential.
+      # Populated by map-haptic-upstream-auth-routes-*; read by frontend-filters-994-upstream-auth.
+      {{ on_own_lines(render_glob "map-haptic-upstream-auth-routes-*") -}}
+  haptic-upstream-auth.map:
+    ordered: false
+    template: |
+      {{ on_own_lines(render_glob "map-haptic-upstream-auth-values-*") -}}

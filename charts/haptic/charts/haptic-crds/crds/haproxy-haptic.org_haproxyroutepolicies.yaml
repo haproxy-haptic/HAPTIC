@@ -153,6 +153,21 @@ spec:
                           type: string
                           maxLength: 128
                           pattern: '^[A-Za-z][A-Za-z0-9-]*$'
+                upstreamAuthorization:
+                  type: object
+                  required: [secretRef]
+                  description: Replaces the request's Authorization header with a Secret's value after every client check.
+                  properties:
+                    secretRef:
+                      type: object
+                      required: [name]
+                      description: Immutable same-namespace Secret containing the header value in authorization. Rotate by changing the reference.
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                          maxLength: 253
+                          pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$'
                 sourceAddress:
                   type: object
                   minProperties: 1

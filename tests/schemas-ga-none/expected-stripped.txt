@@ -380,3 +380,11 @@ test-tlsroute-static-unrouted-listener-with-https
 test-gateway-backend-client-cert-cross-namespace-with-grant
 test-gateway-backend-client-cert-cross-namespace-without-grant-fails-closed
 test-gateway-backend-client-cert-only-from-accepting-gateway
+test-gateway-policy-upstream-auth
+test-gateway-policy-upstream-auth-after-client-auth
+test-gateway-policy-upstream-auth-foreign-namespace
+test-gateway-policy-upstream-auth-missing-key
+test-gateway-policy-upstream-auth-missing-secret
+test-gateway-policy-upstream-auth-missing-secret-admitted
+test-gateway-policy-upstream-auth-mutable-secret
+test-gateway-policy-upstream-auth-mutable-secret-rejected

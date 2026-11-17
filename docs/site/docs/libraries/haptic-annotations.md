@@ -582,6 +582,9 @@ spec:
 - The shared response cache bypasses requests that carry `Authorization`, unless the
   route keys its cache on the consumer.
 
+Gateway API routes get the same behavior from
+[`HAProxyRoutePolicy` `upstreamAuthorization`](../route-policy.md#upstream-credential).
+
 Anyone who can create or edit an Ingress in a namespace can use this annotation
 to send that namespace's Secrets to a backend they choose. See
 [Ingress authors and Secrets](../operations/security.md#ingress-authors-and-secrets).
