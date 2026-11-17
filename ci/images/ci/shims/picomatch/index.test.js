@@ -32,3 +32,20 @@ test("keeps extglob syntax literal when the caller disables extglobs", () => {
   assert.equal(picomatch.isMatch("+(a).md", "+(a).md", { noext: true }), true);
   assert.equal(picomatch.isMatch("a.md", "+(a).md", { noextglob: true }), false);
 });
+
+test("removeBackslashes matches upstream's regex and stays linear", () => {
+  const { removeBackslashes } = require("./lib/utils.js");
+  const { REGEX_REMOVE_BACKSLASH } = require("./lib/constants.js");
+  const upstream = (str) => str.replace(REGEX_REMOVE_BACKSLASH, (m) => (m === "\\" ? "" : m));
+  const alphabet = ["[", "]", "\\", "a", "\n", " ", "*", "/"];
+  let seed = 42;
+  const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+  for (let round = 0; round < 50000; round++) {
+    let str = "";
+    for (let len = next() % 12; len > 0; len--) str += alphabet[next() % alphabet.length];
+    assert.equal(removeBackslashes(str), upstream(str), JSON.stringify(str));
+  }
+  const started = Date.now();
+  removeBackslashes("[".repeat(200000));
+  assert.ok(Date.now() - started < 1000, "200k '[' must not backtrack");
+});
