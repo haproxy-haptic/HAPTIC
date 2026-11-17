@@ -1261,8 +1261,8 @@ controller:
             # authorized nginx-compatible enable-modsecurity=false annotation
             # opts it out.
             mode: opt-in  # @schema enum: [opt-in, default-on]
-            # Enforcement for default-on routes without a policy or route
-            # override. Ignored in opt-in mode. Valid values: deny, detect.
+            # Enforcement for policies that omit `enforcement`, and for
+            # default-on routes without a policy or route override.
             defaultEnforcement: deny  # @schema enum: [deny, detect]
           # Replaces the OWASP CRS compiled into the coraza plugin with one
           # fetched over HTTP, so a CRS release can be adopted without
@@ -1300,6 +1300,8 @@ controller:
           # stay dormant, preserving the vendor libraries' upstream behavior.
           ingressPermissions:
             allowPolicySelection: true
+            # Also lets a self-service policy set an enforcement other than
+            # dispatch.defaultEnforcement.
             allowEnforcementOverride: false
             # Separate from enforcement-mode changes: disabling the WAF is a
             # stronger capability than selecting deny/detect and is denied by

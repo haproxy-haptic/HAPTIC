@@ -122,6 +122,7 @@ validationTests:
           defaultEnforcement: deny
         ingressPermissions:
           allowPolicySelection: true
+          allowEnforcementOverride: true
         policies:
           defaultPolicy: ''
           inline:

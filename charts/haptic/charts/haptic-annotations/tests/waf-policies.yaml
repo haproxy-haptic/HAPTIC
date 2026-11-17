@@ -1487,7 +1487,9 @@ validationTests:
     _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
     description: a namespace's own waf-policies ConfigMap is discovered and its policy is selectable by bare name from that namespace, registered under the namespace-scoped app key
     extraContext:
-      waf: *wafPoliciesRoot
+      waf:
+        <<: *wafPoliciesRoot
+        ingressPermissions: {allowEnforcementOverride: true}
     fixtures:
       waf_selfservice_catalogs:
         - apiVersion: v1
@@ -1836,12 +1838,13 @@ validationTests:
 
   test-haptic-waf-selfservice-default-on-weakening-rejected:
     _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
-    description: under default-on deny dispatch, a tenant-authored detect policy may not weaken the baseline — rejected at admission
+    description: under default-on deny dispatch, a tenant-authored detect policy may not weaken the baseline even when enforcement overrides are allowed — rejected at admission
     extraContext:
       admissionSubject: { store: ingresses, namespace: team-a, name: app }
       renderMode: admission
       waf:
         dispatch: {mode: default-on, defaultEnforcement: deny}
+        ingressPermissions: {allowEnforcementOverride: true}
         policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
     fixtures:
       waf_selfservice_catalogs:
@@ -1861,6 +1864,156 @@ validationTests:
           spec: *specRulesHost
     assertions:
       - { type: contains, target: rendering_error, pattern: "would weaken the default-on baseline enforcement 'deny'" }
+
+  test-haptic-waf-selfservice-omitted-enforcement-inherits-detect:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: a self-service policy without enforcement inherits defaultEnforcement detect instead of deny
+    extraContext:
+      renderMode: reconcile
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: detect}
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              app:
+                requestBody:
+                  mode: none
+                ruleExclusions:
+                  - rules: [930130]
+                    excludeTarget: "ARGS:path"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-a, name: app, annotations: { haproxy-haptic.org/waf-policy: app } }
+          spec: *specRulesHost
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:coraza-app.map", pattern: "team-a/app policy:team-a/app" }
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/app detect$" }
+
+  test-haptic-waf-selfservice-omitted-enforcement-inherits-deny:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: a self-service policy without enforcement inherits defaultEnforcement deny
+    extraContext:
+      renderMode: reconcile
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: deny}
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              app:
+                requestBody:
+                  mode: none
+                ruleExclusions:
+                  - rules: [930130]
+                    excludeTarget: "ARGS:path"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-a, name: app, annotations: { haproxy-haptic.org/waf-policy: app } }
+          spec: *specRulesHost
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:coraza-app.map", pattern: "team-a/app policy:team-a/app" }
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/app deny$" }
+
+  test-haptic-waf-inline-omitted-enforcement-inherits-detect:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: an administrator inline policy without enforcement inherits defaultEnforcement detect
+    extraContext:
+      renderMode: reconcile
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: detect}
+        policies:
+          defaultPolicy: ""
+          configMapRefs: { __replace__: true }
+          inline: {app: {requestBody: {mode: none}}}
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-a, name: app, annotations: { haproxy-haptic.org/waf-policy: app } }
+          spec: *specRulesHost
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:coraza-app.map", pattern: "team-a/app policy:app" }
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/app detect$" }
+
+  test-haptic-waf-selfservice-enforcement-ceiling-rejected:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: with enforcement overrides disallowed, a self-service policy cannot choose deny under defaultEnforcement detect; it is not registered and its route fails closed
+    extraContext:
+      renderMode: reconcile
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: detect}
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              app:
+                enforcement: deny
+                requestBody:
+                  mode: none
+                ruleExclusions:
+                  - rules: [930130]
+                    excludeTarget: "ARGS:path"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-a, name: app, annotations: { haproxy-haptic.org/waf-policy: app } }
+          spec: *specRulesHost
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: events, pattern: "Warning WafPolicyInvalid v1 ConfigMap team-a/waf-policies:.*sets enforcement 'deny', but the administrator fixed enforcement to 'detect'" }
+      - { type: not_contains, target: "map:coraza-app.map", pattern: "policy:team-a/app" }
+      - { type: contains, target: haproxy.cfg, pattern: "http-request deny deny_status 503 if \\{ var\\(txn.resource_key\\) -m str team-a/app \\}" }
+
+  test-haptic-waf-selfservice-enforcement-override-allowed:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: with enforcement overrides allowed, a self-service policy may choose deny under defaultEnforcement detect
+    extraContext:
+      renderMode: reconcile
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: detect}
+        ingressPermissions: {allowEnforcementOverride: true}
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-a, name: waf-policies }
+          data:
+            policies.yaml: |
+              app:
+                enforcement: deny
+                requestBody:
+                  mode: none
+                ruleExclusions:
+                  - rules: [930130]
+                    excludeTarget: "ARGS:path"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-a, name: app, annotations: { haproxy-haptic.org/waf-policy: app } }
+          spec: *specRulesHost
+    assertions:
+      - type: haproxy_valid
+      - { type: contains, target: "map:coraza-app.map", pattern: "team-a/app policy:team-a/app" }
+      - { type: contains, target: "map:haproxy-ingress-waf.map", pattern: "(?m)^team-a/app deny$" }
 
   test-haptic-waf-selfservice-disabled-stays-unknown:
     _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
