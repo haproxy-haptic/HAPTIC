@@ -182,7 +182,7 @@ haptic validate -f config.yaml --verbose --dump-rendered --trace-templates
     - HAProxy configuration (haproxy.cfg)
     - Map files with full content
     - General files with full content
-    - Certificates, secret files and sensitive maps by name only
+    - Certificates, secret files, sensitive maps and `sensitive` k8sResources by name only
       (`TestResult.RenderedSecretNames`); their content never enters a `TestResult`
     - Shown after test results
     - Default: false

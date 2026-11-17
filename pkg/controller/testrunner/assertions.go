@@ -372,7 +372,7 @@ func (r *Runner) executeAssertions(
 	}
 
 	if determinism := r.checkDeterminism(
-		ctx, test, haproxyConfig, auxiliaryFiles, renderedEvents, result, renderDeps,
+		ctx, test, haproxyConfig, auxiliaryFiles, k8sResources, renderedEvents, result, renderDeps,
 	); determinism != nil {
 		if appendAssertionResult(ctx, result, determinism) {
 			return true
@@ -463,6 +463,7 @@ func (r *Runner) checkDeterminism(
 	test *config.ValidationTest,
 	haproxyConfig string,
 	auxiliaryFiles *dataplane.AuxiliaryFiles,
+	k8sResources map[string]string,
 	renderedEvents string,
 	result *TestResult,
 	renderDeps *RenderDependencies,
@@ -481,7 +482,7 @@ func (r *Runner) checkDeterminism(
 	check := r.assertDeterministic(ctx, &config.ValidationAssertion{Type: "deterministic"}, &RenderOutput{
 		HAProxyConfig:  haproxyConfig,
 		AuxiliaryFiles: auxiliaryFiles,
-		K8sResources:   result.RenderedK8sResources,
+		K8sResources:   k8sResources,
 		Events:         renderedEvents,
 	}, renderDeps)
 	return &check

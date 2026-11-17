@@ -177,3 +177,11 @@ func TestUnmarkedK8sResourceDeterminismReportKeepsTheDiff(t *testing.T) {
 	assert.False(t, determinism.Passed)
 	assert.Contains(t, determinism.Error, secretFileContent)
 }
+
+func TestSensitiveK8sResourceIsStoredByNameOnly(t *testing.T) {
+	cfg, functions := nondeterministicK8sResourceConfig(true)
+	result := runSharedAnalysisGate(t, cfg, functions).TestResults[0]
+
+	assert.NotContains(t, result.RenderedK8sResources, "credentials")
+	assert.Contains(t, result.RenderedSecretNames, "k8s:credentials")
+}

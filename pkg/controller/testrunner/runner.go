@@ -398,9 +398,7 @@ func (r *Runner) runSingleTest(ctx context.Context, testName string, test *confi
 		// Store rendered content for --dump-rendered flag
 		result.RenderedConfig = rendered.HAProxyConfig
 		r.storeAuxiliaryFiles(&result, rendered.AuxiliaryFiles)
-		if len(rendered.K8sResources) > 0 {
-			result.RenderedK8sResources = rendered.K8sResources
-		}
+		r.storeK8sResources(&result, rendered.K8sResources)
 		if len(rendered.StatusPatches) > 0 {
 			result.RenderedStatusPatches = rendered.StatusPatches
 		}
@@ -680,6 +678,22 @@ func (r *Runner) storeAuxiliaryFiles(result *TestResult, auxiliaryFiles *datapla
 		func(f auxiliaryfiles.GeneralFile) string { return f.Filename },
 		func(f auxiliaryfiles.GeneralFile) string { return f.Content })
 	result.RenderedSecretNames = secretFileNames(auxiliaryFiles)
+}
+
+// storeK8sResources stores rendered k8sResources for --dump-rendered and
+// --snapshot-dir; a sensitive template keeps only its name.
+func (r *Runner) storeK8sResources(result *TestResult, rendered map[string]string) {
+	for name, content := range rendered {
+		if r.config.K8sResources[name].Sensitive {
+			result.RenderedSecretNames = append(result.RenderedSecretNames, "k8s:"+name)
+			continue
+		}
+		if result.RenderedK8sResources == nil {
+			result.RenderedK8sResources = make(map[string]string, len(rendered))
+		}
+		result.RenderedK8sResources[name] = content
+	}
+	slices.Sort(result.RenderedSecretNames)
 }
 
 // secretFileNames names every rendered file whose content must not leave the

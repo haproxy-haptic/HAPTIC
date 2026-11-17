@@ -628,7 +628,7 @@ Set `sensitive: true` on a template that renders credentials or keys, such as a 
 - When the template renders differently on two passes, the [`deterministic`](validation-reference.md#deterministic) check names it and says `content not shown` instead of printing a diff. The test still fails.
 - A failed assertion on `target: k8s:<template-name>` shows no content preview, and a failed `equals` doesn't quote the content.
 
-This covers `haptic validate`, the controller's startup check, and admission webhook errors. `haptic validate --dump-rendered` still prints the rendered content, as it does for certificates, because you request that output explicitly. The flag doesn't change how the controller applies the resource.
+This covers `haptic validate`, the controller's startup check, and admission webhook errors. `haptic validate --dump-rendered` and `--snapshot-dir` list the template by name only, and a marked template isn't checked by the sidecar preflight. The flag doesn't change how the controller applies the resource.
 
 ```yaml
 k8sResources:
