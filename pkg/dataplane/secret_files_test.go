@@ -122,3 +122,10 @@ func TestCanonicalizeRejectsSensitiveFileOverCertificate(t *testing.T) {
 	_, err := CanonicalizeAuxiliaryFiles(files)
 	require.ErrorContains(t, err, `sensitive file "ssl/tls-ticket-keys" has the path of a certificate`)
 }
+
+func TestCanonicalizeRejectsSensitiveFileOverCertificateWithOtherDirectory(t *testing.T) {
+	files := sensitiveFiles()
+	files.CRTListFiles = []auxiliaryfiles.CRTListFile{{Path: "/etc/haproxy/ssl/tls-ticket-keys", Content: "x.pem"}}
+	_, err := CanonicalizeAuxiliaryFiles(files)
+	require.ErrorContains(t, err, `sensitive file "ssl/tls-ticket-keys" has the path of a certificate`)
+}

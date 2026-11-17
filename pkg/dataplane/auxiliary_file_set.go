@@ -171,20 +171,20 @@ func rejectSharedGeneralStorageName(
 }
 
 // rejectSharedSSLStoragePath refuses a sensitive file written over a
-// certificate, CA file or crt-list in the same directory.
+// certificate, CA file or crt-list; files are stored by base name.
 func rejectSharedSSLStoragePath(files *AuxiliaryFiles) error {
 	taken := make(map[string]bool, len(files.SSLCertificates)+len(files.SSLCaFiles)+len(files.CRTListFiles))
 	for _, file := range files.SSLCertificates {
-		taken[file.Path] = true
+		taken[path.Base(file.Path)] = true
 	}
 	for _, file := range files.SSLCaFiles {
-		taken[file.Path] = true
+		taken[path.Base(file.Path)] = true
 	}
 	for _, file := range files.CRTListFiles {
-		taken[file.Path] = true
+		taken[path.Base(file.Path)] = true
 	}
 	for _, file := range files.SecretFiles {
-		if file.HAProxyReads && taken[file.Path] {
+		if file.HAProxyReads && taken[path.Base(file.Path)] {
 			return fmt.Errorf("sensitive file %q has the path of a certificate, CA file or crt-list; rename one of them", file.Path)
 		}
 	}
