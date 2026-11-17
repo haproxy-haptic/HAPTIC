@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Added
 
 - `haproxy-haptic.org/upstream-authorization-secret` replaces the request's `Authorization` header with a value from a Secret in the Ingress's namespace, after every client check ([#672](https://github.com/haproxy-haptic/HAPTIC/issues/672)).
+- `HAProxyRoutePolicy` `spec.upstreamAuthorization.secretRef` does the same for HTTPRoute and GRPCRoute rules, from an immutable Secret in the policy's namespace ([#676](https://github.com/haproxy-haptic/HAPTIC/issues/676)).
 
 #### Changed
 

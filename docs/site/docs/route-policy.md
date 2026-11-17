@@ -1,8 +1,8 @@
 # HAProxyRoutePolicy reference
 
 Use `HAProxyRoutePolicy` to configure source-address filtering, authentication,
-shared rate limits, a web application firewall (WAF), or HTTP caching for
-HTTPRoute and GRPCRoute rules. The chart installs the CRD at API version
+shared rate limits, a web application firewall (WAF), HTTP caching, or an
+upstream credential for HTTPRoute and GRPCRoute rules. The chart installs the CRD at API version
 `haproxy-haptic.org/v1alpha1`. For a worked example, see
 [Protect Gateway routes](operations/gateway-policies.md).
 
@@ -15,7 +15,7 @@ backend-level attachments, and SSL passthrough combined with a policy are reject
 There is no inherited policy or implicit merge.
 
 A policy must configure at least one of `sourceAddress`, `authentication`,
-`rateLimit`, `waf`, or `cache`. See
+`rateLimit`, `waf`, `cache`, or `upstreamAuthorization`. See
 [Protect Gateway routes](./operations/gateway-policies.md) for a complete example.
 
 ## Source address
@@ -173,6 +173,53 @@ the same origin URL. Authenticated caching also partitions by verified consumer
 and rejects requests without one. Key components are encoded separately so
 separator characters can't merge distinct identities. Reserved `X-Haptic-*`
 headers can't be used as `varyHeaders`.
+
+## Upstream credential
+
+`upstreamAuthorization` sends the backend a credential your callers never see.
+HAPTIC replaces the request's `Authorization` header with the Secret's
+`authorization` value after every client check has read the caller's header, so
+the caller's token never reaches the backend either. It works like the
+[`upstream-authorization-secret`](libraries/haptic-annotations.md#send-a-credential-to-the-upstream)
+Ingress annotation.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: git-deploy-v1
+  namespace: catalog
+immutable: true
+stringData:
+  authorization: Basic Z2l0bGFiK2RlcGxveS10b2tlbi00MjpnbGR0LXh4eA==
+---
+apiVersion: haproxy-haptic.org/v1alpha1
+kind: HAProxyRoutePolicy
+metadata:
+  name: catalog-git
+  namespace: catalog
+spec:
+  authentication:
+    apiKey:
+      secretRef:
+        name: catalog-keys
+  upstreamAuthorization:
+    secretRef:
+      name: git-deploy-v1
+```
+
+- The Secret must be in the policy's namespace and set `immutable: true`, like
+  [credential Secrets](#authentication). A mutable Secret makes the attached rules
+  return 503, and admission rejects the policy change.
+- The value uses printable characters from `!` through `~` and spaces, without
+  line breaks, at most 8192 bytes. A missing Secret, a missing `authorization`
+  key, or an invalid value returns 503 and records a Warning Event on the route.
+  Admission accepts the policy, so you can apply it before its Secret.
+- Rotate the credential by creating a new immutable Secret and changing
+  `secretRef.name`.
+- The value is stored only in a Secret that HAPTIC publishes in its own
+  namespace, never in the rendered `haproxy.cfg` or an `HAProxyMapFile`.
+- `TRACE` requests return 405, so the backend can't echo the credential back.
 
 ## Filter order and failures
 

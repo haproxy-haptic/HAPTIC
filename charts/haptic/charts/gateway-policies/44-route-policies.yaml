@@ -98,8 +98,9 @@ templateSnippets:
               var spec = dig(policy, "spec")
               var auth = dig(spec, "authentication")
               var authenticated = dig(auth, "jwt") != nil || dig(auth, "apiKey") != nil
-              if !authenticated && dig(spec, "rateLimit") == nil && dig(spec, "waf") == nil && dig(spec, "cache") == nil && dig(spec, "sourceAddress") == nil {
-                result["error"] = "HAProxyRoutePolicy " + namespace + "/" + policyName + " has no enforcement settings. Configure authentication, rateLimit, waf, cache, or sourceAddress."
+              var upstreamAuthorization = dig(spec, "upstreamAuthorization")
+              if !authenticated && dig(spec, "rateLimit") == nil && dig(spec, "waf") == nil && dig(spec, "cache") == nil && dig(spec, "sourceAddress") == nil && upstreamAuthorization == nil {
+                result["error"] = "HAProxyRoutePolicy " + namespace + "/" + policyName + " has no enforcement settings. Configure authentication, rateLimit, waf, cache, sourceAddress, or upstreamAuthorization."
               }
               if dig(spec, "sourceAddress") != nil {
                 var sourceAddress = map[string]any{}
@@ -113,13 +114,18 @@ templateSnippets:
                   result["resolvedReason"] = sourceAddress["resolvedReason"]
                 }
               }
-              for _, mode := range []string{"jwt", "apiKey"} {
-                var credential = dig(auth, mode, "secretRef")
+              var credentialFields = map[string]any{
+                "authentication.jwt": dig(auth, "jwt", "secretRef"),
+                "authentication.apiKey": dig(auth, "apiKey", "secretRef"),
+                "upstreamAuthorization": dig(upstreamAuthorization, "secretRef"),
+              }
+              for _, field := range []string{"authentication.jwt", "authentication.apiKey", "upstreamAuthorization"} {
+                var credential = credentialFields[field]
                 if credential == nil { continue }
                 var secretName = dig_string(credential, "", "name")
                 var secretNamespace = dig_string(credential, namespace, "namespace")
                 if secretName == "" || secretNamespace != namespace {
-                  result["error"] = "HAProxyRoutePolicy credentials require a Secret name in the policy's namespace. Correct authentication."
+                  result["error"] = "HAProxyRoutePolicy credentials require a Secret name in the policy's namespace. Correct " + field + ".secretRef."
                   result["resolvedReason"] = "RefNotPermitted"
                 }
                 result["dependencies"] = append(result["dependencies"].([]any), map[string]any{
@@ -132,6 +138,9 @@ templateSnippets:
                     result["resolvedReason"] = "RefNotPermitted"
                   }
                 }
+              }
+              if upstreamAuthorization != nil {
+                result["upstreamAuthorization"] = map[string]any{"secret": dig_string(upstreamAuthorization, "", "secretRef", "name")}
               }
               var metadataName = dig_string(auth, "", "jwt", "resourceMetadata", "configMapRef", "name")
               if metadataName != "" {

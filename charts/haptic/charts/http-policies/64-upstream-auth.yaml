@@ -1,0 +1,54 @@
+# Upstream credential from a Secret, shared by the Ingress annotation and
+# HAProxyRoutePolicy. Adapters key both maps by txn.resource_key and publish
+# group haptic-upstream-auth:
+#   haptic-upstream-auth-routes.map  <resource key> → ok | missing | invalid
+#   haptic-upstream-auth.map         <resource key> → header value (sensitive map)
+templateSnippets:
+  util-upstream-auth-secret:
+    requires: [secrets]
+    template: |-
+      {%- macro ReadUpstreamAuthSecret(namespace string, name string, result map[string]any) -%}
+        {%- result["state"] = "missing" -%}
+        {%- result["value"] = "" -%}
+        {%- var secret = resources.secrets.GetSingle(namespace, name) -%}
+        {%- if secret != nil -%}
+          {%- result["state"] = "invalid" -%}
+          {%- var value = secret.Data["authorization"] | b64decode() | tostring() -%}
+          {%- if len(value) <= 8192 && regex_search(value, "^[!-~]([ -~]*[!-~])?$") -%}
+            {%- result["state"] = "ok" -%}
+            {%- result["value"] = value -%}
+          {%- end -%}
+        {%- end -%}
+      {%- end macro -%}
+
+  # Before the canary band (996): a pinned request is never diverted to a
+  # backend another route chose, which would receive this route's credential.
+  frontend-filters-994-upstream-auth:
+    template: |
+      {%- if incremental_value_count("haptic-upstream-auth", "any") > 0 -%}
+      {%- var routes, e1 = pathResolver.GetPath("haptic-upstream-auth-routes.map", "map") -%}
+      {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
+      {{ "\n" }}# haptic/upstream-auth
+      http-request set-var(txn.ua_state) var(txn.resource_key),map({{ routes }})
+      http-request set-var(txn.backend_pinned) bool(1) if { var(txn.ua_state) -m found }
+      http-request set-var(txn.denied_by) str(upstream_auth_unavailable) if { var(txn.ua_state) -m found } !{ var(txn.ua_state) -m str ok }
+      http-request deny deny_status 503 if { var(txn.ua_state) -m found } !{ var(txn.ua_state) -m str ok }
+      {#- TRACE would echo the injected credential back to the caller. #}
+      http-request set-var(txn.denied_by) str(upstream_auth_trace) if { var(txn.ua_state) -m found } METH_TRACE
+      http-request deny deny_status 405 if { var(txn.ua_state) -m found } METH_TRACE
+      {%- end %}
+
+  # After every rule that reads the caller's Authorization (JWT 858 … satisfy-any 901).
+  # The value is read from the map inline, never stored in a variable.
+  frontend-filters-997-upstream-auth:
+    template: |
+      {%- if incremental_value_count("haptic-upstream-auth", "any") > 0 -%}
+      {%- var values, e1 = pathResolver.GetPath("haptic-upstream-auth.map", "map") -%}
+      {%- if e1 != nil -%}{{ fail(tostring(e1)) }}{%- end -%}
+      {%- var e2 = planRegistry.SensitiveMap("haptic-upstream-auth.map") -%}
+      {%- if e2 != nil -%}{{ fail(tostring(e2)) }}{%- end -%}
+      {{ "\n" }}# haptic/upstream-auth
+      http-request set-var(txn.denied_by) str(upstream_auth_unavailable) if { var(txn.ua_state) -m str ok } !{ var(txn.resource_key),map({{ values }}) -m found }
+      http-request deny deny_status 503 if { var(txn.ua_state) -m str ok } !{ var(txn.resource_key),map({{ values }}) -m found }
+      http-request set-header Authorization %[var(txn.resource_key),map({{ values }})] if { var(txn.ua_state) -m str ok }
+      {%- end %}

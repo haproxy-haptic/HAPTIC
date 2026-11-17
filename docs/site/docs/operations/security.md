@@ -661,6 +661,12 @@ If Ingress authors in a namespace mustn't read its Secrets, reject the annotatio
 there with a [governance rule](governance.md#scope-a-rule-to-namespaces) or an
 admission policy, as for host aliases above.
 
+[`HAProxyRoutePolicy` `upstreamAuthorization`](../route-policy.md#upstream-credential)
+does the same for Gateway routes: anyone who can write an `HAProxyRoutePolicy` and
+a route in a namespace can send that namespace's immutable Secrets to a backend
+they choose. Grant `haproxyroutepolicies` write access only to users who may read
+the namespace's Secrets.
+
 ## Admission validation coverage
 
 The admission webhook renders the proposed state and runs `haproxy -c` before
