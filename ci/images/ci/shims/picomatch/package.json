@@ -1,0 +1,8 @@
+{
+  "name": "picomatch",
+  "version": "0.0.0-haptic-stub",
+  "private": true,
+  "description": "picomatch 2.3.2 without extglob support (GHSA-fc5q-39xc-vjpf): extglob patterns are rejected.",
+  "main": "index.js",
+  "license": "MIT"
+}
