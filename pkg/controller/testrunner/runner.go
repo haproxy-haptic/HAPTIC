@@ -685,7 +685,11 @@ func (r *Runner) storeAuxiliaryFiles(result *TestResult, auxiliaryFiles *datapla
 // secretFileNames names every rendered file whose content must not leave the
 // render, each under the assertion target prefix that reads it.
 func secretFileNames(files *dataplane.AuxiliaryFiles) []string {
-	var names []string
+	count := len(files.SSLCertificates) + len(files.SecretFiles) + len(files.SensitiveMapFiles)
+	if count == 0 {
+		return nil
+	}
+	names := make([]string, 0, count)
 	for _, file := range files.SSLCertificates {
 		names = append(names, "cert:"+file.Path)
 	}

@@ -611,12 +611,12 @@ func dumpRenderedNamedContent(label string, items map[string]string) {
 	}
 }
 
-func dumpRenderedNames(label string, names []string) {
-	if len(names) == 0 {
+func dumpRenderedNames(label string, fileNames []string) {
+	if len(fileNames) == 0 {
 		return
 	}
 	fmt.Println("\n### " + label)
-	for _, name := range names {
+	for _, name := range fileNames {
 		fmt.Println(name)
 	}
 }
