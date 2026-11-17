@@ -713,6 +713,8 @@ templateSnippets:
             }
           }
 
+            // A failed derived policy marks the catalog unavailable; that must not excuse an unrelated inline error.
+            var catalogUnavailableBeforeDerived = trustedCatalogUnavailable
             for _, derivedKey := range keys(derivedTrusted) {
               var entry = derivedTrusted[derivedKey].(map[string]any)
               var policyName = entry["name"].(string)
@@ -734,7 +736,7 @@ templateSnippets:
                 }
                 continue
               }
-              if entry["resource"] == nil && trustedBrokenPolicy[baseName] == "" && !trustedCatalogUnavailable { fail(policyError) }
+              if entry["resource"] == nil && trustedBrokenPolicy[baseName] == "" && !catalogUnavailableBeforeDerived { fail(policyError) }
               trustedBrokenPolicy[policyName] = policyError
               trustedCatalogUnavailable = true
               if entry["resource"] != nil {

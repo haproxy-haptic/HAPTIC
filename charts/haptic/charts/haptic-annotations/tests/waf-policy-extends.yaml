@@ -344,6 +344,32 @@ validationTests:
       - { type: contains, target: events, pattern: "Warning WafPolicyInvalid v1 ConfigMap team-a/waf-policies:.*'git'.*extends unknown policy 'local'" }
       - { type: not_contains, target: "map:coraza-app.map", pattern: "team-a/git" }
 
+  test-haptic-waf-policy-extends-configmap-failure-keeps-inline-error-fatal:
+    _helm_skip_test: *extendsSkip
+    description: A broken derived policy in a trusted ConfigMap doesn't turn an unrelated inline extends error into a runtime 503.
+    extraContext:
+      renderMode: admission
+      waf:
+        policies:
+          defaultPolicy: ""
+          inline:
+            git: {extends: alsomissing}
+          configMapRefs:
+            __replace__: true
+            central: {namespace: security, name: catalog}
+    fixtures:
+      configmaps:
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: security, name: catalog }
+          immutable: true
+          data:
+            policies.yaml: |
+              shop:
+                extends: nosuch
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "WAF policy 'git' from extraContext.waf.policies.inline.git extends unknown policy 'alsomissing'" }
+
   test-haptic-waf-policy-extends-unavailable-base-fails-closed:
     _helm_skip_test: *extendsSkip
     description: A derived policy whose base ConfigMap is missing denies its routes without failing the render.
