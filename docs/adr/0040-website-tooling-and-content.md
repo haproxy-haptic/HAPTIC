@@ -40,12 +40,15 @@ retry can handle them. Successful pages still require full load within 30 second
 
 Cancel an engine transfer after five seconds without network progress and restart
 it at most twice. Progress resets the idle deadline; a slow active transfer can
-continue. Each attempt starts with an empty buffer. Size or checksum violations
-fail immediately. This changes the downloader, not the browser's 30-second gate.
+continue. After [#713](https://github.com/haproxy-haptic/HAPTIC/issues/713),
+recovery retains the received prefix and requests the remainder in ranges of
+at most 1 MiB. A full HTTP 200 response replaces the partial buffer. Each
+partial response must match the requested byte range and length. Size, range
+and checksum violations fail immediately. The browser keeps its 30-second gate.
 
 ## Consequences
 
 Publication now requires two independent source receipts instead of one. Tooling
 changes cannot publish before their canonical CI passes. An old release receives
 transport and redirect repairs without changing its binaries, chart, engine,
-version archive, or tag. Stalled transfers can consume up to three downloads.
+version archive, or tag. A third stalled transfer ends the download.

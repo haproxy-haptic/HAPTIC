@@ -20,7 +20,11 @@ from the output. It materializes local symlinks, rejects escaping links, and
 enforces GitHub Pages' [1 GB published-site limit](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits).
 An oversized build fails without replacing the previous site or deleting versions.
 
-The browser fetches `playground.wasm.br` explicitly. It uses native Brotli
+The browser fetches `playground.wasm.br` in one request. After five seconds without
+network progress, it resumes from the bytes already received in ranges of up to
+1 MiB. A third stall ends the download. The loader checks each partial response’s
+byte range and length, and accepts a full response when an origin ignores Range.
+It uses native Brotli
 decompression where available, with a pinned, locally served decoder otherwise.
 The fallback decodes in bounded chunks in the existing playground worker, so its
 WebAssembly heap does not retain a second engine-sized allocation. Compressed and
