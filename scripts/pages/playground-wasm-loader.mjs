@@ -9,38 +9,67 @@ async function verify(bytes, expected) {
   }
 }
 
-class StalledDownload extends Error {}
+const recoveryRangeSize = 1024 * 1024;
 
-async function transfer(url, expected, progress) {
+class StalledDownload extends Error {
+  constructor(message, resumeAt) {
+    super(message);
+    this.resumeAt = resumeAt;
+  }
+}
+
+async function transfer(url, bytes, start, ranged, progress) {
   const controller = new AbortController();
   let timer;
   let reader;
+  let offset = start;
+  let responseStart = start;
+  let limit = ranged ? Math.min(start + recoveryRangeSize, bytes.length) : bytes.length;
   const resetIdleDeadline = () => {
     clearTimeout(timer);
     timer = setTimeout(() => controller.abort(), 5000);
   };
   resetIdleDeadline();
   try {
-    progress({ type: 'progress', loaded: 0, total: expected.size });
-    const response = await fetch(url, { signal: controller.signal });
+    progress({ type: 'progress', loaded: offset, total: bytes.length });
+    const headers = ranged ? { Range: `bytes=${start}-${limit - 1}` } : {};
+    const response = await fetch(url, { signal: controller.signal, headers });
+    reader = response.body?.getReader();
     if (!response.ok) throw new Error(`Playground engine: HTTP ${response.status}. Reload this page.`);
+    if (response.status === 206) {
+      const expectedRange = `bytes ${start}-${limit - 1}/${bytes.length}`;
+      if (!ranged || response.headers.get('Content-Range') !== expectedRange) {
+        throw new Error('Playground engine response has an unexpected byte range. Reload this page.');
+      }
+    } else if (response.status === 200) {
+      // An origin can ignore Range and send the entire representation.
+      responseStart = 0;
+      offset = 0;
+      limit = bytes.length;
+    } else {
+      throw new Error(`Playground engine: unexpected HTTP ${response.status}. Reload this page.`);
+    }
     resetIdleDeadline();
-    const bytes = new Uint8Array(expected.size);
-    reader = response.body.getReader();
-    let offset = 0;
+    if (!reader) throw new Error('Playground download is incomplete. Reload this page.');
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (offset + value.length > bytes.length) throw new Error('Playground download exceeds its recorded size.');
+      if (offset + value.length > limit) throw new Error('Playground download exceeds its recorded size.');
       bytes.set(value, offset);
       offset += value.length;
       if (value.length) resetIdleDeadline();
       progress({ type: 'progress', loaded: offset, total: bytes.length });
     }
-    if (offset !== bytes.length) throw new Error('Playground download is incomplete. Reload this page.');
-    return bytes;
+    if (offset !== limit) throw new Error('Playground download is incomplete. Reload this page.');
+    return offset;
   } catch (error) {
-    if (controller.signal.aborted) throw new StalledDownload('Playground engine download stalled. Reload this page.');
+    if (controller.signal.aborted) {
+      const stage = reader ? 'reading the body' : 'waiting for headers';
+      const request = ranged ? `range starting at ${start}` : 'full request';
+      throw new StalledDownload(
+        `Playground engine download stalled ${stage} at ${offset} of ${bytes.length} bytes (${request}). Reload this page.`,
+        offset === limit ? responseStart : offset);
+    }
     throw error;
   } finally {
     clearTimeout(timer);
@@ -49,15 +78,19 @@ async function transfer(url, expected, progress) {
 }
 
 async function download(url, expected, progress) {
-  for (let attempt = 1; ; attempt++) {
+  const bytes = new Uint8Array(expected.size);
+  let offset = 0;
+  let stalls = 0;
+  do {
     try {
-      const bytes = await transfer(url, expected, progress);
-      await verify(bytes, expected);
-      return bytes;
+      offset = await transfer(url, bytes, offset, stalls > 0, progress);
     } catch (error) {
-      if (!(error instanceof StalledDownload) || attempt === 3) throw error;
+      if (!(error instanceof StalledDownload) || ++stalls === 3) throw error;
+      offset = error.resumeAt;
     }
-  }
+  } while (offset < bytes.length);
+  await verify(bytes, expected);
+  return bytes;
 }
 
 async function decodeWithWasm(bytes, size) {

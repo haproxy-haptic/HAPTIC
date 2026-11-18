@@ -13,8 +13,8 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/ja
 // Pages answers 5xx for a short while after a deployment. The local server does so once per path, so the retries stay tested.
 const playgrounds = Object.keys(receipt.engines).sort().map(engine => '/' + engine.replace(/playground\.wasm$/, ''));
 const unavailableOnce = new Set(['/shared/pages-transport.json', playgrounds[0] + 'starter.resources.yaml', playgrounds.at(-1)]);
-const stalledOnce = new Set();
 const stalledTransfers = new Map();
+const stallOffset = 65536;
 const attempts = 3;
 const pause = () => new Promise(resolve => setTimeout(resolve, 10000));
 async function fetchPublished(url, options) {
@@ -42,14 +42,28 @@ const server = createServer(async (request, response) => {
     if (!path.startsWith(root + sep)) { response.writeHead(403).end(); return; }
     if ((await stat(path)).isDirectory()) path = resolve(path, 'index.html');
     response.setHeader('Content-Type', types[extname(path)] || 'application/octet-stream');
-    if (stalledOnce.delete(request.url)) {
-      const bytes = await readFile(path);
-      response.setHeader('Content-Length', bytes.length);
-      response.write(bytes.subarray(0, 65536));
-      response.on('close', () => { stalledTransfers.get(request.url).aborted = true; });
+    const stalled = stalledTransfers.get(request.url);
+    if (stalled) {
+      const bytes = stalled.bytes;
+      if (!request.headers.range) {
+        stalled.fullRequests++;
+        response.setHeader('Content-Length', bytes.length);
+        response.write(bytes.subarray(0, stallOffset));
+        response.on('close', () => { stalled.aborted = true; });
+        return;
+      }
+      const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers.range);
+      const start = Number(range?.[1]);
+      const end = Number(range?.[2]);
+      if (!range || start > end || end >= bytes.length) {
+        response.writeHead(416).end();
+        return;
+      }
+      stalled.ranges.push({ start, end });
+      response.writeHead(206, { 'Content-Range': `bytes ${start}-${end}/${bytes.length}`,
+        'Content-Length': end - start + 1 }).end(bytes.subarray(start, end + 1));
       return;
     }
-    if (stalledTransfers.has(request.url)) stalledTransfers.get(request.url).retried = true;
     response.end(await readFile(path));
   } catch {
     response.writeHead(404).end();
@@ -127,7 +141,11 @@ try {
           }
           assert.ok(settled, `${version}: playground did not load: ${unavailable.join(', ')}`);
           const result = await page.evaluate(() => window.hapticPlayground.stats());
-          assert.ok(result?.haproxyCfg?.includes('frontend http'), await page.locator('body').innerText());
+          if (!result?.haproxyCfg?.includes('frontend http')) {
+            const error = new Error(`${version}: starter did not render frontend http`);
+            await diagnose(error);
+            throw error;
+          }
           assert.ok(Object.keys(result.maps).length > 0, `${version}: rendered map missing`);
           assert.equal(result.error, undefined);
           assert.deepEqual(errors, []);
@@ -153,8 +171,8 @@ try {
       const expected = { compressed: receipt.published_files[engine + '.br'], decoded: receipt.engines[engine] };
       if (server.listening) {
         const stalled = `/${engine}.br?stall=${name}`;
-        stalledOnce.add(stalled);
-        stalledTransfers.set(stalled, { aborted: false, retried: false });
+        const recovery = { bytes: await readFile(resolve(root, engine + '.br')), fullRequests: 0, aborted: false, ranges: [] };
+        stalledTransfers.set(stalled, recovery);
         await page.evaluate(({ stalled, expected, base }) => {
           window.stalledDownload = null;
           import(`${base}/shared/playground-wasm-loader.mjs`)
@@ -164,9 +182,15 @@ try {
         }, { stalled, expected, base });
         await page.waitForFunction(() => window.stalledDownload !== null, null, { timeout: 30000 });
         assert.deepEqual(await page.evaluate(() => window.stalledDownload), { size: expected.decoded.size });
-        const recovery = stalledTransfers.get(stalled);
-        assert.ok(recovery.aborted && recovery.retried, `${name}: stalled engine was not cancelled and restarted`);
-        assert.equal(stalledOnce.size, 0);
+        assert.equal(recovery.fullRequests, 1, `${name}: restarted the stalled full download`);
+        assert.ok(recovery.aborted, `${name}: stalled download was not cancelled`);
+        let offset = stallOffset;
+        for (const { start, end } of recovery.ranges) {
+          assert.equal(start, offset, `${name}: noncontiguous engine range`);
+          offset = end + 1;
+        }
+        assert.equal(offset, expected.compressed.size, `${name}: ranges did not complete the download`);
+        stalledTransfers.delete(stalled);
         console.log(JSON.stringify({ browser: name, case: 'stalled-engine-download', result: 'recovered' }));
       }
       const decoderMemory = await page.evaluate(async ({ engine, expected, base }) => {
