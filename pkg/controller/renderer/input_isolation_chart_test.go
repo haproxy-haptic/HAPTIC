@@ -27,7 +27,7 @@ import (
 
 func TestInvalidGatewayTLSOptionsDoNotRejectUnrelatedAdmission(t *testing.T) {
 	snippets := loadGatewayFeaturePublicationSnippets(t)
-	maps.Copy(snippets, loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	maps.Copy(snippets, loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"gateway/16-crtlist-per-listener.yaml": {"gateway-terminating-listeners-100-gateway", "util-gateway-listener-crtlist-name"},
 		"gateway/92-listener-tls-options.yaml": {"util-gateway-listener-tls-options"},
 		"gateway/21-route-helpers.yaml":        {"util-bounded-name"},

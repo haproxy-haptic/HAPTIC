@@ -17,17 +17,13 @@ package renderer
 import (
 	"encoding/json"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 	"unicode"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/helpers"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/rendercontext"
@@ -47,23 +43,6 @@ var current = resources.targets.GetSingle(namespace, name)
 show "governed=" + (current | dig_string("<missing>", "metadata", "annotations", "governed")) +
   ",preserved=" + (current | dig_string("<missing>", "metadata", "annotations", "preserved")) + "\n"
 %%}`
-
-type governanceChartLibrary struct {
-	TemplateSnippets map[string]governanceChartSnippet `yaml:"templateSnippets"`
-}
-
-type governanceChartSnippet struct {
-	Template    string                      `yaml:"template"`
-	Requires    []string                    `yaml:"requires"`
-	Incremental *governanceChartIncremental `yaml:"incremental"`
-}
-
-type governanceChartIncremental struct {
-	Source           string                     `yaml:"source"`
-	BindingsTemplate string                     `yaml:"bindingsTemplate"`
-	Group            string                     `yaml:"group"`
-	Effects          []config.IncrementalEffect `yaml:"effects"`
-}
 
 func TestGovernanceChartDefaultHTTPSInvalidatesOnlyTLSBinding(t *testing.T) {
 	snippet := loadGovernanceChartSnippet(t)
@@ -579,27 +558,12 @@ func (f *governanceChartDerivationFixture) assertNoDerivedAnnotation(t *testing.
 
 func loadGovernanceChartSnippet(t *testing.T) config.TemplateSnippet {
 	t.Helper()
-	_, sourceFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	path := filepath.Join(filepath.Dir(sourceFile), "..", "..", "..", "charts", "haptic", "charts", "governance", "library.yaml")
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	var library governanceChartLibrary
-	require.NoError(t, yaml.Unmarshal(content, &library))
-	chartSnippet, exists := library.TemplateSnippets[governanceChartSnippetName]
-	require.True(t, exists)
-	require.NotNil(t, chartSnippet.Incremental)
-	return config.TemplateSnippet{
-		Name:     governanceChartSnippetName,
-		Template: chartSnippet.Template,
-		Requires: chartSnippet.Requires,
-		Incremental: &config.IncrementalTemplate{
-			Source:           chartSnippet.Incremental.Source,
-			BindingsTemplate: chartSnippet.Incremental.BindingsTemplate,
-			Group:            chartSnippet.Incremental.Group,
-			Effects:          chartSnippet.Incremental.Effects,
-		},
-	}
+	snippets := loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
+		"governance/library.yaml": {governanceChartSnippetName},
+	})
+	snippet := snippets[governanceChartSnippetName]
+	require.NotNil(t, snippet.Incremental)
+	return snippet
 }
 
 func governanceChartContext(defaultHTTPS bool) map[string]any {

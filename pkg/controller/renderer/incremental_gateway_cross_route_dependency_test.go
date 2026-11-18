@@ -354,7 +354,7 @@ func newGatewaySSLPassthroughBackendDependencyFixture(
 	t *testing.T,
 ) *gatewaySSLPassthroughBackendDependencyFixture {
 	t.Helper()
-	snippets := loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	snippets := loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"base/library.yaml": {
 			"util-backend-servers-helpers", "util-backend",
 			"util-webhook-reject-or-warn",

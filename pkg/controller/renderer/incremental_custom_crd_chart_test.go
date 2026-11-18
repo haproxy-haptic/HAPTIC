@@ -161,7 +161,7 @@ func customCRDChartConfig(tb testing.TB) *config.Config {
 				IndexBy:    []string{"metadata.namespace", "metadata.name"},
 			},
 		},
-		TemplateSnippets: loadGatewayHostMapSnippets(tb, gatewayHostMapChartRoot(tb), map[string][]string{
+		TemplateSnippets: loadChartSnippets(tb, chartLibrariesRoot(tb), map[string][]string{
 			"base/library.yaml": {"util-backend"},
 			"custom-crd-example/library.yaml": {
 				"util-custom-route-header-bindings",

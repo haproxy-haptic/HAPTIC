@@ -16,15 +16,11 @@ package renderer
 
 import (
 	"log/slog"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/helpers"
@@ -38,23 +34,6 @@ import (
 )
 
 const annotationConflictChartSnippetName = "features-950-annotation-family-feature-conflict"
-
-type annotationConflictChartLibrary struct {
-	TemplateSnippets map[string]annotationConflictChartSnippet `yaml:"templateSnippets"`
-}
-
-type annotationConflictChartSnippet struct {
-	Template    string                              `yaml:"template"`
-	Requires    []string                            `yaml:"requires"`
-	Incremental *annotationConflictChartIncremental `yaml:"incremental"`
-}
-
-type annotationConflictChartIncremental struct {
-	Source           string                     `yaml:"source"`
-	BindingsTemplate string                     `yaml:"bindingsTemplate"`
-	Group            string                     `yaml:"group"`
-	Effects          []config.IncrementalEffect `yaml:"effects"`
-}
 
 type annotationConflictChartFixture struct {
 	config    *config.Config
@@ -239,29 +218,12 @@ if tostring(extraContext | dig("failAfterComponent") | fallback(false)) == "true
 
 func loadAnnotationConflictChartSnippet(t *testing.T) config.TemplateSnippet {
 	t.Helper()
-	_, sourceFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	path := filepath.Join(
-		filepath.Dir(sourceFile), "..", "..", "..", "charts", "haptic", "charts", "ingress-annotations-compat", "library.yaml",
-	)
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	var library annotationConflictChartLibrary
-	require.NoError(t, yaml.Unmarshal(content, &library))
-	chartSnippet, exists := library.TemplateSnippets[annotationConflictChartSnippetName]
-	require.True(t, exists)
-	require.NotNil(t, chartSnippet.Incremental)
-	return config.TemplateSnippet{
-		Name:     annotationConflictChartSnippetName,
-		Template: chartSnippet.Template,
-		Requires: chartSnippet.Requires,
-		Incremental: &config.IncrementalTemplate{
-			Source:           chartSnippet.Incremental.Source,
-			BindingsTemplate: chartSnippet.Incremental.BindingsTemplate,
-			Group:            chartSnippet.Incremental.Group,
-			Effects:          chartSnippet.Incremental.Effects,
-		},
-	}
+	snippets := loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
+		"ingress-annotations-compat/library.yaml": {annotationConflictChartSnippetName},
+	})
+	snippet := snippets[annotationConflictChartSnippetName]
+	require.NotNil(t, snippet.Incremental)
+	return snippet
 }
 
 func (f *annotationConflictChartFixture) addIngress(t *testing.T, ingress map[string]any) {

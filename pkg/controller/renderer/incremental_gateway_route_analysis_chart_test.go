@@ -98,7 +98,7 @@ type gatewayRouteAnalysisFixture struct {
 }
 
 func TestGatewayRouteAnalysisDoesNotScanWholeStores(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join(gatewayHostMapChartRoot(t), "gateway", "20-route-analysis.yaml"))
+	source, err := os.ReadFile(filepath.Join(chartLibrariesRoot(t), "gateway", "20-route-analysis.yaml"))
 	require.NoError(t, err)
 	contents := string(source)
 	assert.NotContains(t, contents, ".List()")
@@ -427,7 +427,7 @@ func newGatewayRouteAnalysisFixtureWithTemplates(
 
 func loadGatewayRouteAnalysisSnippets(t *testing.T) map[string]config.TemplateSnippet {
 	t.Helper()
-	return loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	return loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"base/library.yaml": {
 			"util-host-key", "util-regex-map-key", "util-webhook-reject-or-warn",
 		},
@@ -481,7 +481,7 @@ func loadGatewayRouteAnalysisLegacySnippets(
 	baselineRoot string,
 ) map[string]config.TemplateSnippet {
 	t.Helper()
-	return loadGatewayHostMapSnippets(t, baselineRoot, map[string][]string{
+	return loadChartSnippets(t, baselineRoot, map[string][]string{
 		"charts/haptic/charts/base/library.yaml": {
 			"util-macros", "util-host-key", "util-webhook-reject-or-warn",
 		},

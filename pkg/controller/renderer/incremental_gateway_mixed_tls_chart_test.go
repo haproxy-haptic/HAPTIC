@@ -111,7 +111,7 @@ func TestGatewayMixedTLSCertificateReferenceLifecycle(t *testing.T) {
 func newMixedTLSCertificateFixture(t *testing.T) *gatewayRouteAnalysisFixture {
 	t.Helper()
 	snippets := loadGatewayFeaturePublicationSnippets(t)
-	maps.Copy(snippets, loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	maps.Copy(snippets, loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"gateway/16-crtlist-per-listener.yaml": {"gateway-terminating-listeners-100-gateway", "util-gateway-listener-crtlist-name"},
 		"gateway/92-listener-tls-options.yaml": {"util-gateway-listener-tls-options"},
 		"gateway/21-route-helpers.yaml":        {"util-bounded-name"},
@@ -132,7 +132,7 @@ func newMixedTLSCertificateFixture(t *testing.T) *gatewayRouteAnalysisFixture {
 
 func TestGatewayMixedTLSStaticClaimsTrackListenerMembership(t *testing.T) {
 	cfg := gatewaySSLPassthroughPublicationConfig(t)
-	maps.Copy(cfg.TemplateSnippets, loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	maps.Copy(cfg.TemplateSnippets, loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"gateway/10-features.yaml":          {"gateway-listener-state-100-gateway"},
 		"gateway/52-static-tls-claims.yaml": {"util-gateway-static-tls-groups"},
 	}))
