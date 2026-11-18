@@ -5,9 +5,6 @@
 {{- $proxyProtocol := include "haptic.proxyProtocol" . | fromYaml }}
 {{- $http3 := include "haptic.http3" . | fromYaml }}
 {{- $name := include "haptic.name" . }}
-{{- /*
-  Validate configuration to prevent deny-all scenarios
-*/ -}}
 {{- if and (not $np.allowExternal) (not $np.allowedSources) }}
   {{- fail "haproxy.networkPolicy.allowExternal is false but haproxy.networkPolicy.allowedSources is empty. This would create a deny-all policy. Either set allowExternal: true or provide allowedSources." }}
 {{- end }}
@@ -152,18 +149,7 @@ spec:
   # Egress rules - what HAProxy can access
   egress:
     # Allow DNS resolution (required for service discovery)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
+    {{- include "haptic.networkPolicy.dnsEgress" . | nindent 4 }}
 
     # Allow HAProxy to connect to backend services in any namespace
     # This is required for proxying traffic and performing health checks

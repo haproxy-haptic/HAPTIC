@@ -48,18 +48,8 @@ type Client struct {
 	onPollTimeout PollTimeoutSnapshot
 }
 
-// PollTimeoutSnapshot is the callback invoked when a poll exhausts
-// its retry budget. Implementations receive the test handle, a
-// human-readable description of what was being polled, the last
-// response observed (may be nil if every attempt errored), and the
-// last error returned by the inner Do (may be nil if responses came
-// back but the predicate never matched).
-//
-// Implementations MUST be best-effort and side-effect-only: they
-// cannot influence the test outcome (the timeout error still
-// propagates) and they must not call t.FailNow / t.Fatalf
-// themselves, which would short-circuit the existing diagnostic
-// chain.
+// PollTimeoutSnapshot captures evidence on timeout and must let the caller report the failure.
+// lastResp is nil if no request succeeded. lastErr is nil if the last request returned a response.
 type PollTimeoutSnapshot func(t *testing.T, description string, lastResp *Response, lastErr error)
 
 type Config struct {
@@ -83,12 +73,7 @@ func New(config *Config) *Client {
 	}
 }
 
-// CloseIdleConnections drops the shared transport's pooled keepalive
-// connections so the next request dials a fresh one. Useful when polling for a
-// not-yet-live route across a reload: a request that 404s on the pre-change
-// HAProxy worker pins a keepalive connection to that (draining) worker, which
-// keeps answering with the old config until it closes; forcing a fresh dial lets
-// the retry reach a current worker generation.
+// CloseIdleConnections lets the next request reach a new HAProxy worker after a reload.
 func (c *Client) CloseIdleConnections() { c.transport.CloseIdleConnections() }
 
 // Dial the explicit endpoint while keeping the requested host for TLS SNI.
@@ -115,10 +100,7 @@ func newSharedTransport(endpointHost string, httpsPort int) *http.Transport {
 	}
 }
 
-// transportForClientCert returns a transport with the given client cert
-// installed and the CA pinned. Used by Request.Do when WithClientCert was
-// set; it is built per-request rather than shared because each test gets
-// its own cert/CA pair.
+// Each mTLS request gets a transport with its own client identity and CA roots.
 func transportForClientCert(endpointHost string, httpsPort int, clientCert *tls.Certificate, ca []byte) (*http.Transport, error) {
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(ca) {

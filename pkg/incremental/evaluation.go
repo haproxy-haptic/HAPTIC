@@ -1036,6 +1036,16 @@ func (s *Session) resolveInputBorrowed(ctx context.Context, key InputKey) (input
 	if s.resolver == nil {
 		return inputEntry{}, &missingInputError{key: key}
 	}
+	entry, err := s.resolveInputEntry(ctx, key)
+	if err != nil {
+		return inputEntry{}, err
+	}
+	s.inputChanges[key] = entry
+	s.observations[key] = InputRevision{Key: key, Revision: entry.revision, Found: entry.found}
+	return entry, nil
+}
+
+func (s *Session) resolveInputEntry(ctx context.Context, key InputKey) (inputEntry, error) {
 	resolved, err := callInputResolver(ctx, s.resolver, key)
 	if err != nil {
 		return inputEntry{}, err
@@ -1046,15 +1056,12 @@ func (s *Session) resolveInputBorrowed(ctx context.Context, key InputKey) (input
 	if err := validateInputBatch([]Input{resolved}); err != nil {
 		return inputEntry{}, err
 	}
-	entry := inputEntry{
+	return inputEntry{
 		revision:  resolved.Revision,
 		found:     resolved.Found,
 		value:     cloneBytes(resolved.Value),
 		changedAt: s.targetGeneration,
-	}
-	s.inputChanges[key] = entry
-	s.observations[key] = revisionOf(resolved)
-	return entry, nil
+	}, nil
 }
 
 func callInputResolver(

@@ -29,21 +29,12 @@ import (
 
 type connGenKey struct{}
 
-// Polling must observe cluster state as it converges — but a pooled
-// keep-alive connection is pinned to the HAProxy worker generation it was
-// opened against (hitless reloads keep old workers serving established
-// connections with the OLD routing tables). This models that: connections
-// opened at generation 0 answer 404 forever; connections opened after the
-// simulated deploy answer 200. The poll converges only if retries re-dial.
+// Each connection retains the route generation it first saw, as a draining HAProxy worker does.
 func TestPollRetriesOnFreshConnection(t *testing.T) {
-	var gen atomic.Int64      // bumped once = "the route deployed / HAProxy reloaded"
-	var conns atomic.Int64    // distinct TCP connections the server accepted
-	var requests atomic.Int64 // total requests served
+	var gen atomic.Int64
+	var conns atomic.Int64
 
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		// Flip the generation after the first request, so the connection
-		// that carried it is forever pre-deploy.
 		defer gen.CompareAndSwap(0, 1)
 		if g, _ := r.Context().Value(connGenKey{}).(int64); g < 1 {
 			http.NotFound(w, r)
@@ -69,7 +60,6 @@ func TestPollRetriesOnFreshConnection(t *testing.T) {
 		MaxInterval:     50 * time.Millisecond,
 		Multiplier:      1,
 	}
-	c.onPollTimeout = nil // no cluster to snapshot in this unit test
 
 	c.GET("pinned.example.test", "/").ExpectOK(t)
 

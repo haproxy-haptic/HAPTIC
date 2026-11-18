@@ -1,9 +1,5 @@
 {{- $store := .Values.rateLimit.shared.managedStore }}
-{{- $np := $store.networkPolicy | default dict }}
-{{- $npEnabled := true }}
-{{- if hasKey $np "enabled" }}
-  {{- $npEnabled = $np.enabled }}
-{{- end }}
+{{- $npEnabled := dig "enabled" true ($store.networkPolicy | default dict) }}
 {{- if and .Values.rateLimit.shared.enabled $store.enabled $npEnabled }}
 {{- $storeName := include "haptic.rateLimit.storeServiceName" . }}
 apiVersion: networking.k8s.io/v1
@@ -49,18 +45,7 @@ spec:
   egress:
     # DNS is required because Sentinel announces and resolves stable StatefulSet
     # pod hostnames.
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
+    {{- include "haptic.networkPolicy.dnsEgress" . | nindent 4 }}
     # Store-internal Valkey replication and Sentinel gossip/reconfiguration.
     - to:
         - podSelector:
