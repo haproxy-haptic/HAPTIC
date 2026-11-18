@@ -329,6 +329,39 @@ search:
 | Body size and catalog growth | Administrator limits cap body sizes, policies per namespace, and total policies. |
 | Custom rules | `selfService.allowSecLang` defaults to `false`. Count and size limits don't bound rule CPU cost. |
 
+## Size the hub memory
+
+The Coraza plugin compiles one WAF rule set for each distinct policy that a
+route selects. Policies with identical directives share a rule set, even if
+their names, sources, or comments differ. A policy that adds one rule exclusion
+needs its own rule set. The base directives get a rule set of their own only
+when a request can reach Coraza without a policy: under `waf.dispatch.mode:
+default-on`, or when a vendor annotation enables the WAF without selecting a
+policy.
+
+Budget the `spoa-hub` sidecar's memory limit with this estimate:
+
+| Item | Memory |
+|------|--------|
+| Hub, plugins, and shared CRS patterns | 64 MiB |
+| Each distinct rule set, held twice while a reload swaps generations | 5 MiB |
+
+The default `spoaHub.resources.limits.memory: 384Mi` fits 64 rule sets, the
+most the default `selfService.limits.maxTotalPolicies: 64` allows. If you raise
+that limit, or set a lower memory limit, a render that needs more than the
+memory limit fails with a message that names the required size, so a new policy
+can't OOM-kill the sidecar in every HAProxy pod. When the render fails, raise
+the memory limit to the size the message names:
+
+```yaml
+spoaHub:
+  resources:
+    limits:
+      memory: 512Mi
+```
+
+Alternatively, merge policies that differ only in their exclusions.
+
 ## Diagnose a rejected policy
 
 Admission rejects invalid definitions and selections. If an invalid selection

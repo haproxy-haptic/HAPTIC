@@ -54,7 +54,7 @@ The image is published at `ghcr.io/haproxy-haptic/haptic/spoa-hub:<HAPTIC versio
 | --------------- | --------------------------------------- |
 | Hub               | `v0.13.0`                     |
 | `api-gateway`    | `v0.1.0`      |
-| `coraza`          | `v0.10.1`           |
+| `coraza`          | `v0.11.0`           |
 | `external-auth`   | `v0.6.0`    |
 | `fingerprinting`  | `v0.3.0`   |
 | `maxmind`         | `v0.4.0`          |
@@ -125,12 +125,14 @@ something else reloads the hub.
 
 ### Confirm which ruleset is running
 
-The plugin logs its rule count whenever it compiles — at startup and on every
-successful refresh. The embedded ruleset compiles to 661 rules:
+The plugin logs the rule count of each distinct rule set it compiles — at
+startup and on every successful refresh. The embedded ruleset compiles to 661
+rules:
 
 ```console
 $ kubectl -n haptic logs -l app.kubernetes.io/component=loadbalancer -c spoa-hub | grep -i coraza
-Coraza default WAF initialized with 661 rules
+Coraza WAF app 'policy:base' initialized with 661 rules
+Coraza compiled 1 distinct rule set(s) for 1 application(s)
 Coraza reloaded its rule set after an on-disk change
 ```
 

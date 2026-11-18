@@ -1000,6 +1000,7 @@
               "reloadDrainTimeoutMs" $hubReloadDrainTimeoutMs
               "metricsAddr" (include "haptic.spoaHub.metricsAddrEffective" $)
               "workerThreads" $hubWorkerThreads
+              "memoryLimitMiB" (int (include "haptic.memoryToMB" (dig "limits" "memory" "" ($.Values.spoaHub.resources | default dict) | toString)))
           )
           "plugins" $pluginEntries
       }}

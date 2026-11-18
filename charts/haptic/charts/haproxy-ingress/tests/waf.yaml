@@ -84,6 +84,7 @@ validationTests:
     assertions:
       - type: haproxy_valid
       - {type: contains, target: map:haproxy-ingress-waf.map, pattern: "default/hi-waf deny"}
+      - {type: not_contains, target: file:spoa-hub-config.toml, pattern: "default_waf"}
       - type: contains
         target: haproxy.cfg
         pattern: "http-request set-var\\(txn.coraza_mode\\).*haproxy-ingress-waf\\.map"

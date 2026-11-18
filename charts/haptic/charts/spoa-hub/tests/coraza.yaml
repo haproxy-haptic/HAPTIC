@@ -871,3 +871,97 @@ validationTests:
     assertions:
       - {type: contains, target: rendering_error, pattern: 'disabled Ingress WAF opt-outs'}
       - {type: contains, target: rendering_error, pattern: 'default/unauthorized-opt-out'}
+
+  test-coraza-rule-set-budget-rejects-over-memory-limit:
+    _helm_skip_test: &corazaBudgetSkip '{{ if or (semverCompare "<3.1" .Values.haproxyVersion) (not .Values.controller.templateLibraries.hapticAnnotations.enabled) }}true{{ else }}false{{ end }}'
+    description: "Two distinct policy rule sets need 74 MiB, above a 73 MiB spoa-hub memory limit, so the render fails instead of the sidecar being OOM-killed."
+    extraContext:
+      haproxyVersion: "3.2"
+      waf: &corazaBudgetWaf
+        dispatch: {mode: opt-in}
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline: {__replace__: true, headers-only: {requestBody: {mode: none}}, headers-only-copy: {requestBody: {mode: none}}, body-inspection: {requestBody: {mode: any}}}
+          configMapRefs: {__replace__: true}
+      spoaHub:
+        enabled: true
+        hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30, memoryLimitMiB: 73}
+        plugins: &corazaBudgetPlugins
+          - {name: coraza, library: libcoraza_plugin.so, messages: [check-request], timeoutMs: 15, dependsOn: [], params: "", directives: "SecRuleEngine On\n"}
+    fixtures:
+      ingresses:
+        - &corazaBudgetIngress
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {name: headers-only, namespace: default, annotations: {haproxy-haptic.org/waf-policy: headers-only}}
+          spec: {ingressClassName: haptic, rules: [{host: headers-only.example.com, http: *httpRoot}]}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {name: body-inspection, namespace: default, annotations: {haproxy-haptic.org/waf-policy: body-inspection}}
+          spec: {ingressClassName: haptic, rules: [{host: body-inspection.example.com, http: *httpRoot}]}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'compiles 2 distinct WAF rule sets, which need about 74 MiB, above the spoa-hub sidecar.s 73 MiB memory limit'}
+      - {type: contains, target: rendering_error, pattern: 'Raise spoaHub.resources.limits.memory to at least 74Mi'}
+
+  test-coraza-rule-set-budget-counts-equal-policies-once:
+    _helm_skip_test: *corazaBudgetSkip
+    description: "Policies with equal effective directives compile to one rule set, and opt-in routes that all name a policy leave the default WAF out, so two equal policies fit a 70 MiB limit."
+    extraContext:
+      haproxyVersion: "3.2"
+      waf: *corazaBudgetWaf
+      spoaHub:
+        enabled: true
+        hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30, memoryLimitMiB: 70}
+        plugins: *corazaBudgetPlugins
+    fixtures:
+      ingresses:
+        - *corazaBudgetIngress
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {name: headers-only-copy, namespace: default, annotations: {haproxy-haptic.org/waf-policy: headers-only-copy}}
+          spec: {ingressClassName: haptic, rules: [{host: headers-only-copy.example.com, http: *httpRoot}]}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: file:spoa-hub-config.toml, pattern: 'applications."policy:headers-only"'}
+      - {type: contains, target: file:spoa-hub-config.toml, pattern: 'applications."policy:headers-only-copy"'}
+      - {type: contains, target: file:spoa-hub-config.toml, pattern: '"""\ndefault_waf = false\n'}
+
+  test-coraza-default-waf-compiled-under-default-on-dispatch:
+    _helm_skip_test: *corazaBudgetSkip
+    description: "Default-on dispatch sends requests without a policy to the default WAF, so it stays compiled and counts toward the memory budget: two rule sets exceed a 73 MiB limit."
+    extraContext:
+      haproxyVersion: "3.2"
+      waf:
+        dispatch: {mode: default-on}
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline: {__replace__: true, headers-only: {requestBody: {mode: none}}}
+          configMapRefs: {__replace__: true}
+      spoaHub:
+        enabled: true
+        hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30, memoryLimitMiB: 73}
+        plugins: *corazaBudgetPlugins
+    fixtures:
+      ingresses:
+        - *corazaBudgetIngress
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'compiles 2 distinct WAF rule sets'}
+
+  test-coraza-default-waf-skipped-without-waf-routes:
+    _helm_skip_test: *corazaBudgetSkip
+    description: "With opt-in dispatch and no WAF route no request reaches Coraza, so the hub compiles no rule set."
+    extraContext:
+      haproxyVersion: "3.2"
+      waf: *corazaBudgetWaf
+      spoaHub:
+        enabled: true
+        hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30, memoryLimitMiB: 64}
+        plugins: *corazaBudgetPlugins
+    fixtures:
+      ingresses: []
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: file:spoa-hub-config.toml, pattern: 'default_waf = false'}
+      - {type: not_contains, target: file:spoa-hub-config.toml, pattern: 'applications\.'}

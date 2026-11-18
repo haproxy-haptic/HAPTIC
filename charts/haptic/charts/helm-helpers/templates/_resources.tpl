@@ -89,21 +89,21 @@ Returns: integer megabytes, or 0 if parsing fails
 {{- define "haptic.memoryToMB" -}}
 {{- $memory := . -}}
 {{- if $memory -}}
+  {{- /* Result is MiB. G/M/K are decimal units; mulf/divf keep fractions (mul/div truncate first). */ -}}
   {{- if hasSuffix "Gi" $memory -}}
-    {{- mul (trimSuffix "Gi" $memory | float64) 1024 | int -}}
+    {{- mulf (trimSuffix "Gi" $memory | float64) 1024 | int -}}
   {{- else if hasSuffix "Mi" $memory -}}
-    {{- trimSuffix "Mi" $memory | int -}}
+    {{- trimSuffix "Mi" $memory | float64 | int -}}
   {{- else if hasSuffix "G" $memory -}}
-    {{- mul (trimSuffix "G" $memory | float64) 1000 | int -}}
+    {{- mulf (trimSuffix "G" $memory | float64) 953.67431640625 | int -}}
   {{- else if hasSuffix "M" $memory -}}
-    {{- trimSuffix "M" $memory | int -}}
+    {{- mulf (trimSuffix "M" $memory | float64) 0.95367431640625 | int -}}
   {{- else if hasSuffix "Ki" $memory -}}
-    {{- div (trimSuffix "Ki" $memory | float64) 1024 | int -}}
+    {{- divf (trimSuffix "Ki" $memory | float64) 1024 | int -}}
   {{- else if hasSuffix "K" $memory -}}
-    {{- div (trimSuffix "K" $memory | float64) 1000 | int -}}
+    {{- divf (trimSuffix "K" $memory | float64) 1048.576 | int -}}
   {{- else -}}
-    {{- /* Assume bytes, convert to MB */ -}}
-    {{- div ($memory | float64) 1048576 | int -}}
+    {{- divf ($memory | float64) 1048576 | int -}}
   {{- end -}}
 {{- else -}}
   {{- 0 -}}

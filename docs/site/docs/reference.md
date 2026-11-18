@@ -171,7 +171,7 @@ when testing another build.
 | `controller.config.templatingSettings.extraContext.jwt.refreshInterval` | string | `5m` | Positive interval between signing-key refreshes by each controller replica. |
 | `controller.config.templatingSettings.extraContext.ssoAuth.allowedIssuers` | map | `{}` | Issuer URL prefixes that an [sso-auth](libraries/haptic-annotations.md#oidc-sign-in) provider Secret's `discovery-url` may start with, keyed by a name of your choice. A prefix matches only up to a `/`. While empty, every sso-auth route answers `503` |
 | `spoaHub.plugins.api-gateway.timeoutMs` | int | `25` | Hub-side processing timeout for JSON validation. The chart derives the message's outer HAProxy deadline from this value; increase only for measured CPU or scheduling pressure |
-| `spoaHub.plugins.api-gateway.maxConcurrency` | int/tpl | derived from sidecar memory (16 at the default 256Mi) | Ceiling for concurrent JSON parse/schema evaluations. With `adaptiveConcurrency` on (default) this is the controller's upper bound, not a fixed limit; derived from `spoaHub.resources` memory so it self-scales. Set a literal to override |
+| `spoaHub.plugins.api-gateway.maxConcurrency` | int/tpl | derived from sidecar memory (32 at the default 384Mi) | Ceiling for concurrent JSON parse/schema evaluations. With `adaptiveConcurrency` on (default) this is the controller's upper bound, not a fixed limit; derived from `spoaHub.resources` memory so it self-scales. Set a literal to override |
 
 ## Coraza WAF
 
@@ -209,7 +209,7 @@ Template-side routing, policy catalogs, and Ingress-author permissions live in t
 | `controller.config.templatingSettings.extraContext.waf.policies.limits.maxSecLangBytes` | int | `65536` | Maximum advanced SecLang bytes in one reusable policy |
 | `controller.config.templatingSettings.extraContext.waf.policies.limits.maxRuleExclusions` | int | `256` | Maximum structured Core Rule Set (CRS) rule-exclusion entries in one reusable policy |
 | `spoaHub.plugins.coraza.timeoutMs` | int | `15` | Hub-side processing timeout for WAF evaluation. The chart derives the message's outer HAProxy deadline from this value; this is a failure bound, not expected latency |
-| `spoaHub.plugins.coraza.maxConcurrency` | int/tpl | derived from sidecar memory (16 at the default 256Mi) | Ceiling for concurrent Coraza evaluations. With `adaptiveConcurrency` on (default) this is the controller's upper bound, not a fixed limit; derived from `spoaHub.resources` memory so it self-scales (give the sidecar more memory → higher ceiling). Set a literal to override |
+| `spoaHub.plugins.coraza.maxConcurrency` | int/tpl | derived from sidecar memory (32 at the default 384Mi) | Ceiling for concurrent Coraza evaluations. With `adaptiveConcurrency` on (default) this is the controller's upper bound, not a fixed limit; derived from `spoaHub.resources` memory so it self-scales (give the sidecar more memory → higher ceiling). Set a literal to override |
 | `spoaHub.plugins.coraza.adaptiveConcurrency` | bool | `true` | Adjust concurrent WAF evaluations from measured latency, up to `maxConcurrency`. Set `false` for a fixed limit. Requires a hub image with adaptive concurrency support. |
 
 ## Policy guardrails (governance)
@@ -827,7 +827,7 @@ One `PodMonitor` for every metrics endpoint on the HAProxy pod. See [Where to sc
 | `spoaHub.image.tag` | string | `""` | Override the tag; empty uses `.Chart.AppVersion` |
 | `spoaHub.resources.requests.cpu` | string | `50m` | SPOA hub CPU request |
 | `spoaHub.resources.requests.memory` | string | `128Mi` | SPOA hub memory request |
-| `spoaHub.resources.limits.memory` | string | `256Mi` | SPOA hub memory limit |
+| `spoaHub.resources.limits.memory` | string | `384Mi` | SPOA hub memory limit |
 | `spoaHub.hub.logLevel` | string | `info` | Hub log level (`info`/`debug`/`warn`/`error`) |
 | `spoaHub.hub.workerThreads` | int/null | `null` | Tokio worker thread count; `null` defaults to CPU count |
 | `spoaHub.hub.maxConnections` | int | `1000` | Maximum concurrent connections per listener |

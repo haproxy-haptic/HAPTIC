@@ -9,6 +9,49 @@
 #   - spoe-message-mirror-body
 
 templateSnippets:
+  # The coraza plugin compiles one WAF per distinct effective rule set: the
+  # lines its SecLang parser evaluates (no blank or `#` lines, trimmed) plus the
+  # body limit. Sizing: docs/site/docs/operations/waf-policies.md#size-the-hub-memory.
+  util-coraza-rule-sets:
+    template: |-
+      {%- macro CorazaRuleSetKey(directives string, requestBodyMaxBytes string) string -%}
+        {%- for _, line := range split(directives, "\n") -%}
+          {%- var effective = trimSpace(line) -%}
+          {%- if effective != "" && !hasPrefix(effective, "#") -%}
+            {{- effective }}{{ "\n" -}}
+          {%- end -%}
+        {%- end -%}
+        {{- "\x00" + requestBodyMaxBytes -}}
+      {%- end macro -%}
+      {#- Non-empty when a request can reach Coraza without an application:
+          default-on dispatch, or a WAF mode map key with no app map entry. -#}
+      {%- macro CorazaDefaultWafReachable() string -%}
+        {%- if (extraContext | dig_string("opt-in", "waf", "dispatch", "mode")) == "default-on" -%}
+          1
+        {%- else -%}
+          {%- var routed = map[string]bool{} -%}
+          {%- for _, line := range split(render_glob "map-coraza-app-*", "\n") -%}
+            {%- var entry = trimSpace(line) -%}
+            {%- if entry != "" && !hasPrefix(entry, "#") -%}{%- routed[split(entry, " ")[0]] = true -%}{%- end -%}
+          {%- end -%}
+          {%- for _, line := range split(render_glob "map-haproxy-ingress-waf-*", "\n") -%}
+            {%- var entry = trimSpace(line) -%}
+            {%- if entry != "" && !hasPrefix(entry, "#") && !routed[split(entry, " ")[0]] -%}1{%- break -%}{%- end -%}
+          {%- end -%}
+        {%- end -%}
+      {%- end macro -%}
+      {%- macro CorazaMemoryGuard(ruleSets int, memoryLimitMiB int) -%}
+        {#- Fitted to OOM kills under GOGC=300 with a 90% GOMEMLIMIT, where a
+            reload holds two generations of every rule set: haptic#698. -#}
+        {%%
+          var requiredMiB = 64 + 5*ruleSets
+          if memoryLimitMiB > 0 && requiredMiB > memoryLimitMiB {
+            // Not sprintf: exact-cycle replay rejects it, so every warm render would go cold.
+            fail("The coraza plugin compiles " + tostring(ruleSets) + " distinct WAF rule sets, which need about " + tostring(requiredMiB) + " MiB, above the spoa-hub sidecar's " + tostring(memoryLimitMiB) + " MiB memory limit. The sidecar would be OOM-killed in every HAProxy pod. Raise spoaHub.resources.limits.memory to at least " + tostring(requiredMiB) + "Mi or merge WAF policies that differ only in exclusions.")
+          }
+        %%}
+      {%- end macro -%}
+
   # Renders the SPOA hub's runtime config.toml. Called from features-spoa-hub
   # via fileRegistry.Register("file", "spoa-hub-config.toml", ...). The
   # agent delivers the rendered file to the haproxy pod, where the
@@ -31,6 +74,7 @@ templateSnippets:
   spoa-hub-config-content:
     template: |
       {%- import "util-waf-crs-directives" for CrsDirectives -%}
+      {%- import "util-coraza-rule-sets" for CorazaRuleSetKey, CorazaDefaultWafReachable, CorazaMemoryGuard -%}
       {%- var hub = extraContext | dig("spoaHub", "hub") | fallback(map[string]any{}) -%}
       {%- var plugins = extraContext | dig("spoaHub", "plugins") | fallback([]any{}) | toSlice() -%}
       {%- var socketPath = extraContext | dig_string("/run/spoa/hub.sock", "spoaHub", "haproxy", "socketPath") -%}
@@ -151,6 +195,7 @@ templateSnippets:
 
       [plugins.params]
         {%- var corazaDirectives = "" %}
+        {%- var corazaRuleSets = map[string]bool{} %}
         {%- if pName == "coraza" %}
           {#- Coraza-specific: emit the BASE directives only — no per-Ingress
               modsec-snippets. Each Ingress with a snippet gets its OWN
@@ -165,9 +210,16 @@ templateSnippets:
           {#- Substitutes the embedded-CRS includes when extraContext.waf.crs.url
               is set; returns the directives unchanged otherwise. -#}
           {%- corazaDirectives = CrsDirectives(corazaDirectives) %}
+          {%- var corazaDefaultWaf = CorazaDefaultWafReachable() != "" %}
+          {%- if corazaDefaultWaf %}
+            {%- corazaRuleSets[CorazaRuleSetKey(corazaDirectives, "")] = true %}
+          {%- end %}
       directives = """
       {{ corazaDirectives | trimSpace() }}
       """
+          {%- if !corazaDefaultWaf %}
+      default_waf = false
+          {%- end %}
         {%- end %}
         {%- if pParams != "" %}
       {{ pParams | trimSpace() }}
@@ -207,6 +259,7 @@ templateSnippets:
                 {%- appBase = parts[0] + trimSpace(setupDirectives) + "\nInclude @owasp_crs" + join(parts[1:], "Include @owasp_crs") %}
               {%- end %}
             {%- end %}
+            {%- corazaRuleSets[CorazaRuleSetKey(appBase + "\n" + a["snippet"].(string), requestBodyMaxBytes)] = true %}
 
       [plugins.params.applications."{{ appName }}"]
             {%- if requestBodyMaxBytes != "" %}
@@ -220,6 +273,9 @@ templateSnippets:
       {{ a["snippet"].(string) | trimSpace() }}
       """
           {%- end %}
+        {%- end %}
+        {%- if pName == "coraza" %}
+          {{- CorazaMemoryGuard(len(corazaRuleSets), toint(hub | dig("memoryLimitMiB") | fallback(0))) }}
         {%- end %}
         {%- if pName == "sso_auth" %}
           {#- Each entry: id, version (changes with its secrets, so the hub

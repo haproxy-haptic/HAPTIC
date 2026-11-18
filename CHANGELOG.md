@@ -47,12 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** `haproxy-haptic.org/auth-secret`, `api-key-secret`, `hmac-secret`, `consumer-groups-secret`, `backend-crt-secret`, and `request-schema-secret` read Secrets only from the Ingress's namespace. Admission rejects a reference to another namespace, and an existing Ingress with one answers `503` with a Warning Event. To migrate, copy the Secret into the Ingress's namespace and reference it by name. `backend-ca-secret`, `auth-tls-secret`, and `jwt-secret` still accept other namespaces.
 - HAProxy always listens on `haproxy.ports.http` and `haproxy.ports.https`, even with no Ingress or Gateway; a request that matches no route gets `404` and HTTPS uses the default certificate. Adding the first route or removing the last no longer reloads HAProxy. `ingressDefaultHTTPS: false` now only keeps hosts without `spec.tls` out of the global HTTPS redirect.
 - **BREAKING:** while `waf.ingressPermissions.allowEnforcementOverride` is `false` (the default), a self-service WAF policy whose `enforcement` differs from `waf.dispatch.defaultEnforcement` is rejected with a `WafPolicyInvalid` Event, and routes selecting it answer `503`. Remove `enforcement` from the policy, or set `allowEnforcementOverride: true` ([#693](https://github.com/haproxy-haptic/HAPTIC/issues/693)).
+- `spoaHub.resources.limits.memory` defaults to `384Mi` (was `256Mi`), enough for the 64 distinct WAF policies `selfService.limits.maxTotalPolicies` allows by default. With 48 or more, the sidecar was OOM-killed on reload ([#698](https://github.com/haproxy-haptic/HAPTIC/issues/698)).
 
 #### Fixed
 
 - HAProxy sends access-log records to the Vector sidecar over UDP on `127.0.0.1:9514` instead of a Unix datagram socket, whose 10-record queue dropped records on every reload ([#677](https://github.com/haproxy-haptic/HAPTIC/issues/677)).
 - Vector exports `haptic_access_log_dropped_records_total`, and the `HAProxyAccessLogRecordsDropped` alert fires on it.
 - A WAF policy that leaves out `enforcement` uses `waf.dispatch.defaultEnforcement` instead of `deny`, so a self-service policy no longer starts blocking routes under a `detect` installation ([#693](https://github.com/haproxy-haptic/HAPTIC/issues/693)).
+- WAF policies whose directives differ only in comments share one compiled Core Rule Set, and the base rule set is compiled only when a request can reach Coraza without a policy (coraza plugin v0.11.0, [#698](https://github.com/haproxy-haptic/HAPTIC/issues/698)).
+- A render fails, naming the required size, when the distinct Coraza rule sets need more than `spoaHub.resources.limits.memory`, instead of OOM-killing the `spoa-hub` sidecar in every HAProxy pod on the next reload ([#698](https://github.com/haproxy-haptic/HAPTIC/issues/698)).
 
 #### Security
 
