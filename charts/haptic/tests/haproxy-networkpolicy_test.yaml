@@ -1,11 +1,7 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
 suite: haproxy network policy
-# Permissive mode (allowExternal, the default) deliberately admits every port
-# from anywhere, because Gateway listener ports are added to the Service at
-# runtime and the chart cannot enumerate them. It must still carve out the
-# internal ports whose own rule names a single allowed client: NetworkPolicy
-# rules are additive, so matching those here unions with the narrow rule and
-# re-opens the port to the whole cluster.
+# Gateway listener ports are dynamic. The public rule must exclude internal
+# ports because NetworkPolicy grants from all matching rules are cumulative.
 templates:
   - haproxy-networkpolicy.yaml
 tests:
@@ -95,7 +91,7 @@ tests:
                     app.kubernetes.io/instance: RELEASE-NAME
                     app.kubernetes.io/name: haptic
 
-  - it: leaves restrictive mode alone
+  - it: restricts client traffic to the HTTP, HTTPS and QUIC ports when allowExternal is false
     set:
       cache.varnish.enabled: true
       haproxy.networkPolicy.allowExternal: false
@@ -112,9 +108,6 @@ tests:
             - port: 443
               protocol: UDP
 
-  # The agent's Prometheus endpoint is a scrape target, so it rides the metrics
-  # rule rather than the controller-only rule, and it is NOT fenced out of the
-  # permissive rule.
   - it: opens the agent metrics port to the metrics sources in restrictive mode
     set:
       haproxy.networkPolicy.allowExternal: false

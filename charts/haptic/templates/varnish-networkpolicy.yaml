@@ -1,9 +1,5 @@
 {{- $varnish := .Values.cache.varnish }}
-{{- $np := $varnish.networkPolicy | default dict }}
-{{- $npEnabled := true }}
-{{- if hasKey $np "enabled" }}
-  {{- $npEnabled = $np.enabled }}
-{{- end }}
+{{- $npEnabled := dig "enabled" true ($varnish.networkPolicy | default dict) }}
 {{- if and $varnish.enabled .Values.haproxy.enabled $npEnabled }}
 {{- $varnishName := include "haptic.varnish.cacheName" . }}
 apiVersion: networking.k8s.io/v1
@@ -33,18 +29,7 @@ spec:
           protocol: TCP
   egress:
     # The headless cache Service and HAProxy origin Service are resolved by DNS.
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
+    {{- include "haptic.networkPolicy.dnsEgress" . | nindent 4 }}
     # Cache-miss origin fetches may reach only this release's HAProxy pods, and
     # only on the dedicated backend-fetch port (not the public HTTP/HTTPS ports).
     - to:
