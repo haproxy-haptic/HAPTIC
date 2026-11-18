@@ -5,43 +5,38 @@ package integration
 import (
 	"strings"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 func TestGenerateSafeNamespaceName(t *testing.T) {
 	tests := []struct {
-		name      string
-		testName  string
-		maxLength int
+		name     string
+		testName string
 	}{
 		{
-			name:      "short test name",
-			testName:  "TestSimple",
-			maxLength: maxK8sNameLength,
+			name:     "short test name",
+			testName: "TestSimple",
 		},
 		{
-			name:      "medium test name with subtest",
-			testName:  "TestSync/add-backend",
-			maxLength: maxK8sNameLength,
+			name:     "medium test name with subtest",
+			testName: "TestSync/add-backend",
 		},
 		{
-			name:      "long test name that needs truncation",
-			testName:  "TestSync/backend-add-http-response-rule",
-			maxLength: maxK8sNameLength,
+			name:     "long test name that needs truncation",
+			testName: "TestSync/backend-add-http-response-rule",
 		},
 		{
-			name:      "very long test name",
-			testName:  "TestVeryLongTestName/with-a-very-long-subtest-name-that-definitely-exceeds-limits",
-			maxLength: maxK8sNameLength,
+			name:     "very long test name",
+			testName: "TestVeryLongTestName/with-a-very-long-subtest-name-that-definitely-exceeds-limits",
 		},
 		{
-			name:      "test name with multiple slashes",
-			testName:  "TestParent/TestChild/TestGrandchild/backend-add-acl",
-			maxLength: maxK8sNameLength,
+			name:     "test name with multiple slashes",
+			testName: "TestParent/TestChild/TestGrandchild/backend-add-acl",
 		},
 		{
-			name:      "test name with uppercase and special chars",
-			testName:  "TestCamelCase/Add-Backend-With-HTTP",
-			maxLength: maxK8sNameLength,
+			name:     "test name with uppercase and special chars",
+			testName: "TestCamelCase/Add-Backend-With-HTTP",
 		},
 	}
 
@@ -49,24 +44,14 @@ func TestGenerateSafeNamespaceName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := generateSafeNamespaceName(tt.testName)
 
-			// Verify length constraint
-			if len(result) > tt.maxLength {
-				t.Errorf("Generated namespace name '%s' exceeds max length %d (actual: %d)",
-					result, tt.maxLength, len(result))
+			if problems := validation.IsDNS1123Label(result); len(problems) > 0 {
+				t.Errorf("Generated namespace %q is invalid: %v", result, problems)
 			}
 
-			// Verify RFC 1123 compliance: lowercase alphanumeric with hyphens
-			if !isValidK8sName(result) {
-				t.Errorf("Generated namespace name '%s' is not RFC 1123 compliant", result)
-			}
-
-			// Verify it starts with expected prefix
 			if !strings.HasPrefix(result, "test-") {
 				t.Errorf("Generated namespace name '%s' doesn't start with 'test-'", result)
 			}
 
-			// Verify uniqueness: generate multiple names for same test
-			// They should be different due to timestamp in hash
 			result2 := generateSafeNamespaceName(tt.testName)
 			if result == result2 {
 				t.Logf("Note: Generated names are identical (this is rare but possible): %s", result)
@@ -76,37 +61,6 @@ func TestGenerateSafeNamespaceName(t *testing.T) {
 				tt.testName, result, len(result))
 		})
 	}
-}
-
-// isValidK8sName checks if a name follows RFC 1123 label requirements:
-// - lowercase alphanumeric characters or '-'
-// - start with alphanumeric character
-// - end with alphanumeric character.
-func isValidK8sName(name string) bool {
-	if name == "" || len(name) > 63 {
-		return false
-	}
-
-	// Check first character (must be alphanumeric)
-	first := name[0]
-	if !isNameAlphanumeric(rune(first)) {
-		return false
-	}
-
-	// Check last character (must be alphanumeric)
-	last := name[len(name)-1]
-	if !isNameAlphanumeric(rune(last)) {
-		return false
-	}
-
-	// Check all characters (must be alphanumeric or hyphen)
-	for _, ch := range name {
-		if !isNameAlphanumeric(ch) && ch != '-' {
-			return false
-		}
-	}
-
-	return true
 }
 
 func TestIsValidK8sName(t *testing.T) {
@@ -131,12 +85,10 @@ func TestIsValidK8sName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isValidK8sName(tt.input)
+			result := len(validation.IsDNS1123Label(tt.input)) == 0
 			if result != tt.valid {
-				t.Errorf("isValidK8sName(%q) = %v, want %v", tt.input, result, tt.valid)
+				t.Errorf("DNS label validity for %q = %v, want %v", tt.input, result, tt.valid)
 			}
 		})
 	}
 }
-
-func isNameAlphanumeric(ch rune) bool { return ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' }
