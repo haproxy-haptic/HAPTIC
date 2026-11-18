@@ -16,15 +16,11 @@ package renderer
 
 import (
 	"log/slog"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/helpers"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/rendercontext"
@@ -165,31 +161,14 @@ func newIngressStatusChartFixture(t *testing.T) *ingressStatusChartFixture {
 
 func loadIngressStatusChartSnippets(t *testing.T) map[string]config.TemplateSnippet {
 	t.Helper()
-	_, sourceFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	path := filepath.Join(
-		filepath.Dir(sourceFile), "..", "..", "..", "charts", "haptic", "charts", "ingress", "library.yaml",
-	)
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	var library ingressBackendChartLibrary
-	require.NoError(t, yaml.Unmarshal(content, &library))
-	result := map[string]config.TemplateSnippet{}
-	for _, name := range []string{ingressStatusAddressComponent, ingressStatusPatchComponent} {
-		chartSnippet, exists := library.TemplateSnippets[name]
-		require.True(t, exists)
-		require.NotNil(t, chartSnippet.Incremental)
-		result[name] = config.TemplateSnippet{
-			Name: name, Template: chartSnippet.Template, Requires: chartSnippet.Requires,
-			Incremental: &config.IncrementalTemplate{
-				Source: chartSnippet.Incremental.Source, BindingsTemplate: chartSnippet.Incremental.BindingsTemplate,
-				Group: chartSnippet.Incremental.Group, Consumes: chartSnippet.Incremental.Consumes,
-				OptionalConsumes: chartSnippet.Incremental.OptionalConsumes,
-				Effects:          chartSnippet.Incremental.Effects,
-			},
-		}
+	names := []string{ingressStatusAddressComponent, ingressStatusPatchComponent}
+	snippets := loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
+		"ingress/library.yaml": names,
+	})
+	for _, name := range names {
+		require.NotNil(t, snippets[name].Incremental, name)
 	}
-	return result
+	return snippets
 }
 
 func ingressStatusResource(name, revision string) map[string]any {
