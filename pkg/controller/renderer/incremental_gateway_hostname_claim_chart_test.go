@@ -237,7 +237,7 @@ func TestGatewayHostnameClaimPresenceTracksEmptyGateway(t *testing.T) {
 
 func loadGatewayHostnameClaimSnippets(t *testing.T) map[string]config.TemplateSnippet {
 	t.Helper()
-	return loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	return loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"gateway/40-maps-host.yaml": {
 			"map-hostvalues-479-gateway-listenersets-empty",
 			"map-hostvalues-480-gateway-listenersets",
@@ -253,7 +253,7 @@ func loadGatewayHostnameClaimSnippets(t *testing.T) map[string]config.TemplateSn
 
 func loadGatewayHostnameSuffixSnippets(t *testing.T) map[string]config.TemplateSnippet {
 	t.Helper()
-	return loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	return loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"gateway/40-maps-host.yaml": {
 			gatewayHostnameSuffixComponent,
 			"util-gateway-listener-hostname-suffix-publications",

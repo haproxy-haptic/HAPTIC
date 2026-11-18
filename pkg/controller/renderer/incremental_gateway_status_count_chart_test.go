@@ -266,7 +266,7 @@ func gatewayStatusCountExecutions(fixture *gatewayHostMapFixture) uint64 {
 
 func newGatewayStatusCountFixture(tb testing.TB) *gatewayHostMapFixture {
 	tb.Helper()
-	snippets := loadGatewayHostMapSnippets(tb, gatewayHostMapChartRoot(tb), map[string][]string{
+	snippets := loadChartSnippets(tb, chartLibrariesRoot(tb), map[string][]string{
 		"gateway/21-route-helpers.yaml": {"util-hostname-intersect-gateway"},
 		"gateway/40-maps-host.yaml":     {"map-hostvalues-480-gateway-listenersets"},
 		"gateway/70-status-gateway.yaml": {

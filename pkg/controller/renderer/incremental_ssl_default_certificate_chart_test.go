@@ -211,7 +211,7 @@ func TestSSLDefaultCertificateECDSAProjectionIsLazyBehindGatewayDefault(t *testi
 }
 
 func TestMigratedChartRootsDoNotReadWatchedResourcesDirectly(t *testing.T) {
-	snippets := loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	snippets := loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"gateway/10-features.yaml": {
 			"util-aggregate-gateway-cert-metadata",
 			"features-100-gateway-tls",
@@ -233,7 +233,7 @@ func TestMigratedChartRootsDoNotReadWatchedResourcesDirectly(t *testing.T) {
 		assert.NotContains(t, snippet.Template, "resources.", name)
 	}
 
-	sslLibraryPath := filepath.Join(gatewayHostMapChartRoot(t), "ssl", "library.yaml")
+	sslLibraryPath := filepath.Join(chartLibrariesRoot(t), "ssl", "library.yaml")
 	content, err := os.ReadFile(sslLibraryPath)
 	require.NoError(t, err)
 	var library sslDefaultCertificateLibrary
@@ -267,7 +267,7 @@ func newSSLDefaultCertificateFixtureWithRoot(
 	defaultName, ecdsaName, root string,
 ) *sslDefaultCertificateFixture {
 	t.Helper()
-	snippets := loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	snippets := loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"ssl/library.yaml": {
 			"util-ssl-default-certificate-bindings",
 			"util-ssl-default-ecdsa-certificate-bindings",
@@ -292,7 +292,7 @@ func newSSLDefaultCertificateFixtureWithRoot(
 			},
 		}
 	}
-	sslLibraryPath := filepath.Join(gatewayHostMapChartRoot(t), "ssl", "library.yaml")
+	sslLibraryPath := filepath.Join(chartLibrariesRoot(t), "ssl", "library.yaml")
 	content, err := os.ReadFile(sslLibraryPath)
 	require.NoError(t, err)
 	var library sslDefaultCertificateLibrary

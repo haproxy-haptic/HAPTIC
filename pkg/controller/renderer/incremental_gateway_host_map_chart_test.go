@@ -25,7 +25,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -55,28 +54,6 @@ const gatewayHostMapRoot = `{{ render "map-host-500-gateway" -}}
 
 const gatewayHostMapLegacyRoot = `{{- render "util-listenerset-candidates" default "" -}}
 {{ render "map-host-500-gateway" }}`
-
-type gatewayHostMapChartLibrary struct {
-	TemplateSnippets map[string]gatewayHostMapChartSnippet `yaml:"templateSnippets"`
-}
-
-type gatewayHostMapChartSnippet struct {
-	Template    string                          `yaml:"template"`
-	Requires    []string                        `yaml:"requires"`
-	Incremental *gatewayHostMapChartIncremental `yaml:"incremental"`
-}
-
-type gatewayHostMapChartIncremental struct {
-	Mode              config.IncrementalMode     `yaml:"mode"`
-	Source            string                     `yaml:"source"`
-	BindingsTemplate  string                     `yaml:"bindingsTemplate"`
-	WhenAnyPathExists []string                   `yaml:"whenAnyPathExists"`
-	Root              string                     `yaml:"root"`
-	Group             string                     `yaml:"group"`
-	Consumes          []string                   `yaml:"consumes"`
-	OptionalConsumes  []string                   `yaml:"optionalConsumes"`
-	Effects           []config.IncrementalEffect `yaml:"effects"`
-}
 
 type gatewayHostMapFixture struct {
 	config          *config.Config
@@ -361,7 +338,7 @@ func gatewayHostMapSchemaTypes(tb testing.TB) *typebootstrap.Result {
 
 func loadGatewayHostMapCurrentSnippets(tb testing.TB) map[string]config.TemplateSnippet {
 	tb.Helper()
-	return loadGatewayHostMapSnippets(tb, gatewayHostMapChartRoot(tb), map[string][]string{
+	return loadChartSnippets(tb, chartLibrariesRoot(tb), map[string][]string{
 		"base/library.yaml": {"util-host-key"},
 		"gateway/15-pod-port-allocator.yaml": {
 			"util-gateway-pod-port-allocation",
@@ -388,7 +365,7 @@ func loadGatewayHostMapCurrentSnippets(tb testing.TB) map[string]config.Template
 
 func loadGatewayHostMapLegacySnippets(tb testing.TB, baselineRoot string) map[string]config.TemplateSnippet {
 	tb.Helper()
-	return loadGatewayHostMapSnippets(tb, baselineRoot, map[string][]string{
+	return loadChartSnippets(tb, baselineRoot, map[string][]string{
 		"charts/haptic/charts/base/library.yaml": {"util-macros", "util-host-key"},
 		"charts/haptic/charts/gateway/15-pod-port-allocator.yaml": {
 			"util-gateway-pod-port-allocator", "util-gateway-port-scope",
@@ -406,48 +383,6 @@ func loadGatewayHostMapLegacySnippets(tb testing.TB, baselineRoot string) map[st
 			"map-host-500-gateway",
 		},
 	})
-}
-
-func gatewayHostMapChartRoot(tb testing.TB) string {
-	tb.Helper()
-	_, sourceFile, _, ok := runtime.Caller(0)
-	require.True(tb, ok)
-	return filepath.Join(filepath.Dir(sourceFile), "..", "..", "..", "charts", "haptic", "charts")
-}
-
-func loadGatewayHostMapSnippets(
-	tb testing.TB,
-	root string,
-	wantedByFile map[string][]string,
-) map[string]config.TemplateSnippet {
-	tb.Helper()
-	result := map[string]config.TemplateSnippet{}
-	for relativePath, names := range wantedByFile {
-		content, err := os.ReadFile(filepath.Join(root, relativePath))
-		require.NoError(tb, err)
-		var library gatewayHostMapChartLibrary
-		require.NoError(tb, yaml.Unmarshal(content, &library))
-		for _, name := range names {
-			chartSnippet, found := library.TemplateSnippets[name]
-			require.Truef(tb, found, "%s is missing %s", relativePath, name)
-			snippet := config.TemplateSnippet{Name: name, Template: chartSnippet.Template, Requires: chartSnippet.Requires}
-			if chartSnippet.Incremental != nil {
-				snippet.Incremental = &config.IncrementalTemplate{
-					Mode:              chartSnippet.Incremental.Mode,
-					Source:            chartSnippet.Incremental.Source,
-					BindingsTemplate:  chartSnippet.Incremental.BindingsTemplate,
-					WhenAnyPathExists: chartSnippet.Incremental.WhenAnyPathExists,
-					Root:              chartSnippet.Incremental.Root,
-					Group:             chartSnippet.Incremental.Group,
-					Consumes:          chartSnippet.Incremental.Consumes,
-					OptionalConsumes:  chartSnippet.Incremental.OptionalConsumes,
-					Effects:           chartSnippet.Incremental.Effects,
-				}
-			}
-			result[name] = snippet
-		}
-	}
-	return result
 }
 
 func gatewayHostMapGateway(name, creationTimestamp, hostname string, port int64) map[string]any {

@@ -292,7 +292,7 @@ func TestGatewayFeaturePublicationColdProjectionMatchesLegacyLoops(t *testing.T)
 	current := newGatewayFeaturePublicationFixtureWithRoot(t, gatewayFeatureProjectionRoot)
 	legacy := newGatewayRouteAnalysisFixtureWithTemplates(
 		t,
-		loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+		loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 			"gateway/21-route-helpers.yaml": {"util-reference-grant-permitted"},
 		}),
 		gatewayFeatureLegacyProjectionRoot,
@@ -573,7 +573,7 @@ func newGatewayFeaturePublicationFixtureWithRoot(t *testing.T, root string) *gat
 
 func loadGatewayFeaturePublicationSnippets(t *testing.T) map[string]config.TemplateSnippet {
 	t.Helper()
-	return loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	return loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"gateway/05-typed-access-smoke.yaml": {gatewayTypedAccessComponent},
 		"gateway/10-features.yaml": {
 			gatewayListenerStateComponent,

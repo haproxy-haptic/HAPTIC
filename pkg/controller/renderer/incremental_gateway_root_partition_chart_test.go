@@ -43,7 +43,7 @@ func TestGatewayHTTPRouteIncrementalRootPartition(t *testing.T) {
 		TemplateSnippets map[string]snippet `yaml:"templateSnippets"`
 	}
 
-	files, err := filepath.Glob(filepath.Join(gatewayHostMapChartRoot(t), "gateway", "*.yaml"))
+	files, err := filepath.Glob(filepath.Join(chartLibrariesRoot(t), "gateway", "*.yaml"))
 	require.NoError(t, err)
 	require.NotEmpty(t, files)
 
@@ -78,7 +78,7 @@ func TestGatewayHTTPRouteIncrementalRootPartition(t *testing.T) {
 }
 
 func TestGatewaySchemaStrippedRootKeepsOnlyServedSourceComponents(t *testing.T) {
-	snippets := loadGatewayHostMapSnippets(t, gatewayHostMapChartRoot(t), map[string][]string{
+	snippets := loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
 		"gateway/22-ssl-passthrough.yaml": {
 			"util-publish-gateway-http-ssl-passthrough",
 			"util-publish-gateway-tls-ssl-passthrough",
