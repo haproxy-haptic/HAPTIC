@@ -328,9 +328,6 @@ test-gateway-policy-waf-invalid
 test-gateway-policy-unavailable-watch
 test-gateway-policy-waf-mutable-catalog
 test-gateway-policy-waf-missing-catalog
-test-gateway-policy-waf-missing-catalog-policy-admission
-test-gateway-policy-waf-missing-catalog-route-admission
-test-gateway-policy-waf-missing-catalog-selfservice-disabled-admission
 test-gateway-policy-waf-malformed-catalog
 test-gateway-policy-waf-catalog-key-missing
 test-gateway-policy-waf-catalog-selfservice-disabled

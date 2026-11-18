@@ -307,6 +307,11 @@ An Ingress in `team-a` selects it with
 `haproxy-haptic.org/waf-policy: app-baseline`. HAPTIC watches ConfigMaps with this
 name and enables Coraza and policy permissions automatically.
 
+You can apply the Ingress and its catalog in one Argo CD sync or `kubectl apply`.
+If the policy name is valid but HAPTIC hasn't seen a definition yet, admission
+returns a `WafPolicyUnavailable` warning. Once reconciled, the affected route
+returns `503` until HAPTIC can apply the selected policy.
+
 To adjust a trusted policy for one application, extend it and narrow what a rule
 inspects rather than removing the rule. This policy keeps every `public-web`
 setting and stops rule 942100 from inspecting the `id` query argument:
@@ -318,12 +323,6 @@ search:
     - rules: [942100]
       excludeTarget: "ARGS:id"
 ```
-
-You can apply the ConfigMap and the Ingress together, for example in one
-`kubectl apply` or one Argo CD sync. Admission might not see the new ConfigMap
-yet, so it admits an Ingress that names a policy its namespace doesn't define
-and prints a warning. That route returns `503` and gets a `WafPolicyUnavailable`
-Warning Event until the policy exists.
 
 | Boundary | Behavior |
 |----------|----------|
@@ -337,13 +336,11 @@ Warning Event until the policy exists.
 
 ## Diagnose a rejected policy
 
-Admission rejects invalid definitions and selections. It admits one exception
-with a warning: a valid policy name that the Ingress's own namespace doesn't
-define yet. Selecting a policy while policy selection is disabled, a malformed
-name, or an unknown name while self-service is disabled is still rejected. If an
-invalid selection exists, HAPTIC returns `503` for affected routes and emits a
-Warning Event. For an invalid self-service catalog, only selecting routes in that
-namespace are affected; other namespaces continue rendering.
+Admission rejects malformed names, invalid catalog definitions, and selections the
+administrator has disabled. With self-service disabled, it also rejects unknown
+names. With self-service enabled, check the Ingress's namespace catalog for the
+name reported in a `WafPolicyUnavailable` warning. A broken self-service catalog
+affects only the Ingresses that select from it.
 
 Inspect the Ingress and catalog ConfigMap Events. `WafPolicyCatalogInvalid`
 identifies malformed catalog YAML; `WafPolicyInvalid` identifies a broken policy.

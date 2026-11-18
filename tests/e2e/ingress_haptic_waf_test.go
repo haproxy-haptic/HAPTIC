@@ -11,14 +11,12 @@
 package e2e
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net/http"
-	"os/exec"
-	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -165,7 +163,10 @@ func TestHapticWAFPolicies(t *testing.T) {
 func TestHapticWAFSelfServiceOneApply(t *testing.T) {
 	t.Parallel()
 
-	const host = "ingress-haptic-waf-selfservice.localdev.me"
+	const (
+		host       = "ingress-haptic-waf-selfservice.localdev.me"
+		updateHost = "ingress-haptic-waf-selfservice-update.localdev.me"
+	)
 
 	feature := features.New("Ingress: a self-service WAF policy applies together with its catalog").
 		Assess("one apply admits both and enforces the policy", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
@@ -177,31 +178,40 @@ func TestHapticWAFSelfServiceOneApply(t *testing.T) {
 			ns := NamespaceForTest(ctx, t, client)
 			DumpLogsOnFailure(t, ns)
 			backend := NewEchoServerBackend(ctx, t, client, ns)
-			manifest := []byte(fmt.Sprintf(`apiVersion: networking.k8s.io/v1
+			NewIngress(ctx, t, client, ns, &IngressSpec{
+				Name: "update", Host: updateHost, BackendService: backend.Service, BackendPort: backend.Port,
+			})
+			probe := httpclient.New(t)
+			probe.GET(updateHost, "/").ExpectOK(t)
+
+			ingress := func(name, hostname string) string {
+				return fmt.Sprintf(`apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  namespace: %[1]s
-  name: app
+  namespace: %s
+  name: %s
   annotations:
     haproxy-haptic.org/waf-policy: team-block
 spec:
   ingressClassName: haptic
   rules:
-  - host: %[2]s
+  - host: %s
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: %[3]s
+            name: %s
             port:
-              number: %[4]d
----
+              number: %d
+`, ns, name, hostname, backend.Service, backend.Port)
+			}
+			manifest := []byte(ingress("app", host) + fmt.Sprintf(`---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  namespace: %[1]s
+  namespace: %s
   name: waf-policies
 data:
   policies.yaml: |
@@ -209,19 +219,20 @@ data:
       requestBody:
         mode: none
       enforcement: deny
-`, ns, host, backend.Service, backend.Port))
-
-			// A server-side dry run never stores the ConfigMap, so admission
-			// always checks the Ingress without it, as an Argo CD diff does.
-			dryRun := exec.CommandContext(ctx, "kubectl", "apply", kubeconfigFlag, kubeconfigPath, "--dry-run=server", "-f", "-")
-			dryRun.Stdin = bytes.NewReader(manifest)
-			out, err := dryRun.CombinedOutput()
-			if err != nil {
-				t.Fatalf("server-side dry run refused the manifest: %v\n%s", err, out)
+`, ns))
+			dryRun := func(manifest []byte, name string) {
+				t.Helper()
+				out, err := kubectlApplyOutput(ctx, manifest, "--server-side", "--dry-run=server")
+				require.NoError(t, err, "server-side dry run")
+				require.Contains(t, out, "Unknown WAF policy 'team-block' on Ingress "+ns+"/"+name)
 			}
-			if !strings.Contains(string(out), "Unknown WAF policy 'team-block'") {
-				t.Fatalf("server-side dry run printed no admission warning:\n%s", out)
+			update := []byte(ingress("update", updateHost))
+			dryRun(update, "update")
+			if _, err := kubectlApplyOutput(ctx, update, "--server-side"); err != nil {
+				t.Fatalf("server-side apply to existing Ingress: %v", err)
 			}
+			probe.GET(updateHost, "/").ExpectStatus(t, http.StatusServiceUnavailable)
+			dryRun(manifest, "app")
 
 			registerControllerForgetNamespaceCleanup(t, client, ns)
 			t.Cleanup(func() {
@@ -234,12 +245,14 @@ data:
 				t.Fatalf("apply Ingress and catalog: %v", err)
 			}
 			waitForIngressDeployed(ctx, t, client, ns, "app")
-			waitForHaproxyIngressWafMap(ctx, t, []string{ns + "/app deny"})
+			waitForHaproxyIngressWafMap(ctx, t, []string{ns + "/app deny", ns + "/update deny"})
 
-			httpclient.New(t).GET(host, "/").ExpectOK(t)
-			httpclient.New(t).GET(host, "/").
-				WithHeader("User-Agent", "haptic-waf-block-probe").
-				ExpectStatus(t, http.StatusForbidden)
+			for _, hostname := range []string{host, updateHost} {
+				probe.GET(hostname, "/").ExpectOK(t)
+				probe.GET(hostname, "/").
+					WithHeader("User-Agent", "haptic-waf-block-probe").
+					ExpectStatus(t, http.StatusForbidden)
+			}
 			return ctx
 		})
 

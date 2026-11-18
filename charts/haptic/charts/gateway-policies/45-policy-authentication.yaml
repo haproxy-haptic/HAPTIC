@@ -27,11 +27,7 @@ templateSnippets:
               affected = true
             }
           }
-          // A catalog ConfigMap created in the same apply may not be visible yet (#703).
-          var pendingCatalogPolicy = dig(record, "waf", "pendingCatalogPolicy")
-          var pendingCatalog = pendingCatalogPolicy != nil && tostring(record["error"]) == dig_string(record, "", "waf", "error")
-          if renderMode == "admission" && affected && !pendingCatalog { fail(message) }
-          if renderMode == "admission" && pendingCatalog { recordEvent(pendingCatalogPolicy, "RoutePolicyInvalid", message) }
+          if renderMode == "admission" && affected { fail(message) }
           recordEvent(record["resource"], "RoutePolicyInvalid", message)
         %%}
       {%- end -%}
