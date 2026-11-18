@@ -307,6 +307,11 @@ An Ingress in `team-a` selects it with
 `haproxy-haptic.org/waf-policy: app-baseline`. HAPTIC watches ConfigMaps with this
 name and enables Coraza and policy permissions automatically.
 
+You can apply the Ingress and its catalog in one Argo CD sync or `kubectl apply`.
+If the policy name is valid but HAPTIC hasn't seen a definition yet, admission
+returns a `WafPolicyUnavailable` warning. Once reconciled, the affected route
+returns `503` until HAPTIC can apply the selected policy.
+
 To adjust a trusted policy for one application, extend it and narrow what a rule
 inspects rather than removing the rule. This policy keeps every `public-web`
 setting and stops rule 942100 from inspecting the `id` query argument:
@@ -364,10 +369,11 @@ Alternatively, merge policies that differ only in their exclusions.
 
 ## Diagnose a rejected policy
 
-Admission rejects invalid definitions and selections. If an invalid selection
-already exists, HAPTIC returns `503` for affected routes and emits a Warning
-Event. For an invalid self-service catalog, only selecting routes in that
-namespace are affected; other namespaces continue rendering.
+Admission rejects malformed names, invalid catalog definitions, and selections the
+administrator has disabled. With self-service disabled, it also rejects unknown
+names. With self-service enabled, check the Ingress's namespace catalog for the
+name reported in a `WafPolicyUnavailable` warning. A broken self-service catalog
+affects only the Ingresses that select from it.
 
 Inspect the Ingress and catalog ConfigMap Events. `WafPolicyCatalogInvalid`
 identifies malformed catalog YAML; `WafPolicyInvalid` identifies a broken policy.

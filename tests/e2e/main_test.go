@@ -1001,25 +1001,30 @@ func teardownCluster(ctx context.Context) (context.Context, error) {
 // kubectlApplyStdin pipes a YAML manifest through `kubectl apply -f -`.
 // Used for fixture YAMLs that don't need typed Go fixtures.
 func kubectlApplyStdin(ctx context.Context, yaml []byte) error {
-	apply := func(c context.Context) error {
-		cmd := exec.CommandContext(c, "kubectl", "apply", kubeconfigFlag, kubeconfigPath, "-f", "-")
+	_, err := kubectlApplyOutput(ctx, yaml)
+	return err
+}
+
+func kubectlApplyOutput(ctx context.Context, yaml []byte, flags ...string) (string, error) {
+	args := append([]string{"apply", kubeconfigFlag, kubeconfigPath, "-f", "-"}, flags...)
+	apply := func(c context.Context) (string, error) {
+		cmd := exec.CommandContext(c, "kubectl", args...)
 		cmd.Stdin = bytes.NewReader(yaml)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("%w (output: %s)", err, out)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("%w (output: %s)", err, out)
 		}
-		return nil
+		return string(out), nil
 	}
-	err := apply(ctx)
-	// The webhook denies with this message while its replica reinitializes (a
-	// config push; lost leadership no longer reinitializes); the denial says
-	// to retry. Bounded and scoped to that one message, like NewIngress.
+	out, err := apply(ctx)
+	// Only a replica still initializing its webhook explicitly asks for a retry.
 	if err != nil && strings.Contains(err.Error(), "retry after controller initialization") {
 		_ = testutil.WaitForCondition(ctx, testutil.FastWaitConfig(), func(c context.Context) (bool, error) {
-			err = apply(c)
+			out, err = apply(c)
 			return err == nil || !strings.Contains(err.Error(), "retry after controller initialization"), nil
 		})
 	}
-	return err
+	return out, err
 }
 
 // kubectlGetSecretData returns the .data map of a Secret as a map of

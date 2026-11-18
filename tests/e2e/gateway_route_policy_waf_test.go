@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -203,22 +204,27 @@ func stopControllersForAdmissionTest(ctx context.Context, t *testing.T, client k
 		if restored {
 			return
 		}
-		recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+		wait := testutil.DefaultWaitConfig()
+		recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), wait.Timeout)
 		defer cancel()
 		current, getErr := deployments.GetScale(recoveryCtx, name, metav1.GetOptions{})
 		require.NoError(t, getErr)
 		current.Spec.Replicas = replicas
 		_, updateErr := deployments.UpdateScale(recoveryCtx, name, current, metav1.UpdateOptions{})
 		require.NoError(t, updateErr)
-		require.NoError(t, testutil.WaitForConditionWithDescription(recoveryCtx, testutil.DefaultWaitConfig(), "controllers ready after recovery", func(ctx context.Context) (bool, error) {
+		require.NoError(t, testutil.WaitForConditionWithDescription(recoveryCtx, wait, "controllers ready after recovery", func(ctx context.Context) (bool, error) {
 			deployment, getErr := deployments.Get(ctx, name, metav1.GetOptions{})
 			if getErr != nil {
 				return false, getErr
 			}
-			return deployment.Status.ObservedGeneration >= deployment.Generation &&
-				deployment.Status.UpdatedReplicas == replicas &&
-				deployment.Status.AvailableReplicas == replicas &&
-				deployment.Status.UnavailableReplicas == 0, nil
+			status := deployment.Status
+			if status.ObservedGeneration >= deployment.Generation && status.UpdatedReplicas == replicas &&
+				status.AvailableReplicas == replicas && status.UnavailableReplicas == 0 {
+				return true, nil
+			}
+			return false, fmt.Errorf("generation %d/%d, replicas updated %d/%d, available %d/%d, unavailable %d",
+				status.ObservedGeneration, deployment.Generation, status.UpdatedReplicas, replicas,
+				status.AvailableReplicas, replicas, status.UnavailableReplicas)
 		}))
 		restored = true
 	}

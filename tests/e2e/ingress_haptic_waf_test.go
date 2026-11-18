@@ -12,10 +12,14 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
@@ -148,6 +152,107 @@ func TestHapticWAFPolicies(t *testing.T) {
 				WithHeader("Content-Type", "application/x-www-form-urlencoded").
 				WithChunkedBody("payload=benign").
 				ExpectStatus(t, http.StatusLengthRequired)
+			return ctx
+		})
+
+	testEnv.Test(t, feature.Feature())
+}
+
+// TestHapticWAFSelfServiceOneApply applies an Ingress and the waf-policies
+// ConfigMap defining its policy in one manifest, Ingress first (#703).
+func TestHapticWAFSelfServiceOneApply(t *testing.T) {
+	t.Parallel()
+
+	const (
+		host       = "ingress-haptic-waf-selfservice.localdev.me"
+		updateHost = "ingress-haptic-waf-selfservice-update.localdev.me"
+	)
+
+	feature := features.New("Ingress: a self-service WAF policy applies together with its catalog").
+		Assess("one apply admits both and enforces the policy", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			client, err := cfg.NewClient()
+			if err != nil {
+				t.Fatalf("new client: %v", err)
+			}
+			ns := NamespaceForTest(ctx, t, client)
+			DumpLogsOnFailure(t, ns)
+			backend := NewEchoServerBackend(ctx, t, client, ns)
+			NewIngress(ctx, t, client, ns, &IngressSpec{
+				Name: "update", Host: updateHost, BackendService: backend.Service, BackendPort: backend.Port,
+			})
+			probe := httpclient.New(t)
+			probe.GET(updateHost, "/").ExpectOK(t)
+
+			ingress := func(name, hostname string) string {
+				return fmt.Sprintf(`apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  namespace: %s
+  name: %s
+  annotations:
+    haproxy-haptic.org/waf-policy: team-block
+spec:
+  ingressClassName: haptic
+  rules:
+  - host: %s
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: %s
+            port:
+              number: %d
+`, ns, name, hostname, backend.Service, backend.Port)
+			}
+			manifest := []byte(ingress("app", host) + fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: %s
+  name: waf-policies
+data:
+  policies.yaml: |
+    team-block:
+      requestBody:
+        mode: none
+      enforcement: deny
+`, ns))
+			dryRun := func(manifest []byte, name string) {
+				t.Helper()
+				out, err := kubectlApplyOutput(ctx, manifest, "--server-side", "--dry-run=server")
+				require.NoError(t, err, "server-side dry run")
+				require.Contains(t, out, "Unknown WAF policy 'team-block' on Ingress "+ns+"/"+name)
+			}
+			update := []byte(ingress("update", updateHost))
+			dryRun(update, "update")
+			if _, err := kubectlApplyOutput(ctx, update, "--server-side"); err != nil {
+				t.Fatalf("server-side apply to existing Ingress: %v", err)
+			}
+			probe.GET(updateHost, "/").ExpectStatus(t, http.StatusServiceUnavailable)
+			dryRun(manifest, "app")
+
+			registerControllerForgetNamespaceCleanup(t, client, ns)
+			t.Cleanup(func() {
+				ing := &networkingv1.Ingress{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "app"}}
+				if err := client.Resources(ns).Delete(context.Background(), ing); err != nil && !apierrors.IsNotFound(err) {
+					t.Logf("delete Ingress %s/app: %v (best-effort)", ns, err)
+				}
+			})
+			if err := kubectlApplyStdin(ctx, manifest); err != nil {
+				t.Fatalf("apply Ingress and catalog: %v", err)
+			}
+			waitForIngressDeployed(ctx, t, client, ns, "app")
+			waitForHaproxyIngressWafMap(ctx, t, []string{ns + "/app deny", ns + "/update deny"})
+
+			for _, hostname := range []string{host, updateHost} {
+				probe.GET(hostname, "/").ExpectOK(t)
+				probe.GET(hostname, "/").
+					WithHeader("User-Agent", "haptic-waf-block-probe").
+					ExpectStatus(t, http.StatusForbidden)
+			}
 			return ctx
 		})
 
