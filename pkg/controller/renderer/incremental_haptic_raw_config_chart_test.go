@@ -16,15 +16,11 @@ package renderer
 
 import (
 	"log/slog"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/helpers"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/rendercontext"
@@ -41,22 +37,6 @@ const (
 	hapticRawFrontendCache     = "global-settings-799-haptic-config-frontend-cache"
 	hapticRawFrontendWrapper   = "frontend-extra-800-haptic-config-frontend"
 )
-
-type hapticRawConfigChartLibrary struct {
-	TemplateSnippets map[string]hapticRawConfigChartSnippet `yaml:"templateSnippets"`
-}
-
-type hapticRawConfigChartSnippet struct {
-	Template    string                           `yaml:"template"`
-	Requires    []string                         `yaml:"requires"`
-	Incremental *hapticRawConfigChartIncremental `yaml:"incremental"`
-}
-
-type hapticRawConfigChartIncremental struct {
-	Source            string   `yaml:"source"`
-	WhenAnyPathExists []string `yaml:"whenAnyPathExists"`
-	Group             string   `yaml:"group"`
-}
 
 func TestHapticRawConfigChartReusesCleanIngressesAndTransfersHeaderOwnership(t *testing.T) {
 	service, ingresses, provider := newHapticRawConfigChartFixture(t, true)
@@ -136,41 +116,15 @@ func newHapticRawConfigChartFixture(
 
 func loadHapticRawConfigChartSnippets(t *testing.T) map[string]config.TemplateSnippet {
 	t.Helper()
-	_, sourceFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	path := filepath.Join(
-		filepath.Dir(sourceFile), "..", "..", "..", "charts", "haptic", "charts", "haptic-annotations", "40-features.yaml",
-	)
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	var library hapticRawConfigChartLibrary
-	require.NoError(t, yaml.Unmarshal(content, &library))
-	names := []string{
-		hapticRawGlobalComponent,
-		hapticRawDefaultsComponent,
-		hapticRawFrontendComponent,
-		hapticRawFrontendCache,
-		hapticRawFrontendWrapper,
-	}
-	result := make(map[string]config.TemplateSnippet, len(names))
-	for _, name := range names {
-		chartSnippet, exists := library.TemplateSnippets[name]
-		require.True(t, exists)
-		snippet := config.TemplateSnippet{
-			Name:     name,
-			Template: chartSnippet.Template,
-			Requires: chartSnippet.Requires,
-		}
-		if chartSnippet.Incremental != nil {
-			snippet.Incremental = &config.IncrementalTemplate{
-				Source:            chartSnippet.Incremental.Source,
-				WhenAnyPathExists: chartSnippet.Incremental.WhenAnyPathExists,
-				Group:             chartSnippet.Incremental.Group,
-			}
-		}
-		result[name] = snippet
-	}
-	return result
+	return loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
+		"haptic-annotations/40-features.yaml": {
+			hapticRawGlobalComponent,
+			hapticRawDefaultsComponent,
+			hapticRawFrontendComponent,
+			hapticRawFrontendCache,
+			hapticRawFrontendWrapper,
+		},
+	})
 }
 
 func hapticRawConfigIngress(name string, annotations map[string]any) map[string]any {

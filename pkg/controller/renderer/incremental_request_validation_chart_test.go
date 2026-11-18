@@ -16,16 +16,12 @@ package renderer
 
 import (
 	"log/slog"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/helpers"
@@ -50,24 +46,6 @@ const requestValidationPublicationRoot = `{{- render "haptic-request-validation-
 {%- if tostring(extraContext | dig("failAfterReplay") | fallback(false)) == "true" -%}
   {{- fail("forced failure after request-validation replay") -}}
 {%- end -%}`
-
-type requestValidationChartLibrary struct {
-	TemplateSnippets map[string]requestValidationChartSnippet `yaml:"templateSnippets"`
-}
-
-type requestValidationChartSnippet struct {
-	Template    string                             `yaml:"template"`
-	Requires    []string                           `yaml:"requires"`
-	Incremental *requestValidationChartIncremental `yaml:"incremental"`
-}
-
-type requestValidationChartIncremental struct {
-	Source            string                     `yaml:"source"`
-	BindingsTemplate  string                     `yaml:"bindingsTemplate"`
-	WhenAnyPathExists []string                   `yaml:"whenAnyPathExists"`
-	Group             string                     `yaml:"group"`
-	Effects           []config.IncrementalEffect `yaml:"effects"`
-}
 
 type requestValidationMetadata struct {
 	Namespace   string            `json:"namespace"`
@@ -241,32 +219,13 @@ func newRequestValidationFixture(t *testing.T) *requestValidationFixture {
 
 func loadRequestValidationSnippets(t *testing.T) map[string]config.TemplateSnippet {
 	t.Helper()
-	_, sourceFile, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	path := filepath.Join(
-		filepath.Dir(sourceFile), "..", "..", "..", "charts", "haptic", "charts",
-		"haptic-annotations", "82-request-validation.yaml",
-	)
-	content, err := os.ReadFile(path)
-	require.NoError(t, err)
-	var library requestValidationChartLibrary
-	require.NoError(t, yaml.Unmarshal(content, &library))
-	wanted := []string{"util-haptic-request-validation-bindings", "util-haptic-request-schema-secret-foreign", requestValidationPublicationComponent}
-	result := make(map[string]config.TemplateSnippet, len(wanted))
-	for _, name := range wanted {
-		chartSnippet, exists := library.TemplateSnippets[name]
-		require.True(t, exists, name)
-		snippet := config.TemplateSnippet{Name: name, Template: chartSnippet.Template, Requires: chartSnippet.Requires}
-		if chartSnippet.Incremental != nil {
-			snippet.Incremental = &config.IncrementalTemplate{
-				Source: chartSnippet.Incremental.Source, BindingsTemplate: chartSnippet.Incremental.BindingsTemplate,
-				WhenAnyPathExists: chartSnippet.Incremental.WhenAnyPathExists,
-				Group:             chartSnippet.Incremental.Group, Effects: chartSnippet.Incremental.Effects,
-			}
-		}
-		result[name] = snippet
-	}
-	return result
+	return loadChartSnippets(t, chartLibrariesRoot(t), map[string][]string{
+		"haptic-annotations/82-request-validation.yaml": {
+			"util-haptic-request-validation-bindings",
+			"util-haptic-request-schema-secret-foreign",
+			requestValidationPublicationComponent,
+		},
+	})
 }
 
 func requestValidationIngressResource(name string, annotations map[string]string) map[string]any {
