@@ -15,6 +15,7 @@ IMAGE="${1:?usage: $0 <image-ref>}"
 declare -A PLUGIN_LIBS=(
     [api-gateway]="libapi_gateway_plugin.so"
     [coraza]="libcoraza_plugin.so"
+    [coraza-rust]="libcoraza_rust_plugin.so"
     [external-auth]="libexternal_auth_plugin.so"
     [fingerprinting]="libfingerprinting_plugin.so"
     [maxmind]="libmaxmind_plugin.so"
@@ -45,7 +46,7 @@ declare -A PLUGIN_PARAMS=(
 cookie_secret_1 = "0123456789abcdef0"
 cookie_domain = "smoke.example.com"'
 )
-PLUGINS=(api-gateway coraza external-auth fingerprinting mirror rate-limit sso-auth)
+PLUGINS=(api-gateway coraza coraza-rust external-auth fingerprinting mirror rate-limit sso-auth)
 
 echo "==> Pulling ${IMAGE}"
 docker pull "${IMAGE}"

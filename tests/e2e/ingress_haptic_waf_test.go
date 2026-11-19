@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -26,6 +27,13 @@ import (
 
 	"github.com/haproxy-haptic/HAPTIC/tests/e2e/httpclient"
 )
+
+func expectedCorazaLibrarySetting() string {
+	if os.Getenv("HAPTIC_E2E_PROFILE") == "api-gateway" {
+		return `library = "libcoraza_rust_plugin.so"`
+	}
+	return `library = "libcoraza_plugin.so"`
+}
 
 // TestHapticWAFPolicies covers the low-maintenance policy path an application
 // owner normally uses: one `waf-policy` annotation and no route-local SecLang.
@@ -100,6 +108,7 @@ func TestHapticWAFPolicies(t *testing.T) {
 				ns + "/extends deny",
 			})
 			waitForSnippetOnPod(ctx, t, []string{
+				expectedCorazaLibrarySetting(),
 				`[plugins.params.applications."policy:streaming-search"]`,
 				`[plugins.params.applications."policy:form-body-inspection"]`,
 				`[plugins.params.applications."policy:` + ns + `/search-extended"]`,

@@ -138,7 +138,7 @@ spec:
           "name" "spoa-hub"
           "socketPath" (include "haptic.validators.socketPath" .)
           "files" (list "general/spoa-hub-config.toml")
-          "dataFiles" (list "general/crs-*.conf" "general/*.data")) }}
+          "dataFiles" (list "general/crs-*.conf" "general/crs-setup.conf.example" "general/*.data")) }}
     {{- end }}
   {{- end }}
   {{- end }}

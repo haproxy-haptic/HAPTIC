@@ -17,10 +17,11 @@ templateSnippets:
   # Resolves where the ruleset comes from and registers its files. Emits
   # nothing. Sets, in shared state:
   #   gf["wafCrsSource"]   "fetched" | "last-deployed" | "embedded"
-  #   gf["wafCrsIncludes"] SecLang Include line, "" when embedded
+  #   gf["wafCrsIncludes"] rule-file Include, "" when embedded
+  #   gf["wafCrsSetup"]    matching setup Include, when available
   #
-  # `.conf` entries are prefixed `crs-` so the Include is a clean `crs-*.conf`
-  # instead of an enumeration of CRS's own filename prefixes. `.data` entries
+  # The setup has its own Include so per-policy directives can follow it.
+  # Rule files use the `crs-*.conf` glob. `.data` entries
   # keep their exact upstream names: rules reference them by bare name
   # (`@pmFromFile lfi-os-files.data`) resolved relative to the including
   # `.conf`, so prefixing them would break every @pm rule.
@@ -73,56 +74,68 @@ templateSnippets:
             if !hasPrefix(crsPath, "/") {
               crsPath = pathResolver.GetBaseDir() + "/" + crsPath
             }
-            var includeLine = "Include " + crsPath
+            var setupName = "crs-setup.conf.example"
+            var selected = map[string]string{}
+            var source = "last-deployed"
             var confCount = 0
-
             if len(files) > 0 {
-              for _, name := range keys(files) {
+              source = "fetched"
+              var names = keys(files)
+              // Official releases ship rules/ alongside plugins, docs and (in
+              // source archives) linter fixtures. Only rules/ is active CRS.
+              // Continue accepting custom flat archives without a rules/ tree.
+              var hasRulesDir = len(glob_match(names, "*/rules/*.conf")) + len(glob_match(names, "rules/*.conf")) > 0
+              for _, name := range names {
                 var parts = split(name, "/")
                 var base = parts[len(parts)-1]
-                if hasSuffix(base, ".conf") {
-                  var _, err = fileRegistry.Register("file", "crs-"+base, files[name], false)
-                  if err != nil {
-                    fail("Fetched CRS: registering rule file '" + base + "' failed: " + err.Error())
+                if base == "crs-setup.conf" || base == setupName {
+                  // An operator-supplied setup takes precedence over the example.
+                  if _, exists := selected[setupName]; !exists || base == "crs-setup.conf" {
+                    selected[setupName] = files[name]
                   }
-                  confCount = confCount + 1
-                } else if hasSuffix(base, ".data") {
-                  var _, derr = fileRegistry.Register("file", base, files[name], false)
-                  if derr != nil {
-                    fail("Fetched CRS: registering data file '" + base + "' failed: " + derr.Error())
+                } else if !hasRulesDir || (len(parts) >= 2 && parts[len(parts)-2] == "rules") {
+                  var dest = base
+                  if hasSuffix(base, ".conf") {
+                    dest = "crs-" + base
+                    confCount++
+                  } else if !hasSuffix(base, ".data") {
+                    continue
                   }
+                  if previous, exists := selected[dest]; exists && previous != files[name] {
+                    fail("Fetched CRS: multiple archive entries supply different content for '" + dest + "'.")
+                  }
+                  selected[dest] = files[name]
                 }
               }
               if confCount == 0 {
                 fail("extraContext.waf.crs.url served an archive with no .conf rule files, so the WAF would compile no rules. Point it at an OWASP CRS release tarball.")
               }
-              gf["wafCrsSource"] = "fetched"
-              gf["wafCrsIncludes"] = includeLine
             } else {
-              // Tier 2: the ruleset already on the fleet, read back from the
-              // published aux-file CRDs. Survives a controller restart with the
-              // upstream down, which the in-memory fetch cache does not.
+              // The last deployed files survive an outage and controller restart.
               for _, name := range keys(currentFiles) {
-                if hasPrefix(name, "crs-") && hasSuffix(name, ".conf") {
-                  var _, kerr = fileRegistry.Register("file", name, tostring(currentFiles[name]), false)
-                  if kerr != nil {
-                    fail("Keeping deployed CRS: re-registering '" + name + "' failed: " + kerr.Error())
-                  }
-                  confCount = confCount + 1
+                if name == setupName || name == "crs-crs-setup.conf" {
+                  // Older controllers treated an explicit setup as a rule file.
+                  selected[setupName] = tostring(currentFiles[name])
+                } else if hasPrefix(name, "crs-") && hasSuffix(name, ".conf") {
+                  selected[name] = tostring(currentFiles[name])
+                  confCount++
                 } else if hasSuffix(name, ".data") {
-                  var _, kderr = fileRegistry.Register("file", name, tostring(currentFiles[name]), false)
-                  if kderr != nil {
-                    fail("Keeping deployed CRS: re-registering '" + name + "' failed: " + kderr.Error())
-                  }
+                  selected[name] = tostring(currentFiles[name])
                 }
               }
-              if confCount > 0 {
-                gf["wafCrsSource"] = "last-deployed"
-                gf["wafCrsIncludes"] = includeLine
+            }
+            if confCount > 0 {
+              for _, name := range keys(selected) {
+                var _, err = fileRegistry.Register("file", name, selected[name], false)
+                if err != nil {
+                  fail("Registering " + source + " CRS file '" + name + "' failed: " + err.Error())
+                }
               }
-              // Tier 3 is the default set above: the plugin's embedded CRS.
-              // Older than upstream, but in the binary and therefore never
-              // absent — the WAF degrades, it is never unarmed.
+              gf["wafCrsSource"] = source
+              gf["wafCrsIncludes"] = "Include " + crsPath
+              if _, exists := selected[setupName]; exists {
+                gf["wafCrsSetup"] = "Include " + trimSuffix(crsPath, "crs-*.conf") + setupName
+              }
             }
           %%}
         {%- end -%}
@@ -157,11 +170,15 @@ templateSnippets:
               fail("extraContext.waf.crs.url is set but spoaHub.plugins.coraza.directives no longer includes the embedded CRS (@crs-setup.conf.example / @owasp_crs/*.conf), so HAPTIC cannot tell where to substitute the fetched ruleset. Restore those includes, or clear waf.crs.url and Include the ruleset yourself.")
             }
             if hadSetup {
-              out = replace(out, "Include @crs-setup.conf.example", includes)
-              if hadRules {
-                out = replace(out, "Include @owasp_crs/*.conf", "")
+              // A legacy deployment or rule-only archive has no saved setup.
+              // Keep the embedded setup rather than running CRS uninitialized.
+              var setup = gfRaw.(map[string]any) | dig_string("Include @crs-setup.conf.example", "wafCrsSetup")
+              if !hadRules {
+                setup += "\n" + includes
               }
-            } else {
+              out = replace(out, "Include @crs-setup.conf.example", setup)
+            }
+            if hadRules {
               out = replace(out, "Include @owasp_crs/*.conf", includes)
             }
             show out

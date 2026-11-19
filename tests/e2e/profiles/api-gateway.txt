@@ -9,3 +9,4 @@ TestHapticJWTMetadata
 TestHapticRequestValidation
 TestHapticWAFPolicies
 TestIngressBasic
+TestIngressModSecuritySnippetRejectedByAdmission

@@ -882,7 +882,7 @@
         {{- end }}
         {{- $entry := dict
             "name" (regexReplaceAll "-" $name "_")
-            "library" (include "haptic.spoaHub.libName" (dict "name" $name))
+            "library" (include "haptic.spoaHub.libName" (dict "name" $name "plugin" $plugin))
             "messages" $plugin.messages
             "timeoutMs" $pluginTimeoutMs
             "dependsOn" $normalizedDependencies

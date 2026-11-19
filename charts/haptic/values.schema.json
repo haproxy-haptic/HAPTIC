@@ -3330,6 +3330,13 @@
                     "string"
                   ]
                 },
+                "engine": {
+                  "type": "string",
+                  "enum": [
+                    "go",
+                    "rust"
+                  ]
+                },
                 "maxConcurrency": {
                   "type": [
                     "integer",

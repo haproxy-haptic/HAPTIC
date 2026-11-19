@@ -408,7 +408,7 @@ address = {{ $spoaHub.haproxy.socketPath | quote }}
        a HAProxy-friendly identifier. */}}
 [[plugins]]
 name = {{ regexReplaceAll "-" $name "_" | quote }}
-library = {{ include "haptic.spoaHub.libName" (dict "name" $name) | quote }}
+library = {{ include "haptic.spoaHub.libName" (dict "name" $name "plugin" $plugin) | quote }}
 messages = {{ $plugin.messages | toJson }}
 timeout_ms = {{ include "haptic.spoaHub.pluginTimeoutMs" (dict "plugin" $plugin "root" $ "name" $name) }}
 {{- if hasKey $plugin "maxConcurrency" }}
@@ -730,10 +730,13 @@ Maps the plugin shortname (as it appears under spoaHub.plugins.<X>) to the
 .so filename produced by the upstream build. Most plugins use
 `lib<name>_plugin.so` (with dashes mapped to underscores), except sso-auth
 whose Cargo crate name produces `libhaproxy_spoa_hub_plugin_sso_auth.so`.
-Argument: dict with `name` key.
+Coraza ships both a Go and a Rust library under one plugin name.
+Argument: dict with `name` and `plugin` keys.
 */}}
 {{- define "haptic.spoaHub.libName" -}}
-{{- if eq .name "sso-auth" -}}
+{{- if and (eq .name "coraza") (eq .plugin.engine "rust") -}}
+libcoraza_rust_plugin.so
+{{- else if eq .name "sso-auth" -}}
 libhaproxy_spoa_hub_plugin_sso_auth.so
 {{- else -}}
 lib{{ regexReplaceAll "-" .name "_" }}_plugin.so

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 )
@@ -52,6 +53,10 @@ func TestIngressModSecuritySnippetRejectedByAdmission(t *testing.T) {
 	feature := features.New("Ingress: nginx.ingress.kubernetes.io/modsecurity-snippet rejected when SecLang is malformed").
 		Assess("admission webhook denies an Ingress with an unknown SecLang directive", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
+			config, err := execInHAProxyPod(ctx, "deployment/"+ControllerDeploymentName, "validators", "cat", "/etc/haproxy-spoa-hub/config.toml")
+			require.NoError(t, err)
+			require.Contains(t, config, expectedCorazaLibrarySetting(), "controller-side validator configuration")
+
 			client, err := cfg.NewClient()
 			if err != nil {
 				t.Fatalf("new client: %v", err)

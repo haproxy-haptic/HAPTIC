@@ -942,8 +942,11 @@ func e2eProfileHelmArgs(profile string) []string {
 			"--set", "rateLimit.shared.managedStore.enabled=true",
 		}
 	case "api-gateway":
-		fmt.Fprintln(os.Stderr, "e2e: api-gateway shard — enabling request validation")
-		return []string{"--set", "controller.config.templatingSettings.extraContext.apiGateway.requestSchemaValidation.enabled=true"}
+		fmt.Fprintln(os.Stderr, "e2e: api-gateway shard — enabling request validation and the Rust WAF")
+		return []string{
+			"--set", "controller.config.templatingSettings.extraContext.apiGateway.requestSchemaValidation.enabled=true",
+			"--set", "spoaHub.plugins.coraza.engine=rust",
+		}
 	default:
 		return nil
 	}

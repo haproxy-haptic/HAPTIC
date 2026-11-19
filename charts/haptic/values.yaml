@@ -1275,9 +1275,8 @@ controller:
           # WAF blocks or only detects, is left alone.
           #
           # The URL must serve a gzip-compressed tar of a CRS release. HAPTIC
-          # writes each `.conf` to general storage prefixed `crs-`, and each
-          # `.data` under its exact upstream name — CRS rules reference those by
-          # bare name via @pmFromFile, so they cannot be renamed.
+          # loads the release setup before the .conf files in rules/ and
+          # keeps .data filenames for rules that use @pmFromFile.
           #
           # If the ruleset cannot be obtained, HAPTIC falls back in order:
           # the last ruleset deployed to the fleet, then the plugin's embedded
@@ -2185,10 +2184,8 @@ defaultSSLCertificate:
   #   -----END PRIVATE KEY-----
 
 # SPOA hub sidecar
-# Bundles the haproxy-spoa-hub binary plus eight plugin shared libraries
-# (api-gateway, coraza, external-auth, fingerprinting, maxmind, mirror,
-# rate-limit, sso-auth) inside
-# the HAProxy pod. Communicates with HAProxy over a Unix-domain socket.
+# Bundles the haproxy-spoa-hub binary and plugin libraries, including both
+# WAF engines, inside the HAProxy pod. Communicates with HAProxy over a Unix-domain socket.
 # The sidecar is rendered conditionally — absent when no plugin is
 # enabled, automatically present when at least one is.
 spoaHub:
@@ -2249,7 +2246,7 @@ spoaHub:
     # entirely. A literal address always wins over the derivation.
     metricsAddr: auto
     # Go garbage-collector target percentage (GOGC) for the sidecar's embedded
-    # Go runtime (the coraza plugin). The default 100 collects often under load,
+    # Go runtime (the Go Coraza engine). The default 100 collects often under load,
     # stealing CPU from the request path and draining the plugin's transaction
     # pool; 300 trims GC frequency for a lower p99 tail while staying well within
     # the sidecar's memory. GOMEMLIMIT is derived automatically as a soft cap at
@@ -2317,6 +2314,8 @@ spoaHub:
       # cannot silently sever the template and plugin defaults.
       params: ""
     coraza:
+      # Select the WAF library for all routes and the policy validator.
+      engine: go  # @schema enum: [go, rust]
       # Auto-enabled when nginx-ingress OR haproxy-ingress is on. Configures
       # the WAF *service* (rules, limits, runtime knobs → spoa-hub TOML);
       # dispatch lives separately under

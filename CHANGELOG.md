@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 
+- Set `spoaHub.plugins.coraza.engine: rust` to inspect requests and validate WAF policies with the bundled Rust engine. Go Coraza remains the default.
 - `haproxy-haptic.org/upstream-authorization-secret` replaces the request's `Authorization` header with a value from a Secret in the Ingress's namespace, after every client check ([#672](https://github.com/haproxy-haptic/HAPTIC/issues/672)).
 - `HAProxyRoutePolicy` `spec.upstreamAuthorization.secretRef` does the same for HTTPRoute and GRPCRoute rules, from an immutable Secret in the policy's namespace ([#676](https://github.com/haproxy-haptic/HAPTIC/issues/676)).
 - WAF policies accept `extends: <policy>` to build on a trusted policy, so a per-route exclusion no longer copies the whole baseline; self-service policies can extend trusted ones ([#694](https://github.com/haproxy-haptic/HAPTIC/issues/694)).
@@ -52,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Fixed
 
+- Fetched OWASP Core Rule Sets load their matching setup file before rule evaluation and honor per-policy CRS tuning and path-scoped exclusions.
 - An Ingress can now be applied alongside its self-service WAF policy. Admission warns if the policy is still missing, and the reconciled route returns `503` until the policy is available ([#703](https://github.com/haproxy-haptic/HAPTIC/issues/703)).
 - HAProxy sends access-log records to the Vector sidecar over UDP on `127.0.0.1:9514` instead of a Unix datagram socket, whose 10-record queue dropped records on every reload ([#677](https://github.com/haproxy-haptic/HAPTIC/issues/677)).
 - Vector exports `haptic_access_log_dropped_records_total`, and the `HAProxyAccessLogRecordsDropped` alert fires on it.

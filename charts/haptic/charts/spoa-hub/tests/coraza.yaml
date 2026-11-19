@@ -86,11 +86,11 @@ validationTests:
       - {type: contains, target: file:spoa-hub-config.toml, pattern: 'SecRuleEngine On'}
 
   test-spoa-hub-config-render-coraza-adaptive-concurrency:
-    _helm_skip_test: '{{ if semverCompare "<3.1" .Values.haproxyVersion }}true{{ else }}false{{ end }}'
-    description: "A coraza plugin with adaptiveConcurrency=true renders `adaptive_concurrency = true` in the hub config, alongside maxConcurrency as the controller's ceiling (ADR-0002)."
+    _helm_skip_test: &corazaAdaptiveSkip '{{ if semverCompare "<3.1" .Values.haproxyVersion }}true{{ else }}false{{ end }}'
+    description: "The default Go coraza plugin with adaptiveConcurrency=true renders `adaptive_concurrency = true` in the hub config, alongside maxConcurrency as the controller's ceiling (ADR-0002)."
     extraContext:
       haproxyVersion: "3.2"
-      spoaHub:
+      spoaHub: &corazaAdaptiveHub
         enabled: true
         haproxy:
           socketPath: /run/spoa/hub.sock
@@ -103,7 +103,8 @@ validationTests:
           poolPurgeDelay: 30s
         hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
         plugins:
-          - name: coraza
+          - &corazaAdaptivePlugin
+            name: coraza
             library: libcoraza_plugin.so
             messages: ["check-request"]
             timeoutMs: 15
@@ -113,7 +114,7 @@ validationTests:
             directives: |
               SecRuleEngine On
             params: ""
-    fixtures:
+    fixtures: &corazaAdaptiveFixtures
       ingresses:
         - apiVersion: networking.k8s.io/v1
           kind: Ingress
@@ -129,6 +130,24 @@ validationTests:
                       backend: { service: { name: echo, port: { number: 80 } } }
     assertions:
       - type: haproxy_valid
+      - {type: contains, target: file:spoa-hub-config.toml, pattern: 'library = "libcoraza_plugin\.so"'}
+      - {type: contains, target: file:spoa-hub-config.toml, pattern: 'max_concurrency = 32'}
+      - {type: contains, target: file:spoa-hub-config.toml, pattern: 'adaptive_concurrency = true'}
+
+  test-spoa-hub-config-render-coraza-rust-adaptive-concurrency:
+    _helm_skip_test: *corazaAdaptiveSkip
+    description: "The Rust WAF loads with the same adaptive concurrency settings as Go Coraza."
+    extraContext:
+      haproxyVersion: "3.2"
+      spoaHub:
+        <<: *corazaAdaptiveHub
+        plugins:
+          - <<: *corazaAdaptivePlugin
+            library: libcoraza_rust_plugin.so
+    fixtures: *corazaAdaptiveFixtures
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: file:spoa-hub-config.toml, pattern: 'library = "libcoraza_rust_plugin\.so"'}
       - {type: contains, target: file:spoa-hub-config.toml, pattern: 'max_concurrency = 32'}
       - {type: contains, target: file:spoa-hub-config.toml, pattern: 'adaptive_concurrency = true'}
 
