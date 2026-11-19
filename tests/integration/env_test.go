@@ -3,140 +3,58 @@
 package integration
 
 import (
+	"encoding/hex"
 	"strings"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 func TestGenerateSafeNamespaceName(t *testing.T) {
+	// A 63-byte label leaves 49 bytes between "test-" and the nine-byte hash suffix.
+	maxBase := strings.Repeat("a", 49)
 	tests := []struct {
 		name      string
-		testName  string
-		maxLength int
+		input     string
+		wantBase  string
+		wantValid bool
 	}{
-		{
-			name:      "short test name",
-			testName:  "TestSimple",
-			maxLength: maxK8sNameLength,
-		},
-		{
-			name:      "medium test name with subtest",
-			testName:  "TestSync/add-backend",
-			maxLength: maxK8sNameLength,
-		},
-		{
-			name:      "long test name that needs truncation",
-			testName:  "TestSync/backend-add-http-response-rule",
-			maxLength: maxK8sNameLength,
-		},
-		{
-			name:      "very long test name",
-			testName:  "TestVeryLongTestName/with-a-very-long-subtest-name-that-definitely-exceeds-limits",
-			maxLength: maxK8sNameLength,
-		},
-		{
-			name:      "test name with multiple slashes",
-			testName:  "TestParent/TestChild/TestGrandchild/backend-add-acl",
-			maxLength: maxK8sNameLength,
-		},
-		{
-			name:      "test name with uppercase and special chars",
-			testName:  "TestCamelCase/Add-Backend-With-HTTP",
-			maxLength: maxK8sNameLength,
-		},
+		{"short", "TestSimple", "testsimple", true},
+		{"subtest", "TestSync/add-backend", "testsync-add-backend", true},
+		{"nested rule", "TestSync/backend-add-http-response-rule", "testsync-backend-add-http-response-rule", true},
+		{"long subtest", "TestVeryLongTestName/with-a-very-long-subtest-name-that-definitely-exceeds-limits", "testverylongtestname-with-a-very-long-subtest-nam", true},
+		{"multiple slashes", "TestParent/TestChild/TestGrandchild/backend-add-acl", "testparent-testchild-testgrandchild-backend-add-a", true},
+		{"mixed case", "TestCamelCase/Add-Backend-With-HTTP", "testcamelcase-add-backend-with-http", true},
+		{"simple", "test", "test", true},
+		{"hyphen", "test-name", "test-name", true},
+		{"number", "test123", "test123", true},
+		{"uppercase", "TestName", "testname", true},
+		{"leading hyphen", "-test", "-test", true},
+		{"trailing hyphen", "test-", "test-", true},
+		{"underscore", "test_name", "test_name", false},
+		{"dot", "test.name", "test.name", false},
+		{"slash", "test/name", "test-name", true},
+		{"over label limit", strings.Repeat("a", 64), maxBase, true},
+		{"at label limit", strings.Repeat("a", 63), maxBase, true},
+		{"empty", "", "", true},
+		{"at base limit", maxBase, maxBase, true},
+		{"truncated after slash", strings.Repeat("a", 48) + "/child", strings.Repeat("a", 48) + "-", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := generateSafeNamespaceName(tt.testName)
-
-			// Verify length constraint
-			if len(result) > tt.maxLength {
-				t.Errorf("Generated namespace name '%s' exceeds max length %d (actual: %d)",
-					result, tt.maxLength, len(result))
+			name := generateSafeNamespaceName(tt.input)
+			suffix, ok := strings.CutPrefix(name, "test-"+tt.wantBase+"-")
+			if !ok {
+				t.Fatalf("namespace %q has unexpected base, want %q", name, tt.wantBase)
 			}
-
-			// Verify RFC 1123 compliance: lowercase alphanumeric with hyphens
-			if !isValidK8sName(result) {
-				t.Errorf("Generated namespace name '%s' is not RFC 1123 compliant", result)
+			if _, err := hex.DecodeString(suffix); err != nil || len(suffix) != 8 {
+				t.Errorf("namespace %q has invalid hash suffix %q", name, suffix)
 			}
-
-			// Verify it starts with expected prefix
-			if !strings.HasPrefix(result, "test-") {
-				t.Errorf("Generated namespace name '%s' doesn't start with 'test-'", result)
-			}
-
-			// Verify uniqueness: generate multiple names for same test
-			// They should be different due to timestamp in hash
-			result2 := generateSafeNamespaceName(tt.testName)
-			if result == result2 {
-				t.Logf("Note: Generated names are identical (this is rare but possible): %s", result)
-			}
-
-			t.Logf("Test name: %s -> Namespace: %s (length: %d)",
-				tt.testName, result, len(result))
-		})
-	}
-}
-
-// isValidK8sName checks if a name follows RFC 1123 label requirements:
-// - lowercase alphanumeric characters or '-'
-// - start with alphanumeric character
-// - end with alphanumeric character.
-func isValidK8sName(name string) bool {
-	if name == "" || len(name) > 63 {
-		return false
-	}
-
-	// Check first character (must be alphanumeric)
-	first := name[0]
-	if !isNameAlphanumeric(rune(first)) {
-		return false
-	}
-
-	// Check last character (must be alphanumeric)
-	last := name[len(name)-1]
-	if !isNameAlphanumeric(rune(last)) {
-		return false
-	}
-
-	// Check all characters (must be alphanumeric or hyphen)
-	for _, ch := range name {
-		if !isNameAlphanumeric(ch) && ch != '-' {
-			return false
-		}
-	}
-
-	return true
-}
-
-func TestIsValidK8sName(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		valid bool
-	}{
-		{"valid simple", "test", true},
-		{"valid with hyphen", "test-name", true},
-		{"valid with number", "test123", true},
-		{"invalid uppercase", "TestName", false},
-		{"invalid starts with hyphen", "-test", false},
-		{"invalid ends with hyphen", "test-", false},
-		{"invalid underscore", "test_name", false},
-		{"invalid dot", "test.name", false},
-		{"invalid slash", "test/name", false},
-		{"invalid too long", strings.Repeat("a", 64), false},
-		{"valid max length", strings.Repeat("a", 63), true},
-		{"empty", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isValidK8sName(tt.input)
-			if result != tt.valid {
-				t.Errorf("isValidK8sName(%q) = %v, want %v", tt.input, result, tt.valid)
+			problems := validation.IsDNS1123Label(name)
+			if (len(problems) == 0) != tt.wantValid {
+				t.Errorf("namespace %q: want valid=%t, validation errors=%v", name, tt.wantValid, problems)
 			}
 		})
 	}
 }
-
-func isNameAlphanumeric(ch rune) bool { return ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' }

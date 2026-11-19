@@ -26,60 +26,11 @@ import (
 	"time"
 
 	"github.com/rekby/fixenv"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/client"
 	"github.com/haproxy-haptic/HAPTIC/tests/kindutil"
 )
-
-const (
-	// maxK8sNameLength is the maximum length for Kubernetes resource names (RFC 1123).
-	maxK8sNameLength = 63
-	// hashSuffixLength is the length of the hash suffix used to ensure uniqueness.
-	hashSuffixLength = 8
-)
-
-// generateSafeNamespaceName creates a Kubernetes-compliant namespace name that never exceeds 63 characters.
-// It uses a combination of the test name (truncated if needed) and a unique hash suffix.
-//
-// Strategy:
-// 1. Normalize test name (lowercase, replace "/" with "-")
-// 2. If the name would exceed 63 chars with hash suffix, truncate intelligently
-// 3. Add an 8-character hash suffix for uniqueness (derived from full test name + timestamp)
-// 4. Ensure total length is always <= 63 characters
-//
-// Example outputs:
-//   - "test-add-backend-a1b2c3d4" (short test name)
-//   - "test-backend-add-http-response-rule-a1b2c3d4" (truncated long name)
-func generateSafeNamespaceName(testName string) string {
-	// Normalize test name: lowercase and replace "/" with "-"
-	normalized := strings.ToLower(strings.ReplaceAll(testName, "/", "-"))
-
-	// Generate unique hash from test name + timestamp for uniqueness
-	// This ensures the same test run at different times gets different namespaces
-	timestamp := fmt.Sprintf("%d", time.Now().UnixNano())
-	hashInput := fmt.Sprintf("%s-%s", normalized, timestamp)
-	hash := sha256.Sum256([]byte(hashInput))
-	hashSuffix := hex.EncodeToString(hash[:])[:hashSuffixLength]
-
-	maxBaseLength := maxK8sNameLength - 5 - 1 - hashSuffixLength
-
-	// Truncate normalized name if needed
-	baseName := normalized
-	if len(baseName) > maxBaseLength {
-		baseName = baseName[:maxBaseLength]
-	}
-
-	// Construct final name
-	finalName := fmt.Sprintf("test-%s-%s", baseName, hashSuffix)
-
-	// Sanity check: ensure we never exceed the limit
-	if len(finalName) > maxK8sNameLength {
-		panic(fmt.Sprintf("BUG: generated namespace name '%s' exceeds %d characters (length: %d)",
-			finalName, maxK8sNameLength, len(finalName)))
-	}
-
-	return finalName
-}
 
 // SharedCluster provides a package-scoped Kind cluster shared across all tests
 // This fixture runs only once per test package and is kept by default for faster test iterations
@@ -94,7 +45,6 @@ func SharedCluster(env fixenv.Env) *KindCluster {
 			return nil, fmt.Errorf("failed to setup kind cluster: %w", err)
 		}
 
-		// Return with conditional cleanup function
 		return fixenv.NewGenericResultWithCleanup(cluster, func() {
 			keepCluster := ShouldKeepCluster()
 			if keepCluster == "true" {
@@ -102,7 +52,6 @@ func SharedCluster(env fixenv.Env) *KindCluster {
 				fmt.Printf("🧹 To manually clean up: kind delete cluster --name=%s\n", cluster.Name)
 				return
 			}
-			// Default: always clean up
 			_ = cluster.Teardown()
 		}), nil
 	}, fixenv.CacheOptions{Scope: fixenv.ScopePackage})
@@ -126,32 +75,42 @@ func AgentImage(env fixenv.Env) string {
 	}, fixenv.CacheOptions{Scope: fixenv.ScopePackage})
 }
 
-// TestNamespace provides a test-scoped namespace (fresh for each test)
-// Automatically depends on SharedCluster fixture
-// Namespaces are kept by default for faster test iterations
-// Set KEEP_CLUSTER=false to force cleanup after tests.
+func generateSafeNamespaceName(testName string) string {
+	const prefix = "test-"
+	const suffixLength = 8
+	const maxBaseLength = validation.DNS1123LabelMaxLength - len(prefix) - len("-") - suffixLength
+
+	base := strings.ToLower(strings.ReplaceAll(testName, "/", "-"))
+	// Hash the full name before truncation so tests with a common prefix can share a cluster.
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s-%d", base, time.Now().UnixNano())))
+	suffix := hex.EncodeToString(hash[:])[:suffixLength]
+	if len(base) > maxBaseLength {
+		base = base[:maxBaseLength]
+	}
+	name := prefix + base + "-" + suffix
+	if len(name) > validation.DNS1123LabelMaxLength {
+		panic(fmt.Sprintf("BUG: generated namespace name '%s' exceeds %d characters (length: %d)",
+			name, validation.DNS1123LabelMaxLength, len(name)))
+	}
+	return name
+}
+
+// TestNamespace keeps each test's namespace for inspection by default.
 func TestNamespace(env fixenv.Env) *Namespace {
-	// Automatic dependency: request SharedCluster fixture
 	cluster := SharedCluster(env)
 
 	return fixenv.CacheResult(env, func() (*fixenv.GenericResult[*Namespace], error) {
-		// Generate unique namespace name for this test
-		// Uses generateSafeNamespaceName to ensure Kubernetes compliance (max 63 chars)
-		name := generateSafeNamespaceName(env.T().Name())
-
-		ns, err := cluster.CreateNamespace(name)
+		ns, err := cluster.CreateNamespace(generateSafeNamespaceName(env.T().Name()))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create namespace: %w", err)
 		}
 
-		// Return with conditional cleanup function
 		return fixenv.NewGenericResultWithCleanup(ns, func() {
 			keepCluster := ShouldKeepCluster()
 			if keepCluster == "true" {
 				fmt.Printf("🔒 Keeping namespace '%s' (KEEP_CLUSTER=true)\n", ns.Name)
 				return
 			}
-			// Default: always clean up
 			_ = ns.Delete()
 		}), nil
 	})
@@ -188,7 +147,6 @@ func TestHAProxy(env fixenv.Env) *HAProxyInstance {
 				fmt.Printf("🔒 Keeping HAProxy instance '%s' in namespace '%s' (KEEP_CLUSTER=true)\n", haproxy.Name, haproxy.Namespace)
 				return
 			}
-			// Default: always clean up
 			_ = haproxy.Delete()
 		}), nil
 	})
