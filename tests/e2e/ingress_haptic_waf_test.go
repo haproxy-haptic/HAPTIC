@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -99,6 +100,9 @@ func TestHapticWAFPolicies(t *testing.T) {
 				ns + "/web deny",
 				ns + "/extends deny",
 			})
+			if os.Getenv("HAPTIC_E2E_PROFILE") == "api-gateway" {
+				waitForSnippetOnPod(ctx, t, []string{`library = "libcoraza_rust_plugin.so"`})
+			}
 			waitForSnippetOnPod(ctx, t, []string{
 				`[plugins.params.applications."policy:streaming-search"]`,
 				`[plugins.params.applications."policy:form-body-inspection"]`,
