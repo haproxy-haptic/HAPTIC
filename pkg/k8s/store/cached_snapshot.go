@@ -57,7 +57,7 @@ func (s *CachedStore) publishCachedReadRootLocked(
 
 	refs := s.updatedCachedRefsRoot(current, dataKeys)
 	locations, identityVersions := s.updatedCachedIdentityRoots(current, identities)
-	keyVersions := s.updatedCachedKeyVersionRoot(current, keySets)
+	keyVersions := s.revisions.updatedKeyVersionRoot(current.keyVersions, keySets)
 
 	s.readRoot.Store(&cachedReadRoot{
 		source:           s.revisions.source,
@@ -151,29 +151,6 @@ func (s *CachedStore) updatedCachedIdentityRoots(
 		}
 	}
 	return locationTxn.Commit(), identityVersionTxn.Commit()
-}
-
-func (s *CachedStore) updatedCachedKeyVersionRoot(
-	current *cachedReadRoot,
-	keySets [][]string,
-) *iradix.Tree[uint64] {
-	keyVersionTxn := current.keyVersions.Txn()
-	seenVersions := map[string]struct{}{}
-	for _, keys := range keySets {
-		for count := 1; count <= len(keys); count++ {
-			encoded := indexer.EncodeKey(keys[:count])
-			if _, seen := seenVersions[encoded]; seen {
-				continue
-			}
-			seenVersions[encoded] = struct{}{}
-			if version, exists := s.revisions.keyVersions[encoded]; exists {
-				keyVersionTxn.Insert([]byte(encoded), version)
-			} else {
-				keyVersionTxn.Delete([]byte(encoded))
-			}
-		}
-	}
-	return keyVersionTxn.Commit()
 }
 
 func (s *CachedStore) referenceForIdentityLocked(identity resourceIdentity) (resourceRef, bool) {
