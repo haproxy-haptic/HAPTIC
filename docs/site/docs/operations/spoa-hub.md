@@ -75,7 +75,7 @@ HAProxy replicas available during an upgrade.
 ## What each plugin does
 
 - **api-gateway** — performs bounded JSON request validation against schemas compiled at plugin initialization/reload.
-- **coraza** — embeds the [Coraza WAF](https://coraza.io/) engine and runs HTTP request inspection against the Open Worldwide Application Security Project (OWASP) Core Rule Set v4. HAPTIC wires the request phase only — there's no response-body inspection stage, so response compression doesn't interact with the WAF.
+- **coraza** — runs HTTP request inspection against the Open Worldwide Application Security Project (OWASP) Core Rule Set v4. HAPTIC wires the request phase only — there's no response-body inspection stage, so response compression doesn't interact with the WAF.
 - **external-auth** — implements nginx-style `auth_request` semantics: makes an HTTP subrequest to an upstream auth service and returns allow/deny plus identity headers to HAProxy.
 - **fingerprinting** — computes JA3, JA3N, and JA4 TLS fingerprints from the ClientHello.
 - **maxmind** — performs in-memory MaxMind MMDB lookups against operator-provided database files: City, Country, Autonomous System Number (ASN), and so on.
@@ -85,6 +85,24 @@ HAProxy replicas available during an upgrade.
 
 Source-IP rate limits run before WAF, external authentication, and JSON request
 validation. Consumer rate limits run after authentication establishes the identity.
+
+## Choose the WAF engine
+
+The `coraza` plugin defaults to Go Coraza. Select the pure Rust
+zentinel-modsec engine for an installation by adding this to your Helm values:
+
+```yaml
+spoaHub:
+  plugins:
+    coraza:
+      engine: rust
+```
+
+Both engines use the chart's WAF policy catalog and embedded OWASP Core Rule
+Set. The HAProxy sidecar inspects requests and the controller validates policy
+changes with the selected engine. Changing it rolls the affected pods.
+Set `engine: go` to switch back. Use Go for policies that write
+[Coraza audit logs](waf-tuning.md#last-resort-the-coraza-audit-log).
 
 ## Update the WAF rule set
 

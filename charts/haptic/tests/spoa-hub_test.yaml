@@ -221,6 +221,32 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: 'name = "coraza"'
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'library = "libcoraza_plugin\.so"'
+
+  - it: should load the Rust WAF in the bootstrap and validator config
+    template: spoa-hub-configmap.yaml
+    set:
+      spoaHub.plugins.coraza.enabled: true
+      spoaHub.plugins.coraza.engine: rust
+    asserts:
+      - matchRegex:
+          path: data["config.toml"]
+          pattern: 'name = "coraza"\nlibrary = "libcoraza_rust_plugin\.so"'
+
+  - it: should select the Rust WAF for the controller-rendered hub config
+    template: haproxytemplateconfig.yaml
+    documentSelector:
+      path: metadata.name
+      value: haptic-config
+    set:
+      spoaHub.plugins.coraza.enabled: true
+      spoaHub.plugins.coraza.engine: rust
+    asserts:
+      - equal:
+          path: spec.templatingSettings.extraContext.spoaHub.plugins[?(@.name=="coraza")].library
+          value: libcoraza_rust_plugin.so
 
   - it: should reject forcing Coraza off while dispatch is default-on
     template: haproxytemplateconfig.yaml

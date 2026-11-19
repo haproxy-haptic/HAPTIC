@@ -191,6 +191,8 @@ Route this access log to a restricted destination through `accessLog.targets`.
 
 ## Last resort: the Coraza audit log
 
+This audit writer requires `spoaHub.plugins.coraza.engine: go`. Both engines support connector rule-match logging.
+
 When you need the full transaction — every matched rule with its target and the request metadata together — enable Coraza's own audit engine through the trusted policy's `secLang`. A self-service catalog can't: ask the administrator to adopt the policy, or to enable the log in the shared directives.
 
 Set `SecAuditLogParts` explicitly when enabling this log. The example below

@@ -835,7 +835,7 @@ One `PodMonitor` for every metrics endpoint on the HAProxy pod. See [Where to sc
 | `spoaHub.hub.maxBlockingThreads` | int/null | `null` | Process-wide blocking-pool cap. Null derives the sum of resolved per-plugin concurrency; an explicit value must be at least that sum. Changing it rolls the HAProxy pods because Tokio fixes this pool at process start |
 | `spoaHub.hub.reloadDrainTimeoutMs` | int/null | `null` | Hot-reload quiesce-and-drain budget. Null derives 1.5 times the largest plugin timeout, clamped to 1–30 seconds. `0` restores unsafe legacy immediate retirement and can lose in-flight/background work |
 | `spoaHub.hub.metricsAddr` | string | `auto` | Metrics listen address. `auto` uses `127.0.0.1:9095` when Vector re-exports the metrics, otherwise `0.0.0.0:9095` for direct scraping. Set an explicit address to override, or `""` to disable. |
-| `spoaHub.hub.goGCPercent` | int | `300` | Coraza garbage collection target percentage. Lower values trade more CPU work for more frequent memory reclamation |
+| `spoaHub.hub.goGCPercent` | int | `300` | Go Coraza garbage collection target percentage. Lower values trade more CPU work for more frequent memory reclamation |
 | `spoaHub.haproxy.socketPath` | string | `/run/spoa/hub.sock` | Unix socket path shared between HAProxy and the hub |
 | `spoaHub.haproxy.modeSpop` | bool | `true` | Use HAProxy 3.1+ `mode spop` backend; auto-falls back to `mode tcp` on 3.0. Set `false` to force `mode tcp` on 3.1+ |
 | `spoaHub.haproxy.timeoutHello` | duration | `2s` | Stream Processing Offload Engine (SPOE) hello timeout |
@@ -853,6 +853,7 @@ One `PodMonitor` for every metrics endpoint on the HAProxy pod. See [Where to sc
 | `spoaHub.plugins.<name>.messages` | list | per-plugin | SPOE messages this plugin handles |
 | `spoaHub.plugins.<name>.dependsOn` | list | `[]` | Other plugin names this plugin must run after |
 | `spoaHub.plugins.<name>.params` | string | per-plugin | Free-form TOML blob spliced verbatim under `[plugins.params]` — use dotted keys (`x.y = "..."`) or fully qualified headers (`[plugins.params.x]`) for nested values; bare `[x]` headers close the params scope and break the config |
+| `spoaHub.plugins.coraza.engine` | string | `go` | WAF implementation for request inspection and policy validation. Select `go` for Coraza or `rust` for zentinel-modsec. See [Choose the WAF engine](operations/spoa-hub.md#choose-the-waf-engine). |
 | `spoaHub.plugins.coraza.directives` | string | OWASP CRS includes + `SecRuleEngine On` | Chart-wide Coraza WAF directives. Reusable policy applications and authorized per-Ingress rules layer on this base. Keep `SecRuleEngine On` *after* the includes — `@coraza.conf-recommended` sets `DetectionOnly`, so an earlier `On` is silently overridden and the WAF never blocks. Don't also set `directives` inside `params:`; the duplicate TOML field breaks the config |
 | `spoaHub.plugins.mirror.targetTimeoutMs` | int | `2000` | Per-target timeout for asynchronous mirror requests. It's independent of application backend timeouts so a dead mirror releases shared hub capacity quickly |
 | `spoaHub.plugins.mirror.targetRetries` | int | `0` | Retry count for asynchronous mirror requests. The default avoids multiplying work against an unavailable observability target |
