@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The bundled SPOA hub returns WAF decisions faster. Both WAF engines now omit routine OWASP CRS bookkeeping from `plugin_coraza_rule_hits_total` by default.
 - Adding or removing a TLS certificate updates HAProxy at runtime instead of reloading it, wherever its crt-list line lands. A change to the default certificate, or one that would change which line serves an SNI name two lines share, still reloads.
 - `haptic_rejected_watched_inputs` carries `resource_type`, `namespace`, and `name` labels, one series per rejected resource, so an alert names the resource to fix.
 
