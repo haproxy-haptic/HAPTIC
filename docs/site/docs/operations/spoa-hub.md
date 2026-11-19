@@ -54,7 +54,7 @@ The image is published at `ghcr.io/haproxy-haptic/haptic/spoa-hub:<HAPTIC versio
 | --------------- | --------------------------------------- |
 | Hub               | `v0.13.1-rc.1`                     |
 | `api-gateway`    | `v0.1.0`      |
-| `coraza`          | `v0.12.0-rc.3`           |
+| `coraza`          | `v0.12.0-rc.4`           |
 | `external-auth`   | `v0.6.0`    |
 | `fingerprinting`  | `v0.3.0`   |
 | `maxmind`         | `v0.4.0`          |
