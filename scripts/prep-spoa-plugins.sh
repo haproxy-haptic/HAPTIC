@@ -43,7 +43,7 @@ declare -A PLUGINS=(
 # produces `libhaproxy_spoa_hub_plugin_sso_auth.so` instead.
 declare -A LIB_NAMES=(
     [api-gateway]="libapi_gateway_plugin"
-    [coraza]="libcoraza_plugin"
+    [coraza]="libcoraza_plugin libcoraza_rust_plugin"
     [external-auth]="libexternal_auth_plugin"
     [fingerprinting]="libfingerprinting_plugin"
     [maxmind]="libmaxmind_plugin"
@@ -146,7 +146,7 @@ done
 verified=0 reused=0 downloaded=0
 for plugin in "${!PLUGINS[@]}"; do
     version="${PLUGINS[${plugin}]}"
-    lib_name="${LIB_NAMES[${plugin}]}"
+    read -r -a libraries <<< "${LIB_NAMES[${plugin}]}"
     project_path="haproxy-haptic/haproxy-spoa-hub-plugin-${plugin}"
     pkg_base="https://github.com/${project_path}/releases/download/${version}"
     github_identity="https://github.com/${project_path}/.github/workflows/release.yml@refs/tags/${version}"
@@ -162,35 +162,37 @@ for plugin in "${!PLUGINS[@]}"; do
     release_file SHA256SUMS
     sums="${REPLY}"
 
-    for arch in "${ARCHES[@]}"; do
-        suffixed="${lib_name}-${arch}-glibc${SPOA_PLUGIN_GLIBC_VERSION}.so"
+    for lib_name in "${libraries[@]}"; do
+        for arch in "${ARCHES[@]}"; do
+            suffixed="${lib_name}-${arch}-glibc${SPOA_PLUGIN_GLIBC_VERSION}.so"
 
-        if ! grep -q "  ${suffixed}\$" "${sums}"; then
-            reject "${suffixed} not present in upstream SHA256SUMS"
-        fi
+            if ! grep -q "  ${suffixed}\$" "${sums}"; then
+                reject "${suffixed} not present in upstream SHA256SUMS"
+            fi
 
-        release_file "${suffixed}"
-        so="${REPLY}"
-        release_file "${suffixed}.cosign.bundle"
-        bundle="${REPLY}"
+            release_file "${suffixed}"
+            so="${REPLY}"
+            release_file "${suffixed}.cosign.bundle"
+            bundle="${REPLY}"
 
-        expected=$(awk -v f="${suffixed}" '$2 == f {print $1}' "${sums}")
-        actual=$(sha256sum "${so}" | awk '{print $1}')
-        if [ "${expected}" != "${actual}" ]; then
-            reject "SHA256 mismatch for ${suffixed} (expected ${expected}, actual ${actual})"
-        fi
+            expected=$(awk -v f="${suffixed}" '$2 == f {print $1}' "${sums}")
+            actual=$(sha256sum "${so}" | awk '{print $1}')
+            if [ "${expected}" != "${actual}" ]; then
+                reject "SHA256 mismatch for ${suffixed} (expected ${expected}, actual ${actual})"
+            fi
 
-        # Cosign keyless verification anchored to this plugin's project tag.
-        if ! verify_signature "${github_identity}" "${GITHUB_ISSUER}" &&
-            ! verify_signature "${gitlab_identity}" "${GITLAB_ISSUER}"; then
-            echo "${REPLY}" >&2
-            reject "cosign rejected the signature of ${suffixed}"
-        fi
+            # Cosign keyless verification anchored to this plugin's project tag.
+            if ! verify_signature "${github_identity}" "${GITHUB_ISSUER}" &&
+                ! verify_signature "${gitlab_identity}" "${GITLAB_ISSUER}"; then
+                echo "${REPLY}" >&2
+                reject "cosign rejected the signature of ${suffixed}"
+            fi
 
-        mkdir -p "plugins/${arch}"
-        cp "${so}" "plugins/${arch}/${lib_name}.so"
-        verified=$((verified + 1))
-        echo "  ${arch}: verified ${suffixed}"
+            mkdir -p "plugins/${arch}"
+            cp "${so}" "plugins/${arch}/${lib_name}.so"
+            verified=$((verified + 1))
+            echo "  ${arch}: verified ${suffixed}"
+        done
     done
 
     # Only files that passed verification enter the cache.
@@ -199,4 +201,4 @@ for plugin in "${!PLUGINS[@]}"; do
 done
 
 echo
-echo "OK: verified ${verified} plugin .so files across ${#PLUGINS[@]} plugins x ${#ARCHES[@]} architectures (${reused} cached files reused, ${downloaded} downloaded)."
+echo "OK: verified ${verified} plugin .so files from ${#PLUGINS[@]} releases for ${#ARCHES[@]} architectures (${reused} cached files reused, ${downloaded} downloaded)."

@@ -11,15 +11,16 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 LIBRARIES = {
-    "api-gateway": "libapi_gateway_plugin",
-    "coraza": "libcoraza_plugin",
-    "external-auth": "libexternal_auth_plugin",
-    "fingerprinting": "libfingerprinting_plugin",
-    "maxmind": "libmaxmind_plugin",
-    "mirror": "libmirror_plugin",
-    "rate-limit": "librate_limit_plugin",
-    "sso-auth": "libhaproxy_spoa_hub_plugin_sso_auth",
+    "api-gateway": ("libapi_gateway_plugin",),
+    "coraza": ("libcoraza_plugin", "libcoraza_rust_plugin"),
+    "external-auth": ("libexternal_auth_plugin",),
+    "fingerprinting": ("libfingerprinting_plugin",),
+    "maxmind": ("libmaxmind_plugin",),
+    "mirror": ("libmirror_plugin",),
+    "rate-limit": ("librate_limit_plugin",),
+    "sso-auth": ("libhaproxy_spoa_hub_plugin_sso_auth",),
 }
+LIBRARY_PROJECTS = {library: project for project, libraries in LIBRARIES.items() for library in libraries}
 LEGACY_BUNDLES = {"fingerprinting", "maxmind", "sso-auth"}
 ARCHES = ("amd64", "arm64", "armv7")
 TRUSTED_ROOT = "tuf-repo-cdn.sigstore.dev/targets/trusted_root.json"
@@ -63,7 +64,7 @@ if command == "curl":
         sys.exit(22)
     libraries = json.loads(os.environ["TEST_LIBRARIES"])
     glibc = os.environ["TEST_GLIBC"]
-    filenames = [f"{libraries[plugin]}-{arch}-glibc{glibc}.so"
+    filenames = [f"{library}-{arch}-glibc{glibc}.so" for library in libraries[plugin]
                  for arch in ("amd64", "arm64", "armv7")]
     def payload(filename):
         return f"{plugin}:{version}:{filename}\n".encode()
@@ -181,17 +182,17 @@ class SPOAPluginPreparationTests(unittest.TestCase):
 
     def assert_all_verified(self, result, calls, staged, expected_identities):
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("verified 24 plugin .so files", result.stdout)
+        self.assertIn("verified 27 plugin .so files", result.stdout)
         self.assertEqual(set(staged), {f"plugins/{arch}/{name}.so"
-                                       for arch in ARCHES for name in LIBRARIES.values()})
+                                       for arch in ARCHES for name in LIBRARY_PROJECTS})
         verifications = commands(calls, "cosign", "verify-blob")
-        self.assertEqual(len(verifications), len(ARCHES) * len(LIBRARIES) * len(expected_identities))
+        self.assertEqual(len(verifications), len(ARCHES) * len(LIBRARY_PROJECTS) * len(expected_identities))
         for index, call in enumerate(verifications):
             arguments = call["args"]
             with self.subTest(target=arguments[1]):
                 self.assertNotIn("--certificate-identity-regexp", arguments)
                 bundle = Path(arguments[arguments.index("--bundle") + 1]).name
-                plugin = next(name for name, library in LIBRARIES.items() if bundle.startswith(library + "-"))
+                plugin = LIBRARY_PROJECTS[bundle.split("-", 1)[0]]
                 identity, issuer = expected_identities[index % len(expected_identities)](plugin, self.pin(plugin))
                 self.assertEqual(arguments[arguments.index("--certificate-identity") + 1], identity)
                 self.assertEqual(arguments[arguments.index("--certificate-oidc-issuer") + 1], issuer)
@@ -201,7 +202,7 @@ class SPOAPluginPreparationTests(unittest.TestCase):
         result, calls, staged = self.run_preparation("valid")
         self.assert_all_verified(result, calls, staged, (github_identity, gitlab_identity))
         downloads = [call["args"] for call in commands(calls, "curl")]
-        self.assertEqual(len(downloads), len(LIBRARIES) * (1 + 2 * len(ARCHES)))
+        self.assertEqual(len(downloads), len(LIBRARIES) + 2 * len(ARCHES) * len(LIBRARY_PROJECTS))
         for arguments in downloads:
             plugin, version = release_of(arguments[-1])
             self.assertEqual(version, self.pin(plugin))
@@ -218,7 +219,7 @@ class SPOAPluginPreparationTests(unittest.TestCase):
         planted = self.repo / "planted-tuf"
         result, calls, staged = self.run_preparation("transport-failure", TUF_ROOT=str(planted))
         self.assert_all_verified(result, calls, staged, (github_identity, gitlab_identity))
-        self.assertIn("(56 cached files reused, 0 downloaded)", result.stdout)
+        self.assertIn("(62 cached files reused, 0 downloaded)", result.stdout)
         self.assertEqual(commands(calls, "curl"), [])
         initializations = commands(calls, "cosign", "initialize")
         self.assertEqual(len(initializations), 1)
@@ -227,7 +228,7 @@ class SPOAPluginPreparationTests(unittest.TestCase):
 
     def test_rejects_tampered_cached_files(self):
         self.assert_all_verified(*self.run_preparation("valid"), (github_identity, gitlab_identity))
-        library = self.cached("coraza", f"libcoraza_plugin-arm64-glibc{self.versions['SPOA_PLUGIN_GLIBC_VERSION']}.so")
+        library = self.cached("coraza", f"libcoraza_rust_plugin-arm64-glibc{self.versions['SPOA_PLUGIN_GLIBC_VERSION']}.so")
         sums = self.cached("coraza", "SHA256SUMS")
         original = library.read_bytes(), sums.read_text()
         library.write_bytes(b"tampered")
@@ -267,13 +268,13 @@ class SPOAPluginPreparationTests(unittest.TestCase):
         result, calls, staged = self.run_preparation("tuf-flaky")
         self.assertEqual(len(commands(calls, "cosign", "initialize")), 2)
         verifications = commands(calls, "cosign", "verify-blob")
-        self.assertEqual(len(verifications), len(ARCHES) * len(LIBRARIES) * 2 + 1)
+        self.assertEqual(len(verifications), len(ARCHES) * len(LIBRARY_PROJECTS) * 2 + 1)
         retried = [index for index in range(len(verifications) - 1)
                    if verifications[index]["args"] == verifications[index + 1]["args"]]
         self.assertEqual(len(retried), 1)
         self.assertNotIn("--trusted-root", verifications[retried[0]]["args"])
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(staged), len(ARCHES) * len(LIBRARIES))
+        self.assertEqual(len(staged), len(ARCHES) * len(LIBRARY_PROJECTS))
 
     def test_rejects_untrusted_or_wrong_version_signature(self):
         for mode in ("wrong-tag", "wrong-project", "wrong-issuer", "invalid-signature"):
