@@ -54,7 +54,7 @@ The image is published at `ghcr.io/haproxy-haptic/haptic/spoa-hub:<HAPTIC versio
 | --------------- | --------------------------------------- |
 | Hub               | `v0.13.0`                     |
 | `api-gateway`    | `v0.1.0`      |
-| `coraza`          | `v0.12.0-rc.1`           |
+| `coraza`          | `v0.12.0-rc.2`           |
 | `external-auth`   | `v0.6.0`    |
 | `fingerprinting`  | `v0.3.0`   |
 | `maxmind`         | `v0.4.0`          |
@@ -101,8 +101,8 @@ spoaHub:
 Both engines use the chart's WAF policy catalog and embedded OWASP Core Rule
 Set. The HAProxy sidecar inspects requests and the controller validates policy
 changes with the selected engine. Changing it rolls the affected pods.
-Set `engine: go` to switch back. Use Go for policies that write
-[Coraza audit logs](waf-tuning.md#last-resort-the-coraza-audit-log).
+Set `engine: go` to switch back. Both engines support the
+[JSON audit log configuration](waf-tuning.md#last-resort-the-coraza-audit-log).
 
 ## Update the WAF rule set
 

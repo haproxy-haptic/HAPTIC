@@ -191,7 +191,7 @@ Route this access log to a restricted destination through `accessLog.targets`.
 
 ## Last resort: the Coraza audit log
 
-This audit writer requires `spoaHub.plugins.coraza.engine: go`. Both engines support connector rule-match logging.
+Both WAF engines support the serial JSON configuration below. Use the Go engine for native-format or concurrent audit logs.
 
 When you need the full transaction — every matched rule with its target and the request metadata together — enable Coraza's own audit engine through the trusted policy's `secLang`. A self-service catalog can't: ask the administrator to adopt the policy, or to enable the log in the shared directives.
 
@@ -209,7 +209,7 @@ my-policy:
     SecAuditLogFormat JSON
 ```
 
-Records land on the spoa-hub container's stdout as JSON, one per request that matched a rule:
+The spoa-hub container writes one JSON record for each transaction selected by `RelevantOnly`. The status filter uses the interruption status, including the status a rule would return in detection-only mode.
 
 ```console
 kubectl logs -n haptic deployment/haptic-haproxy -c spoa-hub | grep '"transaction"'
