@@ -201,32 +201,12 @@ type Component struct {
 	endpointAuthorities    map[podAuthorityKey]podAuthority
 	endpointAuthoritiesSet bool
 
-	// deployedPending is every deployed render still awaiting publication, in
-	// arrival order and deduplicated by content checksum.
-	//
-	// A size-1 channel with latest-wins coalescing was wrong here, unlike for
-	// the validation path: `status.deployedToPods[].checksum` is written by an
-	// independent path, so a dropped deployed checksum leaves the CR
-	// advertising a config that `spec.content` never carried — a checksum no
-	// reader, and no watcher, can resolve. Measured on a real run: 1 checksum
-	// in 31 dropped.
-	//
-	// What a reader can observe is the bound: a checksum only needs to reach
-	// `spec` while some pod is still reported at it. pruneSupersededDeployed
-	// therefore drops a queued entry once the fleet has demonstrably moved
-	// past it, which caps the queue at the number of distinct checksums live
-	// across the fleet rather than at the deploy rate. Each entry holds a full
-	// rendered config, and the drain is one entry per configPublishInterval,
-	// so without that prune the runtime-raw lane — which skips
-	// minDeploymentInterval by design — grows this without bound under
-	// endpoint churn. Protected by deployedPendingMu.
+	// Readers resolve status.deployedToPods checksums through spec, so distinct
+	// deployed outputs stay queued in arrival order until published or superseded.
 	deployedPending   []*publishWorkItem
 	deployedPendingMu sync.Mutex
 
-	// deployedChecksumByPod is the checksum each pod last reported running,
-	// fed by ConfigAppliedToPodEvent — the same events that write
-	// status.deployedToPods, so it mirrors exactly what a reader can see.
-	// Protected by deployedPendingMu, which also guards the queue it prunes.
+	// Pod reports and queue pruning share deployedPendingMu.
 	deployedChecksumByPod map[podAuthorityKey]string
 	deployedTrigger       chan struct{} // Wakes publishWorker; cap 1, same as statusWorkTrigger
 
