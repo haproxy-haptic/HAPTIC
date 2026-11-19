@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"sync/atomic"
 
+	iradix "github.com/hashicorp/go-immutable-radix/v2"
+
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/indexer"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores"
 )
@@ -182,6 +184,26 @@ func (r *revisionState) updateKeyVersions(sequence uint64, oldKeys, newKeys []st
 		}
 		r.keyVersions[encoded] = sequence
 	}
+}
+
+func (r *revisionState) updatedKeyVersionRoot(current *iradix.Tree[uint64], keySets [][]string) *iradix.Tree[uint64] {
+	txn := current.Txn()
+	seenPrefixes := map[string]struct{}{}
+	for _, keys := range keySets {
+		for count := 1; count <= len(keys); count++ {
+			encoded := indexer.EncodeKey(keys[:count])
+			if _, seen := seenPrefixes[encoded]; seen {
+				continue
+			}
+			seenPrefixes[encoded] = struct{}{}
+			if version, exists := r.keyVersions[encoded]; exists {
+				txn.Insert([]byte(encoded), version)
+			} else {
+				txn.Delete([]byte(encoded))
+			}
+		}
+	}
+	return txn.Commit()
 }
 
 func (r *revisionState) appendChange(change *stores.RevisionChange) {
