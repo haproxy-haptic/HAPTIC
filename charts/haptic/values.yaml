@@ -1275,9 +1275,8 @@ controller:
           # WAF blocks or only detects, is left alone.
           #
           # The URL must serve a gzip-compressed tar of a CRS release. HAPTIC
-          # writes each `.conf` to general storage prefixed `crs-`, and each
-          # `.data` under its exact upstream name — CRS rules reference those by
-          # bare name via @pmFromFile, so they cannot be renamed.
+          # loads the release setup before the .conf files in rules/ and
+          # keeps .data filenames for rules that use @pmFromFile.
           #
           # If the ruleset cannot be obtained, HAPTIC falls back in order:
           # the last ruleset deployed to the fleet, then the plugin's embedded

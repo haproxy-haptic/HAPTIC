@@ -67,6 +67,10 @@ validationTests:
         target: file:spoa-hub-config.toml
         pattern: 'Include \S*/general/crs-\*\.conf'
         description: The deployed ruleset is included, not the embedded one
+      - type: contains
+        target: file:spoa-hub-config.toml
+        pattern: '(?s)Include @crs-setup\.conf\.example.*Include \S*/general/crs-\*\.conf'
+        description: Rules from an older controller without a saved setup retain the embedded setup
       - type: not_contains
         target: file:spoa-hub-config.toml
         pattern: 'Include \S*//'
@@ -87,6 +91,40 @@ validationTests:
         target: file:lfi-os-files.data
         pattern: '/etc/passwd'
         description: "@pmFromFile data files are kept under their bare upstream names"
+
+  test-spoa-hub-crs-deployed-setup-and-policy-order:
+    _helm_skip_test: '{{ if semverCompare "<3.1" .Values.haproxyVersion }}true{{ else }}false{{ end }}'
+    description: "A deployed CRS keeps its own setup, then per-policy tuning, then the rule glob."
+    extraContext:
+      spoaHub: *crsHub
+      waf:
+        crs: {url: https://example.test/coreruleset.tar.gz}
+        ingressPermissions: {allowPolicySelection: true}
+        policies:
+          defaultPolicy: ""
+          inline:
+            tuned: {allowedMethods: [GET, PATCH], paranoiaLevel: 2, anomalyThreshold: {inbound: 8}}
+          configMapRefs: {__replace__: true}
+    currentFiles:
+      crs-setup.conf.example: 'SecAction "id:900990,phase:1,pass,nolog,setvar:tx.crs_setup_version=4250"'
+      crs-REQUEST-901-INITIALIZATION.conf: 'SecAction "id:901001,phase:1,pass,nolog"'
+    fixtures:
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: shop, annotations: {haproxy-haptic.org/waf-policy: tuned}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: shop.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: shop, port: {number: 80}}}}
+    assertions:
+      - {type: contains, target: 'file:crs-setup.conf.example', pattern: 'tx.crs_setup_version=4250'}
+      - type: contains
+        target: file:spoa-hub-config.toml
+        pattern: '(?s)applications\."policy:tuned"\].*Include \S*/crs-setup\.conf\.example.*tx\.allowed_methods=GET PATCH.*tx\.blocking_paranoia_level=2.*tx\.inbound_anomaly_score_threshold=8.*Include \S*/crs-\*\.conf'
 
   test-spoa-hub-crs-unfetchable-with-nothing-deployed-uses-embedded:
     _helm_skip_test: '{{ if semverCompare "<3.1" .Values.haproxyVersion }}true{{ else }}false{{ end }}'

@@ -248,6 +248,16 @@ tests:
           path: spec.templatingSettings.extraContext.spoaHub.plugins[?(@.name=="coraza")].library
           value: libcoraza_rust_plugin.so
 
+  - it: should stage the fetched CRS setup alongside rules and data for admission
+    template: haproxytemplateconfig.yaml
+    documentSelector:
+      path: kind
+      value: HAProxyTemplateConfig
+    asserts:
+      - contains:
+          path: spec.validators[?(@.name == "spoa-hub")].dataFiles
+          content: general/crs-setup.conf.example
+
   - it: should reject forcing Coraza off while dispatch is default-on
     template: haproxytemplateconfig.yaml
     set:

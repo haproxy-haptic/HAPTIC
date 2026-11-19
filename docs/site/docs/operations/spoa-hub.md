@@ -127,7 +127,9 @@ plaintext fetch could be replaced in transit and the substituted rules would
 still validate.
 
 HAPTIC deploys the fetched rule files alongside your configuration. Your custom
-Coraza directives remain in place; only the bundled CRS includes are replaced.
+Coraza directives remain in place. HAPTIC loads the archive's setup, applies
+per-policy tuning, and then loads the files from the release's `rules/` directory.
+A rule-only archive uses the configured setup.
 
 ### What a refresh costs
 

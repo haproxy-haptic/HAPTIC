@@ -194,6 +194,7 @@ templateSnippets:
         {%- end %}
 
       [plugins.params]
+        {%- var corazaBase = "" %}
         {%- var corazaDirectives = "" %}
         {%- var corazaRuleSets = map[string]bool{} %}
         {%- if pName == "coraza" %}
@@ -206,10 +207,10 @@ templateSnippets:
               on another Ingress's traffic) must move the shared rules
               into the chart-level `spoaHub.plugins.coraza.directives`
               values key. -#}
-          {%- corazaDirectives = p | dig_string("", "directives") %}
+          {%- corazaBase = p | dig_string("", "directives") %}
           {#- Substitutes the embedded-CRS includes when extraContext.waf.crs.url
               is set; returns the directives unchanged otherwise. -#}
-          {%- corazaDirectives = CrsDirectives(corazaDirectives) %}
+          {%- corazaDirectives = CrsDirectives(corazaBase) %}
           {%- var corazaDefaultWaf = CorazaDefaultWafReachable() != "" %}
           {%- if corazaDefaultWaf %}
             {%- corazaRuleSets[CorazaRuleSetKey(corazaDirectives, "")] = true %}
@@ -254,9 +255,9 @@ templateSnippets:
             {%- var appBase = corazaDirectives | trimSpace() %}
             {%- var setupDirectives = a | dig_string("", "setupDirectives") %}
             {%- if setupDirectives != "" %}
-              {%- var parts = split(appBase, "Include @owasp_crs") %}
+              {%- var parts = split(corazaBase, "Include @owasp_crs") %}
               {%- if len(parts) > 1 %}
-                {%- appBase = parts[0] + trimSpace(setupDirectives) + "\nInclude @owasp_crs" + join(parts[1:], "Include @owasp_crs") %}
+                {%- appBase = CrsDirectives(parts[0] + trimSpace(setupDirectives) + "\nInclude @owasp_crs" + join(parts[1:], "Include @owasp_crs")) | trimSpace() %}
               {%- end %}
             {%- end %}
             {%- corazaRuleSets[CorazaRuleSetKey(appBase + "\n" + a["snippet"].(string), requestBodyMaxBytes)] = true %}
