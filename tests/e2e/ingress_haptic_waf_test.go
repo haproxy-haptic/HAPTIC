@@ -12,6 +12,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -319,7 +320,15 @@ func TestHapticWAFClientPenalty(t *testing.T) {
 					return false, err
 				}
 				for line := range strings.SplitSeq(logs, "\n") {
-					if strings.Contains(line, `"path":"`+marked+`"`) && strings.Contains(line, `"waf_client_penalty":"detect"`) {
+					start := strings.Index(line, "{")
+					if start < 0 {
+						continue
+					}
+					var rec map[string]any
+					if json.Unmarshal([]byte(line[start:]), &rec) != nil {
+						continue
+					}
+					if rec["path"] == marked && rec["waf_client_penalty"] == "detect" {
 						return true, nil
 					}
 				}

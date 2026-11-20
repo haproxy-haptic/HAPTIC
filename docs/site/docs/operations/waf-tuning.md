@@ -273,6 +273,8 @@ client.
 !!! note
     - A pod learns of a score added on another pod within the rate-limit
       plugin's sync interval, 200 ms by default.
+    - Routes without a named policy use the default rule set and share one
+      score per client.
     - Routes whose WAF policy is in `detect` mode still add to the score but are
       never refused.
     - Clients on a route's rate-limit allowlist are exempt.
