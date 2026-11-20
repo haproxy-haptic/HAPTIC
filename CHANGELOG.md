@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Pre-rollout preparation updates the controller and its existing validators sidecar together, preventing mixed-version admission checks and a second rollout for image-only upgrades ([#724](https://github.com/haproxy-haptic/HAPTIC/issues/724)).
+- The SPOA hub keeps serial WAF calls on one worker under sustained single-CPU load and reuses metric keys. The Rust WAF reduces buffer growth while evaluating rules.
 - The bundled SPOA hub uses jemalloc and starts blocking workers on demand. The Rust WAF also does less work per request when evaluating CRS rules.
 - The access log field `waf_rules_hit` now excludes CRS bookkeeping matches by default, matching the per-rule WAF metric on both engines.
 - The bundled Rust WAF reuses compiled expressions across policy validations and matches Go Coraza on word boundaries, XML namespace attributes, and malformed XML and multipart bodies.
