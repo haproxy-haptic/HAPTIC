@@ -206,13 +206,10 @@ func (v *ValidationTestsValidator) validate(ctx context.Context, cfg *coreconfig
 	return verdict
 }
 
-// RunValidationTestsSync resolves typed schemas, builds a throwaway engine, and
-// runs the config's embedded validationTests via the shared configtest helper
-// used by the live gate. It is the
-// shared core behind both the live scatter-gather gate (the validator's
-// HandleRequest) and the startup load gate (controller.runIteration) — so a
-// config's tests are bootstrapped, compiled, and executed identically whether
-// they run on a live change or at controller load.
+// RunValidationTestsSync starts a fresh run of the complete embedded fixture
+// suite for synchronous config validation, including the startup load gate.
+// It shares schema bootstrap, engine compilation, and test execution with the
+// live validator. Only the live validator retains progress across retries.
 //
 // A config with no validationTests is a zero-cost pass. A runTimeout <= 0 uses
 // the default suite budget (validationTestsRunTimeout). Any setup error is
