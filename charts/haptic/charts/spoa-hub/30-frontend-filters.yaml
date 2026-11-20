@@ -58,6 +58,25 @@ templateSnippets:
       http-after-response set-header X-RateLimit-Reset %[var(txn.hub.rate_limit.reset)] if { var(txn.rl_limit) -m found } !{ var(txn.rl_allow) -m bool } { var(txn.rl_keyspec) -m str {{ keySpec }} } { var(txn.hub.rate_limit.accounted) -m bool }{{ extraCond }}
       {% end %}
 
+  # WAF client penalty (extraContext.waf.clientPenalty): anomaly scores add up
+  # per client IP and WAF application in the rate-limit plugin's shared store
+  # (mode=meter); a client at scoreLimit is refused before the WAF runs. See
+  # docs/site/docs/operations/waf-tuning.md#repeat-offenders.
+  util-waf-client-penalty:
+    template: |
+      {#- Off without both plugins: a validationTest brings its own messages
+          list, so an enabled penalty must not fail its render. The Helm guard
+          rejects the setting without rateLimit.shared.enabled. -#}
+      {% macro WafClientPenaltyMode(context any) string %}
+        {%- var messages = toStringSlice(context | dig("spoaHub", "haproxy", "messages") | fallback([]any{})) %}
+        {%- var mode = context | dig_string("off", "waf", "clientPenalty", "mode") %}
+        {%- if mode != "off" && mode != "detect" && mode != "deny" %}
+          {%- fail("extraContext.waf.clientPenalty.mode must be one of: off, detect, deny.") %}
+        {%- end %}
+        {%- if !(messages contains "check-request") || !(messages contains "check-ratelimit") %}{%- mode = "off" %}{%- end %}
+        {{- mode -}}
+      {% end %}
+
   # Body-inspecting features pass req.body to SPOE, and HAProxy only exposes
   # buffered bytes — so the buffer has to hold the whole body. The size is a knob
   # here (extraContext.requestBodyInspection.haproxyBuffer.sizeBytes) but the
@@ -79,6 +98,7 @@ templateSnippets:
 
   log-fields-300-waf:
     template: |-
+      {%- import "util-waf-client-penalty" for WafClientPenaltyMode -%}
       {#
         WAF verdict fields.
 
@@ -121,6 +141,9 @@ templateSnippets:
       %(waf_rules_hit)[var(txn.hub.coraza.rules_hit)]
       %(waf_matched_var)[var(txn.hub.coraza.matched_var)]
       %(waf_rule_ids)[var(txn.hub.coraza.rule_ids)]
+      {%- if WafClientPenaltyMode(extraContext) != "off" %}
+      %(waf_client_penalty)[var(txn.waf_client_penalty)]
+      {%- end %}
       {%- end %}
 
   log-fields-310-rate-limit:
@@ -173,10 +196,15 @@ templateSnippets:
 
   frontend-filters-100-spoa-hub:
     template: |-
+      {%- import "util-waf-client-penalty" for WafClientPenaltyMode -%}
       {%- if (render "util-spoa-hub-enabled") == "true" %}
       {%- var messages = toStringSlice(extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{})) %}
       {%- for _, msg := range messages %}
       filter spoe engine spoa-hub-{{ msg }} config {{ pathResolver.GetPath("spoe.conf", "file") }}
+      {%- end %}
+      {%- if WafClientPenaltyMode(extraContext) != "off" %}
+      filter spoe engine spoa-hub-waf-penalty-read config {{ pathResolver.GetPath("spoe.conf", "file") }}
+      filter spoe engine spoa-hub-waf-penalty-charge config {{ pathResolver.GetPath("spoe.conf", "file") }}
       {%- end %}
       {{- on_own_lines(render_glob "frontend-spoe-filters-*") }}
       {%- end %}
@@ -272,6 +300,7 @@ templateSnippets:
   frontend-spoe-filters-050-coraza:
     template: |
       {%- import "util-refusal" for Refusal -%}
+      {%- import "util-waf-client-penalty" for WafClientPenaltyMode -%}
       {%- var messagesAny = extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}) %}
       {%- var messages = toStringSlice(messagesAny) %}
       {%- if messages contains "check-request" %}
@@ -287,6 +316,7 @@ templateSnippets:
       {%- if !regex_search(corazaBodyWaitTimeout, "^[1-9][0-9]*(us|ms|s|m|h|d)?$") %}
         {%- fail("extraContext.waf.policies.requestBody.waitTimeout must be a positive HAProxy duration.") %}
       {%- end %}
+      {%- var penaltyMode = WafClientPenaltyMode(extraContext) %}
       {#- Emitted only while a route has a WAF map entry, or dispatch is
           default-on; the first route reloads once, as does removing the last. #}
       {%- var wafRoutes = strip((render_glob "map-coraza-app-*") + (render_glob "map-haproxy-ingress-waf-*")) %}
@@ -310,6 +340,22 @@ templateSnippets:
       {%- end %}
       http-request set-var(txn.coraza_body_mode) str(buffered) if { var(txn.coraza_active) -m bool } { var(txn.coraza_body_policy) -m str buffered } { method POST PUT PATCH DELETE }
       http-request set-var(txn.coraza_detect_only) bool(true) if { var(txn.coraza_active) -m bool } { var(txn.coraza_mode) -m str detect }
+      {%- if penaltyMode != "off" %}
+      {# Before the body wait and the dispatch, so a penalised client costs no
+          WAF work. A missing verdict allows: see "Runtime dependency failure"
+          in charts/CLAUDE.md. #}
+      http-request set-var-fmt(txn.waf_client_key) waf-penalty|%[src]|%[var(txn.coraza_app)] if { var(txn.coraza_active) -m bool } !{ var(txn.rl_allow) -m bool }
+      http-request send-spoe-group spoa-hub-waf-penalty-read waf-penalty-read-group if { var(txn.waf_client_key) -m found }
+      http-request set-var(txn.rate_limit_degraded) str(1) if { var(txn.waf_client_key) -m found } !{ var(txn.hubwpr.rate_limit.allowed) -m found }
+      http-request set-var(txn.rate_limit_degraded) str(1) if { var(txn.waf_client_key) -m found } { var(txn.hubwpr.rate_limit.degraded) -m bool }
+      http-request set-var(txn.waf_client_penalty) str(detect) if { var(txn.hubwpr.rate_limit.allowed) -m found } !{ var(txn.hubwpr.rate_limit.allowed) -m bool }
+      {%- if penaltyMode == "deny" %}
+      {# A detect-mode route never blocks live traffic, so it only records. #}
+      http-request set-var(txn.waf_client_penalty) str(deny) if { var(txn.waf_client_penalty) -m found } !{ var(txn.coraza_detect_only) -m bool }
+      http-request set-var(txn.denied_by) str(waf_client_penalty) if { var(txn.waf_client_penalty) -m str deny }
+      {{- Refusal(`deny deny_status 429 hdr Retry-After %[var(txn.hubwpr.rate_limit.retry_after)]`, `{ var(txn.waf_client_penalty) -m str deny }`) }}
+      {%- end %}
+      {%- end %}
       {# Buffered profiles inspect a bounded complete body. A chunked/streaming
           request (Transfer-Encoding, no Content-Length) cannot prove
           completeness from req.body and is rejected 411 — but a request with
@@ -369,6 +415,12 @@ templateSnippets:
       http-request set-var(txn.coraza_body_complete) bool(true) if { var(txn.coraza_body_mode) -m str buffered } { var(txn.coraza_detect_only) -m bool } { req.hdr(Content-Length) -m found }
       http-request set-var(txn.coraza_body_complete) bool(true) if { var(txn.coraza_body_mode) -m str buffered } !{ var(txn.coraza_detect_only) -m bool }
       http-request send-spoe-group spoa-hub-check-request check-request-group if { var(txn.coraza_active) -m bool }
+      {%- if penaltyMode != "off" %}
+      {# Charged before the verdict rules below: a denied request ends there.
+          The plugin reads cost as a string. #}
+      http-request set-var-fmt(txn.waf_client_cost) %[var(txn.hub.coraza.anomaly_score)] if { var(txn.waf_client_key) -m found } { var(txn.hub.coraza.anomaly_score) -m int gt 0 }
+      http-request send-spoe-group spoa-hub-waf-penalty-charge waf-penalty-charge-group if { var(txn.waf_client_cost) -m found }
+      {%- end %}
       {# Hub admission and plugin engine failures ALLOW the request and record
           it. A WAF reduces risk; it does not establish identity, so a blip in
           our own sidecar must not 503 callers who did nothing wrong — see

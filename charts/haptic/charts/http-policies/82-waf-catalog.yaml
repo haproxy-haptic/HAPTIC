@@ -22,7 +22,7 @@ templateSnippets:
           var allowedWafSettings = map[string]bool{
             "dispatch": true, "ingressPermissions": true,
             "customRules": true, "policies": true, "crs": true,
-            "failClosed": true,
+            "failClosed": true, "clientPenalty": true,
           }
           for _, field := range keys(waf) {
             if !allowedWafSettings[field] {

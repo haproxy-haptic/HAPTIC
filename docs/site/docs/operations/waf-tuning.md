@@ -228,3 +228,54 @@ After checking the policy against representative legitimate traffic, set
 `plugin_coraza_denials_total` and investigate unexpected blocks through the
 access log's `waf_rule_id` and `denied_by` fields. Disable any temporary
 matched-value or audit logging after the investigation.
+
+## Throttle repeat offenders {#repeat-offenders}
+
+A scanner sends many requests, and most of them score below the blocking
+threshold or miss the rules entirely. The client penalty adds up each client's
+anomaly scores across all HAProxy pods and refuses the client for a while once
+the total crosses a limit, so the WAF doesn't have to catch every single probe.
+
+The scores live in the shared rate-limit store, so the penalty needs
+[shared rate limiting](spoa-hub.md):
+
+```yaml
+rateLimit:
+  shared:
+    enabled: true
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        waf:
+          clientPenalty:
+            mode: detect    # off, detect, or deny
+            scoreLimit: 50
+            window: 1m
+```
+
+Every inspected request adds its `waf_score` to a score for the client IP and
+WAF policy. The score drains continuously at `scoreLimit` per `window`. While
+the score stays at or above `scoreLimit`, `deny` answers every request from that client
+to routes using that policy with `429` before the WAF runs, and the access log
+records `denied_by: waf_client_penalty`. A penalty lasts at most one `window`
+after the client's last scored request.
+
+Start with `detect`. It refuses nothing and sets the `waf_client_penalty`
+access-log field to `detect` on requests from a client over the limit;
+with `deny` the field reads `deny` on refused requests.
+
+Raise `scoreLimit` until legitimate clients no longer show
+`waf_client_penalty`, then switch to `deny`. Size the limit for shared
+addresses: all users behind one shared gateway or forward proxy count as one
+client.
+
+!!! note
+    - A pod learns of a score added on another pod within the rate-limit
+      plugin's sync interval, 200 ms by default.
+    - Routes whose WAF policy is in `detect` mode still add to the score but are
+      never refused.
+    - Clients on a route's rate-limit allowlist are exempt.
+    - Requests the WAF couldn't inspect add nothing.
+    - When the store can't answer, requests are allowed and the access log
+      records `rate_limit_degraded`.
