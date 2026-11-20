@@ -24,13 +24,14 @@ const FieldManager = "haptic-prepare-upgrade"
 // IdentityReader reads the running binary, rather than trusting its image tag.
 type IdentityReader func(context.Context, *corev1.Pod) (buildinfo.Identity, error)
 
-// Plan changes one container while preserving the Deployment's rollout policy.
+// Plan prepares controller and validator images while preserving the Deployment's rollout policy.
 type Plan struct {
 	Client       kubernetes.Interface
 	Deployment   *appsv1.Deployment
 	Container    string
 	Image        string
 	PullPolicy   corev1.PullPolicy
+	Validator    *corev1.Container
 	Identity     buildinfo.Identity
 	ReadIdentity IdentityReader
 	owners       map[types.UID]bool
@@ -51,7 +52,7 @@ func (p *Plan) Run(ctx context.Context) error {
 	if p.Deployment.Spec.Paused && replicas(p.Deployment) > 0 {
 		return fmt.Errorf("controller Deployment %s is paused; resume it before preparing the upgrade", p.Deployment.Name)
 	}
-	if current.Image == p.Image && current.ImagePullPolicy == p.PullPolicy {
+	if p.imagesMatch(current, &p.Deployment.Spec.Template.Spec) {
 		// A retried preparation finds its own patch applied but possibly still owned.
 		if err := p.releaseOwnership(ctx); err != nil {
 			return err
@@ -61,9 +62,13 @@ func (p *Plan) Run(ctx context.Context) error {
 	if replicas(p.Deployment) == 0 {
 		return p.wait(ctx, false)
 	}
+	images := map[string]any{"containers": []map[string]any{{"name": p.Container, "image": p.Image, "imagePullPolicy": p.PullPolicy}}}
+	if v := p.Validator; v != nil {
+		images["initContainers"] = []map[string]any{{"name": v.Name, "image": v.Image, "imagePullPolicy": v.ImagePullPolicy}}
+	}
 	patch, err := json.Marshal(map[string]any{
 		"metadata": map[string]any{"uid": p.Deployment.UID, "resourceVersion": p.Deployment.ResourceVersion},
-		"spec":     map[string]any{"template": map[string]any{"spec": map[string]any{"containers": []map[string]any{{"name": p.Container, "image": p.Image, "imagePullPolicy": p.PullPolicy}}}}},
+		"spec":     map[string]any{"template": map[string]any{"spec": images}},
 	})
 	if err != nil {
 		return err
@@ -140,8 +145,8 @@ func (p *Plan) wait(ctx context.Context, unchangedImage bool) error {
 			return false, errors.New("controller Deployment changed during upgrade preparation; retry against its current specification")
 		}
 		container := Container(deployment.Spec.Template.Spec.Containers, p.Container)
-		if container == nil || (replicas(deployment) > 0 && (container.Image != p.Image || container.ImagePullPolicy != p.PullPolicy)) {
-			return false, errors.New("controller image changed during upgrade preparation")
+		if container == nil || (replicas(deployment) > 0 && !p.imagesMatch(container, &deployment.Spec.Template.Spec)) {
+			return false, errors.New("controller Deployment images changed during upgrade preparation")
 		}
 		ready, err := p.podsReady(ctx, deployment, owners, unchangedImage)
 		if err != nil || !ready {
@@ -196,13 +201,25 @@ func (p *Plan) podReady(ctx context.Context, pod *corev1.Pod, unchangedImage boo
 		return false, nil
 	}
 	container := Container(pod.Spec.Containers, p.Container)
-	if container == nil || container.Image != p.Image || !podReady(pod) {
+	if container == nil || container.Image != p.Image || !p.validatorMatches(&pod.Spec) || !podReady(pod) {
 		return false, nil
 	}
 	if err := p.requireIdentity(ctx, pod, unchangedImage); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+func (p *Plan) imagesMatch(controller *corev1.Container, spec *corev1.PodSpec) bool {
+	return controller.Image == p.Image && controller.ImagePullPolicy == p.PullPolicy && p.validatorMatches(spec)
+}
+
+func (p *Plan) validatorMatches(spec *corev1.PodSpec) bool {
+	if p.Validator == nil {
+		return true
+	}
+	current := Container(spec.InitContainers, p.Validator.Name)
+	return current != nil && current.Image == p.Validator.Image && current.ImagePullPolicy == p.Validator.ImagePullPolicy
 }
 
 func podReady(pod *corev1.Pod) bool {

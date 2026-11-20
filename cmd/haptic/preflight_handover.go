@@ -85,6 +85,9 @@ func prepareExistingController(ctx context.Context, current, target *appsv1.Depl
 	plan := &rollout.Plan{Client: schemas.live.clientset, Deployment: current, Container: controllerContainer,
 		Image: nextContainer.Image, PullPolicy: nextContainer.ImagePullPolicy, Identity: identity,
 		ReadIdentity: rollout.ReadIdentity(controllerContainer)}
+	if validatorSidecar(current) != nil {
+		plan.Validator = validatorSidecar(target)
+	}
 	if err := plan.VerifyUnchangedImage(ctx); err != nil {
 		return err
 	}
@@ -113,6 +116,14 @@ func prepareExistingController(ctx context.Context, current, target *appsv1.Depl
 	}
 	fmt.Fprintln(os.Stderr, "✓ every existing controller runs the validated image; templates can now be applied")
 	return nil
+}
+
+func validatorSidecar(deployment *appsv1.Deployment) *corev1.Container {
+	v := rollout.Container(deployment.Spec.Template.Spec.InitContainers, "validators")
+	if v == nil || v.RestartPolicy == nil || *v.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		return nil
+	}
+	return v
 }
 
 func controllerConfigName(container *corev1.Container) (string, error) {
