@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Pre-rollout preparation updates the controller and its existing validators sidecar together, preventing mixed-version admission checks and a second rollout for image-only upgrades ([#724](https://github.com/haproxy-haptic/HAPTIC/issues/724)).
 - The bundled Rust WAF reuses compiled expressions across policy validations and matches Go Coraza on word boundaries, XML namespace attributes, and malformed XML and multipart bodies.
 - The hosted playground resumes stalled engine downloads using byte ranges and verifies the reconstructed engine before rendering ([#713](https://github.com/haproxy-haptic/HAPTIC/issues/713)).
 - The agent no longer echoes a rejected map key or value in its error message.

@@ -281,3 +281,46 @@ func TestRetriedPreparationWaitsForItsOwnInterruptedRollout(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []metav1.ManagedFieldsEntry{{Manager: "helm"}}, deployment.ManagedFields)
 }
+
+func TestPlanPreparesValidatorImage(t *testing.T) {
+	for _, controllerImage := range []string{"candidate", "new-controller"} {
+		t.Run(controllerImage, func(t *testing.T) {
+			plan, client, pod := rolloutFixture()
+			pod = pod.DeepCopy()
+			old := corev1.Container{Name: "validators", Image: "old-hub", ImagePullPolicy: corev1.PullIfNotPresent}
+			setup := corev1.Container{Name: "setup", Image: "setup-image"}
+			old.Args = []string{"serve"}
+			plan.Deployment.Spec.Template.Spec.InitContainers = []corev1.Container{setup, old}
+			_, err := client.AppsV1().Deployments("test").Update(t.Context(), plan.Deployment, metav1.UpdateOptions{})
+			require.NoError(t, err)
+			plan.Validator = &corev1.Container{Name: old.Name, Image: "new-hub", ImagePullPolicy: corev1.PullAlways}
+			plan.Image = controllerImage
+			pod.Spec.Containers[0].Image = controllerImage
+			pod.Spec.InitContainers = []corev1.Container{old}
+			ready, err := plan.podReady(t.Context(), pod, false)
+			require.NoError(t, err)
+			assert.False(t, ready)
+			pod.Spec.InitContainers[0] = *plan.Validator
+			ready, err = plan.podReady(t.Context(), pod, false)
+			require.NoError(t, err)
+			assert.True(t, ready)
+			_, err = client.CoreV1().Pods("test").Update(t.Context(), pod, metav1.UpdateOptions{})
+			require.NoError(t, err)
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			require.NoError(t, plan.Run(ctx))
+			expected := old.DeepCopy()
+			expected.Image, expected.ImagePullPolicy = plan.Validator.Image, plan.Validator.ImagePullPolicy
+			assert.Equal(t, []corev1.Container{setup, *expected}, plan.Deployment.Spec.Template.Spec.InitContainers)
+			assert.Equal(t, controllerImage, plan.Deployment.Spec.Template.Spec.Containers[0].Image)
+			require.NoError(t, plan.Run(ctx), "retry after successful preparation")
+			patches := 0
+			for _, action := range client.Actions() {
+				if action.Matches("patch", "deployments") {
+					patches++
+				}
+			}
+			assert.Equal(t, 1, patches)
+		})
+	}
+}

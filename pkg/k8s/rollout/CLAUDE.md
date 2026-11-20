@@ -1,7 +1,7 @@
 # Deployment rollout preparation
 
-`rollout` is an operational Kubernetes utility. It changes one named container
-image with a Deployment UID/resourceVersion precondition, preserves the chosen
+`rollout` is an operational Kubernetes utility. It changes the controller and optional validators sidecar
+images together with a Deployment UID/resourceVersion precondition, preserves the chosen
 strategy, and waits for actual binary identity and complete old-Pod termination.
 It does not inspect watched routing resources or accept configuration verdicts.
 

@@ -21,8 +21,10 @@ runtime artifacts, making Helm pruning unsafe.
 
 The existing preflight hook validates the complete incoming configuration first.
 Its preparation phase reads the existing Deployment's config name and assembles
-that live set. If the candidate binary can validate it, the hook patches only the
-controller image and pull policy, with Deployment UID/resourceVersion preconditions.
+that live set. If the candidate binary can validate it, the hook patches the controller
+image and pull policy together with those of the validators native sidecar when both releases include it. The patch uses Deployment
+UID/resourceVersion preconditions. Sidecar installation and removal require the chart
+to apply the corresponding configuration and volumes.
 The Deployment's rollout strategy remains the operator's choice.
 Images retain `/usr/local/bin/haptic-controller` as an alias for the command
 used by shipped 0.1 Deployments; preparation leaves their command and arguments intact.
