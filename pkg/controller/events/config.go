@@ -84,6 +84,9 @@ func (e *ConfigParsedEvent) EventType() string { return EventTypeConfigParsed }
 type ConfigValidationRequest struct {
 	reqID string
 
+	// CandidateGeneration stays the same across retries of one live candidate; zero requests a fresh run.
+	CandidateGeneration uint64
+
 	// Config contains the configuration to validate.
 	Config any
 

@@ -653,6 +653,7 @@ func (h *ConfigChangeHandler) validateCandidate(ctx context.Context, candidate *
 
 	// Create validation request
 	req := events.NewConfigValidationRequest(configToValidate, event.Version)
+	req.CandidateGeneration = candidate.generation
 
 	// Send request and wait for responses using scatter-gather.
 	// The structural / template-syntax / JSONPath validators are sub-second even

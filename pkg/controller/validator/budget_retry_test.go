@@ -52,6 +52,7 @@ func TestValidationBudgetRetriesUnchangedCandidateBeforeReload(t *testing.T) {
 	basic := validator.NewBasicValidator(bus, logger)
 	templates := validator.NewTemplateValidator(bus, logger, bootstrap)
 	jsonpath := validator.NewJSONPathValidator(bus, logger)
+	requests := bus.SubscribeTypes("budget-attempts", 2, events.EventTypeConfigValidationRequest)
 	observed := bus.SubscribeTypes("budget-retry-observer", 30,
 		events.EventTypeConfigValidationInconclusive, events.EventTypeConfigInvalid, events.EventTypeConfigValidated)
 	var running sync.WaitGroup
@@ -83,6 +84,17 @@ func TestValidationBudgetRetriesUnchangedCandidateBeforeReload(t *testing.T) {
 	require.True(t, ok, "the same candidate must pass on retry")
 	require.Equal(t, "candidate", validated.Version)
 	require.EqualValues(t, 2, attempts.Load())
+	require.NotZero(t, validated.CandidateGeneration)
+	for range 2 {
+		select {
+		case event := <-requests:
+			request, ok := event.(*events.ConfigValidationRequest)
+			require.True(t, ok)
+			require.Equal(t, validated.CandidateGeneration, request.CandidateGeneration)
+		case <-ctx.Done():
+			t.Fatal("missing validation request")
+		}
+	}
 	select {
 	case reload := <-reloads:
 		require.Equal(t, "candidate", reload.Snapshot.ConfigVersion)

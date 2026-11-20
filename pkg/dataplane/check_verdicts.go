@@ -105,7 +105,7 @@ func (v *CheckVerdicts) key(mainConfig string, auxFiles *AuxiliaryFiles, paths *
 	if entries, err := os.ReadDir(paths.TempDir); err != nil || len(entries) > 0 {
 		return key, false
 	}
-	identity, err := executorIdentity()
+	identity, err := HAProxyExecutorIdentity()
 	if err != nil {
 		return key, false
 	}
