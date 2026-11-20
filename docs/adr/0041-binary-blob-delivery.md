@@ -111,7 +111,7 @@ apply to them.
 
 Blob bytes never go to Kubernetes objects. ADR-0033 checkpoints record the digests
 their configuration references. A controller that starts without a digest it needs,
-or loses its disk, first takes it from an agent that reports it (`GET /v1/blobs`),
+or loses its disk, first takes it from an agent that reports it (`GET /v1/state`, then `GET /v1/blobs/{sha256}`),
 verifying the digest, then falls back to a fresh fetch. While neither works, renders
 keep referencing the deployed digest: the pods keep serving with the file they hold,
 and only new pods wait for it, like any configuration they cannot receive yet.
