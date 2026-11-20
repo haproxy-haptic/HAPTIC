@@ -680,6 +680,15 @@ data:
       ruleExclusions:
         - tags: [attack-sqli, attack-xss]
           excludeTarget: "ARGS:q"
+    grpc-api:
+      enforcement: deny
+      requestBody: {mode: none}
+      crsSettings:
+        allowedRequestContentTypes: [application/grpc]
+      secLang: |
+        Include @owasp_crs/REQUEST-920-PROTOCOL-ENFORCEMENT.conf
+        Include @owasp_crs/REQUEST-949-BLOCKING-EVALUATION.conf
+        SecRule REQUEST_HEADERS:X-Waf-Probe "@streq reject" "id:7700291,phase:1,deny,status:403"
     form-body-inspection:
       description: Form request policy with bounded complete body inspection
       requestBody:

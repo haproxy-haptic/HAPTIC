@@ -208,16 +208,47 @@ and Coraza enforce the effective limit. It must fit within the shared
 
 ### WAF and gRPC streaming
 
-Use `requestBody.mode: none` for gRPC. Method, path, header, and source-IP checks
-still run. Coraza's [body processors](https://coraza.io/docs/reference/body-processing/)
-don't decode protobuf or gRPC messages.
+For native gRPC, select an enforced policy that checks request metadata and
+allows the service's gRPC media type. Add this entry to your policy catalog:
 
-Body inspection waits for the complete request, preventing the backend from
-processing a stream as messages arrive. An enforced client-streaming or
-bidirectional call that exceeds `waf.policies.requestBody.waitTimeout` receives
-`408`. Unary calls still face buffering, size limits, and content-type checks.
-Detect mode skips body-contract rejections and waits only when `Content-Length`
-is present; an unbounded body remains uninspected.
+```yaml
+grpc-api:
+  enforcement: deny
+  requestBody: {mode: none}
+  crsSettings:
+    allowedRequestContentTypes:
+      - application/grpc
+```
+
+Add `application/grpc+proto` if your clients send it. The CRS content-type rule
+can reject a legitimate call with HTTP 403 even when body inspection is off.
+HTTP method, service and method path, header, and source-IP rules still run. Coraza's
+[body processors](https://coraza.io/docs/reference/body-processing/) don't
+decode protobuf. Validate decoded messages and their size in the gRPC service.
+
+For an Ingress with a plaintext gRPC backend, select the policy as follows:
+
+```yaml
+metadata:
+  annotations:
+    haproxy-haptic.org/backend-protocol: grpc
+    haproxy-haptic.org/waf-policy: grpc-api
+    haproxy-haptic.org/request-buffering: "off"
+```
+
+Use `grpcs` for a TLS backend. The last annotation also disables HAPTIC's
+[general request buffering](../libraries/base.md#request-buffering) for clients
+that send `Content-Length`. For a Gateway API `GRPCRoute`, select the same
+catalog entry through its [route policy](../route-policy.md).
+
+Client-streaming and bidirectional calls can keep the request open while the
+server processes individual messages. A proxy waiting for the complete request
+can return HTTP 408 before the backend sees the first message. A bidirectional
+client waiting for its first reply can therefore stall before it sends the
+next message. Unary and server-streaming calls normally finish sending their
+single request message promptly, but a buffered policy still subjects it to the
+body-size, content-type, and time limits. Detect mode skips body-contract
+rejections and waits only when `Content-Length` is present.
 
 Admission rejects body-inspecting policies on routes declared as `grpc`/`grpcs`
 or nginx-compatible `GRPC`/`GRPCS`, including detect policies. An existing
@@ -228,7 +259,6 @@ doesn't trigger this check because HTTP/2 also carries non-gRPC applications.
 Use authentication, source-IP restrictions, and rate limits for gRPC access
 control. `allowed-methods` filters HTTP methods, not gRPC method paths;
 `max-request-body-size` limits an HTTP body, not individual gRPC messages.
-Configure message-size limits in the gRPC application.
 
 ## Require a policy on every Ingress
 
