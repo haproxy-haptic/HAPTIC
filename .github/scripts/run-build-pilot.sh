@@ -20,10 +20,6 @@ docker image inspect "$PILOT_CI_IMAGE" > .pilot/toolchain-image.json
 cache_args=()
 website_args=()
 if [[ "$PILOT_SUITE" == docs ]]; then
-    # The hosted runner has Node and browser dependencies outside the docs image.
-    npm ci --prefix scripts/visual-qa --no-audit --no-fund
-    scripts/visual-qa/node_modules/.bin/playwright install --with-deps --only-shell chromium
-    node --test docs/site/tests/playground-embed.mjs
     website_args+=(--env GH_TOKEN)
 fi
 if [[ -n "${PILOT_GO_CACHE_DIR:-}" ]]; then
@@ -44,6 +40,15 @@ docker run --name haptic-pilot --network host \
     --entrypoint bash "$PILOT_CI_IMAGE" .github/scripts/run-build-suite.sh \
     2>&1 | tee .pilot/test.log
 result=${PIPESTATUS[0]}
+if [[ "$PILOT_SUITE" == docs && "$result" == 0 ]]; then
+    # Use the runner's Node and include browser failures in the docs evidence.
+    {
+        npm ci --prefix scripts/visual-qa --no-audit --no-fund &&
+        scripts/visual-qa/node_modules/.bin/playwright install --with-deps --only-shell chromium &&
+        node --test docs/site/tests/playground-embed.mjs
+    } 2>&1 | tee -a .pilot/test.log
+    result=$?
+fi
 set -e
 elapsed=$(( $(date +%s) - started ))
 printf '{"exit_code":%s,"test_seconds":%s}\n' "$result" "$elapsed" > .pilot/result.json
