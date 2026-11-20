@@ -319,24 +319,29 @@ func TestHapticWAFClientPenalty(t *testing.T) {
 				if err != nil {
 					return false, err
 				}
-				for line := range strings.SplitSeq(logs, "\n") {
-					start := strings.Index(line, "{")
-					if start < 0 {
-						continue
-					}
-					var rec map[string]any
-					if json.Unmarshal([]byte(line[start:]), &rec) != nil {
-						continue
-					}
-					if rec["path"] == marked && rec["waf_client_penalty"] == "detect" {
-						return true, nil
-					}
-				}
-				return false, nil
+				return accessLogHasRecord(logs, func(rec map[string]any) bool {
+					return rec["path"] == marked && rec["waf_client_penalty"] == "detect"
+				}), nil
 			})
 			require.NoError(t, err, "no unscored request was marked after %d scored ones", scoredRequests)
 			return ctx
 		})
 
 	testEnv.Test(t, feature.Feature())
+}
+
+// accessLogHasRecord reports whether any JSON access-log record in logs
+// satisfies want. Lines carry a pod prefix before the record.
+func accessLogHasRecord(logs string, want func(map[string]any) bool) bool {
+	for line := range strings.SplitSeq(logs, "\n") {
+		start := strings.Index(line, "{")
+		if start < 0 {
+			continue
+		}
+		var rec map[string]any
+		if json.Unmarshal([]byte(line[start:]), &rec) == nil && want(rec) {
+			return true
+		}
+	}
+	return false
 }
