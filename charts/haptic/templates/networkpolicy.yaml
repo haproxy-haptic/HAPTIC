@@ -64,6 +64,10 @@ spec:
       ports:
         - port: {{ $controllerPorts.healthz }}
           protocol: TCP
+        {{- if .Values.controller.webhook.enabled }}
+        - port: {{ $controllerPorts.webhook }}
+          protocol: TCP
+        {{- end }}
 
     {{- with $np.egress.additionalRules }}
     # Additional egress rules
@@ -88,6 +92,10 @@ spec:
       ports:
         - port: {{ $controllerPorts.healthz }}
           protocol: TCP
+        {{- if .Values.controller.webhook.enabled }}
+        - port: {{ $controllerPorts.webhook }}
+          protocol: TCP
+        {{- end }}
 
     {{- if $np.ingress.monitoring.enabled }}
     # Allow Prometheus/monitoring to scrape metrics

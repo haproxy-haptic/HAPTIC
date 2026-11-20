@@ -150,6 +150,8 @@ kubectl logs deployment/haptic-controller --namespace haptic --container control
 kubectl logs deployment/haptic-controller --namespace haptic --container my-validator --tail=100
 ```
 
+If a controller's external validator refuses a connection, the controller can send the original admission request to one other Ready controller in the same Helm release. When external validation is slow, the peer can start before the local timeout. Each replica runs the full validation. A conclusive local result takes precedence. Both controllers must present the same current webhook certificate, and the peer must support admission forwarding. During a rolling upgrade or certificate rotation, a peer may temporarily be unavailable. Each controller limits concurrent outgoing peer attempts to four.
+
 If admission returns `503 ServiceUnavailable`, check the validator logs and retry once the sidecar responds. Server-side dry runs also need a fresh verdict for every matching rendered file. An unrelated resource update can render a file that the validator checks.
 
 If the sidecar is repeatedly restarted, inspect its previous logs and pod events

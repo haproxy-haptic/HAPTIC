@@ -17,6 +17,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,12 +28,14 @@ import (
 	"sync"
 	"time"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/introspection"
+	"github.com/haproxy-haptic/HAPTIC/pkg/webhook"
 )
 
 const (
@@ -72,6 +75,7 @@ type siblingHealthMatcher func(status int, components map[string]introspection.C
 
 // siblingProbes are the questions the probes ask about the other replicas.
 type siblingProbes struct {
+	admissionSlots chan struct{}
 	// converged: /healthz is 200 without a grace entry (ADR-0028).
 	converged *siblingProbe
 	// renderGraph: /readyz reports a published render graph.
@@ -106,8 +110,9 @@ func newSiblingProbes(
 		}
 	}
 	return &siblingProbes{
-		converged:   probe("/healthz", siblingConverged),
-		renderGraph: probe(ReadinessPath, siblingRenderGraphPublished),
+		admissionSlots: make(chan struct{}, 4),
+		converged:      probe("/healthz", siblingConverged),
+		renderGraph:    probe(ReadinessPath, siblingRenderGraphPublished),
 	}, nil
 }
 
@@ -224,4 +229,44 @@ func namedContainerPort(pod *corev1.Pod, name string) (int32, bool) {
 		}
 	}
 	return 0, false
+}
+
+// admissionPeer uses the release selector and existing pod-list permission.
+// Discovery runs only on failover, under the outgoing concurrency bound.
+func (s *siblingProbe) admissionPeer(ctx context.Context) (string, error) {
+	pods, err := s.clientset.CoreV1().Pods(s.namespace).List(ctx, metav1.ListOptions{LabelSelector: s.selector.String()})
+	if err != nil {
+		return "", err
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Name == s.podName || pod.DeletionTimestamp != nil || net.ParseIP(pod.Status.PodIP) == nil || !podReady(pod) {
+			continue
+		}
+		if port, ok := namedContainerPort(pod, "webhook"); ok {
+			return net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(int(port))), nil
+		}
+	}
+	return "", fmt.Errorf("no ready admission peer in namespace %s", s.namespace)
+}
+
+func (s *siblingProbes) admissionForwarder(server *webhook.Server, service string) func(context.Context, *admissionv1.AdmissionRequest) (*admissionv1.AdmissionResponse, error) {
+	if s == nil || s.converged == nil || service == "" {
+		return nil
+	}
+	discovery := s.converged
+	dns := service + "." + discovery.namespace + ".svc"
+	return func(ctx context.Context, req *admissionv1.AdmissionRequest) (*admissionv1.AdmissionResponse, error) {
+		select {
+		case s.admissionSlots <- struct{}{}:
+			defer func() { <-s.admissionSlots }()
+		default:
+			return nil, errors.New("admission peer capacity exhausted")
+		}
+		address, err := discovery.admissionPeer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return server.ForwardAdmission(ctx, address, dns, req)
+	}
 }

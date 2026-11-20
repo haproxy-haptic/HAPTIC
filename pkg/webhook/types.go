@@ -56,8 +56,10 @@
 package webhook
 
 import (
+	"context"
 	"time"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -68,6 +70,13 @@ import (
 // the AdmissionRequest. This allows validators to make informed decisions based
 // on the full context of the admission request.
 type ValidationContext struct {
+	// Context ends when the HTTP caller disconnects.
+	Context context.Context
+	// Request is the original admission object, including dryRun and requestKind.
+	Request *admissionv1.AdmissionRequest
+	// FromPeer prevents recursive forwarding of an authenticated peer request.
+	FromPeer bool
+
 	// Object is the resource object being validated (new version).
 	// For CREATE: the object being created
 	// For UPDATE: the new version of the object

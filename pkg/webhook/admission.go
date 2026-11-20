@@ -52,7 +52,7 @@ func (s *Server) handleValidation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := s.validate(review.Request)
+	response := s.validateRequest(r.Context(), review.Request, r.URL.Path == s.config.Path+"/peer")
 	response.UID = review.Request.UID
 	answer := admissionv1.AdmissionReview{TypeMeta: review.TypeMeta, Response: response}
 	responseBytes, err := json.Marshal(answer)

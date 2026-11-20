@@ -341,11 +341,13 @@ func (s *Server) Start(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(s.config.Path, s.handleValidation)
+	mux.HandleFunc(s.config.Path+"/peer", s.handlePeer)
 	mux.HandleFunc("/healthz", s.handleHealthz)
 
 	addr := fmt.Sprintf("%s:%d", s.config.BindAddress, s.config.Port)
 	tlsConfig := &tls.Config{
 		GetCertificate: s.getCertificate,
+		ClientAuth:     tls.RequestClientCert,
 		MinVersion:     tls.VersionTLS12,
 	}
 

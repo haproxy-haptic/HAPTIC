@@ -15,6 +15,7 @@
 package webhook
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-func (s *Server) validate(request *admissionv1.AdmissionRequest) *admissionv1.AdmissionResponse {
+func (s *Server) validateRequest(parent context.Context, request *admissionv1.AdmissionRequest, fromPeer bool) *admissionv1.AdmissionResponse {
 	gvk := getGVK(request)
 
 	s.mu.RLock()
@@ -71,6 +72,9 @@ func (s *Server) validate(request *admissionv1.AdmissionRequest) *admissionv1.Ad
 	namespace, name := extractMetadata(metadataObject)
 
 	ctx := &ValidationContext{
+		Context:   parent,
+		Request:   request,
+		FromPeer:  fromPeer,
 		Object:    obj,
 		OldObject: oldObj,
 		Operation: string(request.Operation),
