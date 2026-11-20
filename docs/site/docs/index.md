@@ -6,10 +6,10 @@ hide:
 
 # HAPTIC
 
-HAPTIC lets you shape Kubernetes traffic routing by editing the [templates](templating.md)
-that generate your HAProxy configuration. Start with ready-to-use Ingress and
-Gateway API support, then add your own annotations, routing rules, or resource
-types as your needs change.
+The HAProxy Template Ingress Controller (HAPTIC) routes Kubernetes traffic through
+HAProxy. Its Helm chart supports [Ingress](libraries/ingress.md) and
+[Gateway API](gateway-api.md) out of the box. Edit the [templates](templating.md)
+to generate HAProxy configuration from your own annotations or resource types.
 
 <a id="what-is-haptic"></a>
 <a id="whats-haptic"></a>

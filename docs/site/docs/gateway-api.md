@@ -1,4 +1,10 @@
-# Route with Gateway API
+---
+description: "Create a Gateway and HTTPRoute with HAPTIC to send requests to a Kubernetes Service through HAProxy. Verify the route with an example request."
+---
+
+# Route with HAProxy and Kubernetes Gateway API
+
+<a id="route-with-gateway-api"></a>
 
 Use a Gateway to define your listening ports and an HTTPRoute to send matching
 requests to a Kubernetes Service. HAPTIC creates the `haptic` GatewayClass that

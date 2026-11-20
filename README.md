@@ -9,7 +9,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-007ec6)](https://opensource.org/licenses/Apache-2.0)
 [![CI](https://github.com/haproxy-haptic/HAPTIC/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/haproxy-haptic/HAPTIC/actions/workflows/ci.yml)
 
-**HAPTIC** (**HAP**roxy **T**emplate **I**ngress **C**ontroller) is a template-driven [HAProxy](https://www.haproxy.org/) Ingress Controller for Kubernetes that generates HAProxy configurations using [Scriggo](https://scriggo.com/) templates and deploys them through the HAPTIC agent in each HAProxy pod.
+**HAPTIC** (HAProxy Template Ingress Controller) is an open-source Kubernetes controller for [HAProxy](https://www.haproxy.org/). Its Helm chart supports [Kubernetes Ingress](https://haproxy-haptic.org/docs/latest/libraries/ingress/) and [Gateway API](https://haproxy-haptic.org/docs/latest/gateway-api/). Extend the [Scriggo](https://scriggo.com/) templates to route traffic from custom resources. HAPTIC validates the generated HAProxy configuration and deploys it through the agent in each HAProxy pod.
 
 > **Documentation**: <https://haproxy-haptic.org/>
 

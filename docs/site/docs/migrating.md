@@ -1,4 +1,10 @@
-# Migrating to HAPTIC
+---
+description: "Check annotation compatibility, run HAPTIC alongside your current Kubernetes ingress controller, and test HAProxy routing before switching traffic."
+---
+
+# Migrate from ingress-nginx or another HAProxy ingress controller
+
+<a id="migrating-to-haptic"></a>
 
 Move Ingresses from **ingress-nginx**, **haproxy-ingress**, or
 **haproxytech/kubernetes-ingress** to HAPTIC. Check annotation compatibility,

@@ -78,12 +78,12 @@ nav:
   - Home: index.md
   - Get started:
     - Install and try HAPTIC: getting-started.md
-    - Migrate from another controller: migrating.md
+    - Migrate from ingress-nginx or another HAProxy controller: migrating.md
     - Install the CLI: cli.md
   - Route traffic:
     - Choose a routing guide: routing.md
     - Ingress routing: libraries/ingress.md
-    - Try Gateway API: gateway-api.md
+    - Route with HAProxy and Kubernetes Gateway API: gateway-api.md
     - Ingress annotations: annotations.md
     - TLS certificates: ssl-certificates.md
     - Gateway route policies: operations/gateway-policies.md

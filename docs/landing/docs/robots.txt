@@ -10,4 +10,4 @@ Disallow: /helm-chart/
 Allow: /
 
 Sitemap: https://haproxy-haptic.org/sitemap.xml
-Sitemap: https://haproxy-haptic.org/docs/dev/sitemap.xml
+Sitemap: https://haproxy-haptic.org/docs/latest/sitemap.xml

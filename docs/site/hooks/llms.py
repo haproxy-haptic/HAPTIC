@@ -41,7 +41,8 @@ def on_post_build(config):
         # page.url would be "page.html", colliding with the emitted HTML file.
         raise RuntimeError("hooks/llms.py requires use_directory_urls: true")
     site = Path(config["site_dir"])
-    base = (config["site_url"] or "/").rstrip("/") + "/"
+    # Relative links follow the version of the index the reader opened.
+    # The HTML canonical URL can point to a different release.
     toc = [
         "# " + config["site_name"],
         "",
@@ -52,9 +53,9 @@ def on_post_build(config):
         "",
         "## Agent skill",
         "",
-        f"- [HAPTIC skill]({base}agent-skills/haptic/SKILL.md): "
+        "- [HAPTIC skill](agent-skills/haptic/SKILL.md): "
         "Workflow for Scriggo customization, resource access, and validation.",
-        f"- [Install the skill]({base}development/agent-skill/index.md): "
+        "- [Install the skill](development/agent-skill/index.md): "
         "Installation, downloads, and example prompts.",
         "",
         "## Documentation",
@@ -65,12 +66,12 @@ def on_post_build(config):
         out = site / page.url / "index.md"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(markdown, encoding="utf-8")
-        desc = _summary(markdown)
+        desc = page.meta.get("description") or _summary(markdown)
         toc.append(
-            f"- [{page.title}]({base}{page.url}index.md)"
+            f"- [{page.title}](./{page.url}index.md)"
             + (f": {desc}" if desc else "")
         )
-        full.append(f"# {page.title}\n\nSource: {base}{page.url}\n\n{markdown}")
+        full.append(f"# {page.title}\n\nSource: ./{page.url}\n\n{markdown}")
     (site / "llms.txt").write_text("\n".join(toc) + "\n", encoding="utf-8")
     (site / "llms-full.txt").write_text(
         "\n\n---\n\n".join(full) + "\n", encoding="utf-8"
