@@ -1012,8 +1012,9 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     fi
 fi
 
-# Trusted-proxy opt-in profile: every test's fixtures must render and pass
-# haproxy -c with extraContext.forwardedHeaders.trustedProxies set.
+# Trusted-proxy and IP-blocklist opt-in profile: every test's fixtures must
+# render and pass haproxy -c with extraContext.forwardedHeaders.trustedProxies
+# set and extraContext.ipBlocklists enabled.
 if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     TRUSTED_PROXIES_CONFIG=$(mktemp /tmp/haptic-trusted-proxies-config-XXXXXX.yaml)
     trap 'rm -f "$TEMP_CONFIG" "$RATE_LIMIT_CONFIG" "$PROXY_PROTOCOL_CONFIG" "$TRUSTED_PROXIES_CONFIG"' EXIT
@@ -1025,6 +1026,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
         --set controller.templateLibraries.nginxIngress.enabled=true \
         --set controller.templateLibraries.haproxytech.enabled=true \
         --set-json 'controller.config.templatingSettings.extraContext.forwardedHeaders.trustedProxies=["10.0.0.0/8","2001:db8::/32"]' \
+        --set controller.config.templatingSettings.extraContext.ipBlocklists.enabled=true \
         | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
         > "$TRUSTED_PROXIES_CONFIG"; then
         echo -e "${RED}Error: Failed to render trusted-proxy Helm profile${NC}" >&2

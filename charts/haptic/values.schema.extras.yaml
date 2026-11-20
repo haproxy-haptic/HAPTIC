@@ -142,6 +142,11 @@ controller:
                 connectTimeout: 5s  # @schema type: [string, integer]
                 serverTimeout: 10s  # @schema type: [string, integer]
                 serverOptions: ""
+        ipBlocklists:
+          lists:  # @schema mergeProperties
+            example:
+              entries: [192.0.2.10]
+              refreshInterval: 6h
         prometheusExporter:
           excludeMetrics:  # @schema mergeProperties
             example:

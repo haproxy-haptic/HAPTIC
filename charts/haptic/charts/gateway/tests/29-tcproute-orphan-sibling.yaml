@@ -2,6 +2,8 @@ validationTests:
   test-tcproute-orphan-sibling-does-not-drop-others:
     requires: [gateways, tcproutes]
     description: An orphaned TCPRoute (parentRef Gateway deleted) must NOT drop sibling routes from rendering. Regression for the Scriggo bubble-sort mis-lowering that dropped every route after an orphan.
+    extraContext:
+      ipBlocklists: {enabled: true, lists: {__replace__: true, test: {enabled: true, entries: ["192.0.2.10"]}}}
     fixtures:
       gateways:
         - apiVersion: gateway.networking.k8s.io/v1
@@ -44,6 +46,7 @@ validationTests:
     assertions:
       - type: haproxy_valid
       - {type: contains, target: haproxy.cfg, pattern: 'frontend gateway-tcp-port-9300'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tcp-port-9300\n(?:[ \t][^\n]*\n)*?[ \t]+tcp-request connection reject if \{ src -m ip -M -f \S*/ip-blocklist-test\.map \}[^\n]*\n[ \t]+tcp-request session reject if \{ src -m ip -M -f '}
 
   test-tcproute-cross-namespace-backend-without-referencegrant-not-routed:
     requires: [gateways, referencegrants, tcproutes]

@@ -801,6 +801,7 @@ templateSnippets:
           mode tcp{{ render "util-log-format-tcp" }}
           bind *:{{ extraContext | dig("httpsPort") | fallback(8443) }}
           {{- on_own_lines(render_glob "ssl-tcp-bind-extra-*") | indent(2, true) }}
+          {{- on_own_lines(render_glob "client-connection-*") | indent(2, true) }}
 
           # Extract SNI for routing decisions (wait up to 5s for client hello)
           tcp-request inspect-delay 5s
@@ -870,7 +871,8 @@ templateSnippets:
 
       frontend https
           guid fe:https
-          mode http{{ render "util-http-frontend-settings" }}
+          mode http
+          {{- on_own_lines(render_glob "client-connection-*") | indent(2, true) }}{{ render "util-http-frontend-settings" }}
       {%- if len(passthroughBackends) > 0 || dig(gfMap, "tlsInspectionRequired") == true %}
           bind unix@/etc/haproxy/ssl-frontend.sock mode 660{{ render "util-ssl-bind-options" }} accept-proxy
       {%- else %}

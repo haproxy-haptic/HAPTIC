@@ -323,6 +323,135 @@ carried in the PROXY header. A direct client behind an L4 load balancer still is
 trusted; its address already comes from PROXY protocol and doesn't need
 `src-ip-header`.
 
+## IP blocklists
+
+HAPTIC can refuse clients whose address is on a public blocklist of known bad
+actors. Blocklists are off by default. Enable them in your Helm values:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        ipBlocklists:
+          enabled: true
+```
+
+The controller then fetches the two Spamhaus Don't Route Or Peer (DROP) lists and HAProxy closes
+connections from listed addresses on every listener: HTTP, HTTPS, TLS
+passthrough, and Gateway TCP and TLS listeners. With
+[PROXY protocol](../haproxy-deployment.md#proxy-protocol), HAProxy judges the
+address the load balancer reports.
+
+The controller fetches the lists over HTTPS. If you restricted
+`controller.networkPolicy.egress`, allow port `443` to the list hosts. Each
+controller replica fetches its own copy.
+
+### Bundled lists
+
+The chart ships these lists. Only the Spamhaus DROP lists start enabled, because
+they name whole networks run by criminal operations and rarely affect legitimate
+clients. The other lists name single hosts, which can be shared or reassigned.
+You accept a list's terms of use by enabling it.
+
+| List | Enabled | Contents |
+|------|---------|----------|
+| `spamhaus-drop-v4`, `spamhaus-drop-v6` | Yes | Networks hijacked by or leased to criminal operations ([terms](https://www.spamhaus.org/drop/terms/)) |
+| `abuse-ch-feodo` | No | Active botnet command-and-control servers |
+| `ipsum-level-5` | No | Addresses that appear on five or more other blocklists |
+| `emerging-threats-compromised` | No | Hosts reported as compromised |
+| `cins-army` | No | Addresses with a poor reputation score in the Collective Intelligence Network Security (CINS) sensor network |
+| `blocklist-de` | No | Addresses reported for attacks within the last 48 hours; many are dynamic |
+| `tor-exits` | No | Tor exit nodes; a policy choice, since Tor users aren't bad actors |
+
+### Change the lists
+
+`lists` is a map keyed by list name, so your values merge with the bundled
+lists. This example enables one bundled list, disables another, adds a list from
+a URL, and adds addresses inline:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        ipBlocklists:
+          enabled: true
+          lists:
+            ipsum-level-5:
+              enabled: true
+            spamhaus-drop-v6:
+              enabled: false
+            <list-name>:
+              enabled: true
+              url: https://<host>/<path>
+              refreshInterval: 1h
+            <other-list-name>:
+              enabled: true
+              entries:
+                - 192.0.2.10
+                - 2001:db8::/32
+```
+
+Every list needs `enabled` and a `url`, `entries`, or both. A URL must use HTTPS
+and return one IP address or CIDR per line; `#` and `;` start a comment. HAPTIC
+fetches a list again every `refreshInterval`, which defaults to the top-level
+`ipBlocklists.refreshInterval` (`6h`). List updates reach HAProxy without a
+reload.
+
+### Exempt addresses
+
+Addresses under `exempt` are never refused, even when a list names them. The
+defaults exempt loopback, private, and link-local ranges, plus the shared range
+`100.64.0.0/10`. Add your
+own the same way:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        ipBlocklists:
+          exempt:
+            <name>:
+              enabled: true
+              cidr: 203.0.113.0/24
+```
+
+### Failed and faulty lists
+
+A list that can't be fetched doesn't stop configuration changes. HAProxy keeps
+the last version HAPTIC accepted, or runs without that list until its first
+successful fetch.
+
+HAPTIC refuses a response that would block the wrong clients and keeps the
+previous version:
+
+- A line that isn't an IP address or CIDR, such as an error page.
+- An entry broader than `/8` for IPv4 or `/16` for IPv6.
+
+A refused update of a list HAPTIC already uses records an `HTTPContentRejected`
+Warning Event on the `HAProxyTemplateConfig`.
+
+### Clients behind a load balancer
+
+Behind an L7 load balancer or content delivery network, HAProxy sees the proxy's
+address. List the proxy under
+[`forwardedHeaders.trustedProxies`](#trust-an-l7-load-balancer). HAPTIC then
+also checks the last `X-Forwarded-For` entry of requests from that proxy, which
+is the address the proxy received the request from. If that address is itself a
+trusted proxy, HAPTIC checks the entry before it. Earlier entries aren't
+checked, because a client can write them.
+
+For an Ingress with a `src-ip-header` annotation, HAPTIC checks the address
+taken from that header.
+
+These requests receive `403`, and the access log reports
+`denied_by: ip_blocklist`.
+
+Each list has its own map file, `ip-blocklist-<list-name>.map`. To find the list
+that names an address, search these map files for it.
+
 ## Secrets in templates
 
 Templates can read Secrets included in your watches. Decode `.data` values with
