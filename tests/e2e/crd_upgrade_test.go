@@ -208,7 +208,9 @@ func (dc *debugClient) waitForSettledResolution(
 	ctx context.Context, t *testing.T, description string, accept func(*effectiveResolution) bool,
 ) *effectiveResolution {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Minute)
+	// A served-CRD change validates the full effective configuration before
+	// reinitializing. Allow the same budget as initial environment readiness.
+	deadline := time.Now().Add(DefaultEnvironmentReadyTimeout)
 	var last *effectiveResolution
 	var lastErr error
 	for time.Now().Before(deadline) {
