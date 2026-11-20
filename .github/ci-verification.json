@@ -134,7 +134,11 @@
       "charts/haptic/CHANGELOG.md"
     ],
     "patterns": [
-      "docs/site/docs/.*\\.md"
+      "docs/site/docs/.*\\.md",
+      "docs/(landing|shared)/.+",
+      "docs/site/mkdocs\\.yml",
+      "docs/site/(hooks|overrides|tests)/.+",
+      "docs/site/docs/(assets|javascripts|stylesheets)/.+"
     ],
     "required_jobs": [
       "ci-image-3.0",

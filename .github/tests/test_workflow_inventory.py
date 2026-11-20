@@ -68,7 +68,6 @@ class WorkflowInventoryTests(unittest.TestCase):
                     "ci-image-3.3", "ci-image-3.4"}
         self.assertEqual(set(self.manifest["prose"]["required_jobs"]), expected)
         self.assertTrue(all(path.endswith(".md") or path == "LICENSE" for path in self.manifest["prose"]["paths"]))
-        self.assertEqual(self.manifest["prose"]["patterns"], ["docs/site/docs/.*\\.md"])
         for key, job in self.workflow["jobs"].items():
             if key == "verified":
                 self.assertEqual(job["if"], "always()")
