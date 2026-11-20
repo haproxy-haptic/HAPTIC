@@ -483,6 +483,7 @@ In addition to the snippet-based extension points below, libraries may declare f
 | `default-backend-*` | Optional `default_backend` declaration; base emits its gRPC/404 fallback when every contribution is empty | kubernetes-backends, user libraries |
 | `frontends-*` | Additional frontends (HTTPS, TCP) | ssl |
 | `http-bind-extra-*` | Additional HTTP-frontend `bind *:<port>` directives (Gateway HTTP listener ports, the PROXY-protocol port) | base, gateway |
+| `client-connection-*` | `tcp-request connection`/`session` rules judging the client address, rendered in every client-facing frontend (HTTP, HTTPS, `ssl-tcp`, Gateway TLS and TCP listeners). A new client-facing frontend must render this glob | base |
 | `https-bind-extra-*` | Additional HTTPS-frontend `bind *:<port> ssl crt-list ...` directives (Gateway HTTPS listener ports, the PROXY-protocol port) | gateway, ssl |
 | `ssl-tcp-bind-extra-*` | Additional `frontend ssl-tcp` binds. Only rendered when TLS-Passthrough puts the HTTPS port on the SNI-routing frontend instead of `frontend https` — use it for anything that must attach to the wire connection | ssl |
 | `frontend-routing-listener-port-*` | Per-listener-port frontend routing logic (Gateway listener ports) | gateway |

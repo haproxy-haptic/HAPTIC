@@ -66,6 +66,7 @@ templateSnippets:
           guid fe:gateway-tls-port-{{ port }}
           mode tcp{{ render "util-log-format-tcp" }}
           bind *:{{ port }}
+          {{- on_own_lines(render_glob "client-connection-*") | indent(2, true) }}
           tcp-request inspect-delay 5s
           {# Select the listener before its routes: an unrouted or invalid listener must not fall through. #}
           {%- for _, listener := range listeners %}

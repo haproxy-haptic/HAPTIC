@@ -126,7 +126,9 @@ validationTests:
   test-tlsroute-invalid-backend-rejects-on-chart-static:
     requires: [gateways, tlsroutes]
     description: "A TLS Passthrough listener on httpsPort with a TLSRoute whose backendRef is missing renders `frontend ssl-tcp` and rejects the route's SNI instead of sending it to ssl-loopback (upstream TLSRouteInvalidBackendRef*)."
-    extraContext: {controllerName: "haproxy-haptic.org/controller"}
+    extraContext:
+      controllerName: "haproxy-haptic.org/controller"
+      ipBlocklists: {enabled: true, lists: {__replace__: true, test: {enabled: true, entries: ["192.0.2.10"]}}}
     fixtures:
       gateways:
         - apiVersion: gateway.networking.k8s.io/v1
@@ -159,6 +161,7 @@ validationTests:
       - type: haproxy_valid
 
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend ssl-tcp$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend ssl-tcp\n(?:[ \t][^\n]*\n)*?[ \t]+tcp-request connection reject if \{ src -m ip -M -f \S*/ip-blocklist-test\.map \}[^\n]*\n[ \t]+tcp-request session reject if \{ src -m ip -M -f '}
       - {type: not_contains, target: haproxy.cfg, pattern: 'use_backend .* req_ssl_sni,lower -m str example\.com'}
       - type: contains
         target: haproxy.cfg
@@ -300,7 +303,9 @@ validationTests:
   test-tlsroute-terminate-nondefault-port-frontend:
     requires: [gateways, tlsroutes]
     description: TLSRoute attached to a TLS Terminate listener on a non-chart- static port renders a per-port mode-tcp frontend with TLS termination on the bind.
-    extraContext: {controllerName: "haproxy-haptic.org/controller"}
+    extraContext:
+      controllerName: "haproxy-haptic.org/controller"
+      ipBlocklists: {enabled: true, lists: {__replace__: true, test: {enabled: true, entries: ["192.0.2.10"]}}}
     fixtures:
       gateways:
         - apiVersion: gateway.networking.k8s.io/v1
@@ -336,6 +341,7 @@ validationTests:
       - type: haproxy_valid
 
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-9444$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend gateway-tls-port-9444\n(?:[ \t][^\n]*\n)*?[ \t]+tcp-request connection reject if \{ src -m ip -M -f \S*/ip-blocklist-test\.map \}[^\n]*\n[ \t]+tcp-request session reject if \{ src -m ip -M -f '}
 
       - {type: contains, target: haproxy.cfg, pattern: '(?m)^\s+bind \*:9444 ssl crt-list '}
       - type: contains
