@@ -100,7 +100,6 @@ func (c *Component) ValidateAdmission(ctx context.Context, gvk, namespace, name 
 	}
 
 	c.logger.Debug("Created store overlays for dry-run",
-		"request_id", "direct",
 		"resource_types", subjectAliases,
 		"operation", operation)
 
@@ -110,24 +109,21 @@ func (c *Component) ValidateAdmission(ctx context.Context, gvk, namespace, name 
 	warnings = append(warnings, result.Warnings...)
 	if !result.Valid {
 		c.logger.Info("Dry-run validation failed",
-			"request_id", "direct",
 			"phase", result.Phase,
 			"error", result.Error)
 
-		if errors.Is(result.Error, validation.ErrValidatorUnavailable) || errors.Is(result.Error, context.DeadlineExceeded) || ctx.Err() != nil {
+		if externalValidationUnavailable(result) {
 			reason := "Validation is temporarily unavailable. Retry the request."
 			return false, reason, warnings, apierrors.NewServiceUnavailable(reason)
 		}
 		simplified := c.simplifyError(result.Phase, result.Error)
 		c.logger.Debug("Simplified error",
-			"request_id", "direct",
 			"phase", result.Phase,
 			"simplified", simplified)
 		return false, simplified, warnings, nil
 	}
 
 	c.logger.Debug("Dry-run validation passed",
-		"request_id", "direct",
 		"resource_types", subjectAliases,
 		"duration_ms", result.DurationMs)
 
@@ -147,6 +143,11 @@ func (c *Component) ValidateAdmission(ctx context.Context, gvk, namespace, name 
 	}
 
 	return true, "", warnings, nil
+}
+
+func externalValidationUnavailable(result *validation.ValidationResult) bool {
+	return errors.Is(result.Error, validation.ErrValidatorUnavailable) ||
+		(result.Phase == "external" && (errors.Is(result.Error, context.DeadlineExceeded) || errors.Is(result.Error, context.Canceled)))
 }
 
 // maxEventWarnings bounds how many template-recorded Warning events are
@@ -189,7 +190,7 @@ func formatRenderedEventWarnings(events []templating.RenderedEvent, subject even
 	return out
 }
 
-// ValidateDirect performs synchronous dry-run validation.
+// ValidateDirect returns the denial message to callers that do not consume Kubernetes response codes.
 //
 // Parameters:
 //   - ctx: Context for cancellation and timeout

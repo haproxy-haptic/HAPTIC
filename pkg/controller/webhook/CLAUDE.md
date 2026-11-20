@@ -49,7 +49,7 @@ Each registered validator:
 1. Checks basic object structure.
 2. Derives a 9-second deadline from the iteration context.
 3. Calls `DryRunValidator.ValidateAdmission` with the proposed object.
-4. Returns its allow, reason, and warning result and records metrics.
+4. Returns the decision, reason, warnings, and any service failure. A missing external verdict yields a denied AdmissionReview with status 503.
 
 Keep validation synchronous. The API server waits for the AdmissionReview
 response, so detached work would return before the gate has made a decision.

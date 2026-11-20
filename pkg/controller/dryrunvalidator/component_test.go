@@ -490,6 +490,15 @@ func TestValidateDirect_UpdateSuccess(t *testing.T) {
 	assert.Empty(t, reason)
 }
 
+func TestExternalValidationUnavailableIsPhaseSpecific(t *testing.T) {
+	for _, phase := range []string{"render", "semantic", "external"} {
+		result := &validation.ValidationResult{Phase: phase, Error: context.DeadlineExceeded}
+		assert.Equal(t, phase == "external", externalValidationUnavailable(result), phase)
+		result.Error = errors.New("invalid content")
+		assert.False(t, externalValidationUnavailable(result), phase)
+	}
+}
+
 func TestValidateAdmission_UnavailableExternalValidator(t *testing.T) {
 	logger := slog.Default()
 	manager, err := pluggablevalidator.NewManager(logger, []pluggablevalidator.ManagerConfig{{

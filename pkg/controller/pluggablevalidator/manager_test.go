@@ -453,6 +453,23 @@ func TestManager_ValidateAll_TransportErrorFailsEveryCall(t *testing.T) {
 	}
 }
 
+func TestOversizedValidatorRequestKeepsTheActionableDenial(t *testing.T) {
+	server := testutil.NewFixtureServer(t)
+	manager, err := pv.NewManager(nil, []pv.ManagerConfig{{
+		Name: "hub", SocketPath: server.SocketPath, Files: tomlGlob(), Timeout: 5 * time.Second,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	file := tomlFile()
+	file.Content = strings.Repeat("x", pv.MaxFrameSize)
+	outcome := manager.ValidateAll(t.Context(), []pv.File{file})
+	if outcome.Err != nil || len(outcome.Errors) != 1 || !strings.Contains(outcome.Errors[0].Message, "reduce the validator's dataFiles globs") {
+		t.Fatalf("want actionable request-size denial, got %+v", outcome)
+	}
+}
+
 func TestManager_ValidateRenderedOutput_RejectsInconsistentResultWithoutCaching(t *testing.T) {
 	srv := testutil.NewFixtureServer(t)
 	if err := srv.SetResponse(&pv.Response{

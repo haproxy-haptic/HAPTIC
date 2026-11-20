@@ -158,7 +158,8 @@ type Response struct {
 	Warnings        []Diagnostic `json:"warnings"`
 	Errors          []Diagnostic `json:"errors"`
 
-	synthetic bool
+	synthetic        bool
+	transportFailure bool
 }
 
 // IsSynthetic reports whether the response was produced by ProtocolError.
@@ -169,7 +170,7 @@ func (r *Response) IsSynthetic() bool {
 // Protocol v1 identifies a server-side timeout by its prescribed diagnostic envelope.
 func (r *Response) unavailable() bool {
 	if r.IsSynthetic() {
-		return true
+		return r.transportFailure
 	}
 	if r.Result != ResultError || len(r.Warnings) != 0 || len(r.Errors) != 1 {
 		return false
