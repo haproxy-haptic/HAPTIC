@@ -173,13 +173,20 @@ class VerificationProfileTests(unittest.TestCase):
                                 {} if identity is None else identity, sha=self.sha,
                                 is_ancestor=self.ancestor, changed_paths=self.paths)
 
-    def test_only_the_existing_prose_allowlist_gets_focused_verification(self):
+    def test_website_and_prose_changes_get_focused_verification(self):
         for paths in (["README.md"], ["charts/haptic/README.md", "CHANGELOG.md"],
-                      ["docs/site/docs/development/linting.md"]):
+                      ["docs/site/docs/development/linting.md"],
+                      ["README.md", "docs/landing/mkdocs.yml", "docs/landing/docs/robots.txt",
+                       "docs/landing/docs/llms.txt", "docs/landing/overrides/home.html",
+                       "docs/site/hooks/llms.py", "docs/site/mkdocs.yml", "docs/site/docs/migrating.md"],
+                      ["docs/site/docs/assets/favicon.svg", "docs/shared/playground-embed.js",
+                       "docs/site/tests/playground-embed.mjs"]):
             with self.subTest(paths=paths):
                 self.assertEqual(VERIFY.paths_profile(self.manifest, paths), "prose")
-        for paths in ([], ["README.md", "pkg/controller/controller.go"], ["docs/site/mkdocs.yml"],
-                      [".github/workflows/ci.yml"], ["docs/site/docs/example.yaml"],
+        for paths in ([], ["README.md", "pkg/controller/controller.go"], ["docs/site/mkdocs.yml", "cmd/playground/main.go"],
+                      [".github/workflows/ci.yml"], ["docs/site-tools/example.py"],
+                      ["docs/site/docs/examples/tcp-proxy-values.yaml"],
+                      ["docs/site/docs/example.yaml"], [".github/ci-verification.json"],
                       ["scripts/generate.md"], ["charts/haptic/values.yaml"], ["VERSION"],
                       ["docs/site/docs/line\nbreak.md"], ["pkg/old.go", "docs/site/docs/new.md"]):
             with self.subTest(paths=paths):

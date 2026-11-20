@@ -20,9 +20,11 @@ Go source hash doesn't cover embedded chart inputs.
 
 ## While iterating
 
-- Batch fixes before pushing. Every pull request runs the complete matrix,
-  including compatibility, churn, scale, and the upstream canary; prose-only
-  changes run the common checks.
+- Batch fixes before pushing. Changes confined to website content, assets, MkDocs
+  configuration, site hooks, site tests, or listed prose files run the common checks.
+  Executable Helm examples under `docs/site/docs/examples/` use the full matrix.
+  Other changes run the complete matrix, including compatibility, churn, scale,
+  and the upstream canary.
 - Never add `[skip ci]` or otherwise skip verification.
 - Diagnose failures before retrying. Rerun a specific job once for a demonstrated
   infrastructure failure. Fix test failures instead of rerunning until they pass.

@@ -9,7 +9,8 @@ make test-agent-skill-package
 The search check builds a Material site with generated ADRs and verifies that
 Development pages remain readable without appearing in the user search index.
 
-The embedded-playground browser regressions run in `make test-github-pages-browser` before every website publication. Run them locally:
+The required docs CI job runs the embedded-playground browser regressions.
+Website publication runs them again in `make test-github-pages-browser`. To run them locally:
 
 ```bash
 npm ci --prefix scripts/visual-qa
