@@ -1027,6 +1027,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
         --set controller.templateLibraries.haproxytech.enabled=true \
         --set-json 'controller.config.templatingSettings.extraContext.forwardedHeaders.trustedProxies=["10.0.0.0/8","2001:db8::/32"]' \
         --set controller.config.templatingSettings.extraContext.ipBlocklists.enabled=true \
+        --set-json 'controller.config.templatingSettings.extraContext.ipBlocklists.lists.profile={"enabled":true,"entries":["192.0.2.10","2001:db8::/32"]}' \
         | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
         > "$TRUSTED_PROXIES_CONFIG"; then
         echo -e "${RED}Error: Failed to render trusted-proxy Helm profile${NC}" >&2
