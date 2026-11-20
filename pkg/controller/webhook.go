@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -139,6 +140,7 @@ func setupWebhook(
 			Port:                     webhookPort,
 			Path:                     webhook.DefaultWebhookPath,
 			Rules:                    rules,
+			Peer:                     infra.siblings.admissionForwarder(sharedServer, os.Getenv("WEBHOOK_SERVICE_NAME")),
 			CertDir:                  webhookCertDir,
 			DryRunValidator:          dryrunValidator,
 			ResourceAdmissionTimeout: resourceAdmissionTimeout,
@@ -262,6 +264,9 @@ func buildDryRunValidator(
 	observedStoreProvider func(context.Context, stores.StoreProvider) (stores.StoreProvider, error),
 	logger *slog.Logger,
 ) (*dryrunvalidator.Component, error) {
+	if outputValidator != nil {
+		outputValidator = admissionExternalValidator{outputValidator}
+	}
 	pipelineInstance := pipeline.New(&pipeline.PipelineConfig{
 		Renderer:        renderService,
 		Validator:       validationService,
@@ -349,4 +354,14 @@ func setupReconciliation(
 		"correlation_id", initialReconciliation.CorrelationID())
 
 	return wiring, nil
+}
+
+type admissionExternalValidator struct {
+	pipeline.RenderedOutputValidator
+}
+
+func (v admissionExternalValidator) ValidateRenderedOutput(ctx context.Context, result *pipeline.PipelineResult) ([]string, error) {
+	stop := webhook.WatchExternalValidation(ctx)
+	defer stop()
+	return v.RenderedOutputValidator.ValidateRenderedOutput(ctx, result)
 }

@@ -504,13 +504,13 @@ func TestServer_ValidateDeleteWithOnlyOldObject(t *testing.T) {
 		return true, "", nil, nil
 	})
 
-	response := server.validate(&admissionv1.AdmissionRequest{
+	response := server.validateRequest(t.Context(), &admissionv1.AdmissionRequest{
 		Kind:      metav1.GroupVersionKind{Version: "v1", Kind: "ConfigMap"},
 		Operation: admissionv1.Delete,
 		OldObject: runtime.RawExtension{
 			Raw: []byte(`{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"test","namespace":"default"}}`),
 		},
-	})
+	}, false)
 
 	assert.True(t, response.Allowed)
 }
@@ -1010,7 +1010,7 @@ func TestServer_ReplaceValidatorGenerationRetiresAfterInflightRequest(t *testing
 	}
 	go func() {
 		defer close(oldDone)
-		server.validate(request)
+		server.validateRequest(t.Context(), request, false)
 	}()
 	<-oldStarted
 
@@ -1028,7 +1028,7 @@ func TestServer_ReplaceValidatorGenerationRetiresAfterInflightRequest(t *testing
 		return server.generation != oldGeneration
 	}, time.Second, time.Millisecond)
 
-	response := server.validate(request)
+	response := server.validateRequest(t.Context(), request, false)
 	require.False(t, response.Allowed)
 	assert.Contains(t, response.Result.Message, "new")
 	select {

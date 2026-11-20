@@ -7,7 +7,7 @@ release:
 tests:
   # Replicas compare their /healthz to decide which keeps serving a
   # configuration that failed to start elsewhere (ADR-0028).
-  - it: lets controller replicas reach each other's health port
+  - it: lets controller replicas reach each other's health and admission ports
     set:
       controller.networkPolicy.egress.additionalRules: []
       controller.networkPolicy.ingress.healthChecks.enabled: false
@@ -24,6 +24,8 @@ tests:
             ports:
               - port: 8080
                 protocol: TCP
+              - port: 9443
+                protocol: TCP
       - contains:
           path: spec.ingress
           content:
@@ -36,9 +38,12 @@ tests:
             ports:
               - port: 8080
                 protocol: TCP
+              - port: 9443
+                protocol: TCP
 
-  - it: follows controller.ports.healthz
+  - it: keeps health checks available when the webhook is disabled
     set:
+      controller.webhook.enabled: false
       controller.ports.healthz: 8888
     asserts:
       - contains:

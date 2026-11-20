@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -117,6 +118,8 @@ type DryRunValidator interface {
 
 // Config configures the webhook component.
 type Config struct {
+	// Peer performs a single authenticated admission on another ready controller.
+	Peer peerValidation
 	// Port is the HTTPS port for the webhook server.
 	// Default: 9443
 	Port int
@@ -525,8 +528,7 @@ func (c *Component) createResourceValidator(gvk string) webhook.ValidationFunc {
 
 		parent := c.serverCtx
 		if parent != nil && parent.Err() != nil {
-			c.recordValidationUnavailable(gvk, valCtx, start)
-			return false, validationUnavailableReason, nil, nil
+			return c.validationUnavailable(gvk, valCtx, start)
 		}
 
 		// Basic structural validation runs inline before delegating to ValidateDirect.
@@ -548,8 +550,7 @@ func (c *Component) createResourceValidator(gvk string) webhook.ValidationFunc {
 
 		// Dry-run validation (synchronous call into dryrunvalidator.ValidateDirect).
 		if c.dryRunValidator == nil {
-			c.recordValidationUnavailable(gvk, valCtx, start)
-			return false, validationUnavailableReason, nil, nil
+			return c.validationUnavailable(gvk, valCtx, start)
 		}
 
 		// Derive from c.serverCtx (set in Start()) so iteration shutdown
@@ -564,21 +565,12 @@ func (c *Component) createResourceValidator(gvk string) webhook.ValidationFunc {
 		if parent == nil {
 			parent = context.Background()
 		}
-		ctx, cancel := context.WithTimeout(parent, c.config.ResourceAdmissionTimeout)
+		ctx, cancel := requestDeadline(parent, valCtx.Context, c.config.ResourceAdmissionTimeout)
 		defer cancel()
 
-		allowed, reason, warnings, failure := c.dryRunValidator.ValidateAdmission(
-			ctx,
-			gvk,
-			valCtx.Namespace,
-			valCtx.Name,
-			valCtx.Object,
-			valCtx.OldObject,
-			valCtx.Operation,
-		)
+		allowed, reason, warnings, failure := c.validateWithPeer(ctx, gvk, valCtx)
 		if parent.Err() != nil {
-			c.recordValidationUnavailable(gvk, valCtx, start)
-			return false, validationUnavailableReason, nil, nil
+			return c.validationUnavailable(gvk, valCtx, start)
 		}
 
 		// Record metrics
@@ -606,6 +598,16 @@ func (c *Component) createResourceValidator(gvk string) webhook.ValidationFunc {
 	}
 }
 
+// requestDeadline binds admission to both the validator generation and HTTP caller.
+func requestDeadline(parent, caller context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	if caller == nil {
+		return ctx, cancel
+	}
+	stop := context.AfterFunc(caller, cancel)
+	return ctx, func() { stop(); cancel() }
+}
+
 func validationObject(valCtx *webhook.ValidationContext) any {
 	if valCtx.Object != nil {
 		return valCtx.Object
@@ -613,7 +615,7 @@ func validationObject(valCtx *webhook.ValidationContext) any {
 	return valCtx.OldObject
 }
 
-func (c *Component) recordValidationUnavailable(gvk string, valCtx *webhook.ValidationContext, start time.Time) {
+func (c *Component) validationUnavailable(gvk string, valCtx *webhook.ValidationContext, start time.Time) (allowed bool, reason string, warnings []string, failure error) {
 	c.logger.Error("Validation unavailable; denying resource",
 		"gvk", gvk,
 		"namespace", valCtx.Namespace,
@@ -623,6 +625,11 @@ func (c *Component) recordValidationUnavailable(gvk string, valCtx *webhook.Vali
 		c.metrics.RecordWebhookRequest(gvk, "denied", time.Since(start).Seconds())
 		c.metrics.RecordWebhookValidation(gvk, "denied")
 	}
+	// The caller can use a peer response only for a conclusive decision.
+	if valCtx.FromPeer {
+		return false, validationUnavailableReason, nil, apierrors.NewServiceUnavailable(validationUnavailableReason)
+	}
+	return false, validationUnavailableReason, nil, nil
 }
 
 // validateBasicStructure performs basic structural validation on a Kubernetes resource.
