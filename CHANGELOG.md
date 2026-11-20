@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The WAF guide includes a gRPC policy that enforces metadata rules while preserving client and server streaming.
 - The access log's `waf_rule_ids` names the scoring rules behind a WAF verdict, most severe first (`930130,920420`). In CRS's anomaly mode `waf_rule_id` is the scoring rule 949110 for every request over the threshold ([#692](https://github.com/haproxy-haptic/HAPTIC/issues/692)). It needs a coraza plugin with the `rule_ids` variable (haproxy-haptic/haproxy-spoa-hub-plugin-coraza#9); with an older plugin the field stays empty and is dropped.
 - Templates can declare a map sensitive with `planRegistry.SensitiveMap()` or the `RegisterMap` option `sensitive`. HAPTIC publishes it as a Kubernetes Secret, keeps its entries out of `HAProxyCfg`, `currentFiles`, and CLI output, and still delivers it to HAProxy. Validation tests read it through the `sensitive-map:<name>` target.
 
@@ -29,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The bundled hub reuses registered plugin metric handles. The Rust WAF reuses repeated transformations across rules and reduces rule-ID and keyword lookup costs.
 - The bundled SPOA hub returns WAF decisions faster. Both WAF engines now omit routine OWASP CRS bookkeeping from `plugin_coraza_rule_hits_total` by default.
 - Adding or removing a TLS certificate updates HAProxy at runtime instead of reloading it, wherever its crt-list line lands. A change to the default certificate, or one that would change which line serves an SNI name two lines share, still reloads.
 - `haptic_rejected_watched_inputs` carries `resource_type`, `namespace`, and `name` labels, one series per rejected resource, so an alert names the resource to fix.

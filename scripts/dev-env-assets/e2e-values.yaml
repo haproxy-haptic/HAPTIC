@@ -340,6 +340,10 @@ spoaHub:
       enabled: true
       directives: |
         SecRuleEngine On
+        # Catalog settings are inserted before this CRS initialization include.
+        # grpc-api adds protocol checks and blocking only to its own ruleset.
+        Include @crs-setup.conf.example
+        Include @owasp_crs/REQUEST-901-INITIALIZATION.conf
         SecRule REQUEST_HEADERS:User-Agent "@streq haptic-waf-block-probe" "id:7700201,phase:1,deny,status:403,msg:'haptic-e2e-waf-probe blocked'"
         SecRule ARGS "@streq haptic-waf-query-probe" "id:7700202,phase:1,deny,status:403,tag:'attack-sqli',msg:'haptic-e2e-query-probe blocked'"
         SecRule REQUEST_BODY "@contains haptic-waf-body-probe" "id:7700203,phase:2,deny,status:403,tag:'attack-sqli',msg:'haptic-e2e-body-probe blocked'"
