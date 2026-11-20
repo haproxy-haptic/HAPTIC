@@ -20,6 +20,10 @@ docker image inspect "$PILOT_CI_IMAGE" > .pilot/toolchain-image.json
 cache_args=()
 website_args=()
 if [[ "$PILOT_SUITE" == docs ]]; then
+    # The hosted runner has Node and browser dependencies outside the docs image.
+    npm ci --prefix scripts/visual-qa --no-audit --no-fund
+    scripts/visual-qa/node_modules/.bin/playwright install --with-deps --only-shell chromium
+    node --test docs/site/tests/playground-embed.mjs
     website_args+=(--env GH_TOKEN)
 fi
 if [[ -n "${PILOT_GO_CACHE_DIR:-}" ]]; then
