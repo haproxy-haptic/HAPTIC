@@ -233,19 +233,20 @@ func (p *forwardedPolicyPublication) wait(ctx context.Context, trusted bool, pre
 			if err := p.matchesPolicy(content, trusted); err != nil {
 				return false, err
 			}
-			checksum = obj.Spec.Checksum
-			if checksum == "" || checksum == previousChecksum {
-				return false, fmt.Errorf("published checksum %q has not advanced from %q", checksum, previousChecksum)
+			candidate := obj.Spec.Checksum
+			if candidate == "" || candidate == previousChecksum {
+				return false, fmt.Errorf("published checksum %q has not advanced from %q", candidate, previousChecksum)
 			}
 			if len(obj.Status.DeployedToPods) < p.replicas {
 				return false, fmt.Errorf("only %d/%d replicas reported deployed", len(obj.Status.DeployedToPods), p.replicas)
 			}
 			for index := range obj.Status.DeployedToPods {
 				pod := &obj.Status.DeployedToPods[index]
-				if pod.Checksum != checksum {
-					return false, fmt.Errorf("pod %s has checksum %q, expected %q", pod.PodName, pod.Checksum, checksum)
+				if pod.Checksum != candidate {
+					return false, fmt.Errorf("pod %s has checksum %q, expected %q", pod.PodName, pod.Checksum, candidate)
 				}
 			}
+			checksum = candidate
 			return true, nil
 		})
 	return checksum, err
