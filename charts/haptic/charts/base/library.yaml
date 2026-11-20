@@ -1803,6 +1803,201 @@ templateSnippets:
         })
       %%}
 
+  # Registers one map per enabled extraContext.ipBlocklists list. A malformed
+  # list fails the render, so the HTTP store keeps the version it accepted.
+  # Lists are parsed with whole-text operations: a per-address loop made every
+  # render 0.3 s slower at 45,000 addresses.
+  features-011-ip-blocklist:
+    template: |-
+      {%- import "util-register-map" for RegisterMap -%}
+      {%%
+        _, _ = shared.ComputeIfAbsent("ipBlocklist", func() any {
+          var where = "controller.config.templatingSettings.extraContext.ipBlocklists"
+          var settings = extraContext | dig("ipBlocklists") | fallback(map[string]any{})
+          if tostring(settings | dig("enabled") | fallback(false)) != "true" {
+            return map[string]any{"lists": "", "exempt": ""}
+          }
+          var octet = `(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])`
+          var ipv4 = octet + `(?:\.` + octet + `){3}(?:/(?:3[0-2]|[12]?[0-9]))?`
+          var ipv6 = `[0-9a-f]*:[0-9a-f]*:[0-9a-f:.]*(?:/(?:12[0-8]|1[01][0-9]|[1-9]?[0-9]))?`
+          var address = `(?:` + ipv4 + `|` + ipv6 + `)`
+          var singleAddress = regexp(`^` + address + `$`)
+          var validLine = regexp(`(?m)^[ \t]*(?:` + address + `(?:[ \t;#].*)?|[#;].*)?$`)
+          // Only Match, FindSubmatch and ReplaceAll keep an unchanged render replayable.
+          var lineRemainder = regexp(`(?m)^[ \t]*(` + address + `)?.*$`)
+          var blankLines = regexp(`\n+`)
+          var tooBroad = regexp(`(?m)^(?:[0-9.]+/[0-7]|[0-9a-f:.]*:[0-9a-f:.]*/(?:[0-9]|1[0-5]))$`)
+          var entryMaps = func(key string) map[string]any {
+            var configured = settings | dig(key)
+            if configured == nil {
+              return map[string]any{}
+            }
+            var m, isMap = configured.(map[string]any)
+            if !isMap {
+              fail(where + "." + key + " must be a map keyed by entry name.")
+            }
+            return m
+          }
+          var enabledEntry = func(key string, name string, entry any) map[string]any {
+            var m, isMap = entry.(map[string]any)
+            var enabled, isBool = dig(entry, "enabled").(bool)
+            if !isMap || !isBool {
+              fail(where + "." + key + "." + name + " must be a map with enabled set to true or false.")
+            }
+            if !enabled {
+              return nil
+            }
+            return m
+          }
+          var mapLines = func(addresses []string) []string {
+            if len(addresses) == 0 {
+              return []string{}
+            }
+            return split(join(sort_strings(toSlice(unique(addresses))), " 1\n") + " 1", "\n")
+          }
+
+          var defaultInterval = dig_string(settings, "6h", "refreshInterval")
+          var files = []string{}
+          var lists = entryMaps("lists")
+          for _, name := range keys(lists) {
+            var listWhere = where + ".lists." + name
+            var list = enabledEntry("lists", name, lists[name])
+            if list == nil {
+              continue
+            }
+            if !regex_search(name, `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`) {
+              fail(listWhere + " has an invalid name. Use lowercase letters, digits, and hyphens.")
+            }
+            var addresses = []string{}
+            var url = dig_string(list, "", "url")
+            if url == "" && list["entries"] == nil {
+              fail(listWhere + " has neither a url nor entries. Set one of them.")
+            }
+            if list["entries"] != nil {
+              var inline, isList = list["entries"].([]any)
+              if !isList {
+                fail(listWhere + ".entries must be a list of IP addresses or CIDRs.")
+              }
+              for _, value := range inline {
+                var entry = toLower(strip(tostring(value)))
+                if !singleAddress.Match(entry) {
+                  fail(listWhere + ".entries value '" + entry + "' is not an IP address or CIDR. Use a value such as 192.0.2.10 or 2001:db8::/32.")
+                }
+                addresses = append(addresses, entry)
+              }
+            }
+            if url != "" {
+              if !regex_search(url, `^https://[^/?#@[:space:]]+([/?][^#[:space:]]*)?$`) {
+                fail(listWhere + ".url must be an https:// URL without credentials or a fragment.")
+              }
+              var interval = dig_string(list, defaultInterval, "refreshInterval")
+              var duration, durationErr = parseDuration(interval)
+              if durationErr != nil || duration <= 0 {
+                fail(listWhere + " has refreshInterval '" + interval + "', which is not a positive duration. Use a value such as 6h.")
+              }
+              // Not critical: an unreachable vendor must not block every deploy.
+              var content, fetchErr = http.Fetch(url, map[string]any{"interval": interval, "critical": false})
+              if fetchErr == nil {
+                var text = toLower(replace(tostring(content), "\r", ""))
+                if strip(validLine.ReplaceAll(text, "")) != "" {
+                  fail("IP blocklist '" + name + "' has lines that aren't an IP address or CIDR, so its content is refused. Check that its url returns one address per line.")
+                }
+                var fetched = strip(blankLines.ReplaceAll(lineRemainder.ReplaceAll(text, "$1"), "\n"))
+                if fetched != "" {
+                  addresses = append(addresses, split(fetched, "\n")...)
+                }
+              }
+            }
+            var broadest = tooBroad.FindSubmatch(join(addresses, "\n"))
+            if len(broadest) > 0 {
+              fail("IP blocklist '" + name + "' lists " + broadest[0] + ", which is broader than /8 (IPv4) or /16 (IPv6) and would block a large part of the internet, so its content is refused. Remove the entry from the list.")
+            }
+            files = append(files, RegisterMap("ip-blocklist-" + name + ".map", mapLines(addresses), map[string]any{"ordered": false}))
+          }
+
+          var exempted = []string{}
+          var exemptions = entryMaps("exempt")
+          for _, name := range keys(exemptions) {
+            var exemption = enabledEntry("exempt", name, exemptions[name])
+            if exemption == nil {
+              continue
+            }
+            var cidr = toLower(strip(dig_string(exemption, "", "cidr")))
+            if !singleAddress.Match(cidr) {
+              fail(where + ".exempt." + name + ".cidr '" + cidr + "' is not an IP address or CIDR. Use a value such as 10.0.0.0/8.")
+            }
+            exempted = append(exempted, cidr)
+          }
+          var exemptPath = ""
+          if len(exempted) > 0 {
+            exemptPath = RegisterMap("ip-exempt.map", mapLines(exempted), map[string]any{"ordered": false})
+          }
+          return map[string]any{"lists": join(files, " -f "), "exempt": exemptPath}
+        })
+      %%}
+
+  # IPBlocklisted(fetch) is the ACL condition "the address <fetch> yields is
+  # on an enabled list and not exempt", or "" while no list is enabled.
+  util-ip-blocklist:
+    template: |-
+      {%- macro IPBlocklisted(fetch string) string -%}
+      {%%
+        var state = shared.Get("ipBlocklist")
+        var lists = dig_string(state, "", "lists")
+        var exempt = dig_string(state, "", "exempt")
+        if lists != "" {
+          show "{ " + fetch + " -m ip -M -f " + lists + " }"
+          if exempt != "" {
+            show " !{ " + fetch + " -m ip -M -f " + exempt + " }"
+          }
+        }
+      %%}
+      {%- end macro -%}
+
+  # Both rule sets: a connection rule runs before a PROXY protocol header
+  # replaces the address, a session rule after.
+  client-connection-100-ip-blocklist:
+    template: |-
+      {%- import "util-ip-blocklist" for IPBlocklisted -%}
+      {%- var listed = IPBlocklisted("src") -%}
+      {%- if listed != "" %}
+      # base/ip-blocklist (extraContext.ipBlocklists)
+      tcp-request connection reject if {{ listed }}
+      tcp-request session reject if {{ listed }}
+      {%- end %}
+
+  # The client a trusted proxy forwarded: the last X-Forwarded-For entry, or
+  # the one before it when the last is itself a trusted proxy. Only the last
+  # entries are checked because a client can write the earlier ones.
+  frontend-filters-096-ip-blocklist-forwarded:
+    template: |-
+      {%- import "util-ip-blocklist" for IPBlocklisted -%}
+      {%- import "util-refusal" for Refusal -%}
+      {%%
+        var trusted = shared.Get("forwardedTrustedProxiesMap") | fallback("") | tostring()
+        var viaOneProxy = "haptic_trusted_proxy " + IPBlocklisted("req.hdr_ip(X-Forwarded-For,-1)")
+        var viaTwoProxies = "haptic_trusted_proxy { req.hdr_ip(X-Forwarded-For,-1),map_ip(" + trusted + ") -m found } " + IPBlocklisted("req.hdr_ip(X-Forwarded-For,-2)")
+      %%}
+      {%- if trusted != "" && IPBlocklisted("src") != "" %}
+      # base/ip-blocklist: client forwarded by a trusted proxy
+      http-request set-var(txn.denied_by) str(ip_blocklist) if {{ viaOneProxy }}
+      {{- Refusal("deny deny_status 403", viaOneProxy) }}
+      http-request set-var(txn.denied_by) str(ip_blocklist) if {{ viaTwoProxies }}
+      {{- Refusal("deny deny_status 403", viaTwoProxies) }}
+      {%- end %}
+
+  # After every set-src lane: judges the address a route took from a header.
+  frontend-filters-900-ip-blocklist-rewritten-source:
+    template: |-
+      {%- import "util-ip-blocklist" for IPBlocklisted -%}
+      {%- import "util-refusal" for Refusal -%}
+      {%- var listed = IPBlocklisted("src") -%}
+      {%- if listed != "" %}
+      # base/ip-blocklist: client address set from a request header
+      http-request set-var(txn.denied_by) str(ip_blocklist) if {{ listed }}
+      {{- Refusal("deny deny_status 403", listed) }}
+      {%- end %}
+
   # The forwarded-for-mode-* rules: each sets txn.xff_mode to replace, append,
   # ifmissing or ignore for the requests it claims.
   util-forwarded-for-modes:
@@ -3206,6 +3401,7 @@ haproxyConfig:
             Lands on the OUTER tcp frontend so every HTTP port — chart-static and
             Gateway-derived — goes through the same h2c-detection inspector. #}
         {{- on_own_lines(render_glob "http-bind-extra-*") | indent(2, true) }}
+        {{- on_own_lines(render_glob "client-connection-*") | indent(2, true) }}
 
         # Wait for the first wire bytes so the h2c-preface ACL can classify the
         # connection (safety net for slow initial sends; fast clients aren't delayed).
@@ -3837,6 +4033,195 @@ validationTests:
       - type: contains
         target: rendering_error
         pattern: 'trustedProxies must be a list of CIDRs'
+
+  test-ip-blocklist-disabled-by-default:
+    description: Without ipBlocklists.enabled no list is fetched and no client is refused.
+    fixtures: {}
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: haproxy.cfg, pattern: 'ip-blocklist'}
+
+  test-ip-blocklist-lists:
+    description: >-
+      Each enabled list becomes its own map, so the map name tells which list
+      holds an address; a disabled list is left out; exempt addresses are spared.
+    extraContext:
+      ipBlocklists:
+        enabled: true
+        lists:
+          __replace__: true
+          alpha: {enabled: true, url: "https://lists.example.com/alpha.txt"}
+          beta: {enabled: true, entries: ["198.51.100.7", " 203.0.113.0/24 "]}
+          gamma: {enabled: false, url: "https://lists.example.com/gamma.txt"}
+        exempt:
+          __replace__: true
+          internal: {enabled: true, cidr: 10.0.0.0/8}
+          unused: {enabled: false, cidr: 192.168.0.0/16}
+    fixtures: {}
+    httpResources:
+      - url: https://lists.example.com/alpha.txt
+        content: "; Example list\r\n192.0.2.0/24 ; SBL1\r\n\r\n  2001:DB8:1::/48 ; SBL2\r\n \t\n# comment\n198.51.100.7\n"
+    assertions:
+      - type: haproxy_valid
+      - type: equals
+        target: map:ip-blocklist-alpha.map
+        expected: "192.0.2.0/24 1\n198.51.100.7 1\n2001:db8:1::/48 1\n"
+      - type: equals
+        target: map:ip-blocklist-beta.map
+        expected: "198.51.100.7 1\n203.0.113.0/24 1\n"
+      - type: equals
+        target: map:ip-exempt.map
+        expected: "10.0.0.0/8 1\n"
+      - {type: not_contains, target: haproxy.cfg, pattern: 'ip-blocklist-gamma'}
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend http-tcp\n(?:[ \t][^\n]*\n|\n)*?[ \t]+tcp-request connection reject if \{ src -m ip -M -f \S*/ip-blocklist-alpha\.map -f \S*/ip-blocklist-beta\.map \} !\{ src -m ip -M -f \S*/ip-exempt\.map \}\n[ \t]+tcp-request session reject if \{ src -m ip -M -f \S*/ip-blocklist-alpha\.map -f \S*/ip-blocklist-beta\.map \} !\{ src -m ip -M -f \S*/ip-exempt\.map \}\n'
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend https\n(?:[ \t][^\n]*\n|\n)*?[ \t]+tcp-request connection reject if \{ src -m ip -M -f \S*/ip-blocklist-alpha\.map -f \S*/ip-blocklist-beta\.map \} !\{ src -m ip -M -f \S*/ip-exempt\.map \}\n[ \t]+tcp-request session reject if \{ src -m ip -M -f '
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^frontend http_frontend\n(?:[ \t][^\n]*\n|\n)*?[ \t]+http-request set-var\(txn\.denied_by\) str\(ip_blocklist\) if \{ src -m ip -M -f \S*/ip-blocklist-alpha\.map -f \S*/ip-blocklist-beta\.map \} !\{ src -m ip -M -f \S*/ip-exempt\.map \}\n[ \t]+http-request deny deny_status 403 if \{ src -m ip -M -f '
+      - {type: not_contains, target: haproxy.cfg, pattern: 'X-Forwarded-For,-1\)'}
+
+  test-ip-blocklist-trusted-proxy:
+    description: >-
+      A client forwarded by a trusted proxy is judged by the last
+      X-Forwarded-For entry, or the one before it when the last is itself a
+      trusted proxy.
+    extraContext:
+      forwardedHeaders:
+        trustedProxies: ["10.0.0.0/8"]
+      ipBlocklists:
+        enabled: true
+        lists:
+          __replace__: true
+          beta: {enabled: true, entries: ["198.51.100.7"]}
+        exempt:
+          __replace__: true
+    fixtures: {}
+    assertions:
+      - type: haproxy_valid
+      - type: match_order
+        target: haproxy.cfg
+        patterns:
+          - '(?m)^frontend http_frontend$'
+          - 'acl haptic_trusted_proxy src,map_ip\(\S*/forwarded-trusted-proxies\.map\) -m found'
+          - 'http-request deny deny_status 403 if haptic_trusted_proxy \{ req\.hdr_ip\(X-Forwarded-For,-1\) -m ip -M -f \S*/ip-blocklist-beta\.map \}\n'
+          - 'http-request deny deny_status 403 if haptic_trusted_proxy \{ req\.hdr_ip\(X-Forwarded-For,-1\),map_ip\(\S*/forwarded-trusted-proxies\.map\) -m found \} \{ req\.hdr_ip\(X-Forwarded-For,-2\) -m ip -M -f \S*/ip-blocklist-beta\.map \}\n'
+          - 'http-request deny deny_status 403 if \{ src -m ip -M -f \S*/ip-blocklist-beta\.map \}\n'
+          - 'http-request add-header X-Forwarded-For %\[src\]'
+
+  test-ip-blocklist-pending-content:
+    description: A list whose first response is not accepted yet contributes nothing; the rules already exist, so its entries arrive without a reload.
+    extraContext:
+      ipBlocklists:
+        enabled: true
+        lists:
+          __replace__: true
+          alpha: {enabled: true, url: "https://lists.example.com/alpha.txt"}
+    fixtures: {}
+    httpResources:
+      - url: https://lists.example.com/alpha.txt
+        pending: true
+        content: ''
+    assertions:
+      - type: haproxy_valid
+      - {type: equals, target: "map:ip-blocklist-alpha.map", expected: ""}
+      - {type: contains, target: haproxy.cfg, pattern: 'tcp-request session reject if \{ src -m ip -M -f \S*/ip-blocklist-alpha\.map \}'}
+
+  test-ip-blocklist-rejects-malformed-content:
+    description: A response that is not an address list, such as an error page, is refused instead of emptying the list.
+    extraContext:
+      ipBlocklists:
+        enabled: true
+        lists:
+          __replace__: true
+          alpha: {enabled: true, url: "https://lists.example.com/alpha.txt"}
+    fixtures: {}
+    httpResources:
+      - url: https://lists.example.com/alpha.txt
+        content: "192.0.2.0/24\n<html>Service unavailable</html>\n"
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "IP blocklist 'alpha' has lines that aren't an IP address or CIDR"
+
+  test-ip-blocklist-rejects-out-of-range-content:
+    description: A fetched line with an impossible prefix length is refused by the render, not later by HAProxy.
+    extraContext:
+      ipBlocklists:
+        enabled: true
+        lists:
+          __replace__: true
+          alpha: {enabled: true, url: "https://lists.example.com/alpha.txt"}
+    fixtures: {}
+    httpResources:
+      - url: https://lists.example.com/alpha.txt
+        content: "192.0.2.0/24\n198.51.100.0/33\n"
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "IP blocklist 'alpha' has lines that aren't an IP address or CIDR"
+
+  test-ip-blocklist-rejects-out-of-range-entry:
+    description: An inline entry with an octet above 255 is refused.
+    extraContext:
+      ipBlocklists:
+        enabled: true
+        lists:
+          __replace__: true
+          alpha: {enabled: true, entries: ["300.1.1.1"]}
+    fixtures: {}
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "ipBlocklists\\.lists\\.alpha\\.entries value '300\\.1\\.1\\.1' is not an IP address or CIDR"
+
+  test-ip-blocklist-rejects-broad-entry:
+    description: An entry covering a large part of the address space is refused, so a faulty list cannot block everyone.
+    extraContext:
+      ipBlocklists:
+        enabled: true
+        lists:
+          __replace__: true
+          alpha: {enabled: true, url: "https://lists.example.com/alpha.txt"}
+    fixtures: {}
+    httpResources:
+      - url: https://lists.example.com/alpha.txt
+        content: "192.0.2.0/24\n0.0.0.0/0\n"
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: "IP blocklist 'alpha' lists 0\\.0\\.0\\.0/0, which is broader than /8 \\(IPv4\\)"
+
+  test-ip-blocklist-rejects-missing-enabled:
+    description: A list without an enabled flag is refused rather than left inert.
+    extraContext:
+      ipBlocklists:
+        enabled: true
+        lists:
+          __replace__: true
+          alpha: {url: "https://lists.example.com/alpha.txt"}
+    fixtures: {}
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: 'ipBlocklists\.lists\.alpha must be a map with enabled set to true or false'
+
+  test-ip-blocklist-rejects-plaintext-url:
+    description: A list fetched over plaintext could be replaced in transit, so its URL is refused.
+    extraContext:
+      ipBlocklists:
+        enabled: true
+        lists:
+          __replace__: true
+          alpha: {enabled: true, url: "http://lists.example.com/alpha.txt"}
+    fixtures: {}
+    assertions:
+      - type: contains
+        target: rendering_error
+        pattern: 'ipBlocklists\.lists\.alpha\.url must be an https:// URL'
 
   test-shm-stats-max-objects:
     description: shm-stats-file-max-objects uses configurable fixed value

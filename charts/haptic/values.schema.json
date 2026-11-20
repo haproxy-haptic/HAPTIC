@@ -653,6 +653,57 @@
                       },
                       "additionalProperties": false
                     },
+                    "ipBlocklists": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "exempt": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "cidr": {
+                                "type": "string"
+                              },
+                              "enabled": {
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "lists": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "entries": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "refreshInterval": {
+                                "type": "string"
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "refreshInterval": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "jwt": {
                       "type": "object",
                       "properties": {

@@ -112,6 +112,7 @@ This table is the authoritative registry of every `render_glob` extension point 
 | Features | `features-*` | Early in config generation | Feature initialization and registration |
 | Global Top | `global-top-*` | After `defaults` section | Top-level HAProxy elements (userlists, peers, etc.) |
 | HTTP Bind Extra | `http-bind-extra-*` | Inside the outer plaintext TCP frontend, after the chart-static bind | Additional plaintext-HTTP `bind` lines (for example, Gateway HTTP listeners on non-default ports); every added port goes through the same [h2c detection](#h2c-cleartext-detection) |
+| Client Connection | `client-connection-*` | Every client-facing frontend, before any request rule | `tcp-request connection` and `tcp-request session` rules that judge a client address, such as the [IP blocklists](../operations/security.md#ip-blocklists) |
 | Frontend Extra | `frontend-extra-*` | After frontend bind, before routing | Early frontend directives (options, captures, ACLs) |
 | Listener Port Translation | `frontend-routing-listener-port-*` | Routing prologue, after `txn.listener_port` is seeded from `dst_port` | Remap `txn.listener_port` when a library binds a pod port that differs from the user-facing listener port (for example, Gateway per-Gateway HTTPS binds) |
 | Host Matching | `frontend-routing-host-match-*` | Before the standard hostname lookups | Set `txn.host_match` to select a routing group; leave it empty to use the standard lookups |

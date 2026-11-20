@@ -212,6 +212,7 @@ templateSnippets:
       frontend gateway-tls-port-{{ port }}
           guid fe:gateway-tls-port-{{ port }}
           mode tcp{{ render "util-log-format-tcp" }}
+          {{- on_own_lines(render_glob "client-connection-*") | indent(2, true) }}
             {%- if portMode == "Terminate" %}
           bind *:{{ port }}{{ TLSListenerBindOptions(certificate) }}
             {%- else %}

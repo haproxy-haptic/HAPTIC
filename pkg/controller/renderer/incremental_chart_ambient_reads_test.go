@@ -90,8 +90,9 @@ func TestBundledChartAmbientReadsStayBehindExactBoundaries(t *testing.T) {
 	incrementalTraversal := traverseChartAmbientAudit(nodes, incrementalRoots, true)
 
 	exactCycleReaders := map[string][]string{
-		"util-emit-gatewayclass": {"resources.gatewayclasses.APIVersion("},
-		"util-waf-crs-source":    {"http.Fetch("},
+		"features-011-ip-blocklist": {"http.Fetch("},
+		"util-emit-gatewayclass":    {"resources.gatewayclasses.APIVersion("},
+		"util-waf-crs-source":       {"http.Fetch("},
 	}
 	var failures []string
 	failures = append(failures, rootTraversal.problems...)

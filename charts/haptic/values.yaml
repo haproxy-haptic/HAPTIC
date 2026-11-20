@@ -739,6 +739,65 @@ controller:
         # https://haproxy-haptic.org/docs/latest/operations/security/#forwarded-headers
         forwardedHeaders:
           trustedProxies: []  # @schema item: string
+        # Refuse clients whose address is on a public blocklist of known bad
+        # actors. The controller fetches each enabled list over HTTPS; its
+        # NetworkPolicy must allow that egress. See
+        # https://haproxy-haptic.org/docs/latest/operations/security/#ip-blocklists
+        ipBlocklists:
+          enabled: false
+          # How often a list is fetched again. A list can set its own.
+          refreshInterval: 6h
+          # Keyed by list name. Each list has `enabled` and a `url` (one IP
+          # address or CIDR per line, `#` and `;` start a comment), inline
+          # `entries`, or both. Add your own lists the same way. You accept
+          # each list's terms of use by enabling it.
+          lists:  # @schema mergeProperties
+            # Networks hijacked by or leased to criminal operations.
+            # Terms: https://www.spamhaus.org/drop/terms/
+            spamhaus-drop-v4:
+              enabled: true
+              url: https://www.spamhaus.org/drop/drop.txt
+            spamhaus-drop-v6:
+              enabled: true
+              url: https://www.spamhaus.org/drop/dropv6.txt
+            # Active botnet command-and-control servers.
+            abuse-ch-feodo:
+              enabled: false
+              url: https://feodotracker.abuse.ch/downloads/ipblocklist_recommended.txt
+            # Addresses that appear on five or more other blocklists.
+            ipsum-level-5:
+              enabled: false
+              url: https://raw.githubusercontent.com/stamparm/ipsum/master/levels/5.txt
+            # Hosts reported as compromised.
+            emerging-threats-compromised:
+              enabled: false
+              url: https://rules.emergingthreats.net/blockrules/compromised-ips.txt
+            # Addresses with a poor reputation score in the CINS sensor network.
+            cins-army:
+              enabled: false
+              url: https://cinsscore.com/list/ci-badguys.txt
+            # Addresses reported for attacks within the last 48 hours. Many are
+            # dynamic, so legitimate clients are more likely to be listed.
+            blocklist-de:
+              enabled: false
+              url: https://lists.blocklist.de/lists/all.txt
+            # Tor exit nodes. A policy choice: Tor users aren't bad actors.
+            tor-exits:
+              enabled: false
+              url: https://check.torproject.org/torbulkexitlist
+          # Addresses that are never refused, keyed by a name of your choice.
+          # The defaults keep cluster-internal and private clients reachable
+          # when a list contains reserved ranges.
+          exempt:  # @schema mergeProperties
+            loopback-v4: {enabled: true, cidr: 127.0.0.0/8}
+            loopback-v6: {enabled: true, cidr: "::1"}
+            private-10: {enabled: true, cidr: 10.0.0.0/8}
+            private-172: {enabled: true, cidr: 172.16.0.0/12}
+            private-192: {enabled: true, cidr: 192.168.0.0/16}
+            shared-nat: {enabled: true, cidr: 100.64.0.0/10}
+            link-local-v4: {enabled: true, cidr: 169.254.0.0/16}
+            link-local-v6: {enabled: true, cidr: "fe80::/10"}
+            unique-local-v6: {enabled: true, cidr: "fc00::/7"}
         # HTTP/3 over QUIC. Every TLS-terminating HTTPS listener gets a UDP twin
         # on the same port with the same certificates, the HAProxy Service and
         # container get a UDP port, and responses carry an `alt-svc` header that
@@ -2789,7 +2848,7 @@ vector:
       enabled: true
       field: denied_by
       kind: enum  # @schema enum: [enum, numeric]
-      values: ["api_key", "api_key_unavailable", "backend_tls_unavailable", "basic_auth", "basic_auth_unavailable", "body_too_large", "cache_origin_internal_backend", "consumer_groups", "consumer_groups_unavailable", "content_type", "external_auth", "external_auth_unavailable", "gw_sni_host_mismatch", "hmac", "hmac_body_incomplete", "hmac_no_content_length", "hmac_unavailable", "jwt_algorithm", "jwt_audience", "jwt_expired", "jwt_groups", "jwt_issuer", "jwt_key_unavailable", "jwt_missing", "jwt_not_yet_valid", "jwt_required_claim", "jwt_signature", "jwt_unavailable", "method_not_allowed", "mtls_sni_host_mismatch", "mtls_unavailable", "policy_consumer_missing", "rate_limit_connections", "rate_limit_local", "rate_limit_shared", "rate_limit_shared_invalid", "rate_limit_shared_unavailable", "request_schema_unavailable", "required_header", "route_policy_unavailable", "schema_body_incomplete", "schema_body_too_large", "schema_duplicate_content_length", "schema_invalid", "schema_no_content_length", "schema_unavailable", "schema_unsupported_media_type", "sni_host_mismatch", "source_address", "sso_auth", "sso_auth_unavailable", "upstream_auth_trace", "upstream_auth_unavailable", "waf", "waf_body_chunked", "waf_body_content_type", "waf_body_duplicate_content_length", "waf_body_incomplete", "waf_body_too_large", "waf_client_penalty", "waf_policy_unavailable", "waf_status_400", "waf_status_413", "waf_unavailable"]
+      values: ["api_key", "api_key_unavailable", "backend_tls_unavailable", "basic_auth", "basic_auth_unavailable", "body_too_large", "cache_origin_internal_backend", "consumer_groups", "consumer_groups_unavailable", "content_type", "external_auth", "external_auth_unavailable", "gw_sni_host_mismatch", "hmac", "hmac_body_incomplete", "hmac_no_content_length", "hmac_unavailable", "ip_blocklist", "jwt_algorithm", "jwt_audience", "jwt_expired", "jwt_groups", "jwt_issuer", "jwt_key_unavailable", "jwt_missing", "jwt_not_yet_valid", "jwt_required_claim", "jwt_signature", "jwt_unavailable", "method_not_allowed", "mtls_sni_host_mismatch", "mtls_unavailable", "policy_consumer_missing", "rate_limit_connections", "rate_limit_local", "rate_limit_shared", "rate_limit_shared_invalid", "rate_limit_shared_unavailable", "request_schema_unavailable", "required_header", "route_policy_unavailable", "schema_body_incomplete", "schema_body_too_large", "schema_duplicate_content_length", "schema_invalid", "schema_no_content_length", "schema_unavailable", "schema_unsupported_media_type", "sni_host_mismatch", "source_address", "sso_auth", "sso_auth_unavailable", "upstream_auth_trace", "upstream_auth_unavailable", "waf", "waf_body_chunked", "waf_body_content_type", "waf_body_duplicate_content_length", "waf_body_incomplete", "waf_body_too_large", "waf_client_penalty", "waf_policy_unavailable", "waf_status_400", "waf_status_413", "waf_unavailable"]
       metric: denied_total
       tag: reason
 

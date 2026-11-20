@@ -160,7 +160,7 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 	replicas, err := discoverHAProxyReplicaCount(ctx, client)
 	require.NoError(t, err)
 	publication := forwardedPolicyPublication{client: hc, replicas: replicas, namespace: namespace, routeNames: routeNames}
-	publication.baselineChecksum, err = publication.wait(ctx, false)
+	baselineChecksum, err := publication.wait(ctx, false, "")
 	require.NoError(t, err)
 	configs := dyn.Resource(configGVR).Namespace(ControllerNamespace)
 	original, err := configs.Get(ctx, HAProxyConfigName, metav1.GetOptions{})
@@ -178,6 +178,7 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 		}
 		return configs.Patch(ctx, HAProxyConfigName, types.JSONPatchType, body, metav1.PatchOptions{})
 	}
+	var trustedChecksum string
 	var patched *unstructured.Unstructured
 	t.Cleanup(func() {
 		if patched == nil {
@@ -192,7 +193,7 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 		restored, err := patch(cleanupCtx, patched, operation, previous)
 		require.NoError(t, err)
 		require.NoError(t, waitForConfigValidation(cleanupCtx, configs, restored))
-		_, err = publication.wait(cleanupCtx, false)
+		_, err = publication.wait(cleanupCtx, false, trustedChecksum)
 		require.NoError(t, err)
 		waitForOperatorForwardedPolicy(cleanupCtx, t, host, false, forwardedPrefix)
 	})
@@ -205,20 +206,19 @@ func trustForwardedHeadersDuringTest(ctx context.Context, t *testing.T, cfg *env
 	patched, err = patch(ctx, original, "add", map[string]any{"trustedProxies": []string{prefix}})
 	require.NoError(t, err)
 	require.NoError(t, waitForConfigValidation(ctx, configs, patched))
-	_, err = publication.wait(ctx, true)
+	trustedChecksum, err = publication.wait(ctx, true, baselineChecksum)
 	require.NoError(t, err)
 	waitForOperatorForwardedPolicy(ctx, t, host, true, forwardedPrefix)
 }
 
 type forwardedPolicyPublication struct {
-	client           hapticclient.Interface
-	replicas         int
-	namespace        string
-	routeNames       []string
-	baselineChecksum string
+	client     hapticclient.Interface
+	replicas   int
+	namespace  string
+	routeNames []string
 }
 
-func (p *forwardedPolicyPublication) wait(ctx context.Context, trusted bool) (string, error) {
+func (p *forwardedPolicyPublication) wait(ctx context.Context, trusted bool, previousChecksum string) (string, error) {
 	var checksum string
 	err := testutil.WaitForConditionWithDescription(ctx, testutil.SlowWaitConfig(), "forwarding policy is published and deployed to every replica",
 		func(ctx context.Context) (bool, error) {
@@ -233,19 +233,20 @@ func (p *forwardedPolicyPublication) wait(ctx context.Context, trusted bool) (st
 			if err := p.matchesPolicy(content, trusted); err != nil {
 				return false, err
 			}
-			checksum = obj.Spec.Checksum
-			if checksum == "" || p.baselineChecksum != "" && (checksum == p.baselineChecksum) == trusted {
-				return false, fmt.Errorf("published checksum %q does not match the expected forwarding transition", checksum)
+			candidate := obj.Spec.Checksum
+			if candidate == "" || candidate == previousChecksum {
+				return false, fmt.Errorf("published checksum %q has not advanced from %q", candidate, previousChecksum)
 			}
 			if len(obj.Status.DeployedToPods) < p.replicas {
 				return false, fmt.Errorf("only %d/%d replicas reported deployed", len(obj.Status.DeployedToPods), p.replicas)
 			}
 			for index := range obj.Status.DeployedToPods {
 				pod := &obj.Status.DeployedToPods[index]
-				if pod.Checksum != checksum {
-					return false, fmt.Errorf("pod %s has checksum %q, expected %q", pod.PodName, pod.Checksum, checksum)
+				if pod.Checksum != candidate {
+					return false, fmt.Errorf("pod %s has checksum %q, expected %q", pod.PodName, pod.Checksum, candidate)
 				}
 			}
+			checksum = candidate
 			return true, nil
 		})
 	return checksum, err
