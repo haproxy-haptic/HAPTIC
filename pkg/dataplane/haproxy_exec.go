@@ -97,8 +97,8 @@ type identifiedExecutor interface {
 // executor gave is never an answer for another.
 var executorGeneration atomic.Uint64
 
-// executorIdentity names the active executor and, when it can tell, its binary.
-func executorIdentity() (string, error) {
+// HAProxyExecutorIdentity names the active executor and, when available, its binary.
+func HAProxyExecutorIdentity() (string, error) {
 	generation := strconv.FormatUint(executorGeneration.Load(), 10)
 	identified, ok := getHAProxyExecutor().(identifiedExecutor)
 	if !ok {

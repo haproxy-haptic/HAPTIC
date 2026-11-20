@@ -22,15 +22,18 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/names"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/testrunner"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/typebootstrap"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
 	"github.com/haproxy-haptic/HAPTIC/pkg/templating"
@@ -51,11 +54,10 @@ type Result struct {
 	// Non-empty only when Passed is false and Incomplete is false.
 	Failures []string
 
-	// Incomplete is true when the run was cut short by the timeout before every
-	// test finished. The caller owns the fail-closed (reject) vs fail-open
-	// (admit-with-warning) decision: the daemon load gate fails closed; the
-	// admission webhook fails open so a slow suite never blocks an apply.
+	// Incomplete means the caller still lacks a verdict for the full suite.
 	Incomplete bool
+	// Remaining counts unfinished runnable tests in an incomplete attempt.
+	Remaining int
 }
 
 // RunValidationTests executes cfg's embedded validationTests against the given
@@ -73,6 +75,31 @@ func RunValidationTests(
 	timeout time.Duration,
 	logger *slog.Logger,
 ) (Result, error) {
+	var progress SuiteProgress
+	return progress.Run(ctx, cfg, engine, &typebootstrap.Result{Types: typedResourceTypes}, 0, timeout, logger)
+}
+
+// SuiteProgress belongs to one live validator's serial event loop. It retains
+// unfinished names and immutable inputs for an interrupted candidate only.
+type SuiteProgress struct {
+	generation uint64
+	config     *config.Config
+	schema     *typebootstrap.Result
+	haproxy    dataplane.Version
+	executor   string
+	pending    []string
+}
+
+func (p *SuiteProgress) matches(generation uint64, cfg *config.Config, schema *typebootstrap.Result, version *dataplane.Version, executor string) bool {
+	return executor != "" && generation != 0 && p.executor == executor && p.generation == generation && p.haproxy == *version &&
+		reflect.DeepEqual(p.config, cfg) && maps.Equal(p.schema.Types, schema.Types) &&
+		maps.Equal(p.schema.Kinds, schema.Kinds) && len(p.schema.Errors) == 0 && len(schema.Errors) == 0
+}
+
+func (p *SuiteProgress) Run(ctx context.Context, cfg *config.Config, engine templating.Engine, schema *typebootstrap.Result, generation uint64, timeout time.Duration, logger *slog.Logger) (Result, error) {
+	previous := *p
+	*p = SuiteProgress{}
+
 	if len(cfg.ValidationTests) == 0 {
 		return Result{Passed: true}, nil
 	}
@@ -87,35 +114,55 @@ func RunValidationTests(
 		Logger:             logger,
 		Capabilities:       capabilities,
 		HAProxyVersion:     haproxyVersion,
-		TypedResourceTypes: typedResourceTypes,
+		TypedResourceTypes: schema.Types,
 	})
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	results, err := runner.RunTests(runCtx, "")
+	var selection []string
+	var executor string
+	if generation != 0 {
+		// An unidentified binary can still run a full suite but cannot continue a partial one.
+		executor, _ = dataplane.HAProxyExecutorIdentity()
+	}
+	if previous.matches(generation, cfg, schema, haproxyVersion, executor) {
+		selection = previous.pending
+		logger.Info("Resuming incomplete validationTests", "remaining_tests", len(selection), "candidate_generation", generation)
+	}
+	results, err := runner.RunNamedTests(runCtx, selection)
 	if err != nil {
 		return Result{}, fmt.Errorf("executing validationTests: %w", err)
 	}
 
-	// RunTests does NOT report context cancellation as an error: on timeout its
-	// workers stop early and the un-run tests are silently absent from the
-	// counts (counted in neither PassedTests nor FailedTests). So a timed-out
-	// run with no observed failures looks like "0 failures" — which would be
-	// fail-OPEN if trusted. Flag that case as Incomplete and let the caller
-	// decide (the load gate fails closed; the webhook admits-with-warning).
-	//
-	// BUT a cut-short run that ALREADY observed real failures must surface them
-	// as a denial, not collapse to Incomplete: observed failures are
-	// authoritative regardless of whether the rest of the suite finished.
-	// Without this, a genuinely-failing config whose suite happens to exceed the
-	// budget would slip through the webhook's admit-with-warning path.
 	if results.FailedTests > 0 {
 		return Result{Failures: summarizeTestFailures(results)}, nil
 	}
-	if runCtx.Err() != nil {
-		return Result{Incomplete: true}, nil
+	if executor != "" && (len(selection) > 0 || runCtx.Err() != nil) {
+		current, err := dataplane.HAProxyExecutorIdentity()
+		if err != nil || current != executor {
+			return Result{Incomplete: true, Remaining: len(cfg.ValidationTests)}, nil
+		}
+	}
+	if runCtx.Err() != nil || results.PassedTests != results.TotalTests {
+		pending := unfinishedTests(cfg, selection, results)
+		if executor != "" && ctx.Err() == nil && len(pending) > 0 {
+			*p = SuiteProgress{generation: generation, config: cfg, schema: schema, executor: executor, haproxy: *haproxyVersion, pending: pending}
+		}
+		return Result{Incomplete: true, Remaining: len(pending)}, nil
 	}
 	return Result{Passed: true}, nil
+}
+
+func unfinishedTests(cfg *config.Config, selection []string, results *testrunner.TestResults) []string {
+	if len(selection) == 0 {
+		selection = slices.Collect(maps.Keys(cfg.ValidationTests))
+	}
+	done := map[string]bool{"_global": true}
+	for i := range results.TestResults {
+		tr := &results.TestResults[i]
+		done[tr.TestName] = tr.Passed || tr.Skipped
+	}
+	return slices.DeleteFunc(selection, func(name string) bool { return done[name] })
 }
 
 // buildValidationPaths creates a temporary HAProxy validation tree mirroring the

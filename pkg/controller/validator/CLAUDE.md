@@ -44,7 +44,7 @@ ConfigValidatedEvent  or  ConfigInvalidEvent  or  ConfigValidationInconclusiveEv
 - **BasicValidator**: Structural validation (required fields, types)
 - **TemplateValidator**: Template syntax validation. Calls `helpers.ExtractTemplatesFromConfig`, which walks `spec.haproxyConfig`, `spec.templateSnippets`, `spec.maps`, `spec.files`, and `spec.sslCertificates` (there is no flat `spec.templates` field), then compiles them with `templating.NewScriggoWithDeclarations`.
 - **JSONPathValidator**: JSONPath expression validation (evaluates each `indexBy` expression)
-- **ValidationTestsValidator**: Runs the embedded validation tests; incomplete runs without assertion failures are inconclusive.
+- **ValidationTestsValidator**: Runs the embedded fixture suite. A live retry can continue the unfinished tests for its candidate generation after rechecking the effective config, typed schemas and local HAProxy identity. The replica drops progress at a verdict or on restart. Startup always needs a fresh complete run.
 
 ## Resources
 

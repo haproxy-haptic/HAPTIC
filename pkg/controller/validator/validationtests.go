@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/configtest"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/events"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/helpers"
 	coreconfig "github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	busevents "github.com/haproxy-haptic/HAPTIC/pkg/events"
@@ -128,6 +129,7 @@ type ValidationTestsValidator struct {
 	*BaseValidator
 	bootstrap TypeBootstrapper
 	budgetFor func(testCount int) time.Duration
+	progress  configtest.SuiteProgress
 }
 
 // NewValidationTestsValidator creates the validationTests validator.
@@ -146,13 +148,21 @@ func NewValidationTestsValidator(eventBus *busevents.EventBus, logger *slog.Logg
 		bootstrap: bootstrap,
 		budgetFor: SuiteRunBudget,
 	}
-	v.BaseValidator = NewBaseValidator(eventBus, logger, ValidatorNameValidationTests, v)
+	v.BaseValidator = newRequestValidator(eventBus, logger, ValidatorNameValidationTests, func(ctx context.Context, cfg *coreconfig.Config, request *events.ConfigValidationRequest) Verdict {
+		return v.validate(ctx, cfg, request.Version, request.CandidateGeneration, &v.progress)
+	})
 	return v
 }
 
 // Validate implements ValidationHandler.
 func (v *ValidationTestsValidator) Validate(ctx context.Context, cfg *coreconfig.Config, version string) Verdict {
+	return v.validate(ctx, cfg, version, 0, &configtest.SuiteProgress{})
+}
+
+func (v *ValidationTestsValidator) validate(ctx context.Context, cfg *coreconfig.Config, version string, generation uint64, saved *configtest.SuiteProgress) Verdict {
 	start := time.Now()
+	progress := *saved
+	*saved = configtest.SuiteProgress{}
 
 	if len(cfg.ValidationTests) == 0 {
 		return Verdict{Valid: true}
@@ -162,7 +172,10 @@ func (v *ValidationTestsValidator) Validate(ctx context.Context, cfg *coreconfig
 	v.Logger().Debug("Running validationTests",
 		"version", version, "test_count", len(cfg.ValidationTests), "run_budget", budget)
 
-	result, err := RunValidationTestsSync(ctx, cfg, v.bootstrap, budget, v.Logger())
+	result, err := runValidationTests(ctx, cfg, v.bootstrap, budget, v.Logger(), generation, &progress)
+	if err == nil && result.Incomplete && ctx.Err() == nil {
+		*saved = progress
+	}
 	if ctx.Err() == context.Canceled {
 		v.Logger().Debug("ValidationTests canceled", "version", version)
 		return Verdict{Errors: []string{context.Cause(ctx).Error()}}
@@ -173,7 +186,7 @@ func (v *ValidationTestsValidator) Validate(ctx context.Context, cfg *coreconfig
 	switch {
 	case result.Incomplete && verdict.Inconclusive:
 		v.Logger().Warn("ValidationTests did not complete in time",
-			"version", version, "run_budget", budget, "duration_ms", duration.Milliseconds())
+			"version", version, "run_budget", budget, "duration_ms", duration.Milliseconds(), "remaining_tests", result.Remaining)
 	case verdict.Inconclusive:
 		v.Logger().Warn("ValidationTests could not run yet",
 			"version", version, "error", err)
@@ -193,19 +206,20 @@ func (v *ValidationTestsValidator) Validate(ctx context.Context, cfg *coreconfig
 	return verdict
 }
 
-// RunValidationTestsSync resolves typed schemas, builds a throwaway engine, and
-// runs the config's embedded validationTests via the shared configtest helper
-// (the same one the admission webhook uses, so the gates can't drift). It is the
-// shared core behind both the live scatter-gather gate (the validator's
-// HandleRequest) and the startup load gate (controller.runIteration) — so a
-// config's tests are bootstrapped, compiled, and executed identically whether
-// they run on a live change or at controller load.
+// RunValidationTestsSync starts a fresh run of the complete embedded fixture
+// suite for synchronous config validation, including the startup load gate.
+// It shares schema bootstrap, engine compilation, and test execution with the
+// live validator. Only the live validator retains progress across retries.
 //
 // A config with no validationTests is a zero-cost pass. A runTimeout <= 0 uses
 // the default suite budget (validationTestsRunTimeout). Any setup error is
 // returned so the caller can fail validation with a clear reason rather than
 // silently skipping the gate.
 func RunValidationTestsSync(ctx context.Context, cfg *coreconfig.Config, bootstrap TypeBootstrapper, runTimeout time.Duration, logger *slog.Logger) (configtest.Result, error) {
+	return runValidationTests(ctx, cfg, bootstrap, runTimeout, logger, 0, &configtest.SuiteProgress{})
+}
+
+func runValidationTests(ctx context.Context, cfg *coreconfig.Config, bootstrap TypeBootstrapper, runTimeout time.Duration, logger *slog.Logger, generation uint64, progress *configtest.SuiteProgress) (configtest.Result, error) {
 	if len(cfg.ValidationTests) == 0 {
 		return configtest.Result{Passed: true}, nil
 	}
@@ -229,7 +243,7 @@ func RunValidationTestsSync(ctx context.Context, cfg *coreconfig.Config, bootstr
 		return configtest.Result{}, fmt.Errorf("building validation engine: %w", err)
 	}
 
-	return configtest.RunValidationTests(ctx, cfg, engine, bootstrapResult.Types, runTimeout, logger)
+	return progress.Run(ctx, cfg, engine, bootstrapResult, generation, runTimeout, logger)
 }
 
 func validationTestsVerdict(result configtest.Result, err error, incompleteMessage string) Verdict {

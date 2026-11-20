@@ -173,15 +173,15 @@ const (
 	// DefaultHelmInstallTimeout caps `helm install --wait`.
 	DefaultHelmInstallTimeout = 5 * time.Minute
 
-	// DefaultEnvironmentReadyTimeout is the budget for the suite-level
-	// readiness check (controller pipeline succeeded, all HAProxy pods
-	// acknowledged the deployed config). 6 minutes, not 3: controller
+	// DefaultEnvironmentReadyTimeout covers startup and full controller
+	// reinitialization after served-CRD changes. The suite waits for the controller
+	// pipeline and all HAProxy pods to acknowledge the deployed config. Controller
 	// STARTUP legitimately runs the config's embedded validationTests
 	// (dozens of haproxy -c semantic checks, parallelized only up to
 	// NumCPU) before turning Ready — measured at 2-4 minutes on 2-vCPU
 	// shared CI runners, where 2 of 5 otherwise-green e2e jobs timed out
-	// at 3m purely on startup. This budget gates one-time initialization
-	// only; post-startup convergence stays under the 15s httpclient poll
+	// at 3m purely on startup. CRD-triggered validation took over 3m for
+	// 1,362 tests. Routing convergence stays under the 15s httpclient poll
 	// ceiling and the conformance suite's 10s MaxTimeToConsistency.
 	DefaultEnvironmentReadyTimeout = 6 * time.Minute
 

@@ -38,8 +38,8 @@ type ValidationHandler interface {
 // A panic produces a rejection so the scatter-gather coordinator can finish.
 type BaseValidator struct {
 	*component.Base
-	name    string
-	handler ValidationHandler
+	name     string
+	validate func(context.Context, *coreconfig.Config, *events.ConfigValidationRequest) Verdict
 }
 
 // NewBaseValidator subscribes the handler to config validation requests.
@@ -49,9 +49,15 @@ func NewBaseValidator(
 	name string,
 	handler ValidationHandler,
 ) *BaseValidator {
+	return newRequestValidator(eventBus, logger, name, func(ctx context.Context, cfg *coreconfig.Config, request *events.ConfigValidationRequest) Verdict {
+		return handler.Validate(ctx, cfg, request.Version)
+	})
+}
+
+func newRequestValidator(eventBus *busevents.EventBus, logger *slog.Logger, name string, validate func(context.Context, *coreconfig.Config, *events.ConfigValidationRequest) Verdict) *BaseValidator {
 	v := &BaseValidator{
-		name:    name,
-		handler: handler,
+		name:     name,
+		validate: validate,
 	}
 	v.Base = component.New(&component.Config{
 		EventBus:   eventBus,
@@ -81,7 +87,7 @@ func (v *BaseValidator) HandleRequest(req *events.ConfigValidationRequest) {
 		v.respond(req, Verdict{Errors: []string{fmt.Sprintf("invalid config type: %T", req.Config)}})
 		return
 	}
-	v.respond(req, v.handler.Validate(v.LifecycleContext(), cfg, req.Version))
+	v.respond(req, v.validate(v.LifecycleContext(), cfg, req))
 }
 
 // HandlePanic rejects the request so scatter-gather does not wait for a lost response.
