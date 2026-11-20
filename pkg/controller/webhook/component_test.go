@@ -499,17 +499,17 @@ type mockDryRunValidator struct {
 	oldObject any
 }
 
-func (m *mockDryRunValidator) ValidateDirect(_ context.Context, _, _, _ string, object, oldObject any, _ string) (allowed bool, reason string, warnings []string) {
+func (m *mockDryRunValidator) ValidateAdmission(_ context.Context, _, _, _ string, object, oldObject any, _ string) (allowed bool, reason string, warnings []string, failure error) {
 	m.object = object
 	m.oldObject = oldObject
-	return m.allowed, m.reason, m.warnings
+	return m.allowed, m.reason, m.warnings, nil
 }
 
 type contextBlockingDryRunValidator struct{}
 
-func (contextBlockingDryRunValidator) ValidateDirect(ctx context.Context, _, _, _ string, _, _ any, _ string) (allowed bool, reason string, warnings []string) {
+func (contextBlockingDryRunValidator) ValidateAdmission(ctx context.Context, _, _, _ string, _, _ any, _ string) (allowed bool, reason string, warnings []string, failure error) {
 	<-ctx.Done()
-	return false, ctx.Err().Error(), nil
+	return false, ctx.Err().Error(), nil, nil
 }
 
 func TestComponent_createResourceValidator_ReturnsFunction(t *testing.T) {

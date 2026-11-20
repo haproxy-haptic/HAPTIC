@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The hosted playground resumes stalled engine downloads using byte ranges and verifies the reconstructed engine before rendering ([#713](https://github.com/haproxy-haptic/HAPTIC/issues/713)).
 - The agent no longer echoes a rejected map key or value in its error message.
 - Shared rate limiting no longer stays on per-pod budgets for an extra cooldown after a Valkey failover (rate-limit plugin v0.4.3, [#668](https://github.com/haproxy-haptic/HAPTIC/issues/668)).
+- Admission reports an unavailable external validator as retryable and skips repeat validation against the same unavailable service ([#727](https://github.com/haproxy-haptic/HAPTIC/issues/727)).
 
 ### Changed
 

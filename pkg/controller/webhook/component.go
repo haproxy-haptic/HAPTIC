@@ -112,7 +112,7 @@ type MetricsRecorder interface {
 // --validate-socket mode) populate this slice from their non-fatal
 // diagnostics; the standard render+validate pipeline does not.
 type DryRunValidator interface {
-	ValidateDirect(ctx context.Context, gvk, namespace, name string, object, oldObject any, operation string) (allowed bool, reason string, warnings []string)
+	ValidateAdmission(ctx context.Context, gvk, namespace, name string, object, oldObject any, operation string) (allowed bool, reason string, warnings []string, failure error)
 }
 
 // Config configures the webhook component.
@@ -567,7 +567,7 @@ func (c *Component) createResourceValidator(gvk string) webhook.ValidationFunc {
 		ctx, cancel := context.WithTimeout(parent, c.config.ResourceAdmissionTimeout)
 		defer cancel()
 
-		allowed, reason, warnings := c.dryRunValidator.ValidateDirect(
+		allowed, reason, warnings, failure := c.dryRunValidator.ValidateAdmission(
 			ctx,
 			gvk,
 			valCtx.Namespace,
@@ -602,7 +602,7 @@ func (c *Component) createResourceValidator(gvk string) webhook.ValidationFunc {
 			"warnings", len(warnings),
 			"duration_ms", time.Since(start).Milliseconds())
 
-		return allowed, reason, warnings, nil
+		return allowed, reason, warnings, failure
 	}
 }
 

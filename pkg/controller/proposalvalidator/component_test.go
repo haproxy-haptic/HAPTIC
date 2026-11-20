@@ -42,14 +42,18 @@ import (
 )
 
 type cancelingRejectingOutputValidator struct {
-	cancel       context.CancelCauseFunc
-	cause        error
-	cancelOnCall int
-	calls        int
+	cancel            context.CancelCauseFunc
+	cause             error
+	cancelOnCall      int
+	unavailableOnCall int
+	calls             int
 }
 
 func (v *cancelingRejectingOutputValidator) ValidateRenderedOutput(context.Context, *pipeline.PipelineResult) ([]string, error) {
 	v.calls++
+	if v.calls == v.unavailableOnCall {
+		return nil, validation.ErrValidatorUnavailable
+	}
 	if v.calls == v.cancelOnCall {
 		v.cancel(v.cause)
 	}
@@ -368,6 +372,20 @@ func TestService_ValidateSync_CancellationDuringBaselineDenies(t *testing.T) {
 	assert.Equal(t, "external", result.Phase)
 	assert.ErrorIs(t, result.Error, authorityErr)
 	assert.Equal(t, 2, outputValidator.calls)
+}
+
+func TestService_UnavailableValidatorCannotAuthorizeBaselineRecovery(t *testing.T) {
+	for _, unavailableOn := range []int{1, 2} {
+		validator := &cancelingRejectingOutputValidator{unavailableOnCall: unavailableOn}
+		service := NewService(&ServiceConfig{
+			Pipeline:          createTestPipelineWithOutputValidator(t, testutil.MinimalHAProxyConfig, validator),
+			BaseStoreProvider: stores.NewRealStoreProvider(map[string]stores.Store{}),
+		})
+		_, result := service.ValidateSync(t.Context(), nil)
+		require.False(t, result.Valid)
+		require.ErrorIs(t, result.Error, validation.ErrValidatorUnavailable)
+		require.Equal(t, unavailableOn, validator.calls)
+	}
 }
 
 func TestPipelineFailurePhase(t *testing.T) {

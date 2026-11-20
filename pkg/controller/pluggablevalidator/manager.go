@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/pipeline"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/validation"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/renderartifact"
 )
 
@@ -215,14 +216,16 @@ type dispatchTask struct {
 }
 
 type dispatchResults struct {
-	mu       sync.Mutex
-	warnings []Diagnostic
-	errors   []Diagnostic
+	mu          sync.Mutex
+	unavailable bool
+	warnings    []Diagnostic
+	errors      []Diagnostic
 }
 
 func (r *dispatchResults) append(resp *Response) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.unavailable = r.unavailable || resp.unavailable()
 	r.warnings = append(r.warnings, resp.Warnings...)
 	r.errors = append(r.errors, resp.Errors...)
 }
@@ -324,6 +327,10 @@ func (m *Manager) dispatchTasks(ctx context.Context, tasks []dispatchTask) *Vali
 	out := &ValidationOutcome{Err: dispatchErr}
 	if err := externalValidationContextError(ctx); err != nil {
 		out.Err = err
+	}
+
+	if results.unavailable {
+		out.Err = errors.Join(validation.ErrValidatorUnavailable, out.Err)
 	}
 
 	sortDiagnostics(results.warnings)

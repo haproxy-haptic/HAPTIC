@@ -74,7 +74,9 @@ one validation occurrence.
 Proposal admission has one narrow recovery exception: if the live baseline is
 already invalid, the proposal may proceed only when both renders complete and
 their output checksums are identical. A render error or any changed invalid
-output is denied.
+output is denied. A validator transport or protocol failure supplies no verdict
+for either render. Admission returns a retryable failure, and input isolation
+retains its last accepted state until validation can finish.
 
 ## Consequences
 

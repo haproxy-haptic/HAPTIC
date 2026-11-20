@@ -321,6 +321,9 @@ func authenticatedRenderedContent(result *pipeline.PipelineResult) (*renderedCon
 func validationAuthorityFailure(ctx context.Context, runErr error, runResult *validation.ValidationResult) error {
 	cause := context.Cause(ctx)
 	if cause == nil {
+		if runResult != nil && errors.Is(runResult.Error, validation.ErrValidatorUnavailable) {
+			return &pipeline.PipelineError{Phase: pipeline.PhaseValidation, ValidationPhase: runResult.Phase, Cause: runResult.Error}
+		}
 		return nil
 	}
 	if runErr != nil && errors.Is(runErr, cause) {

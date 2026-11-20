@@ -7,7 +7,7 @@ This package connects the pure HTTPS server in `pkg/webhook` to the synchronous
 
 - Resolve configured GroupVersionResources to GroupVersionKinds.
 - Build one complete validator table for the watched-resource rules.
-- Run structural checks and `DryRunValidator.ValidateDirect` synchronously.
+- Run structural checks and `DryRunValidator.ValidateAdmission` synchronously.
 - Apply the controller-side admission deadline and record decisions.
 
 Certificate provisioning and `ValidatingWebhookConfiguration` resources belong
@@ -48,7 +48,7 @@ Each registered validator:
 
 1. Checks basic object structure.
 2. Derives a 9-second deadline from the iteration context.
-3. Calls `DryRunValidator.ValidateDirect` with the proposed object.
+3. Calls `DryRunValidator.ValidateAdmission` with the proposed object.
 4. Returns its allow, reason, and warning result and records metrics.
 
 Keep validation synchronous. The API server waits for the AdmissionReview

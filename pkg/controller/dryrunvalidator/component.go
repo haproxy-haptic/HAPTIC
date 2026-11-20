@@ -23,14 +23,17 @@ package dryrunvalidator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/proposalvalidator"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/validation"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	"github.com/haproxy-haptic/HAPTIC/pkg/templating"
 )
@@ -82,21 +85,22 @@ func New(cfg *ComponentConfig) (*Component, error) {
 	}, nil
 }
 
-// validateWithOverlay builds selector-aware overlays for the request GVR and
+// ValidateAdmission builds selector-aware overlays for the request GVR and
 // runs the shared proposal pipeline.
-func (c *Component) validateWithOverlay(ctx context.Context, gvk, namespace, name string, object, oldObject any, operation, requestID string) (allowed bool, reason string, warnings []string) {
+func (c *Component) ValidateAdmission(ctx context.Context, gvk, namespace, name string, object, oldObject any, operation string) (allowed bool, reason string, warnings []string, failure error) {
+	c.logger.Debug("Direct validation request", "gvk", gvk, "namespace", namespace, "name", name, "operation", operation)
 	aliases, err := c.mapGVKToResourceAliases(gvk)
 	if err != nil {
-		return false, fmt.Sprintf("unsupported resource type: %v", err), nil
+		return false, fmt.Sprintf("unsupported resource type: %v", err), nil, nil
 	}
 
 	overlays, subjectAliases, err := c.createOverlays(aliases, namespace, name, object, oldObject, operation)
 	if err != nil {
-		return false, fmt.Sprintf("building admission overlay: %v", err), nil
+		return false, fmt.Sprintf("building admission overlay: %v", err), nil, nil
 	}
 
 	c.logger.Debug("Created store overlays for dry-run",
-		"request_id", requestID,
+		"request_id", "direct",
 		"resource_types", subjectAliases,
 		"operation", operation)
 
@@ -106,20 +110,24 @@ func (c *Component) validateWithOverlay(ctx context.Context, gvk, namespace, nam
 	warnings = append(warnings, result.Warnings...)
 	if !result.Valid {
 		c.logger.Info("Dry-run validation failed",
-			"request_id", requestID,
+			"request_id", "direct",
 			"phase", result.Phase,
 			"error", result.Error)
 
+		if errors.Is(result.Error, validation.ErrValidatorUnavailable) || errors.Is(result.Error, context.DeadlineExceeded) || ctx.Err() != nil {
+			reason := "Validation is temporarily unavailable. Retry the request."
+			return false, reason, warnings, apierrors.NewServiceUnavailable(reason)
+		}
 		simplified := c.simplifyError(result.Phase, result.Error)
 		c.logger.Debug("Simplified error",
-			"request_id", requestID,
+			"request_id", "direct",
 			"phase", result.Phase,
 			"simplified", simplified)
-		return false, simplified, warnings
+		return false, simplified, warnings, nil
 	}
 
 	c.logger.Debug("Dry-run validation passed",
-		"request_id", requestID,
+		"request_id", "direct",
 		"resource_types", subjectAliases,
 		"duration_ms", result.DurationMs)
 
@@ -132,13 +140,13 @@ func (c *Component) validateWithOverlay(ctx context.Context, gvk, namespace, nam
 	if pipelineResult != nil {
 		renderedEvents, err := pipelineResult.MaterializeEvents()
 		if err != nil {
-			return false, fmt.Sprintf("reading rendered warnings: %v", err), warnings
+			return false, fmt.Sprintf("reading rendered warnings: %v", err), warnings, nil
 		}
 		subject := eventSubject{kind: gvk[strings.LastIndex(gvk, ".")+1:], namespace: namespace, name: name}
 		warnings = append(warnings, formatRenderedEventWarnings(renderedEvents, subject)...)
 	}
 
-	return true, "", warnings
+	return true, "", warnings, nil
 }
 
 // maxEventWarnings bounds how many template-recorded Warning events are
@@ -197,11 +205,6 @@ func formatRenderedEventWarnings(events []templating.RenderedEvent, subject even
 //   - reason: Denial reason if not allowed, empty otherwise
 //   - warnings: Pipeline warnings surfaced through AdmissionResponse.Warnings
 func (c *Component) ValidateDirect(ctx context.Context, gvk, namespace, name string, object, oldObject any, operation string) (allowed bool, reason string, warnings []string) {
-	c.logger.Debug("Direct validation request",
-		"gvk", gvk,
-		"namespace", namespace,
-		"name", name,
-		"operation", operation)
-
-	return c.validateWithOverlay(ctx, gvk, namespace, name, object, oldObject, operation, "direct")
+	allowed, reason, warnings, _ = c.ValidateAdmission(ctx, gvk, namespace, name, object, oldObject, operation)
+	return allowed, reason, warnings
 }

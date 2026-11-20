@@ -37,6 +37,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	admissionv1 "k8s.io/api/admission/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -352,6 +353,21 @@ func TestServer_HandleValidation_ValidatorDenies(t *testing.T) {
 	assert.False(t, responseReview.Response.Allowed)
 	assert.Contains(t, responseReview.Response.Result.Message, "validation failed: missing required field")
 	assert.Equal(t, int32(http.StatusForbidden), responseReview.Response.Result.Code)
+}
+
+func TestServer_HandleValidation_ValidatorUnavailable(t *testing.T) {
+	server := newTestServer(t, &ServerConfig{})
+	server.RegisterValidator("v1.ConfigMap", func(_ *ValidationContext) (bool, string, []string, error) {
+		return false, "", []string{"warning"}, apierrors.NewServiceUnavailable("validation unavailable")
+	})
+	w, req := configMapAdmissionRequest(t)
+	server.handleValidation(w, req)
+	var review admissionv1.AdmissionReview
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&review))
+	require.False(t, review.Response.Allowed)
+	assert.Equal(t, int32(http.StatusServiceUnavailable), review.Response.Result.Code)
+	assert.Equal(t, metav1.StatusReasonServiceUnavailable, review.Response.Result.Reason)
+	assert.Equal(t, []string{"warning"}, review.Response.Warnings)
 }
 
 func TestServer_HandleValidation_ValidatorError(t *testing.T) {

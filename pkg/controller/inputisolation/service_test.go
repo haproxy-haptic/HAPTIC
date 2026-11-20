@@ -32,6 +32,7 @@ import (
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/pipeline"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/rendercontext"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/validation"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	k8sstore "github.com/haproxy-haptic/HAPTIC/pkg/k8s/store"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores"
@@ -325,4 +326,33 @@ func TestInputIndependentRenderFailureSkipsTheInputSearch(t *testing.T) {
 	_, err := selector.Execute(t.Context(), stores.NewRealStoreProvider(map[string]stores.Store{"widgets": live}), rendercontext.RenderModeReconcile)
 	require.ErrorContains(t, err, "invalid chart value")
 	require.Equal(t, 2, renders)
+}
+
+func TestUnavailableValidatorPreservesObservedInputsForRetry(t *testing.T) {
+	live := k8sstore.NewMemoryStore(2)
+	watch := config.WatchedResource{APIVersion: "example.test/v1", Resources: "widgets", IndexBy: []string{"metadata.namespace", "metadata.name"}}
+	provider := stores.NewRealStoreProvider(map[string]stores.Store{"widgets": live})
+	calls := 0
+	validator := validationFunc(func(context.Context, stores.StoreProvider) (*pipeline.PipelineResult, error) {
+		calls++
+		if calls == 1 {
+			return nil, &pipeline.PipelineError{Phase: pipeline.PhaseValidation, ValidationPhase: "external", Cause: validation.ErrValidatorUnavailable}
+		}
+		return &pipeline.PipelineResult{}, nil
+	})
+	selector := New(validator, map[string]config.WatchedResource{"widgets": watch}, nil)
+	require.NoError(t, live.Add(widget("healthy", "pending"), []string{"default", "healthy"}))
+	_, err := selector.Execute(t.Context(), provider, rendercontext.RenderModeReconcile)
+	require.ErrorIs(t, err, validation.ErrValidatorUnavailable)
+	require.Equal(t, 1, calls)
+	_, rejected, ready := selector.Snapshot()
+	require.False(t, ready)
+	require.Empty(t, rejected)
+	_, err = selector.Execute(t.Context(), provider, rendercontext.RenderModeReconcile)
+	require.NoError(t, err)
+	accepted, _, ready := selector.Snapshot()
+	require.True(t, ready)
+	items, err := accepted.GetStore("widgets").Get("default", "healthy")
+	require.NoError(t, err)
+	require.Len(t, items, 1)
 }

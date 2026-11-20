@@ -18,15 +18,19 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/pipeline"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/pluggablevalidator"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/proposalvalidator"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/renderer"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/testutil"
@@ -486,6 +490,27 @@ func TestValidateDirect_UpdateSuccess(t *testing.T) {
 	assert.Empty(t, reason)
 }
 
+func TestValidateAdmission_UnavailableExternalValidator(t *testing.T) {
+	logger := slog.Default()
+	manager, err := pluggablevalidator.NewManager(logger, []pluggablevalidator.ManagerConfig{{
+		Name: "sidecar", SocketPath: filepath.Join(t.TempDir(), "missing.sock"),
+		Files: []string{"/etc/haproxy/haproxy.cfg"}, Timeout: time.Second,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(manager.Close)
+	component, err := New(&ComponentConfig{
+		RESTMapper: newTestRESTMapper(), WatchedResources: testWatchedResources(),
+		ProposalValidator: createMockProposalValidatorWithStores(logger, manager, "ingresses"),
+	})
+	require.NoError(t, err)
+	obj := createTestIngress("unchanged", "default")
+	allowed, reason, _, failure := component.ValidateAdmission(t.Context(),
+		"networking.k8s.io/v1.Ingress", "default", "unchanged", obj, obj, "UPDATE")
+	require.False(t, allowed)
+	require.True(t, apierrors.IsServiceUnavailable(failure), reason)
+	require.Contains(t, reason, "Retry")
+}
+
 // TestValidateDirect_DeleteSuccess tests the full flow for a DELETE operation.
 func TestValidateDirect_DeleteSuccess(t *testing.T) {
 	logger := slog.Default()
@@ -601,7 +626,7 @@ func TestValidateDirect_Success(t *testing.T) {
 
 func TestValidateDirect_ConfiguredAliasDiffersFromPlural(t *testing.T) {
 	logger := slog.Default()
-	proposalValidator := createMockProposalValidatorWithStores(logger, "application-routes")
+	proposalValidator := createMockProposalValidatorWithStores(logger, nil, "application-routes")
 	component, err := New(&ComponentConfig{
 		RESTMapper:        newTestRESTMapper(),
 		ProposalValidator: proposalValidator,
@@ -711,10 +736,10 @@ func TestValidateDirect_AlwaysFailingTemplate_Denies(t *testing.T) {
 
 // createMockProposalValidator creates a minimal ProposalValidator for testing.
 func createMockProposalValidator(logger *slog.Logger) *proposalvalidator.Service {
-	return createMockProposalValidatorWithStores(logger, "ingresses", "services")
+	return createMockProposalValidatorWithStores(logger, nil, "ingresses", "services")
 }
 
-func createMockProposalValidatorWithStores(logger *slog.Logger, names ...string) *proposalvalidator.Service {
+func createMockProposalValidatorWithStores(logger *slog.Logger, output pipeline.RenderedOutputValidator, names ...string) *proposalvalidator.Service {
 	// Create minimal render service
 	engine, _ := templating.New(map[string]string{"haproxy.cfg": testutil.ValidHAProxyConfigTemplate}, nil)
 
@@ -732,9 +757,10 @@ func createMockProposalValidatorWithStores(logger *slog.Logger, names ...string)
 
 	// Create pipeline
 	pipelineInstance := pipeline.New(&pipeline.PipelineConfig{
-		Renderer:  renderService,
-		Validator: validationService,
-		Logger:    logger,
+		Renderer:        renderService,
+		Validator:       validationService,
+		OutputValidator: output,
+		Logger:          logger,
 	})
 
 	// Create base store provider

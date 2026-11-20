@@ -27,6 +27,7 @@ import (
 	pv "github.com/haproxy-haptic/HAPTIC/pkg/controller/pluggablevalidator"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/pluggablevalidator/testutil"
 	controllertestutil "github.com/haproxy-haptic/HAPTIC/pkg/controller/testutil"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/validation"
 )
 
 func tomlFile() pv.File {
@@ -442,6 +443,9 @@ func TestManager_ValidateAll_TransportErrorFailsEveryCall(t *testing.T) {
 	out2 := mgr.ValidateAll(context.Background(), files)
 	if out2.Result() != pv.ResultError {
 		t.Fatalf("result=%q want %q", out2.Result(), pv.ResultError)
+	}
+	if !errors.Is(out1.Err, validation.ErrValidatorUnavailable) || !errors.Is(out2.Err, validation.ErrValidatorUnavailable) {
+		t.Fatalf("missing unavailable classification: %v, %v", out1.Err, out2.Err)
 	}
 	// Both calls must surface a fresh transport error.
 	if len(out1.Errors) == 0 || len(out2.Errors) == 0 {
