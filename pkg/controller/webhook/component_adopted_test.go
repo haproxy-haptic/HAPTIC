@@ -258,22 +258,22 @@ func newAdoptingComponent(t *testing.T, server *pkgwebhook.Server, marker string
 // response identifies which iteration's table served it.
 type staticDenyValidator struct{ reason string }
 
-func (v staticDenyValidator) ValidateDirect(context.Context, string, string, string, any, any, string) (allowed bool, reason string, warnings []string) {
-	return false, v.reason, nil
+func (v staticDenyValidator) ValidateAdmission(context.Context, string, string, string, any, any, string) (allowed bool, reason string, warnings []string, failure error) {
+	return false, v.reason, nil, nil
 }
 
 type contextStateValidator struct{}
 
 type iterationContextKey struct{}
 
-func (contextStateValidator) ValidateDirect(ctx context.Context, _, _, _ string, _, _ any, _ string) (allowed bool, reason string, warnings []string) {
+func (contextStateValidator) ValidateAdmission(ctx context.Context, _, _, _ string, _, _ any, _ string) (allowed bool, reason string, warnings []string, failure error) {
 	if active, _ := ctx.Value(iterationContextKey{}).(bool); !active {
-		return false, "iteration context missing", nil
+		return false, "iteration context missing", nil, nil
 	}
 	if err := ctx.Err(); err != nil {
-		return false, err.Error(), nil
+		return false, err.Error(), nil, err
 	}
-	return false, "iteration context active", nil
+	return false, "iteration context active", nil, nil
 }
 
 // ingressRESTMapper resolves ingresses -> Ingress without a cluster.

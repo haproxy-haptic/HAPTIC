@@ -29,6 +29,7 @@ import (
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/pipeline"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/rendercontext"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/validation"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
 	k8sstore "github.com/haproxy-haptic/HAPTIC/pkg/k8s/store"
@@ -360,7 +361,7 @@ func stopIsolation(ctx context.Context, err error) bool {
 // A trial can need an unread retained revision that the API no longer serves.
 func stopInputTrial(ctx context.Context, err error) bool {
 	return ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
-		pipeline.WaitsForCriticalContent(err) || pipeline.CriticalContentUnavailable(err)
+		errors.Is(err, validation.ErrValidatorUnavailable) || pipeline.WaitsForCriticalContent(err) || pipeline.CriticalContentUnavailable(err)
 }
 
 func (s *Service) accept(ctx context.Context, branches map[string]*k8sstore.SnapshotBranch, result *pipeline.PipelineResult, rejected []Rejection) (*pipeline.PipelineResult, error) {

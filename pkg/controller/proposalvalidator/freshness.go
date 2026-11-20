@@ -6,11 +6,15 @@ import (
 	"fmt"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/rendercontext"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/validation"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores"
 )
 
 func (c *Service) validateAdmission(ctx context.Context, provider *stores.OverlayStoreProvider, opts ...rendercontext.Option) validationOutcome {
 	observed := c.runWithBaselineCheck(ctx, provider, opts...)
+	if errors.Is(observed.Error, validation.ErrValidatorUnavailable) {
+		return observed
+	}
 	isolated, used := c.validateIsolatedAdmission(ctx, provider, observed, opts...)
 	if isolated.Admit || ctx.Err() != nil {
 		return isolated
@@ -87,9 +91,9 @@ func (c *Service) refreshObservedAdmission(ctx context.Context, provider *stores
 	if err := refreshed.Validate(); err != nil {
 		return validationOutcome{Phase: setupPhase, Error: err}
 	}
-	validation := *c
-	validation.baseStore = fresh
-	return validation.runWithBaselineCheck(ctx, refreshed, opts...)
+	freshService := *c
+	freshService.baseStore = fresh
+	return freshService.runWithBaselineCheck(ctx, refreshed, opts...)
 }
 
 func rebaseAdmissionProvider(provider *stores.OverlayStoreProvider, base stores.StoreProvider) *stores.OverlayStoreProvider {

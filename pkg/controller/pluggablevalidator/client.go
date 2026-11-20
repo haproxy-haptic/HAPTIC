@@ -175,7 +175,7 @@ func (c *Client) attempt(callCtx context.Context, req *Request, deadline time.Ti
 		conn, fresh, err = c.dialFresh(callCtx)
 	}
 	if err != nil {
-		return ProtocolError(fmt.Sprintf(
+		return unavailableResponse(fmt.Sprintf(
 			"validator %q: connect %s%s: %v", c.Name, c.SocketPath, retrySuffix(n), err,
 		)), false
 	}
@@ -186,7 +186,7 @@ func (c *Client) attempt(callCtx context.Context, req *Request, deadline time.Ti
 
 	if err := conn.SetDeadline(deadline); err != nil {
 		c.discard(conn)
-		return ProtocolError(fmt.Sprintf(
+		return unavailableResponse(fmt.Sprintf(
 			"validator %q: set deadline%s: %v", c.Name, retrySuffix(n), err,
 		)), false
 	}
@@ -207,9 +207,11 @@ func (c *Client) attempt(callCtx context.Context, req *Request, deadline time.Ti
 		if cause := context.Cause(callCtx); cause != nil {
 			return canceledResponse(c.Name, cause), false
 		}
-		return ProtocolError(fmt.Sprintf(
-			"validator %q: encode request%s: %v", c.Name, retrySuffix(n), err,
-		)), canRetry
+		message := fmt.Sprintf("validator %q: encode request%s: %v", c.Name, retrySuffix(n), err)
+		if _, ok := errors.AsType[*net.OpError](err); ok {
+			return unavailableResponse(message), canRetry
+		}
+		return ProtocolError(message), false
 	}
 
 	resp, err := DecodeResponse(conn)
@@ -219,7 +221,7 @@ func (c *Client) attempt(callCtx context.Context, req *Request, deadline time.Ti
 		if cause := context.Cause(callCtx); cause != nil {
 			return canceledResponse(c.Name, cause), false
 		}
-		return ProtocolError(fmt.Sprintf(
+		return unavailableResponse(fmt.Sprintf(
 			"validator %q: decode response%s: %v", c.Name, retrySuffix(n), err,
 		)), canRetry
 	}
@@ -249,8 +251,14 @@ func armConnectionCancellation(ctx context.Context, conn net.Conn) func() {
 	}
 }
 
+func unavailableResponse(message string) *Response {
+	resp := ProtocolError(message)
+	resp.transportFailure = true
+	return resp
+}
+
 func canceledResponse(validatorName string, cause error) *Response {
-	return ProtocolError(fmt.Sprintf(
+	return unavailableResponse(fmt.Sprintf(
 		"validator %q: validation did not finish: %v; retry the request",
 		validatorName,
 		cause,

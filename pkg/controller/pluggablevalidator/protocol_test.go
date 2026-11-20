@@ -283,6 +283,24 @@ func TestDecodeResponse_RejectsWrongProtocolVersion(t *testing.T) {
 	}
 }
 
+func TestServerTimeoutClassification(t *testing.T) {
+	for _, tc := range []struct {
+		diagnostic Diagnostic
+		want       bool
+	}{
+		{Diagnostic{Message: "validation timed out after 5000ms"}, true},
+		{Diagnostic{Message: "validation timed out after 5s"}, true},
+		{Diagnostic{Path: "config.toml", Message: "validation timed out after 5000ms"}, false},
+		{Diagnostic{Message: "validation timed out after parsing the configuration"}, false},
+		{Diagnostic{Message: "invalid configuration"}, false},
+	} {
+		response := Response{Result: ResultError, Errors: []Diagnostic{tc.diagnostic}}
+		if got := response.unavailable(); got != tc.want {
+			t.Errorf("diagnostic %+v: unavailable=%v, want %v", tc.diagnostic, got, tc.want)
+		}
+	}
+}
+
 func TestProtocolError(t *testing.T) {
 	got := ProtocolError("something broke")
 	if got.Result != ResultError {

@@ -150,6 +150,8 @@ kubectl logs deployment/haptic-controller --namespace haptic --container control
 kubectl logs deployment/haptic-controller --namespace haptic --container my-validator --tail=100
 ```
 
+If admission returns `503 ServiceUnavailable`, check the validator logs and retry once the sidecar responds. Server-side dry runs also need a fresh verdict for every matching rendered file. An unrelated resource update can render a file that the validator checks.
+
 If the sidecar is repeatedly restarted, inspect its previous logs and pod events
 for an out-of-memory termination or failed mount. Restore the validator before
 retrying the rejected change; disabling validation would leave its files unchecked.

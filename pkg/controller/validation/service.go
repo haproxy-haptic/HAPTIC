@@ -54,6 +54,8 @@ const (
 	DefaultValidationTimeout = 30 * time.Second
 )
 
+var ErrValidatorUnavailable = errors.New("external validation unavailable; retry the request")
+
 // ValidationResult contains the output of a validation operation.
 type ValidationResult struct {
 	// Valid is true if the configuration passed all validation phases.

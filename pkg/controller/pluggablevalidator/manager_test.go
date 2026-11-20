@@ -27,6 +27,7 @@ import (
 	pv "github.com/haproxy-haptic/HAPTIC/pkg/controller/pluggablevalidator"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/pluggablevalidator/testutil"
 	controllertestutil "github.com/haproxy-haptic/HAPTIC/pkg/controller/testutil"
+	"github.com/haproxy-haptic/HAPTIC/pkg/controller/validation"
 )
 
 func tomlFile() pv.File {
@@ -443,9 +444,29 @@ func TestManager_ValidateAll_TransportErrorFailsEveryCall(t *testing.T) {
 	if out2.Result() != pv.ResultError {
 		t.Fatalf("result=%q want %q", out2.Result(), pv.ResultError)
 	}
+	if !errors.Is(out1.Err, validation.ErrValidatorUnavailable) || !errors.Is(out2.Err, validation.ErrValidatorUnavailable) {
+		t.Fatalf("missing unavailable classification: %v, %v", out1.Err, out2.Err)
+	}
 	// Both calls must surface a fresh transport error.
 	if len(out1.Errors) == 0 || len(out2.Errors) == 0 {
 		t.Fatal("expected at least one error per call")
+	}
+}
+
+func TestOversizedValidatorRequestKeepsTheActionableDenial(t *testing.T) {
+	server := testutil.NewFixtureServer(t)
+	manager, err := pv.NewManager(nil, []pv.ManagerConfig{{
+		Name: "hub", SocketPath: server.SocketPath, Files: tomlGlob(), Timeout: 5 * time.Second,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	file := tomlFile()
+	file.Content = strings.Repeat("x", pv.MaxFrameSize)
+	outcome := manager.ValidateAll(t.Context(), []pv.File{file})
+	if outcome.Err != nil || len(outcome.Errors) != 1 || !strings.Contains(outcome.Errors[0].Message, "reduce the validator's dataFiles globs") {
+		t.Fatalf("want actionable request-size denial, got %+v", outcome)
 	}
 }
 

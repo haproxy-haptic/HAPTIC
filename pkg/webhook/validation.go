@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	admissionv1 "k8s.io/api/admission/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -81,6 +82,12 @@ func (s *Server) validate(request *admissionv1.AdmissionRequest) *admissionv1.Ad
 
 	allowed, reason, warnings, err := validator(ctx)
 
+	if apierrors.IsServiceUnavailable(err) {
+		resp := deniedResponse(err.Error(), http.StatusServiceUnavailable)
+		resp.Result.Reason = metav1.StatusReasonServiceUnavailable
+		resp.Warnings = warnings
+		return resp
+	}
 	if err != nil {
 		return deniedResponse(fmt.Sprintf("validation error: %v", err), http.StatusInternalServerError)
 	}

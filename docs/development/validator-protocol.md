@@ -148,7 +148,7 @@ These responses come from the validator framework itself, not from any internal 
 | Wrong protocol version | `"protocol version N not supported (max: 1)"` (connection MAY remain open) |
 | Missing required field | `"missing required field 'files'"` etc. (connection MAY remain open) |
 | Empty files array | `"'files' array must be non-empty"` (connection MAY remain open) |
-| Per-request timeout exceeded | `"validation timed out after Ns"` (connection closed; mid-write timeout poisons stream state) |
+| Per-request timeout exceeded | `"validation timed out after <duration>"` with a Go duration such as `5000ms`. The validator closes the connection after a timeout. |
 | Connect refused (client-side) | `"validator <name>: connect <path>: <reason>"` |
 | Decode failure (client-side) | `"validator <name>: decode response: <reason>"` |
 
