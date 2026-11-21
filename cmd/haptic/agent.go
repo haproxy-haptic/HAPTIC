@@ -18,6 +18,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -28,7 +29,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
+	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/logging"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/server"
 	"github.com/haproxy-haptic/HAPTIC/pkg/metrics"
@@ -59,6 +62,8 @@ var (
 	agentReloadTimeout     time.Duration
 	agentTLSDirectory      string
 	agentTLSClientName     string
+	agentBlobDir           string
+	agentBlobMaxSize       string
 )
 
 var agentCmd = &cobra.Command{
@@ -117,6 +122,24 @@ func init() {
 		"Shortest interval between two reloads, at most 60s; a reload inside the window is scheduled, never dropped")
 	agentCmd.Flags().DurationVar(&agentReloadTimeout, "reload-timeout", server.DefaultReloadTimeout,
 		"How long a reload may take before the apply reports what it knows; capped at the API's reload limit")
+	agentCmd.Flags().StringVar(&agentBlobDir, "blob-dir", "",
+		"Absolute directory of the content-addressed blobs the controller puts; empty disables blobs")
+	agentCmd.Flags().StringVar(&agentBlobMaxSize, "blob-max-size",
+		resource.NewQuantity(blob.DefaultMaxSize, resource.BinarySI).String(),
+		"Largest blob a put may carry, as a Kubernetes quantity")
+}
+
+// parseBlobMaxSize reads --blob-max-size, which the chart passes as a quantity.
+func parseBlobMaxSize(raw string) (int64, error) {
+	quantity, err := resource.ParseQuantity(raw)
+	if err != nil {
+		return 0, fmt.Errorf("--blob-max-size %q: %w", raw, err)
+	}
+	size, exact := quantity.AsInt64()
+	if !exact || size <= 0 {
+		return 0, fmt.Errorf("--blob-max-size %q must be a positive whole number of bytes", raw)
+	}
+	return size, nil
 }
 
 func runAgent(_ *cobra.Command, _ []string) error {
@@ -143,6 +166,11 @@ func runAgent(_ *cobra.Command, _ []string) error {
 		return errors.New("the agent needs " + agentUsernameEnv + " and " + agentPasswordEnv + " from the credentials Secret")
 	}
 
+	blobMaxSize, err := parseBlobMaxSize(agentBlobMaxSize)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
@@ -167,13 +195,16 @@ func runAgent(_ *cobra.Command, _ []string) error {
 		DrainQuietPeriod:     agentDrainQuietPeriod,
 		DrainMaxWait:         agentDrainMaxWait,
 		DrainIgnoreFrontends: agentDrainIgnore,
+		BlobDir:              agentBlobDir,
+		BlobMaxSize:          blobMaxSize,
 	})
 	if err != nil {
 		return err
 	}
 
 	logger.Info("starting the HAPTIC agent",
-		"base_dir", agentBaseDir, "listen", agentListen, "reload_interval_min", agentReloadIntervalMin)
+		"base_dir", agentBaseDir, "listen", agentListen, "reload_interval_min", agentReloadIntervalMin,
+		"blob_dir", agentBlobDir)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error { return agent.Start(groupCtx) })

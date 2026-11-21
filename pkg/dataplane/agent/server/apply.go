@@ -41,7 +41,7 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, api.MaxApplyBodyBytes)
 	reader, err := r.MultipartReader()
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, api.ApplyError{Stage: "request", Message: err.Error()})
+		writeJSON(w, http.StatusBadRequest, api.ApplyError{Stage: stageRequest, Message: err.Error()})
 		return
 	}
 	manifest, err := readManifest(reader)
@@ -57,6 +57,11 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 	if conflict := s.fence(manifest); conflict != nil {
 		s.metrics.rejected.WithLabelValues("fencing").Inc()
 		writeJSON(w, http.StatusConflict, conflict)
+		return
+	}
+	if missing := s.missingBlobs(manifest); len(missing) > 0 {
+		s.metrics.rejected.WithLabelValues("blobs").Inc()
+		writeJSON(w, http.StatusConflict, api.MissingBlobs{Reason: api.ReasonMissingBlobs, MissingBlobs: missing})
 		return
 	}
 	s.stageAndRun(w, reader, manifest, started)
@@ -109,6 +114,9 @@ func (s *Server) stageAndRun(w http.ResponseWriter, reader *multipart.Reader, ma
 	}
 	timing.AdmitMs = time.Since(admitStarted).Milliseconds()
 	result := s.runApply(manifest, got, digest, work, appliedProof, workerProof, timing)
+	if result.OK {
+		s.collectBlobs(started)
+	}
 	result.Timing.TotalMs = time.Since(started).Milliseconds()
 	writeJSON(w, http.StatusOK, result)
 }
@@ -160,6 +168,7 @@ func workIdentity(m *api.Manifest) ([]byte, error) {
 		PlanProof                  string     `json:"plan_proof"`
 		PlanSchemaVersion          int        `json:"plan_schema_version"`
 		Files                      []api.File `json:"files"`
+		RequiredBlobs              []string   `json:"required_blobs,omitempty"`
 		Ops                        []api.Op   `json:"ops"`
 		OpBatches                  [][]api.Op `json:"op_batches"`
 		InPlaceOps                 []api.Op   `json:"in_place_ops"`
@@ -173,6 +182,7 @@ func workIdentity(m *api.Manifest) ([]byte, error) {
 		PlanProof:                  m.PlanProof,
 		PlanSchemaVersion:          m.PlanSchemaVersion,
 		Files:                      declared,
+		RequiredBlobs:              m.RequiredBlobs,
 		Ops:                        m.Ops,
 		OpBatches:                  m.OpBatches,
 		InPlaceOps:                 m.InPlaceOps,
@@ -206,6 +216,9 @@ func validateManifest(m *api.Manifest) error {
 		return errors.New("a revert needs the refused plan proof")
 	}
 	if err := validateEnumeratedMode(m.Mode); err != nil {
+		return err
+	}
+	if err := m.ValidateRequiredBlobs(); err != nil {
 		return err
 	}
 	seen := make(map[string]struct{}, len(m.Files))

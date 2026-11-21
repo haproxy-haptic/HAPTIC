@@ -40,6 +40,9 @@ func validateApply(m *api.Manifest, parts map[string]io.Reader, manifestBytes in
 	if err := m.ValidateOpBatches(); err != nil {
 		return fmt.Errorf("agent client: %w", err)
 	}
+	if err := m.ValidateRequiredBlobs(); err != nil {
+		return fmt.Errorf("agent client: %w", err)
+	}
 
 	declared := make(map[string]int64, len(m.Files))
 	for i := range m.Files {

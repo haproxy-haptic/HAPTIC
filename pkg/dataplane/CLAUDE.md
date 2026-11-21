@@ -38,6 +38,7 @@ pkg/dataplane/
 │   ├── client/                 # The controller's end: State + streaming Apply
 │   ├── server/                 # The agent: HTTP surface, state machine, transaction
 │   ├── files/                  # The file tree it owns: mounts, journal, temp+rename
+│   ├── blobs/                  # Content-addressed blobs, outside the tree and its journal
 │   ├── cli/                    # Typed ops → HAProxy runtime commands
 │   ├── agenttest/              # An in-process fake agent, for deployer tests
 │   └── haproxytest/            # A modelled worker + master socket, for agent tests

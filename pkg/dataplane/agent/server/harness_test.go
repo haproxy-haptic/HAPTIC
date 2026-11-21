@@ -70,6 +70,8 @@ type options struct {
 	clientTLS         *transportsecurity.Source
 	drainQuietPeriod  time.Duration
 	drainMaxWait      time.Duration
+	blobDir           string
+	blobMaxSize       int64
 }
 
 func newHarness(tb testing.TB, opts ...func(*options)) *harness {
@@ -106,6 +108,8 @@ func newHarness(tb testing.TB, opts ...func(*options)) *harness {
 		DrainQuietPeriod:     settings.drainQuietPeriod,
 		DrainMaxWait:         settings.drainMaxWait,
 		DrainIgnoreFrontends: []string{"status"},
+		BlobDir:              settings.blobDir,
+		BlobMaxSize:          settings.blobMaxSize,
 	})
 	require.NoError(t, err)
 
@@ -152,6 +156,10 @@ func withBaseDir(dir string) func(*options) {
 
 func withDrain(socket string, quiet, bound time.Duration) func(*options) {
 	return func(o *options) { o.drainSocket, o.drainQuietPeriod, o.drainMaxWait = socket, quiet, bound }
+}
+
+func withBlobs(dir string, maxSize int64) func(*options) {
+	return func(o *options) { o.blobDir, o.blobMaxSize = dir, maxSize }
 }
 
 func withModel(model *haproxytest.HAProxy) func(*options) {

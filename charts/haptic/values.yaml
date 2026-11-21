@@ -2015,6 +2015,18 @@ haproxy:
     #     ports:
     #       - port: 443
     extraEgress: []
+# Binary blobs (ADR-0041): content-addressed files, such as GeoIP databases,
+# that the agent receives outside the configuration and the spoa-hub reads from
+# /var/lib/haptic/blobs. Root-level because the chart adds a volume to the
+# HAProxy pod from it.
+blobs:
+  # Mount the disk-backed blobs volume and start the agent with --blob-dir.
+  enabled: false
+  # Volume limit. Hold every blob the applied and the last known good
+  # configuration require plus one upload; kubelet evicts the pod above it.
+  sizeLimit: 1Gi
+  # Largest single blob the agent accepts (--blob-max-size).
+  maxSize: 256Mi
 # Shared response cache (Varnish tier). When enabled, requests to Ingresses
 # carrying the haproxy-haptic.org/cache-* annotations are routed through a
 # chart-deployed, consistent-hash-sharded Varnish workload so the cache is

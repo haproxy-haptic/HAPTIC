@@ -37,6 +37,7 @@ const (
 	MaxDeferredAttempts      = 5  // per queued delete before the agent gives up on it
 	MaxInventoryEntries      = 4096
 	MaxMapEntries            = 1 << 18 // one map's entries; the design target is one per route
+	MaxRequiredBlobs         = 256
 )
 
 // A per-command round trip is bounded by client-native's own 30 s task

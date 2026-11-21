@@ -98,3 +98,11 @@ func TestCleanMember(t *testing.T) {
 	assert.Equal(t, "db/City.mmdb", CleanMember("././/db/City.mmdb"))
 	assert.Equal(t, "City.mmdb", CleanMember("City.mmdb"))
 }
+
+func TestValidDigest(t *testing.T) {
+	valid := strings.Repeat("0123456789abcdef", 4)
+	assert.True(t, ValidDigest(valid))
+	for _, name := range []string{"", valid[:63], valid + "0", strings.ToUpper(valid), "../" + valid[3:], valid[:63] + "g", valid + "\n"} {
+		assert.False(t, ValidDigest(name), name)
+	}
+}

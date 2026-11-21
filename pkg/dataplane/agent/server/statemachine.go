@@ -159,9 +159,18 @@ func (s *Server) recordReload(planID, planProof string) {
 	}
 	s.state.LKGPlanID = planID
 	s.state.LKGPlanProof = planProof
+	s.state.LKGBlobs = s.state.TreeBlobs
 	if err := s.store.ClearJournal(&s.state.Journal); err != nil {
 		s.logger.Error("could not clear the backup journal", "error", err)
 	}
+}
+
+// recordTreeBlobs notes the blobs the configuration just written requires;
+// the next setPhase persists it.
+func (s *Server) recordTreeBlobs(required []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.state.TreeBlobs = slices.Clone(required)
 }
 
 // lkgPlan is the plan whose file set a rollback puts back.
@@ -322,6 +331,7 @@ func (s *Server) promoteLKG(m *api.Manifest) error {
 	}
 	s.state.LKGPlanID = s.state.AppliedPlanID
 	s.state.LKGPlanProof = s.state.AppliedPlanProof
+	s.state.LKGBlobs = s.state.TreeBlobs
 	s.logger.Info("promoted the last known good plan", "lkg_plan_id", s.state.LKGPlanID)
 	return s.states.save(s.state)
 }
@@ -346,6 +356,7 @@ func (s *Server) restoreJournal() error {
 	s.treePrints = nil
 	s.state.ManifestPaths = paths
 	s.state.TreeDigest = treeDigest(tree)
+	s.state.TreeBlobs = s.state.LKGBlobs
 	// The tree is the last known good set again, so the backups have nothing
 	// left to protect; the next apply starts a fresh journal from here.
 	return s.store.ClearJournal(&s.state.Journal)

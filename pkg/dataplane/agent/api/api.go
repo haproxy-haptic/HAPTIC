@@ -30,6 +30,7 @@ const (
 	PathState   = "/v1/state"
 	PathApply   = "/v1/apply"
 	PathPlan    = "/v1/plan"
+	PathBlobs   = "/v1/blobs"
 	PathHealthz = "/healthz"
 	PathReadyz  = "/readyz"
 	// PathDrain is served on the drain unix socket only: it holds the preStop
@@ -104,6 +105,9 @@ type Manifest struct {
 	OpBatches          [][]Op `json:"op_batches,omitempty"`
 	InPlaceOps         []Op   `json:"in_place_ops,omitempty"`
 	Mode               string `json:"mode"`
+	// RequiredBlobs are the SHA-256 digests of the blobs the configuration
+	// references; the agent refuses the apply while it lacks one (MissingBlobs).
+	RequiredBlobs []string `json:"required_blobs,omitempty"`
 }
 
 // Token is the fencing token: a leader epoch (CAS-incremented on the Lease
@@ -144,6 +148,7 @@ const (
 	FeatureFilePatch      = "file_patch" // accepts File.Patch
 	FeatureWorkerFence    = "worker_fence"
 	FeatureRuntimeBatches = "runtime_batches"
+	FeatureBlobs          = "blobs" // serves PathBlobs and accepts Manifest.RequiredBlobs
 )
 
 // Op kinds the agent executes. Unknown kinds are refused and the apply falls
@@ -239,6 +244,8 @@ type State struct {
 	// empty if none has. The agent never takes itself down over a violation, so
 	// this is the only place a silent one surfaces.
 	InvariantViolation string `json:"invariant_violation,omitempty"`
+	// Blobs are the blobs the agent holds, sorted by digest; nil without FeatureBlobs.
+	Blobs []Blob `json:"blobs,omitempty"`
 }
 
 // StateRead is what a state read asks the agent for.
@@ -294,6 +301,12 @@ func (i HAProxyInfo) SameWorker(other HAProxyInfo) bool {
 type FileAt struct {
 	Digest string `json:"digest"`
 	Proof  string `json:"proof,omitempty"`
+	Size   int64  `json:"size"`
+}
+
+// Blob is a blob the agent holds.
+type Blob struct {
+	SHA256 string `json:"sha256"`
 	Size   int64  `json:"size"`
 }
 
@@ -414,4 +427,14 @@ type Conflict struct {
 // Missing is the body of a 409 when file parts are missing: resend these.
 type Missing struct {
 	Missing []string `json:"missing"`
+}
+
+// ReasonMissingBlobs is MissingBlobs.Reason.
+const ReasonMissingBlobs = "missing_blobs"
+
+// MissingBlobs is the body of a 409 when the agent lacks required blobs: put
+// them and resend the apply. Nothing was written.
+type MissingBlobs struct {
+	Reason       string   `json:"reason"`
+	MissingBlobs []string `json:"missing_blobs"`
 }

@@ -77,6 +77,66 @@ tests:
           path: spec.template.spec.initContainers[?(@.name=="agent")].args
           content: --reload-timeout=20s
 
+  - it: should leave blobs out of the default render
+    set:
+      spoaHub.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: blobs
+          any: true
+      - notContains:
+          path: spec.template.spec.initContainers[?(@.name=="agent")].volumeMounts
+          content:
+            name: blobs
+          any: true
+      - notContains:
+          path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].volumeMounts
+          content:
+            name: blobs
+          any: true
+      - notContains:
+          path: spec.template.spec.initContainers[?(@.name=="agent")].args
+          content: --blob-dir=/var/lib/haptic/blobs
+
+  # The agent writes blobs where the hub reads them, read-only, on disk.
+  - it: should give the agent and the hub one disk-backed blobs volume when enabled
+    set:
+      spoaHub.enabled: true
+      blobs.enabled: true
+      blobs.sizeLimit: 2Gi
+      blobs.maxSize: 300Mi
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: blobs
+            emptyDir:
+              sizeLimit: 2Gi
+      - contains:
+          path: spec.template.spec.initContainers[?(@.name=="agent")].volumeMounts
+          content:
+            name: blobs
+            mountPath: /var/lib/haptic/blobs
+      - contains:
+          path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].volumeMounts
+          content:
+            name: blobs
+            mountPath: /var/lib/haptic/blobs
+            readOnly: true
+      - contains:
+          path: spec.template.spec.initContainers[?(@.name=="agent")].args
+          content: --blob-dir=/var/lib/haptic/blobs
+      - contains:
+          path: spec.template.spec.initContainers[?(@.name=="agent")].args
+          content: --blob-max-size=300Mi
+      - notContains:
+          path: spec.template.spec.containers[?(@.name=="haproxy")].volumeMounts
+          content:
+            name: blobs
+          any: true
+
   - it: should read the agent credentials from the shared Secret and log at the configured level
     set:
       haproxy.agent.logLevel: debug

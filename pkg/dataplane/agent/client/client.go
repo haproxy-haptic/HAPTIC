@@ -222,7 +222,7 @@ func (c *Client) State(ctx context.Context, read api.StateRead) (*api.State, err
 //
 // A NACK is a successful call with ApplyResult.OK false — the agent's verdict,
 // not a transport failure. A baseline mismatch returns *ConflictError, missing
-// file parts *MissingError.
+// file parts *MissingError, missing required blobs *MissingBlobsError.
 func (c *Client) Apply(ctx context.Context, m *api.Manifest, parts map[string]io.Reader, plan io.Reader) (*api.ApplyResult, error) {
 	if m == nil {
 		return nil, errors.New("agent client: manifest is required")
