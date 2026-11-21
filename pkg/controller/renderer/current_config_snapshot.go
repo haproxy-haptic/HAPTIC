@@ -110,11 +110,14 @@ func applyCurrentConfigBackendChanges(
 	transaction := previous.Txn()
 	for index := range changes {
 		change := &changes[index]
-		if change.After == nil || len(change.After.Servers) == 0 {
+		var servers *persistenttree.Tree[exactCycleCurrentConfigServer]
+		if change.After != nil {
+			servers = currentConfigServers(change.After.Servers)
+		}
+		if servers == nil {
 			transaction.Delete([]byte(change.Name))
 			continue
 		}
-		servers := currentConfigServers(change.After.Servers)
 		previousServers, found := transaction.Get([]byte(change.Name))
 		if found && currentConfigServerTreesEqual(previousServers, servers) {
 			continue
@@ -152,24 +155,33 @@ func currentConfigProjection(
 	transaction := persistenttree.New[*persistenttree.Tree[exactCycleCurrentConfigServer]]().Txn()
 	for name := range backends {
 		backend := backends[name]
-		if len(backend.Servers) == 0 {
-			continue
+		if servers := currentConfigServers(backend.Servers); servers != nil {
+			transaction.Insert([]byte(name), servers)
 		}
-		transaction.Insert([]byte(name), currentConfigServers(backend.Servers))
 	}
 	return transaction.Commit()
 }
 
+// currentConfigServers is the backend's `currentConfig` entry, or nil when it
+// lists no server, as Plan.CurrentConfig leaves such a backend out.
 func currentConfigServers(
 	servers []renderplan.Server,
 ) *persistenttree.Tree[exactCycleCurrentConfigServer] {
 	transaction := persistenttree.New[exactCycleCurrentConfigServer]().Txn()
+	listed := false
 	for index := range servers {
 		server := &servers[index]
+		if !server.InCurrentConfig() {
+			continue
+		}
+		listed = true
 		transaction.Insert([]byte(server.Name), exactCycleCurrentConfigServer{
 			address: server.Address,
 			port:    int64(server.Port),
 		})
+	}
+	if !listed {
+		return nil
 	}
 	return transaction.Commit()
 }

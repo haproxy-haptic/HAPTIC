@@ -15,6 +15,7 @@
 package renderplan_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -208,6 +209,26 @@ func TestPlanCurrentConfig(t *testing.T) {
 	assert.Equal(t, "10.0.0.2", server.Address)
 	require.NotNil(t, server.Port)
 	assert.Equal(t, int64(8081), *server.Port)
+}
+
+// TestPlanCurrentConfigLeavesOutServerTemplates pins that currentConfig lists
+// only servers the running configuration has under their own name: a
+// server-template's slots get their names and addresses at runtime.
+func TestPlanCurrentConfigLeavesOutServerTemplates(t *testing.T) {
+	plan := samplePlan()
+	plan.Backends["be-files"] = renderplan.Backend{
+		Name: "be-files", Shape: renderplan.ShapeStructural,
+		Servers: []renderplan.Server{{Name: "files", Address: "files.example.net", Port: 443, Template: 4}},
+	}
+	mixed := plan.Backends["be-a"]
+	mixed.Servers = append(slices.Clone(mixed.Servers), renderplan.Server{Name: "pool", Address: "pool.example.net", Port: 443, Template: 2})
+	plan.Backends["be-a"] = mixed
+
+	current := plan.CurrentConfig()
+
+	assert.NotContains(t, current.ServerIndex, "be-files", "a backend of only templates contributes no index entry")
+	assert.NotContains(t, current.ServerIndex["be-a"], "pool")
+	assert.Len(t, current.ServerIndex["be-a"], 2)
 }
 
 func TestDigest(t *testing.T) {
