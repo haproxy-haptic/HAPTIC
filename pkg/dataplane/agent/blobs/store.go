@@ -97,8 +97,9 @@ func (s *Store) MaxSize() int64 {
 // store already holds replaces it with identical content, so concurrent puts
 // of one digest are safe.
 func (s *Store) Put(digest string, r io.Reader) (int64, error) {
-	if !api.ValidBlobDigest(digest) {
-		return 0, ErrInvalidDigest
+	target, err := s.path(digest)
+	if err != nil {
+		return 0, err
 	}
 	tmp, err := os.CreateTemp(s.dir, tempPrefix)
 	if err != nil {
@@ -106,7 +107,7 @@ func (s *Store) Put(digest string, r io.Reader) (int64, error) {
 	}
 	size, err := s.fill(tmp, digest, r)
 	if err == nil {
-		err = s.land(tmp.Name(), digest)
+		err = s.land(tmp.Name(), target)
 	}
 	if err != nil {
 		_ = os.Remove(tmp.Name())
@@ -135,21 +136,22 @@ func (s *Store) fill(tmp *os.File, digest string, r io.Reader) (int64, error) {
 	return size, nil
 }
 
-func (s *Store) land(tmp, digest string) error {
+func (s *Store) land(tmp, target string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := os.Rename(tmp, s.path(digest)); err != nil {
-		return fmt.Errorf("put blob %s: %w", digest, err)
+	if err := os.Rename(tmp, target); err != nil {
+		return fmt.Errorf("put blob %s: %w", filepath.Base(target), err)
 	}
 	return syncDir(s.dir)
 }
 
 // Open returns the blob and its size; fs.ErrNotExist when it is not held.
 func (s *Store) Open(digest string) (*os.File, int64, error) {
-	if !api.ValidBlobDigest(digest) {
-		return nil, 0, ErrInvalidDigest
+	target, err := s.path(digest)
+	if err != nil {
+		return nil, 0, err
 	}
-	f, err := os.Open(s.path(digest))
+	f, err := os.Open(filepath.Clean(target))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -178,11 +180,12 @@ func (s *Store) List() ([]api.Blob, error) {
 func (s *Store) Missing(want []string) []string {
 	var missing []string
 	for _, digest := range want {
-		if !api.ValidBlobDigest(digest) {
+		target, err := s.path(digest)
+		if err != nil {
 			missing = append(missing, digest)
 			continue
 		}
-		info, err := os.Lstat(s.path(digest))
+		info, err := os.Lstat(target)
 		if err != nil || !info.Mode().IsRegular() {
 			missing = append(missing, digest)
 		}
@@ -206,7 +209,11 @@ func (s *Store) GC(keep []string, cutoff time.Time) ([]string, error) {
 		if slices.Contains(keep, e.digest) || !e.modified.Before(cutoff) {
 			continue
 		}
-		if err := os.Remove(s.path(e.digest)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		target, err := s.path(e.digest)
+		if err == nil {
+			err = os.Remove(target)
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			errs = append(errs, err)
 			continue
 		}
@@ -229,7 +236,7 @@ func (s *Store) entries() ([]entry, error) {
 	}
 	out := make([]entry, 0, len(dirEntries))
 	for _, d := range dirEntries {
-		if !d.Type().IsRegular() || !api.ValidBlobDigest(d.Name()) {
+		if !d.Type().IsRegular() || !api.BlobDigestPattern.MatchString(d.Name()) {
 			continue
 		}
 		info, err := d.Info()
@@ -244,8 +251,13 @@ func (s *Store) entries() ([]entry, error) {
 	return out, nil
 }
 
-func (s *Store) path(digest string) string {
-	return filepath.Join(s.dir, digest)
+// path is the only way to a blob's file: a name that is not a digest never
+// reaches the filesystem.
+func (s *Store) path(digest string) (string, error) {
+	if !api.BlobDigestPattern.MatchString(digest) {
+		return "", ErrInvalidDigest
+	}
+	return filepath.Join(s.dir, digest), nil
 }
 
 // syncDir makes a rename durable.

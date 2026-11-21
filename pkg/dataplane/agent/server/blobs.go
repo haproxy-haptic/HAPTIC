@@ -64,7 +64,7 @@ func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(blobTransferTimeout))
+	extendForBlob(w)
 	body := &requestBody{reader: r.Body}
 	size, err := s.blobs.Put(digest, body)
 	switch {
@@ -78,6 +78,15 @@ func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("could not store a blob", "sha256", digest, "error", err)
 		writeJSON(w, http.StatusInternalServerError, api.ApplyError{Stage: stageBlob, Message: err.Error()})
 	}
+}
+
+// extendForBlob gives one blob call blobTransferTimeout for both its body and
+// its answer; the server's own timeouts start when the headers arrive.
+func extendForBlob(w http.ResponseWriter) {
+	controller := http.NewResponseController(w)
+	deadline := time.Now().Add(blobTransferTimeout)
+	_ = controller.SetReadDeadline(deadline)
+	_ = controller.SetWriteDeadline(deadline)
 }
 
 // requestBody tells a failed upload from a failed disk.
@@ -112,7 +121,7 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = f.Close() }()
-	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(blobTransferTimeout))
+	extendForBlob(w)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.WriteHeader(http.StatusOK)

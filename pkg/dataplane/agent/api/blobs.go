@@ -14,25 +14,22 @@
 
 package api
 
-import "fmt"
+import (
+	"fmt"
+	"regexp"
+)
 
 // BlobPath is the URL path of one blob, named by its lowercase hex SHA-256.
 func BlobPath(sha256 string) string {
 	return PathBlobs + "/" + sha256
 }
 
-// ValidBlobDigest reports whether s is a blob name: 64 lowercase hex digits.
+// BlobDigestPattern matches a blob name: 64 lowercase hex digits.
+var BlobDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// ValidBlobDigest reports whether s is a blob name.
 func ValidBlobDigest(s string) bool {
-	if len(s) != 64 {
-		return false
-	}
-	for i := range len(s) {
-		c := s[i]
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
+	return BlobDigestPattern.MatchString(s)
 }
 
 // ValidateRequiredBlobs checks RequiredBlobs against the contract: bounded,
