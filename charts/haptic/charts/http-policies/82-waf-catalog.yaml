@@ -789,7 +789,7 @@ templateSnippets:
                 }
                 if catalogError != "" {
                     selfServiceBrokenCatalog[scope] = catalogError
-                  diagnostics = append(diagnostics, map[string]any{"resource": cm, "scope": scope, "reason": "WafPolicyCatalogInvalid", "message": catalogError})
+                  diagnostics = append(diagnostics, map[string]any{"resource": cm, "scope": scope, "reason": "WafPolicyCatalogInvalid", "message": catalogError, "failsAdmission": catalog["underAdmission"] == true})
                   continue
                 }
                 for _, policyName := range keys(parsedPolicies) {
@@ -851,7 +851,7 @@ templateSnippets:
                     selfServiceBrokenPolicy[storeKey] = policyError
                     // A mismatch only breaks routes that select it; another release may serve it (#749).
                     if !enforcementMismatch {
-                      diagnostics = append(diagnostics, map[string]any{"resource": cm, "scope": scope, "reason": "WafPolicyInvalid", "message": policyError})
+                      diagnostics = append(diagnostics, map[string]any{"resource": cm, "scope": scope, "reason": "WafPolicyInvalid", "message": policyError, "failsAdmission": catalog["underAdmission"] == true})
                     } else if catalog["underAdmission"] == true {
                       selfServiceAdmittedBrokenPolicy[storeKey] = policyError
                     }

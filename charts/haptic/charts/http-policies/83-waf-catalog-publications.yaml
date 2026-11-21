@@ -106,7 +106,8 @@ templateSnippets:
         if renderMode == "admission" && dig_string(catalog, "", "defaultPolicyError") != "" { fail(tostring(catalog["defaultPolicyError"])) }
         for _, diagnostic := range toSlice(catalog["diagnostics"]) {
           var message = dig_string(diagnostic, "", "message")
-          if renderMode == "admission" { fail(message) }
+          // A tenant's broken catalog fails only its own admission, not every other request.
+          if renderMode == "admission" && dig(diagnostic, "failsAdmission") != false { fail(message) }
           recordEvent(dig(diagnostic, "resource"), dig_string(diagnostic, "", "reason"), message)
         }
         return catalog

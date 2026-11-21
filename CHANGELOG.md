@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Fixed
 
 - WAF routes with deny enforcement return HTTP 503 when inspection is unavailable, including when Coraza times out.
+- An invalid self-service WAF catalog no longer makes admission reject every Ingress and configuration change. Admission still rejects the catalog itself and any Ingress that selects a policy from it.
 
 - Fetched OWASP Core Rule Sets load their matching setup file before rule evaluation and honor per-policy CRS tuning and path-scoped exclusions.
 - An Ingress can now be applied alongside its self-service WAF policy. Admission warns if the policy is still missing, and the reconciled route returns `503` until the policy is available ([#703](https://github.com/haproxy-haptic/HAPTIC/issues/703)).
