@@ -175,7 +175,7 @@ class VerificationProfileTests(unittest.TestCase):
 
     def test_website_and_prose_changes_get_focused_verification(self):
         for paths in (["README.md"], ["charts/haptic/README.md", "CHANGELOG.md"],
-                      ["docs/site/docs/development/linting.md"],
+                      ["docs/site/docs/development/linting.md"], ["docs/adr/0041-binary-blob-delivery.md"],
                       ["README.md", "docs/landing/mkdocs.yml", "docs/landing/docs/robots.txt",
                        "docs/landing/docs/llms.txt", "docs/landing/overrides/home.html",
                        "docs/site/hooks/llms.py", "docs/site/mkdocs.yml", "docs/site/docs/migrating.md"],
@@ -184,6 +184,7 @@ class VerificationProfileTests(unittest.TestCase):
             with self.subTest(paths=paths):
                 self.assertEqual(VERIFY.paths_profile(self.manifest, paths), "prose")
         for paths in ([], ["README.md", "pkg/controller/controller.go"], ["docs/site/mkdocs.yml", "cmd/playground/main.go"],
+                      ["docs/adr/0041-assets/fixture.md"], ["docs/adr/0041-example.yaml"],
                       [".github/workflows/ci.yml"], ["docs/site-tools/example.py"],
                       ["docs/site/docs/examples/tcp-proxy-values.yaml"],
                       ["docs/site/docs/example.yaml"], [".github/ci-verification.json"],
