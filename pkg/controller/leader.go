@@ -136,6 +136,8 @@ type leaderCallbackDeps struct {
 	cancelCause context.CancelCauseFunc
 	podName     string
 	errGroup    *errgroup.Group
+	// leaveElection ends the election loop, releasing a Lease this replica holds.
+	leaveElection func()
 }
 
 // leaderCallbackState holds mutable state shared across leader callbacks.
@@ -145,6 +147,9 @@ type leaderCallbackState struct {
 	components *leaderOnlyComponents
 	stopped    bool
 	retiring   bool
+	// superseded is set once a successor iteration is being prepared: this
+	// iteration's config is stale, so it must not start another term.
+	superseded bool
 	// leading is readable without mu, which OnStartedLeading holds for as
 	// long as the leader-only components take to start.
 	leading atomic.Bool
@@ -162,6 +167,23 @@ func (s *leaderCallbackState) retire() {
 // isLeading reports whether this iteration's leadership term is running.
 func (s *leaderCallbackState) isLeading() bool {
 	return s != nil && s.leading.Load()
+}
+
+// resume undoes supersede for an iteration that keeps serving because its
+// successor failed to start.
+func (s *leaderCallbackState) resume() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.superseded = false
+}
+
+// supersede stops this iteration from starting another term. It reports
+// whether a term is running; that term serves until the successor takes over.
+func (s *leaderCallbackState) supersede() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.superseded = true
+	return s.leading.Load()
 }
 
 func (s *leaderCallbackState) isRetiring() bool {
@@ -235,6 +257,14 @@ func makeLeaderCallbacks(ctx context.Context, deps leaderCallbackDeps) (k8sleade
 			if state.stopped || ctx.Err() != nil {
 				return
 			}
+			if state.superseded {
+				// Leading with the superseded config would roll the fleet back.
+				deps.logger.Info("Leaving leader election: a successor iteration is starting with newer configuration")
+				if deps.leaveElection != nil {
+					deps.leaveElection()
+				}
+				return
+			}
 			components, err := startLeaderOnlyComponents(
 				ctx,
 				deps.registry,
@@ -273,8 +303,44 @@ func makeLeaderCallbacks(ctx context.Context, deps leaderCallbackDeps) (k8sleade
 // electionRun is one iteration's election loop.
 type electionRun struct {
 	elector *leaderelectionctrl.Component
-	cancel  context.CancelFunc
-	done    chan struct{}
+	// launch starts a loop and returns its cancel and done; nil in tests that
+	// never restart one.
+	launch func() (context.CancelFunc, chan struct{})
+
+	mu     sync.Mutex
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// leave cancels the running loop without waiting; safe from its own callbacks.
+func (r *electionRun) leave() {
+	r.mu.Lock()
+	cancel := r.cancel
+	r.mu.Unlock()
+	cancel()
+}
+
+// stop cancels the running loop and waits for it to end.
+func (r *electionRun) stop() {
+	r.mu.Lock()
+	cancel, done := r.cancel, r.done
+	r.mu.Unlock()
+	cancel()
+	<-done
+}
+
+// restart launches a new loop once the previous one has ended.
+func (r *electionRun) restart() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.launch == nil {
+		return
+	}
+	select {
+	case <-r.done:
+		r.cancel, r.done = r.launch()
+	default:
+	}
 }
 
 // retireLeadership ends this iteration's leadership for a successor on the
@@ -288,8 +354,7 @@ func retireLeadership(setup *componentSetup, logger *slog.Logger) {
 	}
 	if setup.Election != nil {
 		setup.Election.elector.KeepLeaseOnStop()
-		setup.Election.cancel()
-		<-setup.Election.done
+		setup.Election.stop()
 	}
 	if setup.LeaderState != nil {
 		// The loop's end stopped the components through OnStoppedLeading;
@@ -416,13 +481,16 @@ func setupLeaderElection(
 			ReleaseOnCancel: true,
 		}
 
+		var run *electionRun
+
 		// Create callbacks with explicit dependencies
 		callbacks, state := makeLeaderCallbacks(setup.IterCtx, leaderCallbackDeps{
-			registry:    setup.Registry,
-			logger:      logger,
-			cancelCause: setup.CancelCause,
-			podName:     podName,
-			errGroup:    setup.ErrGroup,
+			registry:      setup.Registry,
+			logger:        logger,
+			cancelCause:   setup.CancelCause,
+			podName:       podName,
+			errGroup:      setup.ErrGroup,
+			leaveElection: func() { run.leave() },
 		})
 
 		// Create leader election component (event adapter). It claims the
@@ -434,13 +502,17 @@ func setupLeaderElection(
 
 		// The loop runs on its own child context so a hand-over can end this
 		// term without cancelling the iteration; the errgroup still owns it.
-		electionCtx, cancelElection := context.WithCancel(setup.IterCtx)
-		run := &electionRun{elector: elector, cancel: cancelElection, done: make(chan struct{})}
+		run = &electionRun{elector: elector, launch: func() (context.CancelFunc, chan struct{}) {
+			electionCtx, cancelElection := context.WithCancel(setup.IterCtx)
+			done := make(chan struct{})
+			setup.ErrGroup.Go(func() error {
+				defer close(done)
+				return superviseElection(electionCtx, elector.Start, setup.ElectionRestart, logger)
+			})
+			return cancelElection, done
+		}}
+		run.cancel, run.done = run.launch()
 		setup.Election = run
-		setup.ErrGroup.Go(func() error {
-			defer close(run.done)
-			return superviseElection(electionCtx, elector.Start, setup.ElectionRestart, logger)
-		})
 
 		logger.Info("Leader election initialized", "identity", podName, "lease_name", leConfig.LeaseName, "lease_namespace", leConfig.LeaseNamespace)
 		return state, nil

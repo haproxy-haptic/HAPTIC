@@ -115,9 +115,33 @@ func (it *liveIteration) awaitReload() (*configchange.ReloadRequest, error) {
 		reload := it.authority.Latest()
 		it.logger.Info("Configuration change detected, preparing the successor iteration",
 			"new_config_version", reload.Snapshot.ConfigVersion)
+		it.leaveElectionUnlessLeading()
 		return reload, nil
 	case <-it.setup.IterCtx.Done():
 		return waitForIterationExit(it.setup, it.authority, it.logger)
+	}
+}
+
+// leaveElectionUnlessLeading keeps a superseded follower from winning the
+// Lease while its successor starts: it would deploy the previous config.
+// A leader keeps serving until the successor retires it.
+func (it *liveIteration) leaveElectionUnlessLeading() {
+	state, run := it.setup.LeaderState, it.setup.Election
+	if state == nil || run == nil || state.supersede() {
+		return
+	}
+	run.stop()
+	it.logger.Info("Left leader election for the successor iteration")
+}
+
+// resumeElection lets an iteration whose successor failed to start lead again:
+// its config is the newest one that runs.
+func (it *liveIteration) resumeElection() {
+	if it.setup.LeaderState != nil {
+		it.setup.LeaderState.resume()
+	}
+	if it.setup.Election != nil {
+		it.setup.Election.restart()
 	}
 }
 

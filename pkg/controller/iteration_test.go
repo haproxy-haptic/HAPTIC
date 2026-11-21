@@ -19,6 +19,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strconv"
 	"testing"
 	"time"
 
@@ -393,4 +394,71 @@ func TestReloadObserverKeepsAServingIterationRunning(t *testing.T) {
 	require.NoError(t, setup.IterCtx.Err(), "a serving iteration must not be cancelled by a reload")
 	cancelCause(nil)
 	require.NoError(t, group.Wait())
+}
+
+// A follower leaves the election as soon as its successor is being prepared;
+// a leader keeps campaigning so the fleet sees no vacancy.
+func TestAwaitReloadLeavesElectionOnlyAsFollower(t *testing.T) {
+	for _, leading := range []bool{false, true} {
+		t.Run("leading="+strconv.FormatBool(leading), func(t *testing.T) {
+			it := newTestLiveIteration(t)
+			electionCtx, cancelElection := context.WithCancel(it.setup.IterCtx)
+			run := &electionRun{cancel: cancelElection, done: make(chan struct{})}
+			go func() {
+				<-electionCtx.Done()
+				close(run.done)
+			}()
+			it.setup.Election = run
+			it.setup.LeaderState = &leaderCallbackState{}
+			it.setup.LeaderState.leading.Store(leading)
+
+			it.authority.Record(testReload("b"))
+			reload, err := it.awaitReload()
+			require.NoError(t, err)
+			require.Equal(t, "b", reload.Snapshot.ConfigVersion)
+			assert.Equal(t, !leading, electionCtx.Err() != nil)
+			cancelElection()
+		})
+	}
+}
+
+// A successor that fails to start leaves the follower that stood down for it
+// campaigning again; one interrupted by a newer reload keeps it out.
+func TestIterationSequenceStepResumesElectionAfterFailedStart(t *testing.T) {
+	for _, interrupted := range []bool{false, true} {
+		t.Run("interrupted="+strconv.FormatBool(interrupted), func(t *testing.T) {
+			first := newTestLiveIteration(t)
+			var launches int
+			run := &electionRun{launch: func() (context.CancelFunc, chan struct{}) {
+				launches++
+				done := make(chan struct{})
+				return func() {
+					select {
+					case <-done:
+					default:
+						close(done)
+					}
+				}, done
+			}}
+			run.cancel, run.done = run.launch()
+			first.setup.Election = run
+			first.setup.LeaderState = &leaderCallbackState{}
+			first.authority.Record(testReload("b"))
+			_, err := first.awaitReload()
+			require.NoError(t, err)
+			require.True(t, first.setup.LeaderState.superseded)
+
+			startErr := errors.New("start failed")
+			if interrupted {
+				startErr = &startupInterruptedError{reload: testReload("c")}
+			}
+			seq := &iterationSequence{logger: first.logger, current: first}
+			_ = seq.step(func(*configchange.ReloadRequest, *liveIteration) (*liveIteration, error) {
+				return nil, startErr
+			})
+			assert.Equal(t, interrupted, first.setup.LeaderState.superseded)
+			assert.Equal(t, map[bool]int{false: 2, true: 1}[interrupted], launches)
+			run.stop()
+		})
+	}
 }
