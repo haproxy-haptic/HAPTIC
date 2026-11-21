@@ -45,6 +45,10 @@ type composer struct {
 	pendingBackendDeletes int
 }
 
+// errServerTemplate refuses every runtime op on a server-template: its servers
+// exist only as Name1..NameN, which add, set and del server cannot address as one.
+const errServerTemplate = "a server-template has no runtime form"
+
 // addServer composes add server plus the enable that takes it out of MAINT.
 func (c *composer) addServer(be *renderplan.Backend, srv *renderplan.Server) (ops []api.Op, reason string) {
 	switch {
@@ -54,6 +58,8 @@ func (c *composer) addServer(be *renderplan.Backend, srv *renderplan.Server) (op
 		return nil, fmt.Sprintf("balance %q takes no dynamic server", be.Balance)
 	case !api.SafeToken(srv.Name):
 		return nil, "the name is not a safe runtime token"
+	case srv.Template > 0:
+		return nil, errServerTemplate
 	}
 	if reason := endpointReason(srv.Address, srv.Port); reason != "" {
 		return nil, reason
@@ -87,6 +93,9 @@ func (c *composer) addServer(be *renderplan.Backend, srv *renderplan.Server) (op
 // the backend because leaving MAINT needs the merged keyword set: `enable
 // health` is only accepted on a server that carries `check`.
 func (c *composer) updateServer(be *renderplan.Backend, prev, next *renderplan.Server) (ops []api.Op, reason string) {
+	if prev.Template > 0 || next.Template > 0 {
+		return nil, errServerTemplate
+	}
 	prevExtra, prevMaxconn := splitMaxconn(prev.Extra)
 	nextExtra, nextMaxconn := splitMaxconn(next.Extra)
 	if prev.GUID != next.GUID || !slices.EqualFunc(prevExtra, nextExtra, sameKeyword) {
@@ -149,6 +158,8 @@ func (c *composer) removeServer(backend string, srv *renderplan.Server) (ops []a
 	switch {
 	case !c.caps.DynamicServers:
 		return nil, "this HAProxy has no del server"
+	case srv.Template > 0:
+		return nil, errServerTemplate
 	case c.pendingServerDeletes >= api.MaxPendingServerDeletes:
 		return nil, fmt.Sprintf("%d server deletes already pending", c.pendingServerDeletes)
 	case !api.SafeToken(srv.Name):

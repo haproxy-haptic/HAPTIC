@@ -1236,7 +1236,7 @@ templateSnippets:
           body          - directive lines that must stay in this section
           servers       - server records, from BackendServers() or a library's
                           own list of {name, address, port, weight, disabled,
-                          guid, comment}
+                          guid, comment, template (server-template slots)}
           defaultServer - `default-server` keyword records {name, args}, formatted
                           into the profile's `default-server` line (use
                           DefaultServerArgs(opts) to build them from serverOpts)
@@ -1265,6 +1265,9 @@ templateSnippets:
       } -%}
       {%- var ServerLine = func(server map[string]any) string {
         var line = "server " + tostring(server["name"]) + " " + tostring(server["address"])
+        if slots := toint(server | dig("template") | fallback(0)); slots > 0 {
+          line = "server-template " + tostring(server["name"]) + " " + tostring(slots) + " " + tostring(server["address"])
+        }
         // A unix-socket address has no port; a record without one describes such a line.
         if server["port"] != nil {
           line = line + ":" + tostring(server["port"])
@@ -2831,6 +2834,12 @@ templateSnippets:
       {{ "\n" }}resolvers dns
           parse-resolv-conf
           accepted_payload_size 8192
+      {#- dns-pool keeps an address 5 minutes after it left the answer, so a pool answering a few
+          addresses at a time doesn't churn server-template slots; dns stays as servers expect it. #}
+      {{ "\n" }}resolvers dns-pool
+          parse-resolv-conf
+          accepted_payload_size 8192
+          hold obsolete 300s
 
   status-extra-100-prometheus-exporter:
     template: |

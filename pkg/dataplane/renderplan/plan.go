@@ -122,6 +122,8 @@ type Server struct {
 	GUID     string       `json:"guid,omitempty"`
 	Comment  string       `json:"comment,omitempty"`
 	Extra    []KeywordArg `json:"extra,omitempty"`
+	// Template is the slot count of a `server-template` line, whose servers are Name1..NameN; 0 is a plain server.
+	Template int `json:"template,omitempty"`
 }
 
 // KeywordArg is a server or default-server keyword with its arguments,

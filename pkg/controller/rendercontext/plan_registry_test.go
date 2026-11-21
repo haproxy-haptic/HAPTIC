@@ -177,6 +177,17 @@ func TestPlanRegistryBackendStrictKeys(t *testing.T) {
 			wantErr: `"port" must be a number, got string`,
 		},
 		{
+			name: "server-template record",
+			record: map[string]any{"name": "be_app", "servers": []any{map[string]any{
+				"name": "pool", "address": "files.example.net", "port": 443, "template": 4,
+			}}},
+		},
+		{
+			name:    "server-template slot count must be a number",
+			record:  map[string]any{"name": "be_app", "servers": []any{map[string]any{"name": "pool", "template": "4"}}},
+			wantErr: `"template" must be a number, got string`,
+		},
+		{
 			name:    "server without a name",
 			record:  map[string]any{"name": "be_app", "servers": []any{map[string]any{"address": "10.0.0.1"}}},
 			wantErr: "server without a name",

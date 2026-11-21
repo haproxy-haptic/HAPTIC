@@ -473,3 +473,41 @@ func srvWith(name, address string, extra ...renderplan.KeywordArg) renderplan.Se
 	server.Extra = extra
 	return server
 }
+
+// TestDiffServerTemplateHasNoRuntimeForm pins that add, set and del server never
+// touch a server-template, whose slots exist only as Name1..NameN; its DNS answer
+// never reaches the plan, so an unchanged template costs nothing.
+func TestDiffServerTemplateHasNoRuntimeForm(t *testing.T) {
+	template := func(slots int) renderplan.Server {
+		pool := srv("pool", "files.example.net", 443)
+		pool.Template = slots
+		return pool
+	}
+	tests := []struct {
+		name   string
+		before []renderplan.Server
+		after  []renderplan.Server
+		reload bool
+	}{
+		{name: "added", after: []renderplan.Server{template(4)}, reload: true},
+		{name: "slot count changed", before: []renderplan.Server{template(4)}, after: []renderplan.Server{template(6)}, reload: true},
+		{name: "removed", before: []renderplan.Server{template(4)}, reload: true},
+		{name: "unchanged", before: []renderplan.Server{template(4)}, after: []renderplan.Server{template(4)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prev := basePlan(withBackend(dynBackend("be-a", append(tt.before, srv("SRV_1", "192.0.2.1", 8080))...)))
+			next := basePlan(withBackend(dynBackend("be-a", append(tt.after, srv("SRV_1", "192.0.2.1", 8080))...)))
+
+			got := deployplan.Diff(next, on34(prev))
+
+			if tt.reload {
+				require.Equal(t, deployplan.VerdictReload, got.Verdict, got.Reasons)
+				reasonsContain(t, got.Reasons, "a server-template has no runtime form")
+				return
+			}
+			require.NotEqual(t, deployplan.VerdictReload, got.Verdict, got.Reasons)
+			assert.Empty(t, got.Ops)
+		})
+	}
+}

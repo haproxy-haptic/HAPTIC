@@ -35,7 +35,7 @@ var (
 	// profileRecordKeys are the shape values a profile is content-addressed
 	// over. `profile` is the directive lines that go inside the named defaults.
 	profileRecordKeys = []string{"mode", "balance", "hashType", "defaultServer", "profile"}
-	serverRecordKeys  = []string{"name", "address", "port", "weight", "disabled", "guid", "comment", "extra"}
+	serverRecordKeys  = []string{"name", "address", "port", "weight", "disabled", "guid", "comment", "extra", "template"}
 	keywordRecordKeys = []string{"name", "args"}
 )
 
@@ -249,6 +249,7 @@ func (d *recordDecoder) servers(key string) []renderplan.Server {
 			GUID:     nested.str("guid"),
 			Comment:  nested.str("comment"),
 			Extra:    nested.keywords("extra"),
+			Template: nested.intVal("template"),
 		})
 		if nested.err != nil {
 			d.adopt(nested.err)

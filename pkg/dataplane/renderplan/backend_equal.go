@@ -88,6 +88,7 @@ func (s *Server) Equal(other *Server) bool {
 		s.Disabled == other.Disabled &&
 		s.GUID == other.GUID &&
 		s.Comment == other.Comment &&
+		s.Template == other.Template &&
 		EqualKeywordArgs(s.Extra, other.Extra)
 }
 

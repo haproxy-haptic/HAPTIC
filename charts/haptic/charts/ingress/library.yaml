@@ -2709,7 +2709,7 @@ validationTests:
         description: "the skipped Ingress gets an InvalidPath Warning naming it"
 
   test-ingress-externalname-backend:
-    description: An ExternalName Service backend emits a server line resolved via HAProxy's dns resolvers section.
+    description: An ExternalName Service backend emits server-template slots resolved via HAProxy's dns-pool resolvers section, which keeps an address that left the answer.
     fixtures:
       services:
         - apiVersion: v1
@@ -2738,7 +2738,10 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^resolvers dns\n\s+parse-resolv-conf\n\s+accepted_payload_size 8192$'
+        pattern: '(?m)^resolvers dns\n\s+parse-resolv-conf\n\s+accepted_payload_size 8192\n+resolvers dns-pool\n\s+parse-resolv-conf\n\s+accepted_payload_size 8192\n\s+hold obsolete 300s$'
       - type: contains
         target: haproxy.cfg
-        pattern: 'server [^\n]*files\.s3\.example\.net:443[^\n]*resolvers dns init-addr last,libc,none'
+        pattern: '(?m)^\s+server-template \S+ 4 files\.s3\.example\.net:443 resolvers dns-pool init-addr last,libc,none  # ExternalName: files\.s3\.example\.net$'
+      - type: not_contains
+        target: haproxy.cfg
+        pattern: 'server-template [^\n]* guid '

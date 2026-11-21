@@ -214,7 +214,7 @@ func TestPlanCanonicalFieldInventory(t *testing.T) {
 		},
 		"Section":      {"kind", "name", "textDigest", "length", "-", "-"},
 		"Backend":      {"name", "profile,omitempty", "mode,omitempty", "guid,omitempty", "balance,omitempty", "hashType,omitempty", "shape", "shapeReason,omitempty", "servers,omitempty", "defaultServer,omitempty", "bodyDigest", "commentsDigest", "recordDigest", "textDigest", "-", "-", "-"},
-		"Server":       {"name", "address", "port", "weight,omitempty", "disabled,omitempty", "guid,omitempty", "comment,omitempty", "extra,omitempty"},
+		"Server":       {"name", "address", "port", "weight,omitempty", "disabled,omitempty", "guid,omitempty", "comment,omitempty", "extra,omitempty", "template,omitempty"},
 		"KeywordArg":   {"name", "args,omitempty"},
 		"Profile":      {"name", "bodyDigest", "hasRules,omitempty"},
 		"Map":          {"path", "ordered", "entries,omitempty"},
