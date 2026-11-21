@@ -130,6 +130,12 @@ func WithoutWorkerFence() Option {
 	return withoutFeature(api.FeatureWorkerFence)
 }
 
+// WithBlobFeature advertises blob storage, which the fake does not implement:
+// it lets a test tell the controller's view of an agent from an older one.
+func WithBlobFeature() Option {
+	return func(a *Agent) { a.state.Features = append(a.state.Features, api.FeatureBlobs) }
+}
+
 func withoutFeature(feature string) Option {
 	return func(a *Agent) {
 		a.state.Features = slices.DeleteFunc(a.state.Features, func(value string) bool { return value == feature })

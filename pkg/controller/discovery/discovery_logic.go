@@ -198,8 +198,8 @@ func (c *Component) admitOne(ctx context.Context, endpoint *dataplane.Endpoint) 
 		return RejectionAgentUnreachable
 	}
 	identity := endpointIdentityOf(endpoint)
-	if version, known := c.admittedVersion(&identity); known {
-		applyHAProxyVersion(endpoint, version)
+	if report, known := c.admittedReport(&identity); known {
+		applyAgentReport(endpoint, report)
 		return ""
 	}
 
@@ -210,8 +210,9 @@ func (c *Component) admitOne(ctx context.Context, endpoint *dataplane.Endpoint) 
 		return RejectionAgentUnreachable
 	}
 
-	c.recordAdmission(&identity, state.HAProxy.Version)
-	applyHAProxyVersion(endpoint, state.HAProxy.Version)
+	report := reportOf(state)
+	c.recordAdmission(&identity, report)
+	applyAgentReport(endpoint, report)
 	c.Logger().Info("Pod admitted",
 		"pod", endpoint.PodName,
 		"haproxy_version", state.HAProxy.Version,
@@ -238,17 +239,17 @@ func (c *Component) probeAgent(ctx context.Context, endpoint *dataplane.Endpoint
 	return client.State(ctx, api.StateRead{})
 }
 
-func (c *Component) admittedVersion(identity *endpointIdentity) (string, bool) {
+func (c *Component) admittedReport(identity *endpointIdentity) (agentReport, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	version, known := c.admitted[*identity]
-	return version, known
+	report, known := c.admitted[*identity]
+	return report, known
 }
 
-func (c *Component) recordAdmission(identity *endpointIdentity, version string) {
+func (c *Component) recordAdmission(identity *endpointIdentity, report agentReport) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.admitted[*identity] = version
+	c.admitted[*identity] = report
 }
 
 // cleanupRemovedPods drops admissions for identities that are no longer

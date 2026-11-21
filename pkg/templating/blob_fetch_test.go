@@ -87,6 +87,43 @@ func TestBlobFetchReturnsAnEmptyHandleWithoutAcceptedContent(t *testing.T) {
 	}
 }
 
+// A fleet with an agent that cannot store blobs gets no blob references, and
+// nothing is fetched, so no version is accepted that a pod could not receive.
+func TestBlobFetchDeclaresNothingWhileTheFleetCannotStoreBlobs(t *testing.T) {
+	ref := blob.Describe([]byte("database"))
+	for name, capabilities := range map[string]any{
+		"map":         map[string]any{"supports_blobs": false},
+		"map pointer": &map[string]any{"supports_blobs": false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fetcher := &recordingFetcher{content: ref.Encode()}
+			engine, err := New(map[string]string{"main": blobTemplate}, nil)
+			require.NoError(t, err)
+
+			output, err := engine.Render(t.Context(), "main", map[string]any{"http": fetcher, "capabilities": capabilities})
+
+			require.NoError(t, err)
+			assert.Equal(t, "digest= size=0 path=", strings.TrimSpace(output))
+			assert.Empty(t, fetcher.calls)
+		})
+	}
+}
+
+func TestBlobFetchDeclaresTheSourceWhenTheFleetStoresBlobs(t *testing.T) {
+	ref := blob.Describe([]byte("database"))
+	fetcher := &recordingFetcher{content: ref.Encode()}
+	engine, err := New(map[string]string{"main": blobTemplate}, nil)
+	require.NoError(t, err)
+
+	output, err := engine.Render(t.Context(), "main", map[string]any{
+		"http": fetcher, "capabilities": map[string]any{"supports_blobs": true},
+	})
+
+	require.NoError(t, err)
+	assert.Contains(t, output, "path="+ref.Path())
+	assert.Len(t, fetcher.calls, 1)
+}
+
 func TestBlobFetchPassesFetcherErrorsThrough(t *testing.T) {
 	fetcher := &recordingFetcher{err: errors.New("render must restart")}
 	_, err := renderBlobTemplate(t, blobTemplate, fetcher)

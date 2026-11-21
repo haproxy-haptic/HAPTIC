@@ -134,7 +134,7 @@ func detectLocalCapabilities(ctx context.Context, logger *slog.Logger) (
 	if err != nil {
 		return nil, fmt.Errorf("detecting local HAProxy version: %w", err)
 	}
-	capabilities := renderer.NewCapabilitiesFanout(dataplane.CapabilitiesFromVersion(localVersion))
+	capabilities := renderer.NewCapabilitiesFanout(dataplane.LocalCapabilities(localVersion))
 
 	local := capabilities.Capabilities()
 	logger.Info("Detected local HAProxy version",
@@ -186,7 +186,6 @@ func createReconciliationComponents(
 	driftInterval := cfg.Dataplane.GetDriftPreventionInterval()
 	httpStoreEvictionMaxAge := 2 * driftInterval
 	httpStoreComponent := httpstore.New(setup.Bus, logger, httpStoreEvictionMaxAge)
-	allReplica := blobComponents(setup, httpStoreComponent, logger)
 
 	wiring, err := buildEngineWiring(setup.IterCtx, cfg, k8sClient, logger)
 	if err != nil {
@@ -285,6 +284,7 @@ func createReconciliationComponents(
 		setup.MetricsComponent.Metrics(),
 		renderInputs{AckedPlanSink: renderService, FleetCapabilitiesSink: capabilities},
 		leadershipFence(setup, cfg, k8sClient, logger), setup.AgentTLS)
+	allReplica := blobComponents(setup, httpStoreComponent, deployStack, logger)
 
 	// Create Discovery component and set pod store
 	discoveryComponent := discovery.New(setup.Bus, logger, discovery.WithTLS(setup.AgentTLS))
@@ -388,12 +388,17 @@ func createReconciliationComponents(
 	}, nil
 }
 
-// blobComponents enables blob.Fetch sources when the controller has a blob store.
-func blobComponents(setup *componentSetup, sources ctrlblobstore.Sources, logger *slog.Logger) []lifecycle.Component {
+// blobComponents enables blob.Fetch sources when the controller has a blob
+// store, delivers their blobs to the pods, and keeps what the pods hold.
+func blobComponents(
+	setup *componentSetup, sources ctrlblobstore.Sources, deployStack *deployer.DeployStack, logger *slog.Logger,
+) []lifecycle.Component {
 	if setup.Blobs == nil {
 		return nil
 	}
-	component := ctrlblobstore.New(logger, setup.Blobs, sources)
+	deployStack.EnableBlobs(setup.Blobs)
+	component := ctrlblobstore.New(logger, setup.Blobs, sources,
+		ctrlblobstore.WithInUse(deployStack.Deployer.HeldBlobs))
 	setup.AddCleanup(component.Close)
 	return []lifecycle.Component{component}
 }

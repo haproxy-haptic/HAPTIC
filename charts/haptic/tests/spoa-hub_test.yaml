@@ -1016,3 +1016,62 @@ tests:
       - matchRegex:
           path: data["config.toml"]
           pattern: 'sort_extensions = false'
+
+  # Declaring a GeoIP database is the whole opt-in: the plugin, its SPOE
+  # message and the validator that loads it come with it.
+  - it: should enable the maxmind plugin when a database is declared
+    template: haproxytemplateconfig.yaml
+    set:
+      controller.config.templatingSettings.extraContext.maxmind.databases.city.url: https://geo.example.com/city.mmdb
+    documentSelector:
+      path: kind
+      value: HAProxyTemplateConfig
+    asserts:
+      - contains:
+          path: spec.templatingSettings.extraContext.spoaHub.haproxy.messages
+          content: geoip-enrich
+      - equal:
+          path: spec.templatingSettings.extraContext.maxmind.databases.city.url
+          value: https://geo.example.com/city.mmdb
+
+  - it: should refuse a database fetched over plaintext http
+    template: haproxytemplateconfig.yaml
+    set:
+      controller.config.templatingSettings.extraContext.maxmind.databases.city.url: http://geo.example.com/city.mmdb
+    asserts:
+      - failedTemplate:
+          errorPattern: 'extraContext\.maxmind\.databases\.city\.url must be an https:// URL'
+
+  - it: should refuse a lookup of an undeclared database
+    template: haproxytemplateconfig.yaml
+    set:
+      controller.config.templatingSettings.extraContext.maxmind:
+        databases:
+          city: {url: https://geo.example.com/city.mmdb}
+        lookups:
+          - {name: asn, database: asn, path: [autonomous_system_number], outputVar: geo_asn}
+    asserts:
+      - failedTemplate:
+          errorPattern: 'lookups\[0\] \(asn\) names database "asn", which .*maxmind\.databases does not declare'
+
+  - it: should refuse two lookups writing one variable
+    template: haproxytemplateconfig.yaml
+    set:
+      controller.config.templatingSettings.extraContext.maxmind:
+        databases:
+          city: {url: https://geo.example.com/city.mmdb}
+        lookups:
+          - {name: country, database: city, path: [country, iso_code], outputVar: geo}
+          - {name: city, database: city, path: [city, names, en], outputVar: geo}
+    asserts:
+      - failedTemplate:
+          errorPattern: 'lookups\[1\] \(city\) needs an outputVar .* that no other lookup uses'
+
+  - it: should refuse databases while the maxmind plugin is disabled
+    template: haproxytemplateconfig.yaml
+    set:
+      controller.config.templatingSettings.extraContext.maxmind.databases.city.url: https://geo.example.com/city.mmdb
+      spoaHub.plugins.maxmind.enabled: false
+    asserts:
+      - failedTemplate:
+          errorPattern: 'maxmind\.databases is set, but spoaHub\.plugins\.maxmind is disabled'

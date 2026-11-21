@@ -1,0 +1,104 @@
+# SPOA hub library — GeoIP database validation tests
+#
+# A blob fixture is the stored database, so its digest is the SHA-256 of the
+# fixture content: "city database fixture" is 6ccb6c36…, "asn database
+# fixture" is a274d926…. The snippets load with the maxmind plugin only, which
+# scripts/test-templates.sh enables.
+
+_fx:
+  maxmindHub: &maxmindHub
+    enabled: true
+    haproxy:
+      socketPath: /run/spoa/hub.sock
+      modeSpop: true
+      messages: ["geoip-enrich"]
+      timeoutHello: 2s
+      timeoutIdle: 5m
+      timeoutProcessing: 500ms
+      poolMaxConn: 100
+      poolPurgeDelay: 30s
+    hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
+    plugins:
+      - {name: maxmind, library: libmaxmind_plugin.so, messages: ["geoip-enrich"], timeoutMs: 10, dependsOn: [], params: ""}
+  maxmindDatabases: &maxmindDatabases
+    databases:
+      city: {url: "https://geo.example.test/city.mmdb.gz", unpack: gzip}
+      asn: {url: "https://geo.example.test/asn.mmdb"}
+    lookups:
+      - {name: country, database: city, path: [country, iso_code], outputVar: geo_country}
+      - {name: region, database: city, path: [subdivisions, "0", names, en], outputVar: geo_region}
+      - {name: asn, database: asn, path: [autonomous_system_number], outputVar: geo_asn}
+
+validationTests:
+  test-spoa-hub-maxmind-databases-reach-the-plugin:
+    _helm_skip_test: &maxmindSkip '{{ if or (semverCompare "<3.1" .Values.haproxyVersion) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.maxmind "root" . "name" "maxmind"))) }}true{{ else }}false{{ end }}'
+    description: "Each downloaded database's data-plane path and its lookups reach the maxmind plugin, and every request is looked up."
+    extraContext:
+      haproxyVersion: "3.2"
+      spoaHub: *maxmindHub
+      maxmind: *maxmindDatabases
+    httpResources:
+      - {url: "https://geo.example.test/city.mmdb.gz", content: "city database fixture"}
+      - {url: "https://geo.example.test/asn.mmdb", content: "asn database fixture"}
+    assertions:
+      - type: haproxy_valid
+      - type: contains
+        target: file:spoa-hub-config.toml
+        pattern: '\[plugins\.params\.databases\."city"\]\npath = "/var/lib/haptic/blobs/6ccb6c36d92445d0ce1240fdbb79bbf791dc34a190108aabb67d9b953373afa4"'
+      - type: contains
+        target: file:spoa-hub-config.toml
+        pattern: '\[plugins\.params\.databases\."asn"\]\npath = "/var/lib/haptic/blobs/a274d926b13a3ec1f6ed2da452cde8594e7a577c6e8f8b97997cedac75b385de"'
+      - type: contains
+        target: file:spoa-hub-config.toml
+        pattern: '\[\[plugins\.params\.lookups\]\]\nname = "region"\nmessage = "geoip-enrich"\ndatabase = "city"\ninput = "ip"\npath = \["subdivisions", "0", "names", "en"\]\noutput_var = "geo_region"'
+        description: Array indexes travel as strings, which the plugin reads as indexes
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'http-request send-spoe-group spoa-hub-geoip-enrich geoip-enrich-group'
+
+  test-spoa-hub-maxmind-pending-database-leaves-its-lookups-out:
+    _helm_skip_test: *maxmindSkip
+    description: "A database without an accepted version leaves its lookups out; the other database keeps serving."
+    extraContext:
+      haproxyVersion: "3.2"
+      spoaHub: *maxmindHub
+      maxmind: *maxmindDatabases
+    httpResources:
+      - {url: "https://geo.example.test/city.mmdb.gz", content: "", pending: true}
+      - {url: "https://geo.example.test/asn.mmdb", content: "asn database fixture"}
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: file:spoa-hub-config.toml, pattern: 'databases\."city"'}
+      - {type: not_contains, target: file:spoa-hub-config.toml, pattern: 'output_var = "geo_country"'}
+      - {type: contains, target: file:spoa-hub-config.toml, pattern: 'output_var = "geo_asn"'}
+      - {type: contains, target: haproxy.cfg, pattern: 'send-spoe-group spoa-hub-geoip-enrich'}
+
+  test-spoa-hub-maxmind-left-out-until-a-database-arrives:
+    _helm_skip_test: *maxmindSkip
+    description: "The plugin refuses to start without a database, so until one arrives the plugin is left out and requests pass unenriched."
+    extraContext:
+      haproxyVersion: "3.2"
+      spoaHub: *maxmindHub
+      maxmind: *maxmindDatabases
+    httpResources:
+      - {url: "https://geo.example.test/city.mmdb.gz", content: "", pending: true}
+      - {url: "https://geo.example.test/asn.mmdb", content: "", pending: true}
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: file:spoa-hub-config.toml, pattern: 'name = "maxmind"'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'send-spoe-group spoa-hub-geoip-enrich'}
+
+  test-spoa-hub-maxmind-databases-over-memory-limit:
+    _helm_skip_test: *maxmindSkip
+    description: "A reload holds two copies of each database, so databases that would not fit the spoa-hub memory limit fail the render instead of the sidecar being OOM-killed."
+    extraContext:
+      haproxyVersion: "3.2"
+      spoaHub:
+        <<: *maxmindHub
+        hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30, memoryLimitMiB: 65}
+      maxmind: *maxmindDatabases
+    httpResources:
+      - {url: "https://geo.example.test/city.mmdb.gz", content: "city database fixture"}
+      - {url: "https://geo.example.test/asn.mmdb", content: "asn database fixture"}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'maxmind databases need about 66 MiB in the spoa-hub sidecar, above its 65 MiB memory limit'}

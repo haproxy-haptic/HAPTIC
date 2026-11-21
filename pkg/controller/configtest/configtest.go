@@ -180,7 +180,7 @@ func buildValidationPaths(ctx context.Context, cfg *config.Config) (
 	if err != nil {
 		return nil, dataplane.Capabilities{}, nil, nil, fmt.Errorf("detecting local HAProxy version: %w", err)
 	}
-	capabilities = dataplane.CapabilitiesFromVersion(localVersion)
+	capabilities = dataplane.LocalCapabilities(localVersion)
 
 	tempDir, err := os.MkdirTemp("", "haproxy-cfgtest-*")
 	if err != nil {

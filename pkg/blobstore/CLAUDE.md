@@ -17,5 +17,7 @@ knows nothing about HTTP.
 
 `pkg/controller/blobstore` enables blob sources on one iteration's HTTP store component, registers
 that store's digests as a holder (accepted, pending, replaced, and each source's previous accepted
-digest), and runs `Retain` every `RetentionInterval`. The store itself outlives iterations: it is
+digest), and runs `Retain` every `RetentionInterval`, keeping the digests the HAProxy pods hold
+(`WithInUse`, fed by the deployer's `HeldBlobs`). The deployer streams blobs from the store to the
+pods and ingests a blob it takes back from a pod. The store itself outlives iterations: it is
 created in `cmd/haptic` from `--blob-dir` and `--blob-max-size` and lives in `persistentInfra`.

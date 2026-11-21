@@ -87,3 +87,24 @@ func TestFleetCapabilities_UnreadableVersionsKeepTheBootstrap(t *testing.T) {
 
 	assert.Empty(t, sink.capabilities)
 }
+
+// Blobs are offered to templates only while every pod's agent stores them, so
+// a render never references a file one pod could not receive (ADR-0041). The
+// answer changing on its own is a capability change.
+func TestFleetCapabilities_BlobsOnlyWhenEveryAgentStoresThem(t *testing.T) {
+	bus := testutil.NewTestBus()
+	bus.Start()
+	scheduler := newDeploymentScheduler(bus, testutil.NewTestLogger(), 0, 30*time.Second)
+	sink := &recordingPlanSink{}
+	scheduler.capabilities = sink
+	fleet := fleetOf("3.4.3", "3.4.3")
+	fleet[0].AcceptsBlobs = true
+
+	scheduler.publishFleetCapabilities(fleet)
+	fleet[1].AcceptsBlobs = true
+	scheduler.publishFleetCapabilities(fleet)
+
+	require.Len(t, sink.capabilities, 2)
+	assert.False(t, sink.capabilities[0].SupportsBlobs, "one older agent is the whole fleet's answer")
+	assert.True(t, sink.capabilities[1].SupportsBlobs)
+}

@@ -37,6 +37,10 @@ type Endpoint struct {
 	DetectedMajorVersion int    // Major version (e.g., 3)
 	DetectedMinorVersion int    // Minor version (e.g., 4)
 	DetectedFullVersion  string // Full version string (e.g., "3.4.3")
+
+	// AcceptsBlobs reports that the pod's agent advertised blob storage at
+	// discovery admission (ADR-0041).
+	AcceptsBlobs bool
 }
 
 // HasCachedVersion returns true if version info has been cached on this endpoint.

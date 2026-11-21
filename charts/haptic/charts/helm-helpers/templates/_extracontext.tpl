@@ -170,6 +170,7 @@
 {{- if and $wafPoliciesConfigured (not $controller.templateLibraries.hapticAnnotations.enabled) }}
   {{- fail "controller.config.templatingSettings.extraContext.waf.policies requires controller.templateLibraries.hapticAnnotations.enabled=true because WAF policies are a HAPTIC Ingress annotation feature." }}
 {{- end }}
+{{- include "haptic.maxmind.validate" (dict "root" . "maxmind" (dig "maxmind" dict $configuredExtraContext)) }}
 {{- $extraContext := deepCopy $configuredExtraContext }}
 
   {{- /* Which HAPTIC emitted a span. Several deployments per cluster — one for

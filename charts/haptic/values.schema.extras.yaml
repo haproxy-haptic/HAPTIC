@@ -147,6 +147,17 @@ controller:
             example:
               entries: [192.0.2.10]
               refreshInterval: 6h
+        maxmind:
+          databases:  # @schema mergeProperties
+            example:
+              url: https://example.com/City.mmdb.gz  # @schema required: true
+              sha256: ""
+              unpack: none  # @schema enum: [none, gzip, tar.gz]
+              member: ""
+              refreshInterval: 24h
+              timeout: 5m
+              retries: 3
+              maxSize: 268435456
         prometheusExporter:
           excludeMetrics:  # @schema mergeProperties
             example:

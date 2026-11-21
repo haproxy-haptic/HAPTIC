@@ -16,7 +16,8 @@
 {{- $http3 := include "haptic.http3" . | fromYaml }}
 {{- $agent := $haproxy.agent }}
 {{- $blobs := .Values.blobs }}
-{{- $blobDir := "/var/lib/haptic/blobs" }}
+{{- $blobsEnabled := include "haptic.blobs.enabled" . }}
+{{- $blobDir := include "haptic.blobs.dir" . }}
 
 {{/*
   The pod spec below hardcodes /etc/haproxy: haproxy-runtime mounts there, the
@@ -394,7 +395,7 @@ spec:
               readOnly: true
             - name: spoa-socket
               mountPath: /run/spoa
-            {{- if $blobs.enabled }}
+            {{- if $blobsEnabled }}
             - name: blobs
               mountPath: {{ $blobDir }}
               readOnly: true
@@ -451,7 +452,7 @@ spec:
             {{- with $dataplaneConfig.reloadVerificationTimeout }}
             - --reload-timeout={{ . }}
             {{- end }}
-            {{- if $blobs.enabled }}
+            {{- if $blobsEnabled }}
             - --blob-dir={{ $blobDir }}
             - --blob-max-size={{ $blobs.maxSize }}
             {{- end }}
@@ -498,7 +499,7 @@ spec:
             # Secret files: the haproxy container never mounts this volume.
             - name: secret-storage
               mountPath: /etc/haproxy/secrets
-            {{- if $blobs.enabled }}
+            {{- if $blobsEnabled }}
             - name: blobs
               mountPath: {{ $blobDir }}
             {{- end }}
@@ -676,7 +677,7 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 1Mi
-        {{- if $blobs.enabled }}
+        {{- if $blobsEnabled }}
         # Disk-backed: one GeoIP database version is 60-130 MB.
         - name: blobs
           emptyDir:

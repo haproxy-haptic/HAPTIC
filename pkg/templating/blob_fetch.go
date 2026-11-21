@@ -15,6 +15,7 @@
 package templating
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -65,7 +66,7 @@ func scriggoBlobFetch(env native.Env, url string, options ...map[string]any) (Bl
 	ctx := env.Context()
 	value, _ := lookupRenderContextValue(ctx, declHTTP)
 	fetcher, _ := value.(HTTPFetcher)
-	if fetcher == nil {
+	if fetcher == nil || fleetRejectsBlobs(ctx) {
 		return BlobHandle{}, nil
 	}
 	content, err := fetcher.Fetch(url, httpOptions)
@@ -78,6 +79,27 @@ func scriggoBlobFetch(env native.Env, url string, options ...map[string]any) (Bl
 		return BlobHandle{}, nil
 	}
 	return BlobHandle{Digest: ref.Digest, Size: ref.Size, Path: ref.Path()}, nil
+}
+
+// capabilityBlobs is the `capabilities` key that reports every pod's agent
+// stores blobs; dataplane.Capabilities.SupportsBlobs feeds it.
+const capabilityBlobs = "supports_blobs"
+
+// fleetRejectsBlobs reports a render whose capabilities say a pod cannot store
+// blobs. A render without capabilities is not refused: it has no fleet.
+func fleetRejectsBlobs(ctx context.Context) bool {
+	value, _ := lookupRenderContextValue(ctx, "capabilities")
+	var capabilities map[string]any
+	switch typed := value.(type) {
+	case map[string]any:
+		capabilities = typed
+	case *map[string]any:
+		if typed != nil {
+			capabilities = *typed
+		}
+	}
+	supported, declared := capabilities[capabilityBlobs].(bool)
+	return declared && !supported
 }
 
 var blobOptionKeys = []string{httpOptionInterval, httpOptionTimeout, httpOptionRetries, "sha256", "unpack", "member", "maxSize"}

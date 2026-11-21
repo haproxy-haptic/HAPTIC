@@ -734,6 +734,89 @@
                       },
                       "additionalProperties": false
                     },
+                    "maxmind": {
+                      "type": "object",
+                      "properties": {
+                        "databases": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "required": [
+                              "url"
+                            ],
+                            "properties": {
+                              "maxSize": {
+                                "type": "integer"
+                              },
+                              "member": {
+                                "type": "string"
+                              },
+                              "refreshInterval": {
+                                "type": "string"
+                              },
+                              "retries": {
+                                "type": "integer"
+                              },
+                              "sha256": {
+                                "type": "string"
+                              },
+                              "timeout": {
+                                "type": "string"
+                              },
+                              "unpack": {
+                                "type": "string",
+                                "enum": [
+                                  "none",
+                                  "gzip",
+                                  "tar.gz"
+                                ]
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "lookups": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "name",
+                              "database",
+                              "path",
+                              "outputVar"
+                            ],
+                            "properties": {
+                              "database": {
+                                "type": "string"
+                              },
+                              "input": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "outputVar": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "array",
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "integer"
+                                  ]
+                                }
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "prometheusExporter": {
                       "type": "object",
                       "properties": {

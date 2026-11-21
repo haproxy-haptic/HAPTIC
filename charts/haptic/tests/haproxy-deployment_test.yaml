@@ -137,6 +137,27 @@ tests:
             name: blobs
           any: true
 
+  # A GeoIP database is a blob source, so declaring one is enough.
+  - it: should give the agent and the hub the blobs volume when a maxmind database is declared
+    set:
+      controller.config.templatingSettings.extraContext.maxmind.databases.city.url: https://geo.example.com/city.mmdb
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: blobs
+            emptyDir:
+              sizeLimit: 1Gi
+      - contains:
+          path: spec.template.spec.initContainers[?(@.name=="spoa-hub")].volumeMounts
+          content:
+            name: blobs
+            mountPath: /var/lib/haptic/blobs
+            readOnly: true
+      - contains:
+          path: spec.template.spec.initContainers[?(@.name=="agent")].args
+          content: --blob-dir=/var/lib/haptic/blobs
+
   - it: should read the agent credentials from the shared Secret and log at the configured level
     set:
       haproxy.agent.logLevel: debug

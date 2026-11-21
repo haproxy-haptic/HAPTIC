@@ -186,9 +186,10 @@ type DeploymentScheduler struct {
 	healthTracker *lifecycle.HealthTracker
 
 	// capabilities receives the capability set derived from the fleet's lowest
-	// reported HAProxy version. Nil in tests; guarded by mu with lastFleetVersion.
-	capabilities     FleetCapabilitiesSink
-	lastFleetVersion string
+	// reported HAProxy version and its agents. Nil in tests; guarded by mu with
+	// lastFleetCapabilities.
+	capabilities          FleetCapabilitiesSink
+	lastFleetCapabilities *dataplane.Capabilities
 
 	// Deploy-loop coordination. The single long-lived runDeployLoop goroutine
 	// (started in Start) is the only dispatcher. Created in Start so each

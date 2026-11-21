@@ -122,10 +122,14 @@ func (c *Component) applyToPod(ctx context.Context, endpoint *dataplane.Endpoint
 		return nil, fmt.Errorf("reading agent state: %w", err)
 	}
 	c.notePodPlans(endpoint, state.AppliedPlanProof, state.RunningPlanProof, state.WorkerOpsPlanProof)
+	c.noteHeldBlobs(endpoint, state.Blobs)
 	attempt := &podApply{client: client, endpoint: endpoint, req: req, state: state}
 	attempt.phases.Pod = endpoint.PodName
 	attempt.phases.StateMs = time.Since(stateStarted).Milliseconds()
 	attempt.full, attempt.notes = c.applyPosture(endpoint, state)
+	if err := c.deliverBlobs(ctx, attempt); err != nil {
+		return nil, err
+	}
 
 	for round := 1; ; round++ {
 		outcome, err := c.applyOnce(ctx, attempt)
@@ -153,6 +157,7 @@ func (c *Component) applyToPod(ctx context.Context, endpoint *dataplane.Endpoint
 		}
 		attempt.phases.StateMs += time.Since(stateStarted).Milliseconds()
 		c.notePodPlans(endpoint, attempt.state.AppliedPlanProof, attempt.state.RunningPlanProof, attempt.state.WorkerOpsPlanProof)
+		c.noteHeldBlobs(endpoint, attempt.state.Blobs)
 		if conflict.Conflict.Reason == conflictWorkerOpsMismatch {
 			// Only the worker moved on (its pacer fired between the state read
 			// and the apply); the applied plan the blob describes is intact.
@@ -209,6 +214,10 @@ type podApply struct {
 	resend   bool     // carry the plan blob even though the pod holds a baseline
 	notes    []string // what the controller decided before the diff ran
 	phases   events.DeployPhases
+
+	// blobsResent is set once the blobs a missing_blobs refusal named were
+	// pushed: a second refusal of the same apply fails it.
+	blobsResent bool
 }
 
 // applyOnce sends the complete decision as one fenced agent transaction.
@@ -322,6 +331,11 @@ func (c *Component) send(ctx context.Context, attempt *podApply, manifest *api.M
 		attempt.phases.UploadBytes += uploaded
 		if result != nil {
 			attempt.phases.Agent = addApplyTiming(attempt.phases.Agent, result.Timing)
+		}
+		if resent, pushErr := c.resendMissingBlobs(ctx, attempt, err); pushErr != nil {
+			return nil, pushErr
+		} else if resent {
+			continue
 		}
 		var missing *agentclient.MissingError
 		if !errors.As(err, &missing) || held == nil {
@@ -489,6 +503,7 @@ func (r *deployRequest) manifest(
 		Ops:                        ops,
 		InPlaceOps:                 decision.InPlace,
 		Mode:                       decision.Mode,
+		RequiredBlobs:              r.blobs.requiredBlobs(),
 	}
 	if len(manifest.InPlaceOps) > 0 {
 		manifest.WorkerOpsPlanID = decision.WorkerPlan.ID

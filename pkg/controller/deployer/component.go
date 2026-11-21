@@ -93,6 +93,8 @@ type Component struct {
 	keeper   *planKeeper
 	fence    LeadershipFence
 	retained *retainedRecovery
+	// blobs is the controller's blob store; nil when blob sources are off.
+	blobs BlobStore
 
 	contentProofMu sync.Mutex
 	contentProofs  map[string]map[string]contentProof
@@ -127,6 +129,8 @@ type Component struct {
 	observedPlans   map[string][]string
 	podSkew         map[string]string
 	fleet           []dataplane.Endpoint
+	// podBlobs are the blob digests each pod last reported or was sent.
+	podBlobs map[string][]string
 	// awaiting are the renders the fleet accepted behind a paced reload, in
 	// dispatch order, until a later deployment observes the fleet running one.
 	awaiting []awaitingRender
@@ -159,6 +163,7 @@ func New(eventBus *busevents.EventBus, logger *slog.Logger, syncTimeout time.Dur
 		invalidBaseline: map[string]struct{}{},
 		observedPlans:   map[string][]string{},
 		podSkew:         map[string]string{},
+		podBlobs:        map[string][]string{},
 		validatedPlans:  newValidatedPlanSet(),
 		healthTracker:   lifecycle.NewProcessingTracker(ComponentName, lifecycle.DefaultProcessingTimeout),
 		metrics:         domainMetrics,

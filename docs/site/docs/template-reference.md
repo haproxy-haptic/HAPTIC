@@ -34,7 +34,9 @@ Use `capabilities` for feature checks, for example
 a misspelled key evaluates to false rather than raising an error.
 
 The flags reflect the lowest HAProxy version reported by the fleet. Before pod
-discovery, they reflect the controller image's HAProxy binary. The chart selects
+discovery, they reflect the controller image's HAProxy binary.
+`capabilities.supports_blobs` is true while every pod's agent stores
+[blobs](./watching-resources.md#binary-blobs). The chart selects
 matching controller and HAProxy versions through `haproxyVersion`.
 
 The chart also sets `extraContext.haproxyVersion`. If you deploy without the

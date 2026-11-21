@@ -170,6 +170,8 @@ when testing another build.
 | `controller.config.templatingSettings.extraContext.jwt.allowedJWKSURLs` | map | `{}` | Approved HTTPS JSON Web Key Set (JWKS) endpoints, keyed by a name of your choice; `jwt-jwks-url` must match a value exactly. |
 | `controller.config.templatingSettings.extraContext.jwt.refreshInterval` | string | `5m` | Positive interval between signing-key refreshes by each controller replica. |
 | `controller.config.templatingSettings.extraContext.ssoAuth.allowedIssuers` | map | `{}` | Issuer URL prefixes that an [sso-auth](libraries/haptic-annotations.md#oidc-sign-in) provider Secret's `discovery-url` may start with, keyed by a name of your choice. A prefix matches only up to a `/`. While empty, every sso-auth route answers `503` |
+| `controller.config.templatingSettings.extraContext.maxmind.databases` | map | `{}` | GeoIP databases in MaxMind's MMDB format, keyed by a name of your choice. Each needs an HTTPS `url` and takes `unpack` (`none`, `gzip`, or `tar.gz` with the archive `member` to keep), `sha256` (refuse other content), `refreshInterval` (`24h`), `timeout` (`5m`), `retries` (`3`), and `maxSize` in bytes (256 MiB, capped by `blobs.maxSize`). Declaring one enables the `maxmind` plugin and the `blobs` volumes. See [Geolocation lookups](operations/spoa-hub.md#geolocation-lookups) |
+| `controller.config.templatingSettings.extraContext.maxmind.lookups` | list | `[]` | Fields to look up in the databases, each with a `name`, a `database`, a `path` of record keys and array indexes (`[subdivisions, "0", iso_code]`), an `outputVar`, and an optional `input` (default `ip`, the client address). A request gets each result as `txn.hub.maxmind.<outputVar>`; a database that hasn't been downloaded yet leaves its lookups out |
 | `spoaHub.plugins.api-gateway.timeoutMs` | int | `25` | Hub-side processing timeout for JSON validation. The chart derives the message's outer HAProxy deadline from this value; increase only for measured CPU or scheduling pressure |
 | `spoaHub.plugins.api-gateway.maxConcurrency` | int/tpl | derived from sidecar memory (32 at the default 384Mi) | Ceiling for concurrent JSON parse/schema evaluations. With `adaptiveConcurrency` on (default) this is the controller's upper bound, not a fixed limit; derived from `spoaHub.resources` memory so it self-scales. Set a literal to override |
 
@@ -781,16 +783,18 @@ Agent credentials are the top-level `credentials.dataplane.*` section — see [C
 ## Binary blobs
 
 Blobs are content-addressed files, such as GeoIP databases, that the controller
-streams to each HAProxy pod's agent outside the configuration
+downloads and streams to each HAProxy pod's agent outside the configuration
 ([#743](https://github.com/haproxy-haptic/HAPTIC/issues/743)). Enabled, the
-pod gets a disk-backed `blobs` volume, mounted read-write in the agent and
-read-only in the spoa-hub at `/var/lib/haptic/blobs`.
+controller pod gets a disk-backed `blobs` volume, mounted read-write in the
+controller and read-only in the validator, and each HAProxy pod gets one,
+mounted read-write in the agent and read-only in the spoa-hub, all at
+`/var/lib/haptic/blobs`.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `blobs.enabled` | bool | `false` | Mount the `blobs` volume and start the agent with `--blob-dir` |
-| `blobs.sizeLimit` | string | `1Gi` | Volume limit. Hold every blob the applied and the last known good configuration require, plus one upload; kubelet evicts the pod above it |
-| `blobs.maxSize` | string | `256Mi` | Largest single blob the agent accepts (`--blob-max-size`) |
+| `blobs.enabled` | bool | `false` | Mount the `blobs` volumes and start the controller and the agent with `--blob-dir`. Always on while `extraContext.maxmind.databases` declares a database; set it for [`blob.Fetch`](watching-resources.md#binary-blobs) templates of your own |
+| `blobs.sizeLimit` | string | `1Gi` | Limit of each `blobs` volume. Hold every version in use: the current one, the previous one, and a download in progress. Kubelet evicts the pod above it |
+| `blobs.maxSize` | string | `256Mi` | Largest single blob the controller downloads and the agent accepts (`--blob-max-size`) |
 
 ## HAProxy tuning
 
@@ -879,7 +883,7 @@ One `PodMonitor` for every metrics endpoint on the HAProxy pod. See [Where to sc
 | `spoaHub.plugins.mirror.targetTimeoutMs` | int | `2000` | Per-target timeout for asynchronous mirror requests. It's independent of application backend timeouts so a dead mirror releases shared hub capacity quickly |
 | `spoaHub.plugins.mirror.targetRetries` | int | `0` | Retry count for asynchronous mirror requests. The default avoids multiplying work against an unavailable observability target |
 | `spoaHub.securityContext` | map | See values.yaml | Container security context for the spoa-hub container. Default runs user and group 99, matching the pod's `fsGroup`, so the Unix socket the hub creates under `/run/spoa` is accessible to the HAProxy container; read-only root filesystem, no privilege escalation, all capabilities dropped |
-| `spoaHub.extraVolumeMounts` | list | `[]` | Extra volume mounts added to the spoa-hub container only (rendered through `tpl`) — for MMDB files (`maxmind`), OpenID Connect (OIDC) client secrets (`sso-auth`), and similar plugin data |
+| `spoaHub.extraVolumeMounts` | list | `[]` | Extra volume mounts added to the spoa-hub container only (rendered through `tpl`) — for OpenID Connect (OIDC) client secrets (`sso-auth`) and similar plugin data |
 
 Available plugin names (`<name>`): `api-gateway`, `coraza`, `external-auth`, `fingerprinting`, `maxmind`, `mirror`, `rate-limit`, `sso-auth`. See `values.yaml` for each plugin's defaults and the upstream plugin README for the `params:` schema.
 

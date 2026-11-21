@@ -745,9 +745,9 @@ func TestComponent_CleanupRemovedPods(t *testing.T) {
 	pod2 := testEndpointIdentity("pod-2")
 	pod3 := testEndpointIdentity("pod-3")
 	component.mu.Lock()
-	component.admitted[pod1] = "3.4.3"
-	component.admitted[pod2] = "3.4.3"
-	component.admitted[pod3] = "3.4.3"
+	component.admitted[pod1] = agentReport{version: "3.4.3"}
+	component.admitted[pod2] = agentReport{version: "3.4.3"}
+	component.admitted[pod3] = agentReport{version: "3.4.3"}
 	component.mu.Unlock()
 
 	component.cleanupRemovedPods(map[endpointIdentity]struct{}{pod1: {}, pod3: {}})
@@ -769,7 +769,7 @@ func TestComponent_CleanupRemovedPods_EvictsReplacedIdentity(t *testing.T) {
 	replacement := oldIdentity
 	replacement.podUID = "replacement-uid"
 
-	component.admitted[oldIdentity] = "3.4.3"
+	component.admitted[oldIdentity] = agentReport{version: "3.4.3"}
 	component.cleanupRemovedPods(map[endpointIdentity]struct{}{replacement: {}})
 
 	assert.NotContains(t, component.admitted, oldIdentity)

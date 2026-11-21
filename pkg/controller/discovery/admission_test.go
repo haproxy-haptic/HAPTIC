@@ -84,6 +84,34 @@ func TestAdmission_ReachableAgentIsAdmitted(t *testing.T) {
 	}
 }
 
+// Whether the pod's agent stores blobs travels with the endpoint too: the
+// fleet's template capabilities offer blobs only when every agent does.
+func TestAdmission_BlobSupportTravelsWithTheEndpoint(t *testing.T) {
+	for name, test := range map[string]struct {
+		options []agenttest.Option
+		want    bool
+	}{
+		"agent with blobs":    {options: []agenttest.Option{agenttest.WithBlobFeature()}, want: true},
+		"agent without blobs": {want: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			agent := agenttest.New(t, test.options...)
+			component, _, podStore, port := admissionFixture(t, agent)
+			addPodToStoreWithPort(t, podStore, "haproxy-0", "default", "127.0.0.1", int64(port))
+
+			component.triggerDiscovery("first")
+			component.triggerDiscovery("cached")
+
+			component.mu.RLock()
+			defer component.mu.RUnlock()
+			require.Len(t, component.lastEndpoints, 1)
+			for _, authority := range component.lastEndpoints {
+				assert.Equal(t, test.want, authority.acceptsBlobs)
+			}
+		})
+	}
+}
+
 // An admitted identity is not probed again: the identity carries the pod's
 // container fingerprint, so only a restart or a new address costs a round trip.
 func TestAdmission_AdmittedIdentityIsNotProbedAgain(t *testing.T) {
