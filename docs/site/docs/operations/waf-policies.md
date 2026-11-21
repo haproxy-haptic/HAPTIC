@@ -367,7 +367,7 @@ search:
 | Namespace | A team can select its own policies and trusted policies. Cross-namespace names such as `team-a/app-baseline` are rejected. |
 | Name conflicts | A local name that duplicates a trusted policy blocks that namespace's selection; it never silently replaces the trusted policy. |
 | Cluster baseline | `defaultPolicy` resolves only from trusted catalogs. With `default-on`/`deny`, a self-service policy can't weaken enforcement to `detect`, including through a base it extends. |
-| Enforcement | A self-service policy whose `enforcement`, set or inherited from its base, differs from `waf.dispatch.defaultEnforcement` is rejected unless `waf.ingressPermissions.allowEnforcementOverride` is `true`. |
+| Enforcement | Unless `waf.ingressPermissions.allowEnforcementOverride` is `true`, a route can't select a self-service policy whose `enforcement`, set or inherited from its base, differs from `waf.dispatch.defaultEnforcement`: admission rejects the route or the catalog change, and an existing route answers `503`. A policy no route of this release selects is left alone, so another release with that enforcement can serve it. |
 | Extending | A self-service policy can [extend](#extend-a-policy) a trusted policy, not another namespace policy. It inherits the base's `secLang`, but `selfService.allowSecLang` still governs its own. Limits apply to the combined policy. |
 | Body size and catalog growth | Administrator limits cap body sizes, policies per namespace, and total policies. |
 | Custom rules | `selfService.allowSecLang` defaults to `false`. Count and size limits don't bound rule CPU cost. |

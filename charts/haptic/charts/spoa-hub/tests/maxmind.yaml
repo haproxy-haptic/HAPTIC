@@ -30,6 +30,12 @@ _fx:
       - {name: asn, database: asn, path: [autonomous_system_number], outputVar: geo_asn}
 
 validationTests:
+  # No fixture can serve an operator's database URL; tests that need one declare their own.
+  _global:
+    extraContext:
+      maxmind:
+        databases: { __replace__: true }
+
   test-spoa-hub-maxmind-databases-reach-the-plugin:
     _helm_skip_test: &maxmindSkip '{{ if or (semverCompare "<3.1" .Values.haproxyVersion) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.maxmind "root" . "name" "maxmind"))) }}true{{ else }}false{{ end }}'
     description: "Each downloaded database's data-plane path and its lookups reach the maxmind plugin, and every request is looked up."

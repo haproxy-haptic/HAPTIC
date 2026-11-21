@@ -79,6 +79,7 @@ templateSnippets:
           "namespace": namespace,
           "name": name,
           "policyYAML": cm.Data[tostring(props["dataKey"])],
+          "underAdmission": tostring(renderSubject | dig("mode") | fallback("reconcile")) == "admission",
           "resource": map[string]any{
             "apiVersion": resources.waf_selfservice_catalogs.APIVersion(),
             "kind": "ConfigMap",

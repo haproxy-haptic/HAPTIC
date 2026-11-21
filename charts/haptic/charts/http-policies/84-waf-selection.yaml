@@ -19,6 +19,8 @@ templateSnippets:
           } else if to_str_map(catalog["trustedBrokenPolicy"])[requested] != "" {
             result["error"] = to_str_map(catalog["trustedBrokenPolicy"])[requested]
           } else if broken[ownPolicy] != "" {
+            var admitted = to_str_map(catalog["selfServiceAdmittedBrokenPolicy"])[ownPolicy]
+            if admitted != "" { fail(admitted) }
             result["error"] = broken[ownPolicy]
           } else if scope == "" && sources[requested] != "" {
             selected = requested
