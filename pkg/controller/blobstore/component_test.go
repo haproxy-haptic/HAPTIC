@@ -100,13 +100,18 @@ func TestDigestsKeepEachSourcesPredecessor(t *testing.T) {
 	v1, v2, v3 := blob.Describe([]byte("v1")).Digest, blob.Describe([]byte("v2")).Digest, blob.Describe([]byte("v3")).Digest
 
 	sources.set(httpstore.BlobSource{URL: "a", Accepted: v1})
+	component.Retain()
 	assert.ElementsMatch(t, []string{v1}, component.Digests())
 
 	sources.set(httpstore.BlobSource{URL: "a", Accepted: v2, Pending: v3})
+	assert.ElementsMatch(t, []string{v2, v3}, component.Digests(), "reading digests does not advance the predecessor")
+	component.Retain()
 	assert.ElementsMatch(t, []string{v2, v3, v1}, component.Digests(), "a confirmed predecessor stays")
+	component.Retain()
 	assert.ElementsMatch(t, []string{v2, v3, v1}, component.Digests(), "until the source changes again")
 
 	sources.set(httpstore.BlobSource{URL: "a", Accepted: v3})
+	component.Retain()
 	assert.ElementsMatch(t, []string{v3, v2}, component.Digests())
 
 	sources.set()

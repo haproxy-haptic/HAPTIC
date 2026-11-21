@@ -108,8 +108,10 @@ func (c *Component) Start(ctx context.Context) error {
 	}
 }
 
-// Retain removes the blobs no live HTTP store and no in-use digest references.
+// Retain records each source's predecessor, then removes the blobs no live
+// HTTP store and no in-use digest references.
 func (c *Component) Retain() {
+	c.trackPredecessors()
 	var inUse []string
 	if c.inUse != nil {
 		inUse = c.inUse()
@@ -119,18 +121,15 @@ func (c *Component) Retain() {
 	}
 }
 
-// Digests returns every digest this component's sources still need: accepted,
-// pending, the one an unconfirmed acceptance replaced, and each source's
-// previous accepted digest.
-func (c *Component) Digests() []string {
+// trackPredecessors remembers, per source, the accepted digest the current one
+// replaced. It advances once per retention pass, whoever else reads Digests.
+func (c *Component) trackPredecessors() {
 	sources := c.sources.BlobSources()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	accepted := make(map[string]string, len(sources))
 	replaced := make(map[string]string, len(sources))
-	var digests []string
 	for _, source := range sources {
-		digests = append(digests, source.Digests()...)
 		accepted[source.URL] = source.Accepted
 		previous := c.replaced[source.URL]
 		if last := c.accepted[source.URL]; last != "" && last != source.Accepted {
@@ -138,11 +137,26 @@ func (c *Component) Digests() []string {
 		}
 		if previous != "" {
 			replaced[source.URL] = previous
-			digests = append(digests, previous)
 		}
 	}
 	c.accepted = accepted
 	c.replaced = replaced
+}
+
+// Digests returns every digest this component's sources still need: accepted,
+// pending, the one an unconfirmed acceptance replaced, and each source's
+// previous accepted digest as of the last retention pass.
+func (c *Component) Digests() []string {
+	sources := c.sources.BlobSources()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var digests []string
+	for _, source := range sources {
+		digests = append(digests, source.Digests()...)
+		if previous := c.replaced[source.URL]; previous != "" {
+			digests = append(digests, previous)
+		}
+	}
 	return digests
 }
 

@@ -235,6 +235,25 @@ func TestRetainKeepsHeldDigestsAndRecentOrphans(t *testing.T) {
 	assert.ElementsMatch(t, []string{held, inUse}, removed)
 }
 
+func TestRetainNeverRemovesABlobWhileItIsIngested(t *testing.T) {
+	store, clock := newTestStore(t, 1<<20)
+	clock.Advance(OrphanGrace)
+	data := []byte("fresh")
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 200 {
+			_, _ = store.Retain(nil)
+		}
+	}()
+	for range 200 {
+		ref, err := store.Ingest(t.Context(), bytes.NewReader(data), blob.Spec{Unpack: blob.UnpackNone})
+		require.NoError(t, err)
+		require.True(t, store.Has(ref.Digest), "a blob Ingest returned is on disk")
+	}
+	<-done
+}
+
 func TestRetainGivesBlobsFromAnEarlierProcessTheGraceFromStart(t *testing.T) {
 	dir := t.TempDir()
 	data := []byte("survivor")

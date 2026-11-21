@@ -138,13 +138,15 @@ func (s *Store) Ingest(ctx context.Context, body io.Reader, spec blob.Spec) (blo
 	if err := os.Chmod(temporary.Name(), blobFileMode); err != nil {
 		return blob.Ref{}, fmt.Errorf("sealing blob file: %w", err)
 	}
+	// Retain decides and removes under s.mu, so it never deletes this file
+	// between its rename and its ingest time.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := os.Rename(temporary.Name(), s.path(ref.Digest)); err != nil {
 		return blob.Ref{}, fmt.Errorf("storing blob file: %w", err)
 	}
 	kept = true
-	s.mu.Lock()
 	s.ingested[ref.Digest] = s.now()
-	s.mu.Unlock()
 	return ref, nil
 }
 
@@ -299,25 +301,19 @@ func (s *Store) Retain(inUse []string) ([]string, error) {
 		}
 		switch {
 		case blob.ValidDigest(name):
-			if _, kept := keep[name]; kept || !s.orphanExpired(name) {
+			if _, kept := keep[name]; kept {
 				continue
 			}
-		case strings.HasPrefix(name, ingestPrefix):
-			if !s.leftoverExpired(entry) {
-				continue
+			deleted, err := s.removeExpiredOrphan(name)
+			if err != nil {
+				errs = append(errs, err)
+			} else if deleted {
+				removed = append(removed, name)
 			}
-		default:
-			continue
-		}
-		if err := os.Remove(filepath.Join(s.dir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			errs = append(errs, err)
-			continue
-		}
-		if blob.ValidDigest(name) {
-			removed = append(removed, name)
-			s.mu.Lock()
-			delete(s.ingested, name)
-			s.mu.Unlock()
+		case strings.HasPrefix(name, ingestPrefix) && s.leftoverExpired(entry):
+			if err := os.Remove(filepath.Join(s.dir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+			}
 		}
 	}
 	if len(removed) > 0 {
@@ -345,16 +341,24 @@ func (s *Store) kept(inUse []string) map[string]struct{} {
 	return keep
 }
 
-// A blob found on disk at start gets the grace from the start, since the
-// process that ingested it is gone.
-func (s *Store) orphanExpired(digest string) bool {
+// removeExpiredOrphan deletes an unheld blob once its grace has passed. A blob
+// found on disk at start gets the grace from the start, since the process that
+// ingested it is gone.
+func (s *Store) removeExpiredOrphan(digest string) (bool, error) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	since, ingested := s.ingested[digest]
-	s.mu.Unlock()
 	if !ingested {
 		since = s.started
 	}
-	return s.now().Sub(since) >= OrphanGrace
+	if s.now().Sub(since) < OrphanGrace {
+		return false, nil
+	}
+	if err := os.Remove(s.path(digest)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+	delete(s.ingested, digest)
+	return true, nil
 }
 
 func (s *Store) leftoverExpired(entry fs.DirEntry) bool {
