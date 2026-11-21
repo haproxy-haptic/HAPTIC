@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The bundled maxmind plugin is v0.5.0, which indexes arrays in lookup paths, such as `[subdivisions, "0", iso_code]`.
+- The bundled rate-limit plugin is v0.6.0. The WAF client penalty's per-request read no longer waits for the shared store when a pod's cached verdict has just expired: the pod answers from it while it refreshes the verdict in the background, for up to `meter_stale_ms` (30 s by default), and never serves a penalty past the moment the score drains.
 - The bundled hub reuses registered plugin metric handles. The Rust WAF reuses repeated transformations across rules and reduces rule-ID and keyword lookup costs.
 - The bundled SPOA hub returns WAF decisions faster. Both WAF engines now omit routine OWASP CRS bookkeeping from `plugin_coraza_rule_hits_total` by default.
 - Adding or removing a TLS certificate updates HAProxy at runtime instead of reloading it, wherever its crt-list line lands. A change to the default certificate, or one that would change which line serves an SNI name two lines share, still reloads.

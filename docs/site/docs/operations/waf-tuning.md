@@ -272,7 +272,10 @@ client.
 
 !!! note
     - A pod learns of a score added on another pod within the rate-limit
-      plugin's sync interval, 200 ms by default.
+      plugin's sync interval, 200 ms by default. After it, the pod answers
+      from its last verdict while it refreshes that verdict in the background,
+      for up to `meter_stale_ms` (30 s by default), so the read stays off the
+      store; a penalty is never served past the moment the score drains.
     - Routes without a named policy use the default rule set and share one
       score per client.
     - Routes whose WAF policy is in `detect` mode still add to the score but are
