@@ -15,6 +15,8 @@
 {{- $proxyProtocol := include "haptic.proxyProtocol" . | fromYaml }}
 {{- $http3 := include "haptic.http3" . | fromYaml }}
 {{- $agent := $haproxy.agent }}
+{{- $blobs := .Values.blobs }}
+{{- $blobDir := "/var/lib/haptic/blobs" }}
 
 {{/*
   The pod spec below hardcodes /etc/haproxy: haproxy-runtime mounts there, the
@@ -392,6 +394,11 @@ spec:
               readOnly: true
             - name: spoa-socket
               mountPath: /run/spoa
+            {{- if $blobs.enabled }}
+            - name: blobs
+              mountPath: {{ $blobDir }}
+              readOnly: true
+            {{- end }}
             # The spoa-hub container runs with readOnlyRootFilesystem:true.
             # Some plugins (e.g. coraza's filesystem-access verifier) need a
             # writable scratch directory at startup; the hub also keeps a
@@ -444,6 +451,10 @@ spec:
             {{- with $dataplaneConfig.reloadVerificationTimeout }}
             - --reload-timeout={{ . }}
             {{- end }}
+            {{- if $blobs.enabled }}
+            - --blob-dir={{ $blobDir }}
+            - --blob-max-size={{ $blobs.maxSize }}
+            {{- end }}
           env:
             {{- range $env := list (dict "name" "DATAPLANE_USERNAME" "key" "dataplane_username") (dict "name" "DATAPLANE_PASSWORD" "key" "dataplane_password") }}
             - name: {{ $env.name }}
@@ -487,6 +498,10 @@ spec:
             # Secret files: the haproxy container never mounts this volume.
             - name: secret-storage
               mountPath: /etc/haproxy/secrets
+            {{- if $blobs.enabled }}
+            - name: blobs
+              mountPath: {{ $blobDir }}
+            {{- end }}
           resources:
             {{- toYaml $agent.resources | nindent 12 }}
       securityContext:
@@ -661,6 +676,12 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 1Mi
+        {{- if $blobs.enabled }}
+        # Disk-backed: one GeoIP database version is 60-130 MB.
+        - name: blobs
+          emptyDir:
+            sizeLimit: {{ $blobs.sizeLimit }}
+        {{- end }}
         {{- if $haproxy.shmStats.enabled }}
         - name: devshm
           emptyDir:

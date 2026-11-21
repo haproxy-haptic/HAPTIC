@@ -76,6 +76,10 @@ type persistentState struct {
 	LastApply              *api.ApplyResult   `json:"last_apply,omitempty"`
 	ReloadPendingAt        time.Time          `json:"reload_pending_at,omitzero"`
 	PendingDeletes         api.PendingDeletes `json:"pending_deletes"`
+	// TreeBlobs and LKGBlobs are the blobs the tree's and the last known good
+	// set's configuration require; GC keeps both.
+	TreeBlobs []string `json:"tree_blobs,omitempty"`
+	LKGBlobs  []string `json:"lkg_blobs,omitempty"`
 }
 
 // nackRecord remembers a manifest HAProxy itself rejected, so re-sending the

@@ -123,6 +123,7 @@ func (r *applyRun) execute() error {
 		return r.abort("write", err)
 	}
 	r.result.Timing.WriteMs = time.Since(writeStarted).Milliseconds()
+	r.server.recordTreeBlobs(r.manifest.RequiredBlobs)
 	r.server.setPhase(phaseWritten, r.manifest.PlanID)
 	r.server.observeTree(r.manifest, r.staged, r.deletions())
 	opsStarted := time.Now()

@@ -35,6 +35,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/blobs"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/cli"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/files"
 	"github.com/haproxy-haptic/HAPTIC/pkg/transportsecurity"
@@ -79,6 +80,10 @@ type Config struct {
 	// DrainIgnoreFrontends names frontends whose connections are not traffic
 	// (probes, scrapes); the chart passes its status frontend.
 	DrainIgnoreFrontends []string
+	// BlobDir is the blob directory (ADR-0041); empty turns blobs off.
+	BlobDir string
+	// BlobMaxSize bounds one blob. Zero means api.DefaultMaxBlobBytes.
+	BlobMaxSize int64
 }
 
 // Server owns the tree, the runtime plumbing and the apply state machine.
@@ -90,6 +95,8 @@ type Server struct {
 	deferrals *cli.Deferrals
 	metrics   *Metrics
 	states    *stateStore
+	// blobs is nil while the feature is off.
+	blobs *blobs.Store
 
 	// apply serialises the state machine and every re-observation of disk:
 	// at most one apply is ever in flight.
@@ -184,8 +191,15 @@ func New(ctx context.Context, cfg *Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	var blobStore *blobs.Store
+	if cfg.BlobDir != "" {
+		if blobStore, err = openBlobs(cfg); err != nil {
+			return nil, err
+		}
+	}
 	metrics := NewMetrics(cfg.Registry, cfg.Logger)
 	s := &Server{
+		blobs:       blobStore,
 		cfg:         *cfg,
 		logger:      cfg.Logger,
 		store:       store,
@@ -224,6 +238,10 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("GET "+api.PathState, s.authenticated(s.handleState))
 	mux.Handle("POST "+api.PathApply, s.authenticated(s.handleApply))
 	mux.Handle("PUT "+api.PathPlan, s.authenticated(s.handlePlan))
+	if s.blobs != nil {
+		mux.Handle("PUT "+api.BlobPath("{sha256}"), s.authenticated(s.handlePutBlob))
+		mux.Handle("GET "+api.BlobPath("{sha256}"), s.authenticated(s.handleGetBlob))
+	}
 	return mux
 }
 

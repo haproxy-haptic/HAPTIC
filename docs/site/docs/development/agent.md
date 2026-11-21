@@ -13,7 +13,7 @@ ships by rolling the controller, not the data plane.
 
 The agent is the same binary as the controller: `haptic agent`.
 
-Source: `pkg/dataplane/agent/{api,server,files,cli}`; the controller's end is
+Source: `pkg/dataplane/agent/{api,server,files,blobs,cli}`; the controller's end is
 `pkg/dataplane/agent/client`.
 
 ## The controller's side
@@ -92,6 +92,8 @@ log level; logs are JSON.
 | `GET /v1/state[?verify=1][&plan=0]` | mTLS | What this pod holds and runs; `plan=0` leaves the stored plan blob out. |
 | `POST /v1/apply` | mTLS | Apply a desired state. |
 | `PUT /v1/plan?plan_id=…&proof=…` | mTLS | Store the blob of the applied plan after the apply. |
+| `PUT /v1/blobs/{sha256}` | mTLS | Store one binary blob; only with `--blob-dir`. |
+| `GET /v1/blobs/{sha256}` | mTLS | Read back a blob the agent holds; only with `--blob-dir`. |
 
 The chart uses mutual TLS (mTLS) by default. Explicitly disabling agent TLS
 selects legacy HTTP Basic authentication. The local Unix socket exposes state
@@ -176,6 +178,9 @@ sequenceDiagram
     alt baseline mismatch
         A-->>C: 409 Conflict {reason}
     end
+    alt required blob not held
+        A-->>C: 409 {reason: missing_blobs}
+    end
     A->>D: stage parts in the target mount, splice patches, verify each digest
     alt content or patch base missing
         A-->>C: 409 {missing}
@@ -206,6 +211,34 @@ The refusals are distinct because the controller's answers differ:
 | `stale_epoch` | A newer leader has already spoken to this pod. | Stand down until it re-acquires leadership. |
 | `unknown_baseline` | The agent doesn't know what this pod runs. | Send full state with `mode: reload`. |
 | `worker_ops_mismatch` | An automatic apply or executable in-place batch targets an outdated worker baseline. | Re-read state and re-diff against the current worker and its loaded maps; the applied baseline is intact. |
+
+## Blobs
+
+A blob is an opaque binary file the configuration references by the SHA-256 of
+its content, such as a GeoIP database for the spoa-hub's `maxmind` plugin
+([#743](https://github.com/haproxy-haptic/HAPTIC/issues/743)). Blobs are too
+large for the apply, so they travel on their own and never enter the file tree
+or its journal.
+
+`--blob-dir` turns them on. The agent then advertises `blobs` under `features`
+and lists every blob it holds under `blobs` in `/v1/state`, as `sha256` and
+`size`. `PUT /v1/blobs/{sha256}` streams one blob into a temporary file in that
+directory, bounded by `--blob-max-size` (default `256Mi`) rather than the apply
+limit, verifies its SHA-256, syncs it and renames it onto its digest. A mismatch
+is a `400`, a body over the limit a `413`, and neither leaves anything behind.
+The same digest put twice, even concurrently, leaves one complete file.
+
+An apply names the blobs its configuration needs in `required_blobs`. The
+agent checks them after the fence and before any part is staged; a missing one
+is a `409` with `reason: missing_blobs` and the digests under `missing_blobs`,
+so the controller puts them and sends the apply again. Without `--blob-dir` every
+required blob is missing, so a configuration that needs one is never loaded.
+
+The state file records which blobs the tree's configuration and the last known
+good set's configuration require. After every successful apply the agent
+removes every other blob written before that apply arrived; a blob put during
+the apply waits for the next one, because it may be for the next apply. A
+rollback therefore always finds its blobs.
 
 ## The state machine
 
@@ -434,6 +467,8 @@ They live in `pkg/dataplane/agent/api/limits.go` and are asserted at both ends.
 | `MaxPendingServerDeletes` | 1000 | Queued server deletes per pod. |
 | `MaxPendingBackendDeletes` | 100 | Queued backend deletes per pod. |
 | `MaxMapDelRepeat` | 64 | `del map` calls for one key. |
+| `MaxRequiredBlobs` | 256 | Blobs one manifest requires. |
+| `DefaultMaxBlobBytes` | 256 MiB | One blob, unless `--blob-max-size` says otherwise. |
 
 ## Metrics
 

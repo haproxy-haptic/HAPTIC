@@ -58,6 +58,17 @@ func (e *MissingError) Error() string {
 		len(e.Missing), strings.Join(e.Missing, ", "))
 }
 
+// MissingBlobsError is a 409 listing the required blobs the agent does not
+// hold: put them and resend the apply.
+type MissingBlobsError struct {
+	Missing []string
+}
+
+func (e *MissingBlobsError) Error() string {
+	return fmt.Sprintf("agent is missing %d required blob(s): %s",
+		len(e.Missing), strings.Join(e.Missing, ", "))
+}
+
 // HTTPError is any other non-200 answer.
 type HTTPError struct {
 	Status int
@@ -71,13 +82,18 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("agent returned HTTP %d: %s", e.Status, e.Body)
 }
 
-// statusError classifies a non-200 answer. A 409 carries either a baseline
-// conflict or a missing-parts list; the key that is present decides.
+// statusError classifies a non-200 answer. A 409 carries a baseline conflict,
+// a missing-parts list or a missing-blobs list; the key that is present decides.
 func statusError(status int, body []byte) error {
 	if status == http.StatusConflict {
 		var keys map[string]json.RawMessage
 		if err := json.Unmarshal(body, &keys); err == nil {
-			if _, ok := keys["missing"]; ok {
+			if _, ok := keys["missing_blobs"]; ok {
+				var missing api.MissingBlobs
+				if err := json.Unmarshal(body, &missing); err == nil {
+					return &MissingBlobsError{Missing: missing.MissingBlobs}
+				}
+			} else if _, ok := keys["missing"]; ok {
 				var missing api.Missing
 				if err := json.Unmarshal(body, &missing); err == nil {
 					return &MissingError{Missing: missing.Missing}

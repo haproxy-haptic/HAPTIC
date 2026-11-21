@@ -53,6 +53,14 @@ func (s *Server) stateResponse(verify, withPlan bool) (api.State, error) {
 			return api.State{}, err
 		}
 	}
+	held, err := s.heldBlobs()
+	if err != nil {
+		return api.State{}, err
+	}
+	features := []string{api.FeatureFilePatch, api.FeatureWorkerFence, api.FeatureRuntimeBatches}
+	if s.blobs != nil {
+		features = append(features, api.FeatureBlobs)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := api.State{
@@ -60,7 +68,7 @@ func (s *Server) stateResponse(verify, withPlan bool) (api.State, error) {
 		AgentVersion:       s.cfg.AgentVersion,
 		PlanSchemaVersion:  s.state.PlanSchemaVersion,
 		AgentOps:           cli.Kinds(),
-		Features:           []string{api.FeatureFilePatch, api.FeatureWorkerFence, api.FeatureRuntimeBatches},
+		Features:           features,
 		HAProxy:            s.worker,
 		Generation:         s.state.Generation,
 		AppliedPlanID:      s.state.AppliedPlanID,
@@ -75,6 +83,7 @@ func (s *Server) stateResponse(verify, withPlan bool) (api.State, error) {
 		// Cloned: the apply path mutates the tree in place and the answer is
 		// marshalled after this lock is released.
 		Files:              maps.Clone(s.tree),
+		Blobs:              held,
 		Inventory:          s.inventory,
 		PendingDeletes:     s.deferrals.Pending(),
 		LastApply:          s.state.LastApply,
@@ -147,7 +156,7 @@ func (s *Server) handlePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	id, proof := r.URL.Query().Get("plan_id"), r.URL.Query().Get("proof")
 	if id == "" || proof == "" {
-		writeJSON(w, http.StatusBadRequest, api.ApplyError{Stage: "request", Message: "plan_id and proof are required"})
+		writeJSON(w, http.StatusBadRequest, api.ApplyError{Stage: stageRequest, Message: "plan_id and proof are required"})
 		return
 	}
 	blob, err := readPlanBlob(http.MaxBytesReader(w, r.Body, api.MaxPlanBlobBytes+1))

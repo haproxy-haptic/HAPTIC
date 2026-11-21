@@ -778,6 +778,20 @@ so the controller and the agent can't disagree.
 
 Agent credentials are the top-level `credentials.dataplane.*` section — see [Credentials](#credentials) above.
 
+## Binary blobs
+
+Blobs are content-addressed files, such as GeoIP databases, that the controller
+streams to each HAProxy pod's agent outside the configuration
+([#743](https://github.com/haproxy-haptic/HAPTIC/issues/743)). Enabled, the
+pod gets a disk-backed `blobs` volume, mounted read-write in the agent and
+read-only in the spoa-hub at `/var/lib/haptic/blobs`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `blobs.enabled` | bool | `false` | Mount the `blobs` volume and start the agent with `--blob-dir` |
+| `blobs.sizeLimit` | string | `1Gi` | Volume limit. Hold every blob the applied and the last known good configuration require, plus one upload; kubelet evicts the pod above it |
+| `blobs.maxSize` | string | `256Mi` | Largest single blob the agent accepts (`--blob-max-size`) |
+
 ## HAProxy tuning
 
 | Parameter | Type | Default | Description |

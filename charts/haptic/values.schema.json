@@ -18,6 +18,21 @@
       },
       "additionalProperties": false
     },
+    "blobs": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxSize": {
+          "type": "string"
+        },
+        "sizeLimit": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "cache": {
       "type": "object",
       "properties": {
