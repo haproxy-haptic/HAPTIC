@@ -12,10 +12,13 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -26,6 +29,7 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
 	"github.com/haproxy-haptic/HAPTIC/tests/e2e/httpclient"
+	"github.com/haproxy-haptic/HAPTIC/tests/testutil"
 )
 
 func expectedCorazaLibrarySetting() string {
@@ -266,4 +270,78 @@ data:
 		})
 
 	testEnv.Test(t, feature.Feature())
+}
+
+// TestHapticWAFClientPenalty proves the anomaly score the WAF returns is charged
+// to the client's score in the shared store and read back before the next WAF
+// call. The rate-limit profile runs waf.clientPenalty in detect mode, so the
+// penalty is recorded, never enforced, and other WAF tests keep their verdicts.
+func TestHapticWAFClientPenalty(t *testing.T) {
+	RequireRateLimitProfile(t)
+	// Serial: TestHapticSharedRateLimit takes the shared store down, and a
+	// score that can't be stored is not charged.
+
+	const (
+		host = "ingress-haptic-waf-penalty.localdev.me"
+		// Each scores 5 against the profile's scoreLimit of 10.
+		scoredRequests = 4
+	)
+
+	feature := features.New("Ingress: repeated WAF scores mark the client for a penalty").
+		Assess("an unscored request from a client over the limit is marked", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+			t.Helper()
+			client, err := cfg.NewClient()
+			require.NoError(t, err)
+			ns := NamespaceForTest(ctx, t, client)
+			DumpLogsOnFailure(t, ns)
+			backend := NewEchoServerBackend(ctx, t, client, ns)
+			NewIngress(ctx, t, client, ns, &IngressSpec{
+				Name:           "penalty",
+				Host:           host,
+				BackendService: backend.Service,
+				BackendPort:    backend.Port,
+				Annotations:    map[string]string{"haproxy-haptic.org/waf-policy": "streaming-search"},
+			})
+			waitForHaproxyIngressWafMap(ctx, t, []string{ns + "/penalty deny"})
+
+			path := "/penalty-" + ns
+			for range scoredRequests {
+				httpclient.New(t).GET(host, path).WithHeader("X-Waf-Score-Probe", "1").ExpectOK(t)
+			}
+
+			// A pod that did not take the charges learns of them within the
+			// plugin's sync interval, so keep probing until one is marked.
+			since := time.Now()
+			marked := path + "-after"
+			err = testutil.WaitForCondition(ctx, testutil.FastWaitConfig(), func(c context.Context) (bool, error) {
+				httpclient.New(t).GET(host, marked).ExpectOK(t)
+				logs, err := readHAProxyAccessLog(c, t, since)
+				if err != nil {
+					return false, err
+				}
+				return accessLogHasRecord(logs, func(rec map[string]any) bool {
+					return rec["path"] == marked && rec["waf_client_penalty"] == "detect"
+				}), nil
+			})
+			require.NoError(t, err, "no unscored request was marked after %d scored ones", scoredRequests)
+			return ctx
+		})
+
+	testEnv.Test(t, feature.Feature())
+}
+
+// accessLogHasRecord reports whether any JSON access-log record in logs
+// satisfies want. Lines carry a pod prefix before the record.
+func accessLogHasRecord(logs string, want func(map[string]any) bool) bool {
+	for line := range strings.SplitSeq(logs, "\n") {
+		start := strings.Index(line, "{")
+		if start < 0 {
+			continue
+		}
+		var rec map[string]any
+		if json.Unmarshal([]byte(line[start:]), &rec) == nil && want(rec) {
+			return true
+		}
+	}
+	return false
 }

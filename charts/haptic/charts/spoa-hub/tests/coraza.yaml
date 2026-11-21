@@ -984,3 +984,87 @@ validationTests:
       - type: haproxy_valid
       - {type: contains, target: file:spoa-hub-config.toml, pattern: 'default_waf = false'}
       - {type: not_contains, target: file:spoa-hub-config.toml, pattern: 'applications\.'}
+
+  test-coraza-client-penalty-off-by-default:
+    _helm_skip_test: *corazaAdaptiveSkip
+    description: "Without waf.clientPenalty the config has no penalty engine and no penalty rule."
+    extraContext:
+      haproxyVersion: "3.2"
+      waf: {dispatch: {mode: default-on, defaultEnforcement: deny}}
+      spoaHub: &clientPenaltyHub
+        enabled: true
+        haproxy: {socketPath: /run/spoa/hub.sock, modeSpop: true, messages: ["check-request", "check-ratelimit"], timeoutHello: 2s, timeoutIdle: 5m, timeoutProcessing: 500ms, poolMaxConn: 100, poolPurgeDelay: 30s}
+        hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
+        plugins:
+          - {name: coraza, library: libcoraza_plugin.so, messages: ["check-request"], timeoutMs: 15, dependsOn: [], directives: "SecRuleEngine On\n", params: ""}
+          - {name: rate-limit, library: librate_limit_plugin.so, messages: ["check-ratelimit"], timeoutMs: 50, dependsOn: [], params: ""}
+    fixtures: &clientPenaltyFixtures
+      ingresses: *ingressesTriggerExampleCom
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: haproxy.cfg, pattern: 'waf_client|waf-penalty'}
+      - {type: not_contains, target: file:spoe.conf, pattern: 'waf-penalty'}
+
+  test-coraza-client-penalty-deny:
+    _helm_skip_test: *corazaAdaptiveSkip
+    description: "deny mode reads the client's meter before the WAF dispatch, refuses with 429 while it is over, and charges each request's anomaly score before the WAF verdict rules."
+    extraContext:
+      haproxyVersion: "3.2"
+      waf: {dispatch: {mode: default-on, defaultEnforcement: deny}, clientPenalty: {mode: deny, scoreLimit: 30, window: 5m}}
+      spoaHub: *clientPenaltyHub
+    fixtures: *clientPenaltyFixtures
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: file:spoe.conf, pattern: '\[spoa-hub-waf-penalty-read\](?s:.*?)option var-prefix +hubwpr(?s:.*?)args key=var\(txn\.waf_client_key\) limit=str\(30\) period=str\(300\) mode=str\(meter\) req_id=unique-id'}
+      - {type: contains, target: file:spoe.conf, pattern: '\[spoa-hub-waf-penalty-charge\](?s:.*?)args key=var\(txn\.waf_client_key\) limit=str\(30\) period=str\(300\) mode=str\(meter\) cost=var\(txn\.waf_client_cost\) req_id=unique-id'}
+      - {type: contains, target: haproxy.cfg, pattern: 'filter spoe engine spoa-hub-waf-penalty-read config'}
+      - type: contains
+        target: haproxy.cfg
+        description: "The read and its refusal precede the WAF dispatch; the charge precedes the WAF's own 403."
+        pattern: '(?s)send-spoe-group spoa-hub-waf-penalty-read waf-penalty-read-group.*deny deny_status 429 hdr Retry-After %\[var\(txn\.hubwpr\.rate_limit\.retry_after\)\] if \{ var\(txn\.waf_client_penalty\) -m str deny \}.*send-spoe-group spoa-hub-check-request.*send-spoe-group spoa-hub-waf-penalty-charge waf-penalty-charge-group if \{ var\(txn\.waf_client_cost\) -m found \}.*deny deny_status 403'
+      - {type: contains, target: haproxy.cfg, pattern: 'set-var\(txn\.waf_client_penalty\) str\(deny\) if \{ var\(txn\.waf_client_penalty\) -m found \} !\{ var\(txn\.coraza_detect_only\) -m bool \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'set-var\(txn\.rate_limit_degraded\) str\(1\) if \{ var\(txn\.waf_client_key\) -m found \} !\{ var\(txn\.hubwpr\.rate_limit\.allowed\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: '%\(waf_client_penalty\)\[var\(txn\.waf_client_penalty\)\]'}
+
+  test-coraza-client-penalty-detect:
+    _helm_skip_test: *corazaAdaptiveSkip
+    description: "detect mode records the would-be penalty and still charges, but never refuses."
+    extraContext:
+      haproxyVersion: "3.2"
+      waf: {dispatch: {mode: default-on, defaultEnforcement: deny}, clientPenalty: {mode: detect}}
+      spoaHub: *clientPenaltyHub
+    fixtures: *clientPenaltyFixtures
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: file:spoe.conf, pattern: 'limit=str\(50\) period=str\(60\) mode=str\(meter\)'}
+      - {type: contains, target: haproxy.cfg, pattern: 'set-var\(txn\.waf_client_penalty\) str\(detect\) if \{ var\(txn\.hubwpr\.rate_limit\.allowed\) -m found \} !\{ var\(txn\.hubwpr\.rate_limit\.allowed\) -m bool \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'send-spoe-group spoa-hub-waf-penalty-charge'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'waf_client_penalty\) -m str deny'}
+
+  test-coraza-client-penalty-inert-without-rate-limit-plugin:
+    _helm_skip_test: *corazaAdaptiveSkip
+    description: "Without the rate-limit plugin's message the penalty renders nothing, so a test that brings its own plugin list still renders under an operator's enabled penalty."
+    extraContext:
+      haproxyVersion: "3.2"
+      waf: {dispatch: {mode: default-on, defaultEnforcement: deny}, clientPenalty: {mode: deny}}
+      spoaHub:
+        enabled: true
+        haproxy: {socketPath: /run/spoa/hub.sock, modeSpop: true, messages: ["check-request"], timeoutHello: 2s, timeoutIdle: 5m, timeoutProcessing: 500ms, poolMaxConn: 100, poolPurgeDelay: 30s}
+        hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
+        plugins:
+          - {name: coraza, library: libcoraza_plugin.so, messages: ["check-request"], timeoutMs: 15, dependsOn: [], directives: "SecRuleEngine On\n", params: ""}
+    fixtures: *clientPenaltyFixtures
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: haproxy.cfg, pattern: 'waf_client|waf-penalty'}
+
+  test-coraza-client-penalty-invalid-mode-rejected:
+    _helm_skip_test: *corazaAdaptiveSkip
+    description: "An unknown clientPenalty mode fails the render."
+    extraContext:
+      haproxyVersion: "3.2"
+      waf: {dispatch: {mode: default-on, defaultEnforcement: deny}, clientPenalty: {mode: block}}
+      spoaHub: *clientPenaltyHub
+    fixtures: *clientPenaltyFixtures
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'extraContext.waf.clientPenalty.mode must be one of: off, detect, deny.'}

@@ -4,6 +4,7 @@ TestHapticBasicAuth
 TestHapticExternalAuth
 TestHapticRateLimit
 TestHapticSharedRateLimit
+TestHapticWAFClientPenalty
 TestHapticWAFPolicies
 TestIngressBasic
 TestIngressRateLimit

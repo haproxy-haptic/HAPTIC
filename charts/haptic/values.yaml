@@ -1314,6 +1314,20 @@ controller:
           # refusing it. Requests the WAF did inspect and rejected are denied
           # with 403 in both postures.
           failClosed: false
+          # Throttles clients that keep triggering WAF rules, across all HAProxy
+          # pods. Each inspected request adds its anomaly score to a score for
+          # the client IP and WAF policy, which drains at scoreLimit per window.
+          # While the score is at or above scoreLimit, every request from that
+          # client to routes using that policy gets 429 before the WAF runs.
+          # Start with detect, which only records the waf_client_penalty
+          # access-log field; routes whose WAF policy is in detect mode are
+          # never refused. Needs rateLimit.shared.enabled: the score lives in
+          # the shared rate-limit store.
+          clientPenalty:
+            mode: "off"  # @schema enum: ["off", detect, deny]
+            # One critical CRS rule match scores 5.
+            scoreLimit: 50  # @schema minimum: 1; maximum: 999999
+            window: 1m  # @schema pattern: ^[1-9][0-9]{0,4}(s|m|h)$
           dispatch:
             # opt-in: inspect only routes activated by a native or compatibility
             # WAF annotation. default-on: inspect every route unless an
@@ -2834,7 +2848,7 @@ vector:
       enabled: true
       field: denied_by
       kind: enum  # @schema enum: [enum, numeric]
-      values: ["api_key", "api_key_unavailable", "backend_tls_unavailable", "basic_auth", "basic_auth_unavailable", "body_too_large", "cache_origin_internal_backend", "consumer_groups", "consumer_groups_unavailable", "content_type", "external_auth", "external_auth_unavailable", "gw_sni_host_mismatch", "hmac", "hmac_body_incomplete", "hmac_no_content_length", "hmac_unavailable", "ip_blocklist", "jwt_algorithm", "jwt_audience", "jwt_expired", "jwt_groups", "jwt_issuer", "jwt_key_unavailable", "jwt_missing", "jwt_not_yet_valid", "jwt_required_claim", "jwt_signature", "jwt_unavailable", "method_not_allowed", "mtls_sni_host_mismatch", "mtls_unavailable", "policy_consumer_missing", "rate_limit_connections", "rate_limit_local", "rate_limit_shared", "rate_limit_shared_invalid", "rate_limit_shared_unavailable", "request_schema_unavailable", "required_header", "route_policy_unavailable", "schema_body_incomplete", "schema_body_too_large", "schema_duplicate_content_length", "schema_invalid", "schema_no_content_length", "schema_unavailable", "schema_unsupported_media_type", "sni_host_mismatch", "source_address", "sso_auth", "sso_auth_unavailable", "upstream_auth_trace", "upstream_auth_unavailable", "waf", "waf_body_chunked", "waf_body_content_type", "waf_body_duplicate_content_length", "waf_body_incomplete", "waf_body_too_large", "waf_policy_unavailable", "waf_status_400", "waf_status_413", "waf_unavailable"]
+      values: ["api_key", "api_key_unavailable", "backend_tls_unavailable", "basic_auth", "basic_auth_unavailable", "body_too_large", "cache_origin_internal_backend", "consumer_groups", "consumer_groups_unavailable", "content_type", "external_auth", "external_auth_unavailable", "gw_sni_host_mismatch", "hmac", "hmac_body_incomplete", "hmac_no_content_length", "hmac_unavailable", "ip_blocklist", "jwt_algorithm", "jwt_audience", "jwt_expired", "jwt_groups", "jwt_issuer", "jwt_key_unavailable", "jwt_missing", "jwt_not_yet_valid", "jwt_required_claim", "jwt_signature", "jwt_unavailable", "method_not_allowed", "mtls_sni_host_mismatch", "mtls_unavailable", "policy_consumer_missing", "rate_limit_connections", "rate_limit_local", "rate_limit_shared", "rate_limit_shared_invalid", "rate_limit_shared_unavailable", "request_schema_unavailable", "required_header", "route_policy_unavailable", "schema_body_incomplete", "schema_body_too_large", "schema_duplicate_content_length", "schema_invalid", "schema_no_content_length", "schema_unavailable", "schema_unsupported_media_type", "sni_host_mismatch", "source_address", "sso_auth", "sso_auth_unavailable", "upstream_auth_trace", "upstream_auth_unavailable", "waf", "waf_body_chunked", "waf_body_content_type", "waf_body_duplicate_content_length", "waf_body_incomplete", "waf_body_too_large", "waf_client_penalty", "waf_policy_unavailable", "waf_status_400", "waf_status_413", "waf_unavailable"]
       metric: denied_total
       tag: reason
 

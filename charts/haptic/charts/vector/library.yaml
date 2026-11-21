@@ -788,6 +788,7 @@ templateSnippets:
             # translation table; sm holds the rest, where semconv dictates a name.
             hl = ["resource","req_id","denied_by","gw_route","cache","app_backend",
               "waf_action","waf_rule_id","waf_score","waf_rules_hit","waf_matched_var","waf_rule_ids",
+              "waf_client_penalty",
               "auth_status","rate_limit_allowed","rate_limit_remaining","schema_outcome",
               "instance_pod","instance_node"]
             # A LIST, not an object: for_each over a VRL object has no

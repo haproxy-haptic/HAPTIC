@@ -949,6 +949,10 @@ func e2eProfileHelmArgs(profile string) []string {
 		return []string{
 			"--set", "rateLimit.shared.enabled=true",
 			"--set", "rateLimit.shared.managedStore.enabled=true",
+			// detect only records, so other WAF tests keep their verdicts
+			// (TestHapticWAFClientPenalty).
+			"--set", "controller.config.templatingSettings.extraContext.waf.clientPenalty.mode=detect",
+			"--set", "controller.config.templatingSettings.extraContext.waf.clientPenalty.scoreLimit=10",
 		}
 	case "api-gateway":
 		fmt.Fprintln(os.Stderr, "e2e: api-gateway shard — enabling request validation and the Rust WAF")

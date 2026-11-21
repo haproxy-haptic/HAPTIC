@@ -334,6 +334,7 @@ templateSnippets:
 
   spoe-conf-content:
     template: |
+      {%- import "util-waf-client-penalty" for WafClientPenaltyMode -%}
       {%- var messagesAny = extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}) %}
       {%- var messages = toStringSlice(messagesAny) %}
       {%- var messageTimeouts = extraContext | dig("spoaHub", "haproxy", "messageTimeouts") | fallback(map[string]any{}) %}
@@ -371,6 +372,42 @@ templateSnippets:
 
       spoe-group {{ msg }}-group
           messages {{ msg }}
+      {%- end %}
+      {#- The WAF client penalty reads and charges one meter key through the
+          rate-limit plugin. Each needs its own engine: a scope holds one
+          check-ratelimit message, and the prefix keeps these verdicts apart
+          from the route's own rate limit. #}
+      {%- if WafClientPenaltyMode(extraContext) != "off" %}
+      {%- var scoreLimit = extraContext | dig_string("50", "waf", "clientPenalty", "scoreLimit") %}
+      {%- if !regex_search(scoreLimit, "^[1-9][0-9]{0,5}$") %}
+        {%- fail("extraContext.waf.clientPenalty.scoreLimit must be an integer between 1 and 999999.") %}
+      {%- end %}
+      {%- var window = extraContext | dig_string("1m", "waf", "clientPenalty", "window") %}
+      {%- if !regex_search(window, "^[1-9][0-9]{0,4}(s|m|h)$") %}
+        {%- fail("extraContext.waf.clientPenalty.window must be a duration such as 30s, 1m, or 1h.") %}
+      {%- end %}
+      {%- var secondsPerUnit = map[string]int{"s": 1, "m": 60, "h": 3600} %}
+      {%- var windowSeconds = toint(window[:len(window)-1]) * secondsPerUnit[window[len(window)-1:]] %}
+      {%- for _, engine := range []string{"read", "charge"} %}
+
+      [spoa-hub-waf-penalty-{{ engine }}]
+
+      spoe-agent spoa-hub-waf-penalty-{{ engine }}-agent
+          groups waf-penalty-{{ engine }}-group
+          option var-prefix       {% if engine == "read" %}hubwpr{% else %}hubwpc{% end %}
+          option pipelining
+          option async
+          timeout hello      {{ extraContext | dig("spoaHub", "haproxy", "timeoutHello") | fallback("2s") }}
+          timeout idle       {{ extraContext | dig("spoaHub", "haproxy", "timeoutIdle") | fallback("5m") }}
+          timeout processing {{ messageTimeouts | dig("check-ratelimit") | fallback(defaultProcessingTimeout) }}
+          use-backend spoa-hub
+
+      spoe-message check-ratelimit
+          args key=var(txn.waf_client_key) limit=str({{ scoreLimit }}) period=str({{ windowSeconds }}) mode=str(meter){% if engine == "charge" %} cost=var(txn.waf_client_cost){% end %} req_id=unique-id
+
+      spoe-group waf-penalty-{{ engine }}-group
+          messages check-ratelimit
+      {%- end %}
       {%- end %}
 
   # Canonical spoe-message check-auth body. Rendered by name from

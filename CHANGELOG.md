@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 
+- `extraContext.waf.clientPenalty` throttles clients that keep triggering WAF rules: anomaly scores add up per client IP and WAF policy in the shared rate-limit store, and a client at `scoreLimit` gets `429` from every HAProxy pod before the WAF runs. `detect` mode only records the `waf_client_penalty` access-log field. Requires `rateLimit.shared.enabled`.
 - `extraContext.ipBlocklists` refuses clients whose address is on a public blocklist. It's off by default; when enabled, the Spamhaus DROP lists apply, and further bundled or custom lists are opt-in.
 - Set `spoaHub.plugins.coraza.engine: rust` to inspect requests and validate WAF policies with the bundled Rust engine. Go Coraza remains the default.
 - `haproxy-haptic.org/upstream-authorization-secret` replaces the request's `Authorization` header with a value from a Secret in the Ingress's namespace, after every client check ([#672](https://github.com/haproxy-haptic/HAPTIC/issues/672)).
