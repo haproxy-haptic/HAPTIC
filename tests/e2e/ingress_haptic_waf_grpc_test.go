@@ -110,20 +110,43 @@ func TestHapticWAFGRPCStreaming(t *testing.T) {
 			_, err = chat.Recv()
 			require.ErrorIs(t, err, io.EOF)
 
-			since := time.Now()
 			denied := metadata.AppendToOutgoingContext(rpcCtx, "x-waf-probe", "reject")
-			_, err = client.DummyUnary(denied, msg)
-			require.Equal(t, codes.PermissionDenied, status.Code(err))
-			record := findAccessLogRecordWhere(ctx, t, since, "gRPC call refused by WAF", func(r map[string]any) bool {
-				return r["host"] == host && r["path"] == "/grpcbin.GRPCBin/DummyUnary" && r["status"] == float64(403)
+			requireGRPCWAFRuleDenial(ctx, t, host, "/grpcbin.GRPCBin/DummyUnary", func() error {
+				_, err := client.DummyUnary(denied, msg)
+				return err
 			})
-			require.Equal(t, "waf", record["denied_by"])
-			require.Equal(t, "<NOSRV>", record["server_pod"])
 
 			// The policy extends the CRS media-type list only for application/grpc.
-			_, err = client.DummyUnary(rpcCtx, msg, grpc.CallContentSubtype("proto"))
-			require.Equal(t, codes.PermissionDenied, status.Code(err), "unlisted application/grpc+proto")
+			requireGRPCWAFRuleDenial(ctx, t, host, "/grpcbin.GRPCBin/Empty", func() error {
+				_, err := client.Empty(rpcCtx, &grpcbin.EmptyMessage{}, grpc.CallContentSubtype("proto"))
+				return err
+			})
 			return ctx
 		})
 	testEnv.Test(t, feature.Feature())
+}
+
+// An unavailable verdict has its own proxy response. Verify that refusal before
+// sending one fresh probe that must exercise the actual metadata rule.
+func requireGRPCWAFRuleDenial(ctx context.Context, t *testing.T, host, path string, call func() error) {
+	t.Helper()
+	since := time.Now()
+	err := call()
+	recordFor := func(httpStatus float64) map[string]any {
+		return findAccessLogRecordWhere(ctx, t, since, "gRPC WAF refusal on "+path, func(r map[string]any) bool {
+			return r["host"] == host && r["path"] == path && r["status"] == httpStatus
+		})
+	}
+	if status.Code(err) == codes.Unavailable {
+		record := recordFor(503)
+		require.Equal(t, "waf_unavailable", record["denied_by"])
+		require.Equal(t, "<NOSRV>", record["server_pod"])
+		t.Logf("WAF verdict unavailable for %s, request %v refused at proxy", path, record["req_id"])
+		since = time.Now()
+		err = call()
+	}
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%s: %v", path, err)
+	record := recordFor(403)
+	require.Equal(t, "waf", record["denied_by"])
+	require.Equal(t, "<NOSRV>", record["server_pod"])
 }

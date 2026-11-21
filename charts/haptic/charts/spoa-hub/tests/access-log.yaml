@@ -255,15 +255,13 @@ validationTests:
         pattern: 'http-request deny deny_status 429 hdr Retry-After 1 if .*!\{ var\(txn\.hub\.rate_limit\.allowed\) -m found \}'
       - {type: contains, target: haproxy.cfg, pattern: 'str\(rate_limit_shared_unavailable\)'}
 
-  test-spoa-hub-waf-unavailable-fails-open-by-default:
+  test-spoa-hub-waf-unavailable-requires-verdict-in-deny-mode:
     description: >-
-      A WAF that cannot be consulted must not 503 the caller. It reduces risk, it
-      does not establish identity, so a blip in our own sidecar must not refuse
-      traffic that did nothing wrong. The event is recorded instead. Rendered
-      under dispatch default-on so the block exists without a WAF route.
+      Active routes require a verdict unless HAProxy resolved detection-only
+      mode. This includes compatibility apps without an explicit mode.
     _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
     extraContext:
-      waf: {dispatch: {mode: default-on, defaultEnforcement: deny}}
+      waf: {failClosed: false, dispatch: {mode: default-on, defaultEnforcement: deny}}
       spoaHub:
         enabled: true
         haproxy:
@@ -294,13 +292,23 @@ validationTests:
       - type: haproxy_valid
       - type: not_contains
         target: haproxy.cfg
-        pattern: 'http-request return status 503 if \{ var\(txn\.coraza_active\) -m bool \} !\{ var\(txn\.hub\.coraza\.__status\) -m found \}'
+        pattern: 'http-request return status 503 if \{ var\(txn\.waf_degraded\) -m found \}(?:\n|$)'
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'http-request return status 503 if \{ var\(txn\.waf_degraded\) -m found \} !\{ var\(txn\.coraza_detect_only\) -m bool \}'
       - type: contains
         target: haproxy.cfg
         pattern: 'http-request set-var\(txn\.waf_degraded\) str\(1\) if \{ var\(txn\.coraza_active\) -m bool \} !\{ var\(txn\.hub\.coraza\.__status\) -m found \}'
-      # Suppressing the 503 is only half of fail-open. An unset action also
-      # satisfies `!{ ... -m str allow }`, so without `-m found` the 403 below
-      # denies exactly the requests this posture exists to let through.
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'http-request set-var\(txn\.waf_degraded\) str\(1\) if \{ var\(txn\.coraza_active\) -m bool \} !\{ var\(txn\.hub\.coraza\.__status\) -m str ok \}'
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'http-request set-var\(txn\.waf_degraded\) str\(1\) if \{ var\(txn\.coraza_active\) -m bool \} !\{ var\(txn\.hub\.coraza\.action\) -m found \}'
+      - type: contains
+        target: haproxy.cfg
+        pattern: 'str\(waf_unavailable\) if \{ var\(txn\.waf_degraded\) -m found \} !\{ var\(txn\.coraza_detect_only\) -m bool \}'
+      # A detect route with no answer may continue without receiving a 403.
       - type: contains
         target: haproxy.cfg
         pattern: 'http-request deny deny_status 403 if \{ var\(txn\.coraza_active\) -m bool \} \{ var\(txn\.hub\.coraza\.action\) -m found \} !\{ var\(txn\.hub\.coraza\.action\) -m str allow \}'
@@ -313,12 +321,10 @@ validationTests:
 
   test-spoa-hub-waf-fail-closed-opt-in:
     description: >-
-      waf.failClosed restores the 503 for operators who would rather refuse
-      traffic than let it past uninspected. Off by default. Rendered under
-      dispatch default-on so the block exists without a WAF route.
+      Global strict mode requires a verdict even on detect routes.
     _helm_skip_test: '{{ include "haptic.spoaHub.disabled" . }}'
     extraContext:
-      waf: {failClosed: true, dispatch: {mode: default-on, defaultEnforcement: deny}}
+      waf: {failClosed: true, dispatch: {mode: default-on, defaultEnforcement: detect}}
       spoaHub:
         enabled: true
         haproxy:
@@ -349,7 +355,7 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: 'http-request return status 503 if \{ var\(txn\.coraza_active\) -m bool \} !\{ var\(txn\.hub\.coraza\.__status\) -m found \}'
+        pattern: 'http-request return status 503 if \{ var\(txn\.waf_degraded\) -m found \}(?:\n|$)'
       - {type: contains, target: haproxy.cfg, pattern: 'str\(waf_unavailable\)'}
       # Recorded in both postures, so an uninspecting WAF is never silent.
       - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var\(txn\.waf_degraded\) str\(1\)'}

@@ -1302,17 +1302,10 @@ controller:
         # WAF routing and policy behavior. This remains engine-neutral; Coraza
         # implementation/runtime settings belong under spoaHub.plugins.coraza.
         waf:
-          # What happens when the SPOA hub or coraza plugin cannot answer — a
-          # reload, a restart, a timeout. Default false: the request is ALLOWED.
-          # A WAF reduces risk, it does not establish identity, so a blip in our
-          # own sidecar must not refuse traffic that did nothing wrong. Either
-          # way the event is counted (haptic_degraded_waf_total and
-          # the waf_degraded access-log field), so a WAF that is silently not
-          # inspecting stays visible.
-          #
-          # Set true only where letting a request past uninspected is worse than
-          # refusing it. Requests the WAF did inspect and rejected are denied
-          # with 403 in both postures.
+          # Deny-mode routes return 503 when WAF inspection is unavailable.
+          # Set true to require a verdict on all active WAF routes, including
+          # detect mode. Detect routes allow the request by default. Unavailable
+          # inspections set waf_degraded and increment haptic_degraded_waf_total.
           failClosed: false
           # Throttles clients that keep triggering WAF rules, across all HAProxy
           # pods. Each inspected request adds its anomaly score to a score for

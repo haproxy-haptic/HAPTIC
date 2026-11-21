@@ -1075,7 +1075,8 @@ is simply absent.
 | Control | If it silently stops working | Posture |
 |---|---|---|
 | Authentication, authorization, mTLS identity | Unauthenticated callers reach customer data. That is a disclosure incident from the first request, and no later fix undoes it. | **DENY** |
-| WAF, rate limiting, request-schema validation | Higher system load, and a risk window a second layer may still cover. Fixed promptly, customers likely never notice. | **ALLOW**, and record it |
+| WAF with resolved `deny` enforcement | An uninspected request reaches the application despite its deny policy. | **DENY** with 503 and record `waf_unavailable` |
+| Other WAF modes, rate limiting, request-schema validation | Higher system load, and a risk window a second layer may still cover. Fixed promptly, customers likely never notice. | **ALLOW**, and record it |
 
 **Weigh the harm the control prevents against the harm the denial causes.** For a
 rate limiter the honest comparison is *elevated load* versus *every legitimate

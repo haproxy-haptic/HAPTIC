@@ -421,32 +421,18 @@ templateSnippets:
       http-request set-var-fmt(txn.waf_client_cost) %[var(txn.hub.coraza.anomaly_score)] if { var(txn.waf_client_key) -m found } { var(txn.hub.coraza.anomaly_score) -m int gt 0 }
       http-request send-spoe-group spoa-hub-waf-penalty-charge waf-penalty-charge-group if { var(txn.waf_client_cost) -m found }
       {%- end %}
-      {# Hub admission and plugin engine failures ALLOW the request and record
-          it. A WAF reduces risk; it does not establish identity, so a blip in
-          our own sidecar must not 503 callers who did nothing wrong — see
-          "Runtime dependency failure" in charts/CLAUDE.md. Detect-only coercion
-          happens inside Coraza only for completed rule decisions, never for
-          infrastructure errors.
-
-          waf.failClosed restores the 503 for operators who would rather refuse
-          traffic than let it past uninspected. Off by default.
-
-          Either way txn.waf_degraded is set, so an uninspecting WAF shows up in
-          the access log and in haptic_degraded_waf_total rather than
-          looking healthy. Its own variable, not a shared one: see the rate
-          limiter above. #}
-      {%- var wafFailClosed = tostring(extraContext | dig("waf", "failClosed") | fallback(false)) == "true" %}
+      {# A deny-mode route requires a completed inspection. The global strict
+          setting extends that requirement to detection-only routes. An active
+          legacy app with no explicit mode uses the enforcing body-check path. #}
+      {%- var wafUnavailable = "{ var(txn.waf_degraded) -m found }" %}
+      {%- if tostring(extraContext | dig("waf", "failClosed") | fallback(false)) != "true" %}
+        {%- wafUnavailable += " !{ var(txn.coraza_detect_only) -m bool }" %}
+      {%- end %}
       http-request set-var(txn.waf_degraded) str(1) if { var(txn.coraza_active) -m bool } !{ var(txn.hub.coraza.__status) -m found }
       http-request set-var(txn.waf_degraded) str(1) if { var(txn.coraza_active) -m bool } !{ var(txn.hub.coraza.__status) -m str ok }
       http-request set-var(txn.waf_degraded) str(1) if { var(txn.coraza_active) -m bool } !{ var(txn.hub.coraza.action) -m found }
-      {%- if wafFailClosed %}
-      http-request set-var(txn.denied_by) str(waf_unavailable) if { var(txn.coraza_active) -m bool } !{ var(txn.hub.coraza.__status) -m found }
-      http-request return status 503 if { var(txn.coraza_active) -m bool } !{ var(txn.hub.coraza.__status) -m found }
-      http-request set-var(txn.denied_by) str(waf_unavailable) if { var(txn.coraza_active) -m bool } !{ var(txn.hub.coraza.__status) -m str ok }
-      http-request return status 503 if { var(txn.coraza_active) -m bool } !{ var(txn.hub.coraza.__status) -m str ok }
-      http-request set-var(txn.denied_by) str(waf_unavailable) if { var(txn.coraza_active) -m bool } !{ var(txn.hub.coraza.action) -m found }
-      http-request return status 503 if { var(txn.coraza_active) -m bool } !{ var(txn.hub.coraza.action) -m found }
-      {%- end %}
+      http-request set-var(txn.denied_by) str(waf_unavailable) if {{ wafUnavailable }}
+      http-request return status 503 if {{ wafUnavailable }}
       http-request set-var(txn.denied_by) str(waf_status_400) if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 400 }
       http-request return status 400 if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 400 }
       http-request set-var(txn.denied_by) str(waf_status_413) if { var(txn.coraza_active) -m bool } { var(txn.hub.coraza.status) -m int 413 }
