@@ -130,9 +130,19 @@ func (it *liveIteration) leaveElectionUnlessLeading() {
 	if state == nil || run == nil || state.supersede() {
 		return
 	}
-	run.cancel()
-	<-run.done
+	run.stop()
 	it.logger.Info("Left leader election for the successor iteration")
+}
+
+// resumeElection lets an iteration whose successor failed to start lead again:
+// its config is the newest one that runs.
+func (it *liveIteration) resumeElection() {
+	if it.setup.LeaderState != nil {
+		it.setup.LeaderState.resume()
+	}
+	if it.setup.Election != nil {
+		it.setup.Election.restart()
+	}
 }
 
 // startupInterruptedError reports a startup that a reload cut short; the

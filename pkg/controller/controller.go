@@ -736,11 +736,15 @@ func (s *iterationSequence) step(
 			s.startup = interrupted.reload
 			err = nil
 		}
-		if s.current != nil && s.current.retired {
+		switch {
+		case s.current != nil && s.current.retired:
 			// Also on an interrupting reload: the restart starts cold with no
 			// predecessor, so a kept Lease would leave no replica leading.
 			s.current.releaseKeptLease()
 			err = errors.Join(err, s.close())
+		case s.current != nil && s.startup == nil:
+			// An interrupting reload keeps it superseded by the newer config.
+			s.current.resumeElection()
 		}
 		return err
 	}

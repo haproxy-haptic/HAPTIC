@@ -421,3 +421,44 @@ func TestAwaitReloadLeavesElectionOnlyAsFollower(t *testing.T) {
 		})
 	}
 }
+
+// A successor that fails to start leaves the follower that stood down for it
+// campaigning again; one interrupted by a newer reload keeps it out.
+func TestIterationSequenceStepResumesElectionAfterFailedStart(t *testing.T) {
+	for _, interrupted := range []bool{false, true} {
+		t.Run("interrupted="+strconv.FormatBool(interrupted), func(t *testing.T) {
+			first := newTestLiveIteration(t)
+			var launches int
+			run := &electionRun{launch: func() (context.CancelFunc, chan struct{}) {
+				launches++
+				done := make(chan struct{})
+				return func() {
+					select {
+					case <-done:
+					default:
+						close(done)
+					}
+				}, done
+			}}
+			run.cancel, run.done = run.launch()
+			first.setup.Election = run
+			first.setup.LeaderState = &leaderCallbackState{}
+			first.authority.Record(testReload("b"))
+			_, err := first.awaitReload()
+			require.NoError(t, err)
+			require.True(t, first.setup.LeaderState.superseded)
+
+			startErr := errors.New("start failed")
+			if interrupted {
+				startErr = &startupInterruptedError{reload: testReload("c")}
+			}
+			seq := &iterationSequence{logger: first.logger, current: first}
+			_ = seq.step(func(*configchange.ReloadRequest, *liveIteration) (*liveIteration, error) {
+				return nil, startErr
+			})
+			assert.Equal(t, interrupted, first.setup.LeaderState.superseded)
+			assert.Equal(t, map[bool]int{false: 2, true: 1}[interrupted], launches)
+			run.stop()
+		})
+	}
+}
