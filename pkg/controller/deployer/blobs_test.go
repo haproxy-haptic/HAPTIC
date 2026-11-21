@@ -333,7 +333,9 @@ func TestBlobs_UnavailableBlobFailsThePodsThatLackIt(t *testing.T) {
 
 	assert.Equal(t, 1, completed.Failed)
 	assert.Zero(t, pod.proxy.count(applyCall))
-	assert.Contains(t, deployer.failure(t), ref.Digest)
+	failure := deployer.failure(t)
+	assert.Contains(t, failure, ref.Digest)
+	assert.Contains(t, failure, "neither the controller nor any pod holds it")
 }
 
 // The digests the pods hold are kept on the controller's disk; a pod that left

@@ -54,11 +54,12 @@ type blobDelivery struct {
 	recovered map[string]*blobRecovery
 }
 
-// blobRecovery takes one blob back once per deployment, however many pods
-// need it.
+// blobRecovery serialises taking one blob back, however many pods need it.
+// Only "no pod reports it" is remembered for the deployment; a pod that could
+// not be read is tried again for the next pod that needs the blob.
 type blobRecovery struct {
-	once sync.Once
-	err  error
+	mu      sync.Mutex
+	nowhere error
 }
 
 // newBlobDelivery returns nil when the controller has no blob store or the
@@ -165,8 +166,19 @@ func (c *Component) recoverBlob(ctx context.Context, delivery *blobDelivery, dig
 		delivery.recovered[digest] = recovery
 	}
 	delivery.mu.Unlock()
-	recovery.once.Do(func() { recovery.err = c.takeBlobFromFleet(ctx, delivery.fleet, digest) })
-	return recovery.err
+	recovery.mu.Lock()
+	defer recovery.mu.Unlock()
+	if recovery.nowhere != nil {
+		return recovery.nowhere
+	}
+	if file, err := c.blobs.Open(digest); err == nil {
+		return file.Close()
+	}
+	err := c.takeBlobFromFleet(ctx, delivery.fleet, digest)
+	if errors.Is(err, errBlobNowhere) {
+		recovery.nowhere = err
+	}
+	return err
 }
 
 // takeBlobFromFleet copies the blob from the first pod that reports it. The
@@ -184,11 +196,17 @@ func (c *Component) takeBlobFromFleet(ctx context.Context, fleet []dataplane.End
 			errs = append(errs, fmt.Errorf("%s: %w", endpoint.PodName, err))
 		}
 	}
-	return fmt.Errorf("blob %s is neither on the controller nor on a pod; it arrives with its source's next fetch: %w",
-		digest, errors.Join(errs...))
+	if len(errs) > 0 {
+		return fmt.Errorf("blob %s is not on the controller, and taking it back from the pods failed: %w",
+			digest, errors.Join(errs...))
+	}
+	return fmt.Errorf("blob %s: %w", digest, errBlobNowhere)
 }
 
 var errBlobNotReported = errors.New("the pod does not report the blob")
+
+// errBlobNowhere is a blob neither the controller nor any pod holds.
+var errBlobNowhere = errors.New("neither the controller nor any pod holds it; it arrives with its source's next fetch")
 
 func (c *Component) takeBlobFrom(ctx context.Context, endpoint *dataplane.Endpoint, digest string) error {
 	client, err := c.clients.For(endpoint)
