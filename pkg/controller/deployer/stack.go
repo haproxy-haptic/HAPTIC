@@ -45,6 +45,12 @@ type DeployStack struct {
 	DriftMonitor *DriftPreventionMonitor
 }
 
+// EnableBlobs makes the deployer deliver the blobs a render names from store
+// (ADR-0041), and take back from a pod one the store has lost.
+func (s *DeployStack) EnableBlobs(store BlobStore) {
+	s.Deployer.blobs = store
+}
+
 // NewDeployStack builds the three deploy-side components and connects them to
 // the metrics registry, the leadership fence and the render inputs.
 //

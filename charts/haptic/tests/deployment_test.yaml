@@ -29,6 +29,65 @@ tests:
       - notExists:
           path: spec.replicas
 
+  - it: should leave blobs out of the default render
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: blobs
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BLOB_DIR
+          any: true
+
+  # The controller downloads blobs; the validator reads them where the
+  # configuration names them, read-only (ADR-0041).
+  - it: should share one disk-backed blobs volume with the validator when a maxmind database is declared
+    set:
+      controller.config.templatingSettings.extraContext.maxmind.databases.city.url: https://geo.example.com/city.mmdb
+      blobs.sizeLimit: 2Gi
+      blobs.maxSize: 300Mi
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: blobs
+            emptyDir:
+              sizeLimit: 2Gi
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: blobs
+            mountPath: /var/lib/haptic/blobs
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BLOB_DIR
+            value: /var/lib/haptic/blobs
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BLOB_MAX_SIZE
+            value: 300Mi
+      - contains:
+          path: spec.template.spec.initContainers[?(@.name=="validators")].volumeMounts
+          content:
+            name: blobs
+            mountPath: /var/lib/haptic/blobs
+            readOnly: true
+
+  - it: should give the controller the blobs volume for templates of your own
+    set:
+      blobs.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: BLOB_DIR
+            value: /var/lib/haptic/blobs
+
   - it: should set controller container name
     asserts:
       - equal:

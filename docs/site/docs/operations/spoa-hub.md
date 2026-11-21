@@ -57,7 +57,7 @@ The image is published at `ghcr.io/haproxy-haptic/haptic/spoa-hub:<HAPTIC versio
 | `coraza`          | `v0.12.0-rc.8`           |
 | `external-auth`   | `v0.6.0`    |
 | `fingerprinting`  | `v0.3.0`   |
-| `maxmind`         | `v0.4.0`          |
+| `maxmind`         | `v0.5.0`          |
 | `mirror`          | `v0.6.0`           |
 | `rate-limit`      | `v0.5.0`       |
 | `sso-auth`        | `v0.4.1`         |
@@ -78,7 +78,7 @@ HAProxy replicas available during an upgrade.
 - **coraza** — runs HTTP request inspection against the Open Worldwide Application Security Project (OWASP) Core Rule Set v4. HAPTIC wires the request phase only — there's no response-body inspection stage, so response compression doesn't interact with the WAF.
 - **external-auth** — implements nginx-style `auth_request` semantics: makes an HTTP subrequest to an upstream auth service and returns allow/deny plus identity headers to HAProxy.
 - **fingerprinting** — computes JA3, JA3N, and JA4 TLS fingerprints from the ClientHello.
-- **maxmind** — performs in-memory MaxMind MMDB lookups against operator-provided database files: City, Country, Autonomous System Number (ASN), and so on.
+- **maxmind** — performs in-memory MaxMind MMDB lookups: City, Country, Autonomous System Number (ASN), and so on. HAPTIC [delivers the databases](#geolocation-lookups).
 - **mirror** — mirrors HTTP requests to a secondary backend for traffic shadowing; used by the gateway library to implement the Gateway API `HTTPRouteFilter` of type `RequestMirror`.
 - **rate-limit** — enforces a shared request budget across HAProxy replicas. It uses the [managed Valkey store or your existing store](#managed-shared-rate-limit-store); choose how requests behave during store or plugin failures there.
 - **sso-auth** — handles OpenID Connect (OIDC) and Security Assertion Markup Language (SAML) 2.0 single sign-on flows with encrypted session cookies.
@@ -279,87 +279,60 @@ spoaHub:
 
 ## Geolocation lookups
 
-The `maxmind` plugin looks up client IP addresses in a MaxMind MMDB database. Enable the plugin, mount your database, and add a template snippet to use the result. This example adds an `X-Country` request header.
+The `maxmind` plugin looks up client IP addresses in GeoIP databases in
+MaxMind's MMDB format, such as MaxMind GeoLite2 or DB-IP Lite. HAPTIC downloads
+each database on the controller, refreshes it, and delivers it to every HAProxy
+pod before the configuration that uses it, so the HAProxy pods need no internet
+access or license key. This example adds `X-Country` and `X-Region` request
+headers.
 
-### 1. Enable the plugin and declare the lookup
+### 1. Declare the database and the lookups
 
-Turn the plugin on and define, under `params:`, which MMDB files to open and which fields to extract. Each `[[lookups]]` entry sets `output_var` (the variable the hub writes back) and `message` (the SPOE message that triggers it — keep it equal to the plugin's `messages` entry, the default `geoip-enrich`):
-
-```yaml
-# values.yaml
-spoaHub:
-  plugins:
-    maxmind:
-      enabled: true
-      messages: ["geoip-enrich"]   # chart default; drives the generated SPOE group name
-      params: |
-        [databases]
-        country = { path = "/data/GeoLite2-Country.mmdb" }
-
-        [[lookups]]
-        name       = "country_code"
-        message    = "geoip-enrich"
-        database   = "country"
-        path       = ["country", "iso_code"]
-        output_var = "geo_country"
-```
-
-### 2. Mount the MMDB database
-
-The database file lives in the HAProxy pod, where the `spoa-hub` sidecar runs. Declare a pod volume with `haproxy.extraVolumes` and mount it into the sidecar with `spoaHub.extraVolumeMounts` at the path your `params:` references (`/data` above).
-
-MMDB files exceed the 1 MiB `ConfigMap`/`Secret` size limit (GeoLite2-Country alone is several MB), so don't try to mount one from a `Secret`. Use a `PersistentVolumeClaim`, or — as below — an `emptyDir` populated by an init container that downloads the database. The init container needs your MaxMind license key. Create its Secret in the
-release namespace:
-
-```bash
-read -r -s -p "MaxMind license key: " maxmind_license
-printf '%s' "$maxmind_license" |
-  kubectl create secret generic maxmind-license --namespace haptic \
-    --from-file=license_key=/dev/stdin --dry-run=client -o yaml | kubectl apply -f -
-unset maxmind_license
-```
-
-Then add the download container and volume to your Helm values:
+Add the database's download URL and the fields to extract to your Helm values:
 
 ```yaml
 # values.yaml
-haproxy:
-  extraVolumes:
-    - name: maxmind-data
-      emptyDir: {}
-  initContainers:
-    - name: fetch-maxmind
-      image: curlimages/curl:latest
-      command:
-        - sh
-        - -c
-        - |
-          set -eu
-          curl -fsSL -o /tmp/maxmind.tar.gz \
-            "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=$LICENSE_KEY&suffix=tar.gz"
-          tar -xzf /tmp/maxmind.tar.gz --strip-components=1 -C /data
-      env:
-        - name: LICENSE_KEY
-          valueFrom:
-            secretKeyRef:
-              name: maxmind-license
-              key: license_key
-      volumeMounts:
-        - name: maxmind-data
-          mountPath: /data
-
-spoaHub:
-  extraVolumeMounts:
-    - name: maxmind-data
-      mountPath: /data
-      readOnly: true
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        maxmind:
+          databases:
+            city:
+              url: https://downloads.example.com/geoip/city-lite.mmdb.gz
+              unpack: gzip
+              refreshInterval: 24h
+          lookups:
+            - name: country
+              database: city
+              path: [country, iso_code]
+              outputVar: geo_country
+            - name: region
+              database: city
+              path: [subdivisions, "0", iso_code]
+              outputVar: geo_region
 ```
 
-### 3. Dispatch the lookup and use the result
+Declaring a database enables the plugin and gives the controller and HAProxy
+pods a disk-backed `blobs` volume of `blobs.sizeLimit` (default `1Gi`). The URL
+must be `https://`; add `sha256` to accept only one exact file. For a
+`tar.gz` download, set `unpack: tar.gz` and the archive path of the database as
+`member`. A download whose archive path changes with every release can't
+refresh under a fixed `member`, so prefer the plain `.mmdb` or `.mmdb.gz` file.
 
-Add a `frontend-spoe-filters-*` snippet to run the lookup and set the header.
-The engine and group names below match the `geoip-enrich` message configured
-in step 1. The result is available as `txn.hub.maxmind.geo_country`.
+The `path` of each lookup walks the database record: map keys, or array indexes
+such as `"0"` for the first element and `"-1"` for the last. Read the record of
+an address with `mmdblookup` to find the paths your database offers.
+
+The controller fetches the URL itself. Its default NetworkPolicy allows HTTPS to
+any address; if you narrowed `controller.networkPolicy.egress`, add a rule for
+the download host.
+
+### 2. Use the results
+
+Every request is looked up once, and each result is available as
+`txn.hub.maxmind.<outputVar>`, with `txn.hub.maxmind.<outputVar>_status` set to
+`ok`, `not_found`, or `error`. Add a snippet that uses them:
 
 ```yaml
 # values.yaml
@@ -368,13 +341,43 @@ controller:
     templateSnippets:
       frontend-spoe-filters-300-geoip:
         template: |
-          http-request send-spoe-group spoa-hub-geoip-enrich geoip-enrich-group
           http-request set-header X-Country %[var(txn.hub.maxmind.geo_country)]
+          http-request set-header X-Region %[var(txn.hub.maxmind.geo_region)]
 ```
 
 Apply the combined values, then send a request through one of your routes.
-Check the application's received `X-Country` header. Addresses absent from the
-database, including private cluster addresses, don't produce a country code.
+Addresses absent from the database, including private cluster addresses, don't
+produce a country code.
+
+### Budget the memory
+
+The hub keeps each database in memory and holds the old and the new version
+while it switches to a new one. Budget `spoaHub.resources.limits.memory` at
+64 MiB plus twice the size of your databases, plus what other plugins need: a
+130 MB City database needs about 324 MiB, which the default `384Mi` holds when
+it's the only plugin. HAPTIC refuses a configuration whose databases don't fit,
+and the hub keeps the previous version. The controller's validator doesn't load
+databases.
+
+### When a database changes or can't be downloaded
+
+A new version reaches the pods only after a configuration that uses it passes
+validation; the hub then reloads the plugin, without restarting HAProxy. If a
+download fails, the pods keep the version they have. Until a database's first
+version has been downloaded, HAPTIC leaves its lookups out, and requests pass
+without those variables. `haptic_blob_fetch_errors_total` counts failed
+downloads.
+
+While an HAProxy pod runs an agent from a release without blob delivery, for
+example during an upgrade, HAPTIC delivers no database and leaves the lookups
+out until every pod has been replaced.
+
+To use a database you mount into the spoa-hub yourself instead, leave
+`extraContext.maxmind` empty, set `spoaHub.plugins.maxmind.enabled: true`, and
+write the plugin's
+[configuration](https://github.com/haproxy-haptic/haproxy-spoa-hub-plugin-maxmind)
+under `spoaHub.plugins.maxmind.params`. Dispatch it yourself with
+`http-request send-spoe-group spoa-hub-geoip-enrich geoip-enrich-group`.
 
 ## OIDC sign-in
 

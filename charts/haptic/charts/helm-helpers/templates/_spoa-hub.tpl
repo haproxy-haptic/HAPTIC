@@ -742,3 +742,56 @@ libhaproxy_spoa_hub_plugin_sso_auth.so
 lib{{ regexReplaceAll "-" .name "_" }}_plugin.so
 {{- end -}}
 {{- end -}}
+
+{{/*
+Refuses extraContext.maxmind settings the plugin would only reject on the
+HAProxy pods: the hub validator checks the params' shape, not that a lookup's
+database exists, and a refused plugin leaves every pod without GeoIP data.
+*/}}
+{{- define "haptic.maxmind.validate" -}}
+{{- $root := .root -}}
+{{- $prefix := "controller.config.templatingSettings.extraContext.maxmind" -}}
+{{- $databases := dig "databases" dict .maxmind | default dict -}}
+{{- $lookups := dig "lookups" list .maxmind | default list -}}
+{{- if and (gt (len $lookups) 0) (eq (len $databases) 0) -}}
+  {{- fail (printf "%s.lookups is set without databases, so no lookup would run. Declare the databases under %s.databases." $prefix $prefix) -}}
+{{- end -}}
+{{- if gt (len $databases) 0 -}}
+  {{- $plugin := (index ($root.Values.spoaHub.plugins | default dict) "maxmind") | default dict -}}
+  {{- if or (eq (toString $root.Values.spoaHub.enabled) "false") (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" $plugin "root" $root "name" "maxmind"))) -}}
+    {{- fail (printf "%s.databases is set, but spoaHub.plugins.maxmind is disabled, so the databases would be downloaded and never used. Remove spoaHub.plugins.maxmind.enabled=false and spoaHub.enabled=false, or remove the databases." $prefix) -}}
+  {{- end -}}
+{{- end -}}
+{{- range $name, $database := $databases -}}
+  {{- if not (regexMatch "^[A-Za-z0-9_-]+$" $name) -}}
+    {{- fail (printf "%s.databases.%s: a database name may contain only letters, digits, '_' and '-'." $prefix $name) -}}
+  {{- end -}}
+  {{- $url := dig "url" "" ($database | default dict) | toString -}}
+  {{- /* A database decides lookups such as a client's country. Over plaintext
+         anyone on the path could replace it, and the result would still load. */ -}}
+  {{- if not (hasPrefix "https://" $url) -}}
+    {{- fail (printf "%s.databases.%s.url must be an https:// URL, so the database cannot be replaced in transit; got %q." $prefix $name $url) -}}
+  {{- end -}}
+{{- end -}}
+{{- $names := dict -}}
+{{- $outputs := dict -}}
+{{- range $index, $lookup := $lookups -}}
+  {{- $name := dig "name" "" $lookup | toString -}}
+  {{- $output := dig "outputVar" "" $lookup | toString -}}
+  {{- $database := dig "database" "" $lookup | toString -}}
+  {{- if not (hasKey $databases $database) -}}
+    {{- fail (printf "%s.lookups[%d] (%s) names database %q, which %s.databases does not declare." $prefix $index $name $database $prefix) -}}
+  {{- end -}}
+  {{- if or (eq $name "") (hasKey $names $name) -}}
+    {{- fail (printf "%s.lookups[%d] needs a name no other lookup has; got %q." $prefix $index $name) -}}
+  {{- end -}}
+  {{- if or (not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" $output)) (hasKey $outputs $output) -}}
+    {{- fail (printf "%s.lookups[%d] (%s) needs an outputVar of letters, digits and '_' that no other lookup uses, because it becomes the HAProxy variable txn.hub.maxmind.<outputVar>; got %q." $prefix $index $name $output) -}}
+  {{- end -}}
+  {{- if eq (len (dig "path" list $lookup | default list)) 0 -}}
+    {{- fail (printf "%s.lookups[%d] (%s) needs a path, such as [country, iso_code]." $prefix $index $name) -}}
+  {{- end -}}
+  {{- $_ := set $names $name true -}}
+  {{- $_ := set $outputs $output true -}}
+{{- end -}}
+{{- end -}}

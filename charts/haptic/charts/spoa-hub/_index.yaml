@@ -48,6 +48,12 @@
 # (any plugin under spoaHub.plugins.* enabled, or spoaHub.enabled=true).
 _helm_load:
   enable: '{{ or .Values.controller.templateLibraries.spoaHub.enabled (include "haptic.spoaHub.enabled" .) }}'
+  # blob.Fetch costs every render its exact-cycle replay; load it with the plugin only.
+  unset:
+    - path: templateSnippets.util-maxmind-databases
+      when: &maxmindOff '{{ if include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.maxmind "root" . "name" "maxmind") }}false{{ else }}true{{ end }}'
+    - path: templateSnippets.frontend-spoe-filters-010-maxmind
+      when: *maxmindOff
 
 maps:
   coraza-app.map:

@@ -1289,6 +1289,25 @@ controller:
           allowedJWKSURLs: {}  # @schema skipProperties; additionalProperties: {type: string}
           refreshInterval: 5m
 
+        # GeoIP lookups with the maxmind plugin. The controller downloads each
+        # MMDB database, refreshes it, and delivers it to every HAProxy pod
+        # (ADR-0041); declaring a database enables the plugin. A request gets
+        # each lookup's result as txn.hub.maxmind.<outputVar>. Until a database
+        # has been downloaded, its lookups are left out. See
+        # docs/site/docs/operations/spoa-hub.md#geolocation-lookups.
+        maxmind:
+          # Keyed by database name. Each needs an https `url`; `unpack` is
+          # none, gzip, or tar.gz with the archive `member` to keep. Optional:
+          # `sha256` (refuse any other content), `refreshInterval` (24h),
+          # `timeout` (5m), `retries` (3), and `maxSize` in bytes (256 MiB,
+          # capped by blobs.maxSize).
+          databases: {}  # @schema mergeProperties
+          # What to look up: `name`, `database`, `path` (record keys or array
+          # indexes, such as [country, iso_code] or [subdivisions, "0",
+          # iso_code]), and `outputVar`. `input` names the SPOE argument and
+          # defaults to `ip`, the client address.
+          lookups: []  # @schema item: object; itemProperties: {name: {type: string}, database: {type: string}, path: {type: array, items: {type: [string, integer]}}, outputVar: {type: string}, input: {type: string}}; itemRequired: [name, database, path, outputVar]
+
         # OIDC sign-in (haproxy-haptic.org/sso-auth). Each Ingress names a
         # provider Secret in its own namespace; the SPOA hub fetches that
         # provider's discovery document, keys and tokens from the HAProxy pods.
@@ -2016,16 +2035,21 @@ haproxy:
     #       - port: 443
     extraEgress: []
 # Binary blobs (ADR-0041): content-addressed files, such as GeoIP databases,
-# that the agent receives outside the configuration and the spoa-hub reads from
-# /var/lib/haptic/blobs. Root-level because the chart adds a volume to the
-# HAProxy pod from it.
+# that the controller downloads and the agent receives outside the
+# configuration; the spoa-hub and the validator read them from
+# /var/lib/haptic/blobs. Root-level because the chart adds volumes to the
+# controller and HAProxy pods from it.
 blobs:
-  # Mount the disk-backed blobs volume and start the agent with --blob-dir.
+  # Give both Deployments a disk-backed blobs volume and start the controller
+  # and the agent with --blob-dir. On whenever
+  # extraContext.maxmind.databases is set; set it for your own blob.Fetch
+  # templates.
   enabled: false
-  # Volume limit. Hold every blob the applied and the last known good
-  # configuration require plus one upload; kubelet evicts the pod above it.
+  # Volume limit in each pod. Hold every version in use (the current one, the
+  # previous one, and a download in progress); kubelet evicts the pod above it.
   sizeLimit: 1Gi
-  # Largest single blob the agent accepts (--blob-max-size).
+  # Largest single blob the controller downloads and the agent accepts
+  # (--blob-max-size).
   maxSize: 256Mi
 # Shared response cache (Varnish tier). When enabled, requests to Ingresses
 # carrying the haproxy-haptic.org/cache-* annotations are routed through a
@@ -2492,11 +2516,15 @@ spoaHub:
         exclude_extensions = [41]
         ja4 = true
     maxmind:
-      enabled: '{{ false }}'  # @schema type: [boolean, string]
+      # Auto-enabled when controller.config.templatingSettings.extraContext
+      # .maxmind.databases names a database.
+      enabled: '{{ not (empty .Values.controller.config.templatingSettings.extraContext.maxmind.databases) }}'  # @schema type: [boolean, string]
       timeoutMs: 10  # @schema type: [integer, string]
       messages: ["geoip-enrich"]
       dependsOn: []  # @schema item: string
-      # Site-specific: supply MMDB paths and lookup definitions.
+      # Declare databases and lookups under extraContext.maxmind instead: the
+      # chart renders them here with each database's delivered path. For
+      # databases you mount yourself, supply MMDB paths and lookups below.
       # See https://github.com/haproxy-haptic/haproxy-spoa-hub-plugin-maxmind
       params: |
         # [databases]

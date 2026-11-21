@@ -433,7 +433,7 @@ func loadConfig(configYAML, schemasJSON []byte, haproxyVersion string, migration
 	if err != nil {
 		return fmt.Errorf("parsing HAProxy version %q: %w", haproxyVersion, err)
 	}
-	caps := dataplane.CapabilitiesFromVersion(ver)
+	caps := dataplane.LocalCapabilities(ver)
 
 	// Compile the engine exactly as the controller does — same helper, same
 	// declarations — so template compilation behaves identically.

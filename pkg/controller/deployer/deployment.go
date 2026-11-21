@@ -46,6 +46,7 @@ type deployRequest struct {
 	contents        map[string]string // file content by manifest path
 	patches         *patchMemo        // splices into what the pods hold, one per base
 	blob            *planBlob         // the plan, zstd-compressed, as the agent stores it
+	blobs           *blobDelivery     // the blobs the render names; nil when it names none
 	token           api.Token
 	// baselineIsPlan memoizes, per pod baseline, whether it already is this
 	// plan: the answer is the same for every pod on that baseline.
@@ -159,7 +160,7 @@ func (c *Component) deployToEndpoints(
 	// aux bytes outside the plan still ride it.
 	podSetHash := computePodSetHash(event.Endpoints)
 	request := c.newDeployRequest(
-		occurrence, &identity, event.Reason == events.TriggerReasonDriftPrevention,
+		occurrence, &identity, event.Reason == events.TriggerReasonDriftPrevention, event.Endpoints,
 	)
 	if request == nil {
 		c.reportUndeployable(event, deploymentID, occurrence)
@@ -189,8 +190,7 @@ func (c *Component) deployToEndpoints(
 	wg.Wait()
 	settling := time.Now()
 
-	c.plans.Retain(c.fleetPlanRefs(event.Endpoints))
-	c.clients.Retain(event.Endpoints)
+	c.retainFleet(event.Endpoints)
 	c.recordFleetAck(plan, atomic.LoadInt32(&state.ackCount))
 
 	c.Logger().Debug("Deployment completed",
@@ -245,14 +245,23 @@ func (c *Component) reportUndeployable(
 	c.EventBus().Publish(completed)
 }
 
+// retainFleet drops what the deployer keeps for pods that left the fleet.
+func (c *Component) retainFleet(endpoints []dataplane.Endpoint) {
+	c.plans.Retain(c.fleetPlanRefs(endpoints))
+	c.clients.Retain(endpoints)
+	c.retainHeldBlobs(endpoints)
+}
+
 func (c *Component) newDeployRequest(
 	occurrence *rendercycle.Occurrence,
 	identity *renderOccurrenceIdentity,
 	verify bool,
+	fleet []dataplane.Endpoint,
 ) *deployRequest {
 	if !sameOccurrence(occurrence, identity.occurrence) {
 		return nil
 	}
+	contents := contentsByPath(identity.plan)
 	return &deployRequest{
 		occurrence:       occurrence,
 		identity:         identity,
@@ -260,9 +269,10 @@ func (c *Component) newDeployRequest(
 		planID:           identity.plan.ID,
 		occurrenceProof:  identity.proof,
 		checksum:         identity.checksum,
-		contents:         contentsByPath(identity.plan),
+		contents:         contents,
 		patches:          newPatchMemo(),
 		blob:             encodePlanBlob(identity, c.Logger()),
+		blobs:            c.newBlobDelivery(contents, fleet),
 		token:            api.Token{LeaderEpoch: c.leaderEpoch(), RenderSeq: c.nextRenderSeq()},
 		validatedPlanFor: c.validatedPlanFor,
 		verify:           verify,

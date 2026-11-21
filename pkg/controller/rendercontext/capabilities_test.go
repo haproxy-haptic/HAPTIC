@@ -41,7 +41,7 @@ func TestCapabilitiesToMap_AllZeroHasEveryKey(t *testing.T) {
 		"supports_ssl_ca_files", "supports_ssl_crl_files",
 		"supports_http2", "supports_quic", "supports_quic_initial_rules",
 		"supports_log_profiles", "supports_traces", "supports_acme_providers",
-		"supports_runtime_maps", "supports_runtime_servers",
+		"supports_runtime_maps", "supports_runtime_servers", "supports_blobs",
 	}
 	for _, key := range expectedKeys {
 		val, ok := got[key]
@@ -74,6 +74,7 @@ func TestCapabilitiesToMap_PerFieldFlowsThroughVerbatim(t *testing.T) {
 		{name: "SupportsAcmeProviders -> supports_acme_providers", set: func(c *dataplane.Capabilities) { c.SupportsAcmeProviders = true }, wantKey: "supports_acme_providers"},
 		{name: "SupportsRuntimeMaps -> supports_runtime_maps", set: func(c *dataplane.Capabilities) { c.SupportsRuntimeMaps = true }, wantKey: "supports_runtime_maps"},
 		{name: "SupportsRuntimeServers -> supports_runtime_servers", set: func(c *dataplane.Capabilities) { c.SupportsRuntimeServers = true }, wantKey: "supports_runtime_servers"},
+		{name: "SupportsBlobs -> supports_blobs", set: func(c *dataplane.Capabilities) { c.SupportsBlobs = true }, wantKey: "supports_blobs"},
 	}
 
 	for _, tt := range tests {

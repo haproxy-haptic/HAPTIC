@@ -2047,6 +2047,8 @@ func CapabilitiesToMap(caps *dataplane.Capabilities) map[string]any {
 		// Runtime capabilities
 		"supports_runtime_maps":    caps.SupportsRuntimeMaps,
 		"supports_runtime_servers": caps.SupportsRuntimeServers,
+
+		"supports_blobs": caps.SupportsBlobs,
 	}
 }
 

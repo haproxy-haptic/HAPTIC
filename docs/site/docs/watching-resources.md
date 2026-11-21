@@ -422,8 +422,8 @@ returns a handle. Render the handle's `path` into the configuration that reads
 the file. Every new version has a new path, so a configuration that names the
 path changes when the blob changes.
 
-Blob sources need the controller flag `--blob-dir`. Without it, `blob.Fetch`
-returns an empty handle and logs why.
+Blob sources need the controller flag `--blob-dir`, which the chart sets with
+`blobs.enabled`. Without it, `blob.Fetch` returns an empty handle and logs why.
 
 ```
 {%- var db, err = blob.Fetch("https://example.com/GeoLite2-City.tar.gz", map[string]any{
@@ -459,6 +459,16 @@ accepted version, or stays empty. `err` is set only for an invalid declaration.
 `haptic_blob_fetch_errors_total` counts failed downloads, and the controller log
 names the URL and the error.
 
+Before a pod applies a configuration, the controller streams it every blob whose
+path the configuration contains and the pod doesn't hold yet, so a pod never
+loads a configuration that names a missing file. Each pod receives a version
+once. The validator sidecar reads blobs at the same path, so a plugin that
+checks its files sees the real one.
+
+While any HAProxy pod's agent can't store blobs, for example during an upgrade
+from a release without them, `blob.Fetch` returns an empty handle and downloads
+nothing. `capabilities.supports_blobs` reports whether the fleet stores blobs.
+
 ### Blob parameters
 
 The second argument is an options map. All keys are optional:
@@ -480,8 +490,10 @@ render. Admission checks don't download blobs: they see accepted versions only.
 In a validation test, an `httpResources` fixture for the URL is the stored blob,
 after unpacking: the handle carries the fixture's digest and size.
 
-The controller keeps the accepted blob of each source, the blob it replaced, and
-pending versions, and removes other files from `--blob-dir`.
+The controller keeps the accepted blob of each source, the blob it replaced,
+pending versions, and every blob a pod still holds, and removes other files from
+`--blob-dir`. A controller that lost a blob, for example to a restart, takes it
+back from a pod that holds it.
 
 ## Validating webhook scope
 

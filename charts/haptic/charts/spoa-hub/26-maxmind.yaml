@@ -1,0 +1,131 @@
+# SPOA hub library — GeoIP databases, batch 26.
+#
+# extraContext.maxmind.databases arrive as blobs (ADR-0041): blob.Fetch
+# downloads each one to the controller, which delivers the accepted version to
+# every HAProxy pod before the configuration that names it. The maxmind
+# plugin's params name each version's path, so a new version is a params
+# change and the hub reloads the plugin. A database without an accepted
+# version leaves its lookups out and requests pass unenriched.
+#
+# A template that reaches blob.Fetch renders without exact-cycle replay, so
+# _index.yaml drops util-maxmind-databases and the dispatch while the plugin is
+# off, and every other snippet reaches it through render_glob.
+
+templateSnippets:
+  # Resolves the databases and the lookups they serve. Emits nothing. Sets, in
+  # shared state:
+  #   gf["maxmindDatabases"]      name -> data-plane path, accepted versions only
+  #   gf["maxmindLookups"]        the lookups whose database has a version
+  #   gf["maxmindDatabaseBytes"]  the size of those versions
+  #   gf["maxmindMessage"]        the plugin's SPOE message
+  #
+  # Guarded on the shared key instead of shared.ComputeIfAbsent, which
+  # recovers panics and would swallow fail().
+  util-maxmind-databases:
+    template: |
+      {%- var _, _ = shared.ComputeIfAbsent("globalFeatures", func() any { return map[string]any{} }) -%}
+      {%- var gf = shared.Get("globalFeatures").(map[string]any) -%}
+      {%- if gf["maxmindLookups"] == nil -%}
+        {%%
+          var maxmind = extraContext | dig("maxmind") | fallback(map[string]any{})
+          var databases = maxmind | dig("databases") | fallback(map[string]any{})
+          var paths = map[string]string{}
+          var totalBytes = 0
+          for _, name := range keys(databases) {
+            var database = databases.(map[string]any)[name]
+            var options = map[string]any{
+              "interval": database | dig_string("24h", "refreshInterval"),
+              "timeout":  database | dig_string("5m", "timeout"),
+              "retries":  toint(database | dig("retries") | fallback(3)),
+              "unpack":   database | dig_string("none", "unpack"),
+            }
+            for _, key := range []string{"sha256", "member"} {
+              var value = database | dig_string("", key)
+              if value != "" {
+                options[key] = value
+              }
+            }
+            var maxSize = database | dig("maxSize")
+            if maxSize != nil {
+              options["maxSize"] = toint(maxSize)
+            }
+            var handle, fetchErr = blob.Fetch(database | dig_string("", "url"), options)
+            if fetchErr != nil {
+              fail("extraContext.maxmind.databases." + name + " is invalid: " + fetchErr.Error())
+            }
+            if handle.path != "" {
+              paths[name] = handle.path
+              totalBytes += int(handle.size)
+            }
+          }
+          var lookups = []any{}
+          for _, lookup := range maxmind | dig("lookups") | fallback([]any{}) | toSlice() {
+            if paths[lookup | dig_string("", "database")] != "" {
+              lookups = append(lookups, lookup)
+            }
+          }
+          var message = "geoip-enrich"
+          for _, plugin := range extraContext | dig("spoaHub", "plugins") | fallback([]any{}) | toSlice() {
+            if (plugin | dig_string("", "name")) == "maxmind" {
+              for _, candidate := range plugin | dig("messages") | fallback([]any{}) | toSlice() {
+                message = tostring(candidate)
+                break
+              }
+            }
+          }
+          gf["maxmindDatabases"] = paths
+          gf["maxmindLookups"] = lookups
+          gf["maxmindDatabaseBytes"] = totalBytes
+          gf["maxmindMessage"] = message
+        %%}
+      {%- end -%}
+
+  # The databases and lookups under the plugin's [plugins.params], and the
+  # memory they cost: the plugin reads each database into memory, and a reload
+  # holds the old and the new version.
+  util-maxmind-params:
+    template: |-
+      {%- macro MaxmindParams(memoryLimitMiB int) string %}
+        {{- render_glob "util-maxmind-databases" }}
+        {%- var _, _ = shared.ComputeIfAbsent("globalFeatures", func() any { return map[string]any{} }) %}
+        {%- var gf = shared.Get("globalFeatures").(map[string]any) %}
+        {%- var paths, _ = gf["maxmindDatabases"].(map[string]string) %}
+        {%- var lookups, _ = gf["maxmindLookups"].([]any) %}
+        {%- var databaseBytes, _ = gf["maxmindDatabaseBytes"].(int) %}
+        {%- var requiredMiB = 64 + 2*((databaseBytes + (1<<20) - 1) >> 20) %}
+        {%- if memoryLimitMiB > 0 && len(paths) > 0 && requiredMiB > memoryLimitMiB %}
+          {%- fail("The maxmind databases need about " + tostring(requiredMiB) + " MiB in the spoa-hub sidecar, above its " + tostring(memoryLimitMiB) + " MiB memory limit, so it would be OOM-killed on reload. Raise spoaHub.resources.limits.memory to at least " + tostring(requiredMiB) + "Mi.") %}
+        {%- end %}
+        {%- for _, name := range keys(paths) %}
+
+      [plugins.params.databases.{{ toJSON(name) }}]
+      path = {{ toJSON(paths[name]) }}
+        {%- end %}
+        {%- for _, lookup := range lookups %}
+
+      [[plugins.params.lookups]]
+      name = {{ toJSON(lookup | dig_string("", "name")) }}
+      message = {{ toJSON(gf["maxmindMessage"]) }}
+      database = {{ toJSON(lookup | dig_string("", "database")) }}
+      input = {{ toJSON(lookup | dig_string("ip", "input")) }}
+      path = [
+          {%- for i, segment := range lookup | dig("path") | fallback([]any{}) | toSlice() -%}
+            {%- if i > 0 -%}, {% end -%}
+            {{ toJSON(tostring(segment)) }}
+          {%- end -%}
+      ]
+      output_var = {{ toJSON(lookup | dig_string("", "outputVar")) }}
+        {%- end %}
+      {%- end macro %}
+
+  # Looks up the client address once per request while a lookup is usable; the
+  # results are txn.hub.maxmind.<outputVar>. Early, so later rules can use them.
+  frontend-spoe-filters-010-maxmind:
+    template: |
+      {%- var _ = render "util-maxmind-databases" %}
+      {%- var gf = shared.Get("globalFeatures").(map[string]any) %}
+      {%- var message = tostring(gf["maxmindMessage"]) %}
+      {%- var messages = toStringSlice(extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{})) %}
+      {%- if len(gf["maxmindLookups"].([]any)) > 0 && messages contains message %}
+      http-request send-spoe-group spoa-hub-{{ message }} {{ message }}-group
+      {%- end %}

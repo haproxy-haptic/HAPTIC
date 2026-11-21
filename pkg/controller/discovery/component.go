@@ -16,7 +16,7 @@
 //
 // It tracks the set of HAProxy pods reported by the resource watcher (via the
 // auto-injected haproxy-pods watcher), admits the ones whose agent answers
-// /v1/state — carrying the HAProxy version it reports — and publishes
+// /v1/state — carrying the HAProxy version and blob support it reports — and publishes
 // HAProxyPodsDiscoveredEvent / HAProxyPodTerminatedEvent so the deployer and
 // other consumers know which endpoints to talk to.
 package discovery
@@ -24,6 +24,7 @@ package discovery
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"sync"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/component"
@@ -32,6 +33,7 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/names"
 	coreconfig "github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
 	busevents "github.com/haproxy-haptic/HAPTIC/pkg/events"
 	"github.com/haproxy-haptic/HAPTIC/pkg/k8s/types"
 	"github.com/haproxy-haptic/HAPTIC/pkg/transportsecurity"
@@ -84,14 +86,29 @@ type endpointAuthority struct {
 	detectedMajorVersion int
 	detectedMinorVersion int
 	detectedFullVersion  string
+	acceptsBlobs         bool
 }
 
-// applyHAProxyVersion records what the pod's agent reported its HAProxy to be.
-// The controller derives the fleet's template capabilities and each pod's
-// runtime capabilities from it.
-func applyHAProxyVersion(endpoint *dataplane.Endpoint, version string) {
-	endpoint.DetectedFullVersion = version
-	parsed, err := dataplane.ParseVersionString(version)
+// agentReport is what admission keeps of a pod's /v1/state.
+type agentReport struct {
+	version      string
+	acceptsBlobs bool
+}
+
+func reportOf(state *api.State) agentReport {
+	return agentReport{
+		version:      state.HAProxy.Version,
+		acceptsBlobs: slices.Contains(state.Features, api.FeatureBlobs),
+	}
+}
+
+// applyAgentReport records what the pod's agent reported. The controller
+// derives the fleet's template capabilities and each pod's runtime
+// capabilities from it.
+func applyAgentReport(endpoint *dataplane.Endpoint, report agentReport) {
+	endpoint.AcceptsBlobs = report.acceptsBlobs
+	endpoint.DetectedFullVersion = report.version
+	parsed, err := dataplane.ParseVersionString(report.version)
 	if err != nil {
 		return
 	}
@@ -107,6 +124,7 @@ func endpointAuthorityOf(endpoint *dataplane.Endpoint) endpointAuthority {
 		detectedMajorVersion: endpoint.DetectedMajorVersion,
 		detectedMinorVersion: endpoint.DetectedMinorVersion,
 		detectedFullVersion:  endpoint.DetectedFullVersion,
+		acceptsBlobs:         endpoint.AcceptsBlobs,
 	}
 }
 
@@ -161,9 +179,9 @@ type Component struct {
 	lifecycleCtx         context.Context
 
 	// admitted maps an exact pod identity — namespace, name, UID, container
-	// fingerprint and URL — to the HAProxy version its agent reported. A
-	// restart or a new address is a different identity and is probed again.
-	admitted map[endpointIdentity]string
+	// fingerprint and URL — to what its agent reported. A restart or a new
+	// address is a different identity and is probed again.
+	admitted map[endpointIdentity]agentReport
 }
 
 // New creates a new Discovery event adapter component.
@@ -180,7 +198,7 @@ func New(eventBus *busevents.EventBus, logger *slog.Logger, options ...Option) *
 	c := &Component{
 		discoveredReplayer: leadership.NewStateReplayer[*events.HAProxyPodsDiscoveredEvent](eventBus),
 		lastEndpoints:      make(map[podIdentity]endpointAuthority),
-		admitted:           make(map[endpointIdentity]string),
+		admitted:           make(map[endpointIdentity]agentReport),
 	}
 	// The Base subscribes to the EventBus during construction (before
 	// EventBus.Start()). This ensures proper startup synchronization without

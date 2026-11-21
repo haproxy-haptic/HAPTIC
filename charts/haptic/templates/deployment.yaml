@@ -7,6 +7,8 @@
 {{- $webhookResourceTimeoutSeconds := include "haptic.webhook.resourceTimeoutSeconds" . | int }}
 {{- $validatorsEnabled := include "haptic.validators.enabled" . }}
 {{- $validators := $controller.validators }}
+{{- $blobsEnabled := include "haptic.blobs.enabled" . }}
+{{- $blobDir := include "haptic.blobs.dir" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -118,6 +120,12 @@ spec:
             # Coraza's filesystem probe needs writable /tmp with a read-only root filesystem.
             - name: validators-tmp
               mountPath: /tmp
+            {{- if $blobsEnabled }}
+            # A plugin validates a blob at the path the configuration names (ADR-0041).
+            - name: blobs
+              mountPath: {{ $blobDir }}
+              readOnly: true
+            {{- end }}
             {{- with $validators.extraVolumeMounts }}
             {{- tpl (toYaml .) $ | nindent 12 }}
             {{- end }}
@@ -170,6 +178,12 @@ spec:
               value: {{ include "haptic.webhook.serviceName" . }}
             - name: DEBUG_PORT
               value: {{ $ports.healthz | quote }}
+            {{- if $blobsEnabled }}
+            - name: BLOB_DIR
+              value: {{ $blobDir }}
+            - name: BLOB_MAX_SIZE
+              value: {{ .Values.blobs.maxSize | quote }}
+            {{- end }}
             - name: METRICS_PORT
               value: {{ $ports.metrics | quote }}
             {{- with $controller.startupProbe }}
@@ -244,6 +258,10 @@ spec:
             - name: validators-socket
               mountPath: {{ $validators.socketDir }}
             {{- end }}
+            {{- if $blobsEnabled }}
+            - name: blobs
+              mountPath: {{ $blobDir }}
+            {{- end }}
             {{- with $controller.extraVolumeMounts }}
             {{- tpl (toYaml .) $ | nindent 12 }}
             {{- end }}
@@ -273,6 +291,12 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 16Mi
+        {{- end }}
+        {{- if $blobsEnabled }}
+        # Disk-backed: one GeoIP database version is 60-130 MB.
+        - name: blobs
+          emptyDir:
+            sizeLimit: {{ .Values.blobs.sizeLimit }}
         {{- end }}
         {{- with $controller.extraVolumes }}
         {{- tpl (toYaml .) $ | nindent 8 }}

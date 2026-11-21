@@ -75,6 +75,7 @@ templateSnippets:
     template: |
       {%- import "util-waf-crs-directives" for CrsDirectives -%}
       {%- import "util-coraza-rule-sets" for CorazaRuleSetKey, CorazaDefaultWafReachable, CorazaMemoryGuard -%}
+      {%- import "util-maxmind-params" for MaxmindParams -%}
       {%- var hub = extraContext | dig("spoaHub", "hub") | fallback(map[string]any{}) -%}
       {%- var plugins = extraContext | dig("spoaHub", "plugins") | fallback([]any{}) | toSlice() -%}
       {%- var socketPath = extraContext | dig_string("/run/spoa/hub.sock", "spoaHub", "haproxy", "socketPath") -%}
@@ -90,11 +91,13 @@ templateSnippets:
       {{- render_glob "util-*-coraza-scan" -}}
       {{- render_glob "util-*-api-gateway-schemas" -}}
       {{- render_glob "util-*-sso-auth-providers" -}}
+      {{- render_glob "util-maxmind-databases" -}}
       {%- var _, _ = shared.ComputeIfAbsent("globalFeatures", func() any { return map[string]any{} }) -%}
       {%- var gf = shared.Get("globalFeatures").(map[string]any) -%}
       {%- var modsecApps = gf | dig("sphCorazaApps") | fallback([]any{}) | toSlice() -%}
       {%- var ssoProviders = gf | dig("ssoAuthProviders") | fallback([]any{}) | toSlice() -%}
       {%- var apiGatewaySchemas = gf | dig("apiGatewaySchemas") | fallback([]any{}) | toSlice() -%}
+      {%- var maxmindLookups = gf | dig("maxmindLookups") | fallback([]any{}) | toSlice() -%}
 
       {# plugin_dir is the bundled image's fixed layout and default_timeout_ms
           is a fallback deadline only used when a [[plugins]] entry omits
@@ -152,6 +155,11 @@ templateSnippets:
           var pMaxQueue = p | dig("maxQueue")
           var pQueueTimeoutMs = p | dig("queueTimeoutMs")
           var pAdaptiveConcurrency = p | dig("adaptiveConcurrency")
+          // The plugin refuses to start without a database: until one of
+          // extraContext.maxmind.databases has a version, it is left out.
+          if pName == "maxmind" && (p | dig_string("", "params")) == "" && len(maxmindLookups) == 0 {
+            continue
+          }
         %%}
         {#- Every plugin's messages list is static, straight from values.
             The mirror plugin uses a single `mirror` message that fans out
@@ -224,6 +232,9 @@ templateSnippets:
         {%- end %}
         {%- if pParams != "" %}
       {{ pParams | trimSpace() }}
+        {%- end %}
+        {%- if pName == "maxmind" %}
+          {{- MaxmindParams(toint(hub | dig("memoryLimitMiB") | fallback(0))) }}
         {%- end %}
         {%- if pName == "coraza" && len(modsecApps) > 0 %}
           {#- Per-app WAF instances. Vendor scans use ns/name app identities;

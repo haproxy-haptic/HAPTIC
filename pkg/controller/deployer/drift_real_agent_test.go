@@ -41,10 +41,17 @@ import (
 // returns the pod endpoint and the tree it writes.
 func startRealAgent(t *testing.T, podName string) (endpoint dataplane.Endpoint, baseDir string) {
 	t.Helper()
+	return startRealAgentWith(t, podName, "")
+}
+
+// startRealAgentWith also stores blobs in blobDir; empty leaves blobs off.
+func startRealAgentWith(t *testing.T, podName, blobDir string) (endpoint dataplane.Endpoint, baseDir string) {
+	t.Helper()
 	model := haproxytest.Start(t)
 	baseDir = t.TempDir()
 	ctx, cancel := context.WithCancel(t.Context())
 	agent, err := server.New(ctx, &server.Config{
+		BlobDir:      blobDir,
 		BaseDir:      baseDir,
 		ConfigFile:   "haproxy.cfg",
 		MasterSocket: model.MasterSocket(),

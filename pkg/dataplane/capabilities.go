@@ -41,11 +41,23 @@ type Capabilities struct {
 	// Runtime capabilities
 	SupportsRuntimeMaps    bool // runtime map operations (3.0+)
 	SupportsRuntimeServers bool // runtime server operations (3.0+)
+
+	// SupportsBlobs reports that every pod's agent stores blobs (ADR-0041),
+	// whatever its HAProxy version. blob.Fetch returns no handle without it.
+	SupportsBlobs bool
 }
 
-// CapabilitiesFromVersion computes what a fleet running v supports. The
-// controller's own binary seeds the value at startup; the deployer replaces it
-// with the fleet minimum once the pods have reported.
+// LocalCapabilities is what a fleet of this release's agents running HAProxy v
+// supports: the seed from the controller's own binary until the pods have
+// reported, and the answer for renders that have no fleet.
+func LocalCapabilities(v *Version) Capabilities {
+	capabilities := CapabilitiesFromVersion(v)
+	capabilities.SupportsBlobs = v != nil
+	return capabilities
+}
+
+// CapabilitiesFromVersion computes what HAProxy v supports. The deployer
+// derives the fleet's capabilities from its lowest reported version.
 func CapabilitiesFromVersion(v *Version) Capabilities {
 	if v == nil {
 		return Capabilities{} // All false - safest default

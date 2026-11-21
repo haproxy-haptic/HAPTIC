@@ -192,3 +192,17 @@ func TestCapabilitiesFromVersion_GeneralStorageThreshold(t *testing.T) {
 			"SupportsGeneralStorage for v%d.%d", tt.major, tt.minor)
 	}
 }
+
+// Blob support is a fact about the agents, not HAProxy: this release's agents
+// store blobs, so the seed and the offline answer say so, while a version alone
+// says nothing about them.
+func TestLocalCapabilities_AgentsOfThisReleaseStoreBlobs(t *testing.T) {
+	version := &Version{Major: 3, Minor: 2, Full: "3.2.0"}
+
+	local := LocalCapabilities(version)
+
+	assert.True(t, local.SupportsBlobs)
+	assert.False(t, CapabilitiesFromVersion(version).SupportsBlobs)
+	local.SupportsBlobs = false
+	assert.Equal(t, CapabilitiesFromVersion(version), local, "the HAProxy flags come from the version alone")
+}

@@ -114,6 +114,7 @@ func TestEndpointAuthorityIncludesConnectionAndPodIdentity(t *testing.T) {
 		{name: "major version", mutate: func(endpoint *dataplane.Endpoint) { endpoint.DetectedMajorVersion = 4 }},
 		{name: "minor version", mutate: func(endpoint *dataplane.Endpoint) { endpoint.DetectedMinorVersion = 3 }},
 		{name: "full version", mutate: func(endpoint *dataplane.Endpoint) { endpoint.DetectedFullVersion = "3.2.2" }},
+		{name: "blob support", mutate: func(endpoint *dataplane.Endpoint) { endpoint.AcceptsBlobs = true }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

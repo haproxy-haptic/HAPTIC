@@ -15,6 +15,8 @@
 package deployer
 
 import (
+	"slices"
+
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/events"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
 )
@@ -26,9 +28,10 @@ type FleetCapabilitiesSink interface {
 }
 
 // publishFleetCapabilities re-sources the template `capabilities` input from
-// the fleet's lowest reported HAProxy version, so a render never uses a
-// feature the oldest pod would reject. A change triggers one reconciliation:
-// the value only reaches templates through a render.
+// the fleet's lowest reported HAProxy version and from whether every agent
+// stores blobs, so a render never uses a feature the oldest pod would reject.
+// A change triggers one reconciliation: the value only reaches templates
+// through a render.
 func (s *DeploymentScheduler) publishFleetCapabilities(endpoints []dataplane.Endpoint) {
 	if s.capabilities == nil {
 		return
@@ -37,18 +40,22 @@ func (s *DeploymentScheduler) publishFleetCapabilities(endpoints []dataplane.End
 	if version == nil {
 		return
 	}
+	capabilities := dataplane.CapabilitiesFromVersion(version)
+	capabilities.SupportsBlobs = !slices.ContainsFunc(endpoints, func(endpoint dataplane.Endpoint) bool {
+		return !endpoint.AcceptsBlobs
+	})
 
 	s.mu.Lock()
-	changed := s.lastFleetVersion != version.Full
-	s.lastFleetVersion = version.Full
+	changed := s.lastFleetCapabilities == nil || *s.lastFleetCapabilities != capabilities
+	s.lastFleetCapabilities = &capabilities
 	s.mu.Unlock()
 	if !changed {
 		return
 	}
 
-	s.logger.Info("Fleet HAProxy version changed, re-sourcing template capabilities",
-		"version", version.Full, "pods", len(endpoints))
-	s.capabilities.SetCapabilities(dataplane.CapabilitiesFromVersion(version))
+	s.logger.Info("Fleet capabilities changed, re-sourcing template capabilities",
+		"version", version.Full, "blobs", capabilities.SupportsBlobs, "pods", len(endpoints))
+	s.capabilities.SetCapabilities(capabilities)
 	s.eventBus.Publish(events.NewReconciliationTriggeredEvent(
 		"fleet_capabilities_changed", false, events.WithNewCorrelation()))
 }

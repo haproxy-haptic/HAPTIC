@@ -42,6 +42,7 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/testutil"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/typebootstrap"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
+	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane"
 	busevents "github.com/haproxy-haptic/HAPTIC/pkg/events"
 	purehttpstore "github.com/haproxy-haptic/HAPTIC/pkg/httpstore"
 	k8sstore "github.com/haproxy-haptic/HAPTIC/pkg/k8s/store"
@@ -110,6 +111,8 @@ func newAcceptanceHarnessWithConfig(t *testing.T, pageURL string, cfg *config.Co
 	component := controllerhttpstore.New(bus, logger, 0)
 	service := renderer.NewRenderService(&renderer.RenderServiceConfig{
 		Engine: engine, Config: cfg, Logger: logger, HTTPStoreComponent: component,
+		// A fleet of this release, whose agents store blobs.
+		Capabilities:               dataplane.Capabilities{SupportsBlobs: true},
 		ColdRendersRunToCompletion: true,
 	})
 	t.Cleanup(func() { _ = service.RetireIncrementalCache() })

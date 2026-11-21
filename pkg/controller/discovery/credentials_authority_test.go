@@ -66,7 +66,7 @@ func TestCredentialsUpdatedPublishesFreshEndpointCredentials(t *testing.T) {
 	component.hasDataplanePort = true
 	component.initialDiscoveryDone = true
 	component.discovery = &Discovery{dataplanePort: 5555}
-	component.admitted[identity] = "3.4.3"
+	component.admitted[identity] = agentReport{version: "3.4.3"}
 	component.mu.Unlock()
 
 	eventChannel := bus.Subscribe("credential-authority-test", 10)
@@ -120,7 +120,7 @@ func TestCredentialsUpdateCannotBeOverwrittenByAnOlderDiscoveryPass(t *testing.T
 	}
 	component.hasCredentials = true
 	component.discovery = &Discovery{dataplanePort: 5555}
-	component.admitted[identity] = "3.4.3"
+	component.admitted[identity] = agentReport{version: "3.4.3"}
 	component.mu.Unlock()
 
 	eventChannel := bus.Subscribe("ordered-credential-authority-test", 10)
@@ -194,7 +194,7 @@ func TestDataplanePortUpdateCannotBeOverwrittenByAnOlderDiscoveryPass(t *testing
 	}
 	component.hasCredentials = true
 	component.discovery = &Discovery{dataplanePort: 5555}
-	component.admitted[oldIdentity] = "3.4.3"
+	component.admitted[oldIdentity] = agentReport{version: "3.4.3"}
 	component.mu.Unlock()
 
 	eventChannel := bus.Subscribe("ordered-port-authority-test", 10)

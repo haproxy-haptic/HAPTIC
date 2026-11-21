@@ -872,7 +872,7 @@ func setupValidationPaths(ctx context.Context, configSpec *v1alpha1.HAProxyTempl
 	if err != nil {
 		return nil, dataplane.Capabilities{}, nil, nil, fmt.Errorf("detecting local HAProxy version: %w\nHint: Ensure 'haproxy' is in PATH", err)
 	}
-	capabilities = dataplane.CapabilitiesFromVersion(localVersion)
+	capabilities = dataplane.LocalCapabilities(localVersion)
 
 	// Create temporary directory
 	tempDir, err := os.MkdirTemp("", "haproxy-validate-*")
