@@ -468,7 +468,6 @@ They live in `pkg/dataplane/agent/api/limits.go` and are asserted at both ends.
 | `MaxPendingBackendDeletes` | 100 | Queued backend deletes per pod. |
 | `MaxMapDelRepeat` | 64 | `del map` calls for one key. |
 | `MaxRequiredBlobs` | 256 | Blobs one manifest requires. |
-| `DefaultMaxBlobBytes` | 256 MiB | One blob, unless `--blob-max-size` says otherwise. |
 
 ## Metrics
 

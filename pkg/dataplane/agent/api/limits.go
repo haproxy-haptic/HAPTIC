@@ -38,7 +38,6 @@ const (
 	MaxInventoryEntries      = 4096
 	MaxMapEntries            = 1 << 18 // one map's entries; the design target is one per route
 	MaxRequiredBlobs         = 256
-	DefaultMaxBlobBytes      = 256 << 20 // one blob; the agent's --blob-max-size default
 )
 
 // A per-command round trip is bounded by client-native's own 30 s task

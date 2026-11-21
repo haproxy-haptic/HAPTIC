@@ -31,8 +31,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/logging"
-	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/server"
 	"github.com/haproxy-haptic/HAPTIC/pkg/metrics"
 	"github.com/haproxy-haptic/HAPTIC/pkg/transportsecurity"
@@ -125,7 +125,7 @@ func init() {
 	agentCmd.Flags().StringVar(&agentBlobDir, "blob-dir", "",
 		"Absolute directory of the content-addressed blobs the controller puts; empty disables blobs")
 	agentCmd.Flags().StringVar(&agentBlobMaxSize, "blob-max-size",
-		resource.NewQuantity(api.DefaultMaxBlobBytes, resource.BinarySI).String(),
+		resource.NewQuantity(blob.DefaultMaxSize, resource.BinarySI).String(),
 		"Largest blob a put may carry, as a Kubernetes quantity")
 }
 

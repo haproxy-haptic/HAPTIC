@@ -82,7 +82,7 @@ type Config struct {
 	DrainIgnoreFrontends []string
 	// BlobDir is the blob directory (ADR-0041); empty turns blobs off.
 	BlobDir string
-	// BlobMaxSize bounds one blob. Zero means api.DefaultMaxBlobBytes.
+	// BlobMaxSize bounds one blob. Zero means blob.DefaultMaxSize.
 	BlobMaxSize int64
 }
 

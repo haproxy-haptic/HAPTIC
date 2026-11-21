@@ -16,20 +16,13 @@ package api
 
 import (
 	"fmt"
-	"regexp"
+
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 )
 
 // BlobPath is the URL path of one blob, named by its lowercase hex SHA-256.
 func BlobPath(sha256 string) string {
 	return PathBlobs + "/" + sha256
-}
-
-// BlobDigestPattern matches a blob name: 64 lowercase hex digits.
-var BlobDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
-// ValidBlobDigest reports whether s is a blob name.
-func ValidBlobDigest(s string) bool {
-	return BlobDigestPattern.MatchString(s)
 }
 
 // ValidateRequiredBlobs checks RequiredBlobs against the contract: bounded,
@@ -40,7 +33,7 @@ func (m *Manifest) ValidateRequiredBlobs() error {
 	}
 	seen := make(map[string]struct{}, len(m.RequiredBlobs))
 	for _, digest := range m.RequiredBlobs {
-		if !ValidBlobDigest(digest) {
+		if !blob.ValidDigest(digest) {
 			return fmt.Errorf("required blob %q is not a lowercase hex SHA-256", digest)
 		}
 		if _, duplicate := seen[digest]; duplicate {

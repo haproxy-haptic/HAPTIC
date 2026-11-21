@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
 )
 
@@ -236,7 +237,7 @@ func (s *Store) entries() ([]entry, error) {
 	}
 	out := make([]entry, 0, len(dirEntries))
 	for _, d := range dirEntries {
-		if !d.Type().IsRegular() || !api.BlobDigestPattern.MatchString(d.Name()) {
+		if !d.Type().IsRegular() || !blob.DigestPattern.MatchString(d.Name()) {
 			continue
 		}
 		info, err := d.Info()
@@ -254,7 +255,7 @@ func (s *Store) entries() ([]entry, error) {
 // path is the only way to a blob's file: a name that is not a digest never
 // reaches the filesystem.
 func (s *Store) path(digest string) (string, error) {
-	if !api.BlobDigestPattern.MatchString(digest) {
+	if !blob.DigestPattern.MatchString(digest) {
 		return "", ErrInvalidDigest
 	}
 	return filepath.Join(s.dir, digest), nil

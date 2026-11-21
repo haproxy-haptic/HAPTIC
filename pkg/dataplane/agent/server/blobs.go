@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/blobs"
 )
@@ -41,7 +42,7 @@ const blobTransferTimeout = 10 * time.Minute
 func openBlobs(cfg *Config) (*blobs.Store, error) {
 	maxSize := cfg.BlobMaxSize
 	if maxSize == 0 {
-		maxSize = api.DefaultMaxBlobBytes
+		maxSize = blob.DefaultMaxSize
 	}
 	store, err := blobs.New(cfg.BlobDir, maxSize)
 	if err != nil {
@@ -54,7 +55,7 @@ func openBlobs(cfg *Config) (*blobs.Store, error) {
 // and only becomes reachable through a later apply that requires it.
 func (s *Server) handlePutBlob(w http.ResponseWriter, r *http.Request) {
 	digest := r.PathValue("sha256")
-	if !api.ValidBlobDigest(digest) {
+	if !blob.ValidDigest(digest) {
 		writeJSON(w, http.StatusBadRequest, api.ApplyError{Stage: stageRequest, Message: blobs.ErrInvalidDigest.Error()})
 		return
 	}
@@ -107,7 +108,7 @@ func (b *requestBody) Read(p []byte) (int, error) {
 // take it back from a pod.
 func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	digest := r.PathValue("sha256")
-	if !api.ValidBlobDigest(digest) {
+	if !blob.ValidDigest(digest) {
 		writeJSON(w, http.StatusBadRequest, api.ApplyError{Stage: stageRequest, Message: blobs.ErrInvalidDigest.Error()})
 		return
 	}

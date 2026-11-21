@@ -20,14 +20,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 )
 
 // The chart passes blobs.maxSize as a Kubernetes quantity.
 func TestParseBlobMaxSize(t *testing.T) {
 	defaultSize, err := parseBlobMaxSize(agentCmd.Flags().Lookup("blob-max-size").DefValue)
 	require.NoError(t, err)
-	assert.Equal(t, int64(api.DefaultMaxBlobBytes), defaultSize)
+	assert.Equal(t, blob.DefaultMaxSize, defaultSize)
 
 	size, err := parseBlobMaxSize("300Mi")
 	require.NoError(t, err)

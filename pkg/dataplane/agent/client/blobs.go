@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
 )
 
@@ -46,7 +47,7 @@ var ErrBlobDigestMismatch = errors.New("agent client: blob content does not matc
 // agent verifies the digest and keeps nothing on a mismatch. r is read once; a
 // refused connection is retried only while nothing of it was read.
 func (c *Client) PutBlob(ctx context.Context, digest string, size int64, r io.Reader) error {
-	if !api.ValidBlobDigest(digest) {
+	if !blob.ValidDigest(digest) {
 		return fmt.Errorf("agent client: blob name %q is not a lowercase hex SHA-256", digest)
 	}
 	if size < 0 || r == nil {
@@ -96,7 +97,7 @@ func (o *onceReader) Read(p []byte) (int, error) {
 // size. The reader returns ErrBlobDigestMismatch instead of io.EOF when the
 // content does not hash to digest; the caller closes it.
 func (c *Client) GetBlob(ctx context.Context, digest string) (io.ReadCloser, int64, error) {
-	if !api.ValidBlobDigest(digest) {
+	if !blob.ValidDigest(digest) {
 		return nil, 0, fmt.Errorf("agent client: blob name %q is not a lowercase hex SHA-256", digest)
 	}
 	ctx, cancel := context.WithTimeout(ctx, blobTimeout)

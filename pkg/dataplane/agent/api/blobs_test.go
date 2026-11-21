@@ -24,12 +24,8 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/pkg/dataplane/agent/api"
 )
 
-func TestValidBlobDigest(t *testing.T) {
+func TestBlobPath(t *testing.T) {
 	valid := strings.Repeat("0123456789abcdef", 4)
-	assert.True(t, api.ValidBlobDigest(valid))
-	for _, name := range []string{"", valid[:63], valid + "0", strings.ToUpper(valid), "../" + valid[3:], valid[:63] + "g"} {
-		assert.False(t, api.ValidBlobDigest(name), name)
-	}
 	assert.Equal(t, "/v1/blobs/"+valid, api.BlobPath(valid))
 }
 

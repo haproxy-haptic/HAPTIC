@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -174,18 +175,13 @@ func DecodeRef(content string) (Ref, bool) {
 	return Ref{Digest: digest, Size: n}, true
 }
 
+// DigestPattern matches a lowercase hex SHA-256 digest. Path builders guard
+// with it directly, so static analysis sees the name sanitised.
+var DigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 // ValidDigest reports whether digest is a lowercase hex SHA-256 digest.
 func ValidDigest(digest string) bool {
-	if len(digest) != digestLength {
-		return false
-	}
-	for i := range len(digest) {
-		c := digest[i]
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
+	return DigestPattern.MatchString(digest)
 }
 
 // ReferencedDigests returns the sorted digests whose data-plane path occurs in
