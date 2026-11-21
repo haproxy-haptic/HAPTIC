@@ -453,6 +453,45 @@ validationTests:
       # promoted node to replicate from itself — leaving the tier with no primary.
       - {type: contains, target: "k8s:rate-limit-store", pattern: 'replica-announce-ip "\$self"'}
 
+  test-haptic-rate-limit-store-pod-security-restricted:
+    description: >-
+      The store's pods meet Pod Security Admission's restricted level, so a namespace
+      that enforces it (as hardened clusters label their ingress namespaces) admits
+      them: non-root as the image's valkey user, no privilege escalation, no
+      capabilities, the runtime's default seccomp profile and a read-only root
+      filesystem, with emptyDir volumes for Valkey's working directory (a replica
+      writes its full-sync RDB there) and Sentinel's rewritten config.
+    extraContext:
+      rateLimit:
+        shared:
+          enabled: true
+          managedStore:
+            enabled: true
+            serviceName: haptic-rate-limit-store
+            namespace: default
+            replicas: 3
+    fixtures:
+      ingresses: []
+    assertions:
+      - {type: contains, target: "k8s:rate-limit-store", pattern: "runAsNonRoot: true"}
+      - {type: contains, target: "k8s:rate-limit-store", pattern: "runAsUser: 999"}
+      - {type: contains, target: "k8s:rate-limit-store", pattern: "fsGroup: 1000"}
+      - {type: contains, target: "k8s:rate-limit-store", pattern: "type: RuntimeDefault"}
+      - type: match_count
+        target: "k8s:rate-limit-store"
+        pattern: "allowPrivilegeEscalation: false"
+        expected: "2"
+      - type: match_count
+        target: "k8s:rate-limit-store"
+        pattern: 'drop: \["ALL"\]'
+        expected: "2"
+      - type: match_count
+        target: "k8s:rate-limit-store"
+        pattern: "readOnlyRootFilesystem: true"
+        expected: "2"
+      - {type: contains, target: "k8s:rate-limit-store", pattern: "mountPath: /data"}
+      - {type: contains, target: "k8s:rate-limit-store", pattern: "mountPath: /sentinel"}
+
   test-haptic-rate-limit-store-requires-shared-opt-in:
     description: >-
       managedStore.enabled alone does NOT deploy the store — the render gate must match
