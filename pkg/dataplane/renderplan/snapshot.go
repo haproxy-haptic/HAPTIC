@@ -1309,7 +1309,7 @@ func ownServers(source []Server) []Server {
 		result[index] = Server{
 			Name: server.Name, Address: server.Address,
 			Port: server.Port, Disabled: server.Disabled, GUID: server.GUID,
-			Comment: server.Comment, Extra: ownKeywordArgs(server.Extra),
+			Comment: server.Comment, Extra: ownKeywordArgs(server.Extra), Template: server.Template,
 		}
 		if server.Weight != nil {
 			weight := *server.Weight
@@ -1332,6 +1332,7 @@ func exactServers(left, right []Server) bool {
 		if leftServer.Name != rightServer.Name || leftServer.Address != rightServer.Address ||
 			leftServer.Port != rightServer.Port || leftServer.Disabled != rightServer.Disabled ||
 			leftServer.GUID != rightServer.GUID || leftServer.Comment != rightServer.Comment ||
+			leftServer.Template != rightServer.Template ||
 			!exactIntPointers(leftServer.Weight, rightServer.Weight) ||
 			!exactKeywordArgs(leftServer.Extra, rightServer.Extra) {
 			return false
