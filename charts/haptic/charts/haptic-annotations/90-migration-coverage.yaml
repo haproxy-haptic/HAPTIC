@@ -273,6 +273,9 @@ _migrationCoverage:
       haproxy-haptic.org/apex-www-redirect:
         status: supported
         note: "Issues a `301` redirect between the apex domain and its `www` subdomain, in both directions, preserving the request path and scheme."
+      haproxy-haptic.org/externalname-slots:
+        status: supported
+        note: "Integer 1-64 → the server-template slot count of the Ingress's ExternalName Service backends (default 8); other backends ignore it. Out of range is rejected at admission and warned at reconcile, keeping the default."
       haproxy-haptic.org/fullconn:
         status: supported
         note: "Emits `fullconn <n>` on the backend. HAProxy uses this threshold to scale each server's `minconn`/`maxconn` range as backend load rises. For a hard per-server cap, use `maxconn-server`."

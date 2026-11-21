@@ -287,3 +287,108 @@ validationTests:
       - type: haproxy_valid
       - {type: contains, target: haproxy.cfg, pattern: "server echo-0 10\\.0\\.0\\.7:8080 .*maxconn 750"}
       - {type: not_contains, target: haproxy.cfg, pattern: "default-server [^\\n]*maxconn"}
+
+  test-haptic-externalname-slots:
+    description: >-
+      haproxy-haptic.org/externalname-slots sets the server-template slot count
+      of the Ingress's own ExternalName backend; another Ingress for the same
+      Service keeps the default of 8. The count sits on the server line, not in
+      the profile, so both backends still share one profile, whose
+      default-server check reaches every slot.
+    fixtures:
+      services:
+        - apiVersion: v1
+          kind: Service
+          metadata: {namespace: default, name: s3}
+          spec:
+            type: ExternalName
+            externalName: files.s3.example.net
+            ports:
+              - {name: https, port: 443}
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: wide, annotations: {haproxy-haptic.org/externalname-slots: "16"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: wide.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: s3, port: {number: 443}}}}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: narrow}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: narrow.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: s3, port: {number: 443}}}}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend default_wide_svc_s3_https from haptic-be-\w+\n  guid be:default_wide_svc_s3_https\n  server-template s3 16 files\.s3\.example\.net:443 resolvers dns-pool '}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend default_narrow_svc_s3_https from haptic-be-\w+\n  guid be:default_narrow_svc_s3_https\n  server-template s3 8 files\.s3\.example\.net:443 resolvers dns-pool '}
+      - {type: match_count, target: haproxy.cfg, expected: "1", pattern: '(?m)^defaults haptic-be-\w+ from haptic-base\n  default-server check$'}
+
+  test-haptic-externalname-slots-out-of-range-admission-rejected:
+    description: An externalname-slots value above 64 is rejected at admission.
+    extraContext: {renderMode: admission}
+    fixtures:
+      services:
+        - apiVersion: v1
+          kind: Service
+          metadata: {namespace: default, name: s3}
+          spec: {type: ExternalName, externalName: files.s3.example.net, ports: [{name: https, port: 443}]}
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: wide, annotations: {haproxy-haptic.org/externalname-slots: "65"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: wide.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: s3, port: {number: 443}}}}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: "sets 'haproxy-haptic.org/externalname-slots' to '65', which isn't an integer from 1 to 64; the Ingress is rejected"}
+
+  test-haptic-externalname-slots-invalid-reconcile-keeps-default:
+    description: >-
+      On reconcile an invalid externalname-slots value (0, or not a number) warns
+      on the Ingress and its ExternalName backend keeps the default of 8 slots.
+    extraContext: {renderMode: reconcile}
+    fixtures:
+      services:
+        - apiVersion: v1
+          kind: Service
+          metadata: {namespace: default, name: s3}
+          spec: {type: ExternalName, externalName: files.s3.example.net, ports: [{name: https, port: 443}]}
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: zero, annotations: {haproxy-haptic.org/externalname-slots: "0"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: zero.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: s3, port: {number: 443}}}}
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: {namespace: default, name: word, annotations: {haproxy-haptic.org/externalname-slots: "eight"}}
+          spec:
+            ingressClassName: haptic
+            rules:
+              - host: word.example.com
+                http:
+                  paths:
+                    - {path: /, pathType: Prefix, backend: {service: {name: s3, port: {number: 443}}}}
+    assertions:
+      - type: haproxy_valid
+      - {type: match_count, target: haproxy.cfg, expected: "2", pattern: '(?m)^  server-template s3 8 files\.s3\.example\.net:443 '}
+      - {type: contains, target: events, pattern: "InvalidAnnotationValue[^\\n]*default/zero[^\\n]*to '0', which isn't an integer from 1 to 64; its ExternalName backends keep the default of 8 slots"}
+      - {type: contains, target: events, pattern: "InvalidAnnotationValue[^\\n]*default/word[^\\n]*to 'eight'"}

@@ -300,6 +300,12 @@ templateSnippets:
           if v := serverOpts | dig("maxconn"); v != nil {
             maxconn = []any{map[string]any{"name": "maxconn", "args": []any{tostring(toint(v))}}}
           }
+          // An ExternalName backend's server-template slots; a resource library
+          // validates its own setting (haproxy-haptic.org/externalname-slots).
+          var externalNameSlots = 8
+          if v := serverOpts | dig("externalNameSlots"); v != nil && toint(v) > 0 {
+            externalNameSlots = toint(v)
+          }
           var bkName = ""
           if backendName != nil {
             bkName = tostring(backendName)
@@ -401,7 +407,7 @@ templateSnippets:
                 "name": srvName, "address": externalName, "port": resolvedPort,
                 "comment": "ExternalName: " + externalName,
                 "extra": extra,
-                "template": 4,
+                "template": externalNameSlots,
               }
               if weight != nil {
                 record["weight"] = weight

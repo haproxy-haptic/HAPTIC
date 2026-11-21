@@ -8,6 +8,7 @@
 #   - per-server maxconn / maxqueue + soft fullconn (haproxy-ingress)
 #   - pod-maxconn + scale-server-slots (haproxytech)
 #   - initial-weight (haproxy-ingress)
+#   - externalname-slots (server-template slots of an ExternalName backend)
 #   - proxy-protocol send-proxy variants (haproxytech vocabulary + fail-on-invalid)
 #   - health checks: check toggle, httpchk uri, port, interval, fall, rise
 #   - agent checks (haproxy-ingress)
@@ -345,6 +346,36 @@ templateSnippets:
             {{- fail("Invalid value '" + weight + "' for annotation 'haproxy-haptic.org/initial-weight' on Ingress '" + key + "'. Must be 0-256.") -}}
           {%- end %}
           {%- serverOpts["flags"] = append(serverOpts | dig("flags") | toSlice(), "weight " + tostring(val)) %}
+        {%- end %}
+      {%- end -%}
+
+  backend-directives-836-haptic-externalname-slots:
+    template: |
+      {#
+        HAPTIC ExternalName Server Slots
+
+        Sets how many server-template slots an ExternalName Service backend gets
+        (kubernetes-backends, default 8). Each slot holds one address of the DNS
+        answer; a slot keeps its address while it stays in the answer or within
+        dns-pool's hold, even when its health check fails, so more slots keep the
+        backend up when several addresses fail together. Other backends ignore it.
+
+        Annotation: haproxy-haptic.org/externalname-slots (integer 1-64)
+
+        An invalid value is rejected at admission and warned at reconcile
+        (WebhookRejectOrWarn), where the backend keeps the default.
+      #}
+      {%- import "util-webhook-reject-or-warn" for WebhookOutcomeMessage, WebhookRejectOrWarn -%}
+      {%- if ingress != nil %}
+        {%- var slots = ingress.Metadata.Annotations["haproxy-haptic.org/externalname-slots"] %}
+        {%- if slots != "" %}
+          {%- if regex_search(slots, "^[0-9]{1,2}$") && toint(slots) >= 1 && toint(slots) <= 64 %}
+            {%- serverOpts["externalNameSlots"] = toint(slots) %}
+          {%- else %}
+            {%- _ = WebhookRejectOrWarn(ingress, "InvalidAnnotationValue", WebhookOutcomeMessage(
+              "Ingress " + ingress.Metadata.Namespace + "/" + ingress.Metadata.Name + " sets 'haproxy-haptic.org/externalname-slots' to '" + slots + "', which isn't an integer from 1 to 64",
+              "the Ingress is rejected", "its ExternalName backends keep the default of 8 slots", "Set an integer from 1 to 64.")) %}
+          {%- end %}
         {%- end %}
       {%- end -%}
 

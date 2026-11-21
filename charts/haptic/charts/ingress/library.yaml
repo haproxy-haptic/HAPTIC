@@ -2741,7 +2741,14 @@ validationTests:
         pattern: '(?m)^resolvers dns\n\s+parse-resolv-conf\n\s+accepted_payload_size 8192\n+resolvers dns-pool\n\s+parse-resolv-conf\n\s+accepted_payload_size 8192\n\s+hold obsolete 300s$'
       - type: contains
         target: haproxy.cfg
-        pattern: '(?m)^\s+server-template \S+ 4 files\.s3\.example\.net:443 resolvers dns-pool init-addr last,libc,none  # ExternalName: files\.s3\.example\.net$'
+        pattern: '(?m)^\s+server-template \S+ 8 files\.s3\.example\.net:443 resolvers dns-pool init-addr last,libc,none  # ExternalName: files\.s3\.example\.net$'
       - type: not_contains
         target: haproxy.cfg
         pattern: 'server-template [^\n]* guid '
+      # The profile's default-server check reaches every slot; nothing turns it off.
+      - type: contains
+        target: haproxy.cfg
+        pattern: '(?m)^defaults haptic-be-\w+ from haptic-base\n  default-server check$'
+      - type: not_contains
+        target: haproxy.cfg
+        pattern: 'server-template [^\n]*no-check'
