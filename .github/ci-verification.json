@@ -134,6 +134,7 @@
       "charts/haptic/CHANGELOG.md"
     ],
     "patterns": [
+      "docs/adr/[0-9]{4}-[^/]*\\.md",
       "docs/site/docs/.*\\.md",
       "docs/(landing|shared)/.+",
       "docs/site/mkdocs\\.yml",
