@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `blob.Fetch(url, options)` downloads a binary file, such as a GeoIP database, to the controller's disk with the new `--blob-dir` flag. It refreshes, unpacks gzip or one tar.gz member, enforces `maxSize` (capped by `--blob-max-size`) and an optional SHA-256 pin, and accepts each version like `http.Fetch` content. The handle's `path` is where the data plane reads the blob. Metrics `haptic_blob_fetch_errors_total` and `haptic_blob_content_revoked_total`, and the `BlobContentRevoked` Warning Event, report failures ([#743](https://github.com/haproxy-haptic/HAPTIC/issues/743)).
+
 - The WAF guide includes a gRPC policy that enforces metadata rules while preserving client and server streaming.
 - The access log's `waf_rule_ids` names the scoring rules behind a WAF verdict, most severe first (`930130,920420`). In CRS's anomaly mode `waf_rule_id` is the scoring rule 949110 for every request over the threshold ([#692](https://github.com/haproxy-haptic/HAPTIC/issues/692)). It needs a coraza plugin with the `rule_ids` variable (haproxy-haptic/haproxy-spoa-hub-plugin-coraza#9); with an older plugin the field stays empty and is dropped.
 - Templates can declare a map sensitive with `planRegistry.SensitiveMap()` or the `RegisterMap` option `sensitive`. HAPTIC publishes it as a Kubernetes Secret, keeps its entries out of `HAProxyCfg`, `currentFiles`, and CLI output, and still delivers it to HAProxy. Validation tests read it through the `sensitive-map:<name>` target.

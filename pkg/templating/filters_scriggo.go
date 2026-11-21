@@ -122,6 +122,7 @@ func registerScriggoRuntimeVars(decl native.Declarations) {
 	decl[declShared] = (*SharedContext)(nil)
 	decl["extraContext"] = (*map[string]any)(nil)
 	decl[declHTTP] = (*HTTPFetcher)(nil)                    // HTTP store for fetching remote content
+	decl[declBlob] = newBlobPackage()                       // blob.Fetch, which declares blob sources through http
 	decl["runtimeEnvironment"] = (*RuntimeEnvironment)(nil) // Runtime environment info (GOMAXPROCS, etc.)
 	decl[declRenderMode] = (*string)(nil)                   // "reconcile" (warn) | "admission" (fail); see rendercontext.RenderMode
 	decl["admissionSubject"] = (*map[string]any)(nil)       // Store aliases and identity of the resource under admission review; empty map otherwise

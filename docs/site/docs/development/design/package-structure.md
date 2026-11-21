@@ -19,6 +19,8 @@ haptic/
 │       └── internal/migratecheck/ # Ingress migration report classifier
 ├── pkg/
 │   ├── apis/                # CRD type definitions (HAProxyTemplateConfig, HAProxyCfg, ...)
+│   ├── blob/                # Blob declarations, references, and their data-plane path
+│   ├── blobstore/           # Content-addressed blob files on the controller's disk
 │   ├── compression/         # zstd helpers used by CRD content compression
 │   ├── core/                # Shared primitives (config parsing, logging setup)
 │   ├── events/              # Generic EventBus and request/response plumbing
@@ -63,6 +65,7 @@ haptic/
 │   ├── webhook/             # HTTP server shared by validating webhook and health probes
 │   └── controller/          # Event-driven orchestration (adapters + components)
 │       ├── component/       # Shared event-loop scaffold embedded by most components
+│       ├── blobstore/       # Enables blob.Fetch sources and removes unreferenced blobs
 │       ├── buffers/         # Byte-buffer pool used by render/validation hot paths
 │       ├── coalesce/        # Coalesces bursts of events into a single work item
 │       ├── commentator/     # Structured domain-aware log producer

@@ -27,6 +27,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 	"github.com/haproxy-haptic/HAPTIC/pkg/httpstore"
 	"github.com/haproxy-haptic/HAPTIC/pkg/stores"
 	"github.com/haproxy-haptic/HAPTIC/pkg/templating"
@@ -420,6 +421,10 @@ func (w *HTTPStoreWrapper) fetchReadOnlyOnce(
 	if ok {
 		return w.recordSnapshot(&snapshot), nil
 	}
+	if opts.Blob.Declared() {
+		// A render that cannot accept content never downloads a blob.
+		return w.recordSnapshot(&snapshot), nil
+	}
 
 	content, err := w.transientStore.Fetch(w.ctx, url, opts, auth)
 	if err != nil {
@@ -660,7 +665,29 @@ func parseFetchOptions(m map[string]any) (httpstore.FetchOptions, error) {
 		opts.AcceptStatus = set
 	}
 
+	key, err := parseBlobOption(m)
+	if err != nil {
+		return opts, err
+	}
+	opts.Blob = key
+
 	return opts, nil
+}
+
+// parseBlobOption reads the spec blob.Fetch passes under HTTPOptionBlob.
+func parseBlobOption(m map[string]any) (blob.Key, error) {
+	v, declared := m[templating.HTTPOptionBlob]
+	if !declared {
+		return "", nil
+	}
+	spec, ok := v.(blob.Spec)
+	if !ok || !spec.Declared() {
+		return "", fmt.Errorf("option %q is reserved for blob.Fetch", templating.HTTPOptionBlob)
+	}
+	if err := spec.Validate(); err != nil {
+		return "", fmt.Errorf("invalid blob: %w", err)
+	}
+	return spec.Key(), nil
 }
 
 // toIntList converts a template list of whole numbers to []int.

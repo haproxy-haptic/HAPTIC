@@ -413,6 +413,76 @@ test's `httpResources` field, alongside `fixtures`. See
 [HTTP response fixtures](validation-reference.md#test-structure). There is no
 top-level `spec.httpResources` field.
 
+## Binary blobs
+
+Use `blob.Fetch(url, options)` for binary data that's too large for
+`http.Fetch`, such as a GeoIP database for an SPOA hub plugin. The controller
+streams the download to its own disk, names the file by its SHA-256 digest, and
+returns a handle. Render the handle's `path` into the configuration that reads
+the file. Every new version has a new path, so a configuration that names the
+path changes when the blob changes.
+
+Blob sources need the controller flag `--blob-dir`. Without it, `blob.Fetch`
+returns an empty handle and logs why.
+
+```
+{%- var db, err = blob.Fetch("https://example.com/GeoLite2-City.tar.gz", map[string]any{
+  "interval": "24h",
+  "unpack": "tar.gz",
+  "member": "GeoLite2-City.mmdb",
+}) %}
+{%- if err != nil %}
+{{ fail(tostring(err)) }}
+{%- end %}
+{%- if db.path != "" %}
+database = "{{ db.path }}"
+{%- end %}
+```
+
+The handle has these fields:
+
+| Field | Type | Content |
+|-------|------|---------|
+| `digest` | string | SHA-256 of the blob, in lowercase hex |
+| `size` | integer | Size of the blob in bytes |
+| `path` | string | Where the data plane reads the blob: `/var/lib/haptic/blobs/<digest>` |
+
+All three fields are empty, or `0`, while no version is accepted. A blob is
+accepted like new `http.Fetch` content: deploying renders leave a new version
+out until a render that uses it passes `haproxy -c`. If HAProxy refuses a
+configuration containing a new blob, HAPTIC takes the blob back, returns to the
+previous version or to an empty handle, and records a `BlobContentRevoked`
+Warning Event on the `HAProxyTemplateConfig`.
+
+A blob that can't be fetched never fails a render: the handle keeps the
+accepted version, or stays empty. `err` is set only for an invalid declaration.
+`haptic_blob_fetch_errors_total` counts failed downloads, and the controller log
+names the URL and the error.
+
+### Blob parameters
+
+The second argument is an options map. All keys are optional:
+
+| Key | Type | Default | Effect |
+|-----|------|---------|--------|
+| `interval` | Go duration string | none | Refresh interval after the first fetch. Refreshes use conditional requests, so an unchanged file isn't downloaded again. |
+| `timeout` | Go duration string | `5m` | Per-request timeout, covering the whole download. |
+| `retries` | integer | 2 | Retry attempts after a failed request. A refused blob isn't retried. |
+| `sha256` | string | none | Pins the blob's digest, in lowercase hex. Any other content is refused. |
+| `unpack` | string | `none` | `none` keeps the body, `gzip` decompresses it, and `tar.gz` keeps one file of a gzip-compressed tar archive. |
+| `member` | string | none | Archive path of the file `tar.gz` keeps, for example `GeoLite2-City_20261117/GeoLite2-City.mmdb`. Required with `tar.gz`; not allowed otherwise. |
+| `maxSize` | integer | `268435456` (256 MiB) | Largest blob in bytes. For `tar.gz` it bounds the archive up to the end of `member`. A larger download is refused. `--blob-max-size` caps it. |
+
+Use the same options for every call to a URL within one render, and don't fetch
+a URL with both `http.Fetch` and `blob.Fetch`. Conflicting declarations fail the
+render. Admission checks don't download blobs: they see accepted versions only.
+
+In a validation test, an `httpResources` fixture for the URL is the stored blob,
+after unpacking: the handle carries the fixture's digest and size.
+
+The controller keeps the accepted blob of each source, the blob it replaced, and
+pending versions, and removes other files from `--blob-dir`.
+
 ## Validating webhook scope
 
 Set `enableValidationWebhook: true` on a watch to validate creates and updates

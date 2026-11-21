@@ -44,6 +44,8 @@ type RevokedContent struct {
 	Restored bool
 	// Critical is the source's failure mode: a render without it fails.
 	Critical bool
+	// BlobDigest is the revoked blob of a blob source, else empty.
+	BlobDigest string
 }
 
 // AcceptanceSequence counts acceptances so far. A render that reads the store
@@ -87,13 +89,18 @@ func (s *HTTPStore) RevokeAcceptances(sequence uint64) []RevokedContent {
 			entry.acceptedRevision != record.revision {
 			continue
 		}
+		revokedContent := entry.AcceptedContent
 		s.restoreAcceptedLocked(url, entry, record.previous)
-		revoked = append(revoked, RevokedContent{
+		revocation := RevokedContent{
 			URL:      url,
 			Checksum: record.checksum,
 			Restored: record.previous != nil,
 			Critical: entry.Options.Critical,
-		})
+		}
+		if entry.Options.Blob.Declared() {
+			revocation.BlobDigest = blobDigest(revokedContent)
+		}
+		revoked = append(revoked, revocation)
 	}
 	return revoked
 }

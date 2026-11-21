@@ -20,6 +20,7 @@ const (
 	declItem          = "item"
 	declShared        = "shared"
 	declHTTP          = "http"
+	declBlob          = "blob"
 	declController    = "controller"
 	declPlanRegistry  = "planRegistry"
 	declResources     = "resources"

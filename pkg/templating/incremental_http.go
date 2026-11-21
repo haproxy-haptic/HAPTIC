@@ -30,12 +30,20 @@ const incrementalTypeField = "type"
 var ErrHTTPFetchDelayOption = errors.New(
 	`option "delay" was removed, so this call fails. Rename it to "interval"`)
 
+// http.Fetch options blob.Fetch shares.
+const (
+	httpOptionInterval = "interval"
+	httpOptionTimeout  = "timeout"
+	httpOptionRetries  = "retries"
+)
+
 var incrementalHTTPOptionKeys = map[string]struct{}{
-	"interval":     {},
-	"timeout":      {},
-	"retries":      {},
-	"critical":     {},
-	"acceptStatus": {},
+	httpOptionInterval: {},
+	httpOptionTimeout:  {},
+	httpOptionRetries:  {},
+	"critical":         {},
+	"acceptStatus":     {},
+	HTTPOptionBlob:     {},
 }
 
 var incrementalHTTPAuthKeys = map[string]struct{}{
@@ -92,38 +100,38 @@ func canonicalIncrementalHTTPOptions(value any) (map[string]any, error) {
 		}
 	}
 	for key, option := range options {
-		var canonical any
-		switch key {
-		case "interval", "timeout":
-			plain, ok := option.(string)
-			if !ok {
-				return nil, incrementalHTTPScalarError("option", key, "a plain duration string", option)
-			}
-			canonical = plain
-		case "retries":
-			retries, err := canonicalIncrementalHTTPRetries(option)
-			if err != nil {
-				return nil, err
-			}
-			canonical = retries
-		case "critical":
-			critical, ok := option.(bool)
-			if !ok {
-				return nil, incrementalHTTPScalarError("option", key, "a bool", option)
-			}
-			canonical = critical
-		case "acceptStatus":
-			codes, err := canonicalIncrementalHTTPAcceptStatus(option)
-			if err != nil {
-				return nil, err
-			}
-			canonical = codes
-		default:
-			panic("templating: unknown incremental HTTP option")
+		canonical, err := canonicalIncrementalHTTPOption(key, option)
+		if err != nil {
+			return nil, err
 		}
 		options[key] = canonical
 	}
 	return options, nil
+}
+
+func canonicalIncrementalHTTPOption(key string, option any) (any, error) {
+	switch key {
+	case httpOptionInterval, httpOptionTimeout:
+		plain, ok := option.(string)
+		if !ok {
+			return nil, incrementalHTTPScalarError("option", key, "a plain duration string", option)
+		}
+		return plain, nil
+	case httpOptionRetries:
+		return canonicalIncrementalHTTPRetries(option)
+	case "critical":
+		critical, ok := option.(bool)
+		if !ok {
+			return nil, incrementalHTTPScalarError("option", key, "a bool", option)
+		}
+		return critical, nil
+	case "acceptStatus":
+		return canonicalIncrementalHTTPAcceptStatus(option)
+	case HTTPOptionBlob:
+		return canonicalIncrementalBlobSpec(option)
+	default:
+		panic("templating: unknown incremental HTTP option")
+	}
 }
 
 func canonicalIncrementalHTTPRetries(value any) (int, error) {

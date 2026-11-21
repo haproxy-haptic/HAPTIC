@@ -59,6 +59,7 @@ type HTTPStore struct {
 	acceptanceSequence      uint64
 	acceptances             map[string]*acceptance
 	httpClient              *http.Client
+	blobs                   atomic.Pointer[blobTarget]
 	logger                  *slog.Logger
 	maxAge                  time.Duration // Maximum time an entry can remain unused before eviction (0 = disabled)
 

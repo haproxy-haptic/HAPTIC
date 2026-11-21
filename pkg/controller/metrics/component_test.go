@@ -350,6 +350,21 @@ func TestComponent_HTTPContentRevoked(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 }
 
+// Blob revocations and fetch failures have their own counters.
+func TestComponent_BlobEvents(t *testing.T) {
+	metrics, eventBus := startTestComponent(t)
+
+	eventBus.Publish(events.NewBlobContentRevokedEvent("https://dbs/a", "d1", false))
+	eventBus.Publish(events.NewBlobFetchFailedEvent("https://dbs/a", "refused"))
+	eventBus.Publish(events.NewBlobFetchFailedEvent("https://dbs/b", "timeout"))
+
+	assert.Eventually(t, func() bool {
+		return testutil.ToFloat64(metrics.BlobContentRevokedTotal) == 1 &&
+			testutil.ToFloat64(metrics.BlobFetchErrorsTotal) == 2
+	}, time.Second, 5*time.Millisecond)
+	assert.Zero(t, testutil.ToFloat64(metrics.HTTPContentRevokedTotal))
+}
+
 func TestComponent_AllEventTypes(t *testing.T) {
 	metrics, eventBus := startTestComponent(t)
 

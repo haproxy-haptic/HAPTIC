@@ -785,6 +785,8 @@ func TestTimestampNotZero(t *testing.T) {
 		{"HTTPResourceAccepted", NewHTTPResourceAcceptedEvent("url", "checksum", 0)},
 		{"HTTPContentAcceptanceRequested", NewHTTPContentAcceptanceRequestedEvent()},
 		{"HTTPContentRevoked", NewHTTPContentRevokedEvent("url", "checksum", false, false)},
+		{"BlobContentRevoked", NewBlobContentRevokedEvent("url", "digest", false)},
+		{"BlobFetchFailed", NewBlobFetchFailedEvent("url", "error")},
 		{"TemplateRendered", NewTemplateRenderedEvent("cfg", nil, nil, nil, 0, 0, "", "", nil, "", true)},
 		{"TemplateRenderFailed", NewTemplateRenderFailedEvent("name", "error", "stack")},
 		{"RenderGateCompleted", NewRenderGateCompletedEvent("plan-1", true, false, true, "", false, 0)},

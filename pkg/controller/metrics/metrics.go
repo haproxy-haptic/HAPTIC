@@ -189,6 +189,13 @@ type Metrics struct {
 	// HTTPContentRejectedTotal counts pending content refused before acceptance.
 	HTTPContentRejectedTotal prometheus.Counter
 
+	// BlobContentRevokedTotal counts accepted blobs taken back because HAProxy
+	// refused a render containing them (ADR-0041).
+	BlobContentRevokedTotal prometheus.Counter
+
+	// BlobFetchErrorsTotal counts blob source fetches that failed after their retries.
+	BlobFetchErrorsTotal prometheus.Counter
+
 	// ConfigPinned is 1 while the render gate is holding renders it has
 	// already refused once: nothing new reaches the fleet, which keeps serving
 	// the last config HAProxy accepted, until the operator's input changes.
@@ -497,6 +504,18 @@ func NewMetrics(registry prometheus.Registerer) *Metrics {
 			registry,
 			"haptic_http_content_revoked_total",
 			"Total number of HTTP content acceptances revoked after a render was refused.",
+		),
+
+		BlobContentRevokedTotal: pkgmetrics.NewCounter(
+			registry,
+			"haptic_blob_content_revoked_total",
+			"Total number of blob acceptances revoked after a render was refused.",
+		),
+
+		BlobFetchErrorsTotal: pkgmetrics.NewCounter(
+			registry,
+			"haptic_blob_fetch_errors_total",
+			"Total number of blob source fetches that failed after their retries; the source keeps its accepted blob.",
 		),
 
 		ControllerReinitializationsTotal: pkgmetrics.NewCounter(
@@ -864,6 +883,16 @@ func (m *Metrics) RecordHTTPContentRevoked() {
 
 func (m *Metrics) RecordHTTPContentRejected() {
 	m.HTTPContentRejectedTotal.Inc()
+}
+
+// RecordBlobContentRevoked counts one revoked blob acceptance.
+func (m *Metrics) RecordBlobContentRevoked() {
+	m.BlobContentRevokedTotal.Inc()
+}
+
+// RecordBlobFetchError counts one failed blob source fetch.
+func (m *Metrics) RecordBlobFetchError() {
+	m.BlobFetchErrorsTotal.Inc()
 }
 
 // SetRenderProfiles records how many distinct backend profiles the most recent

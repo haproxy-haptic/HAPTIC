@@ -31,7 +31,7 @@ Modify this package when:
 
 This is a **pure library** with no controller or Kubernetes dependencies. Its status projection index uses the domain-free immutable container in `pkg/persistenttree`.
 
-Dependencies: Scriggo fork (from `github.com/haproxy-haptic/scriggo`), `pkg/persistenttree`, and standard library.
+Dependencies: Scriggo fork (from `github.com/haproxy-haptic/scriggo`), `pkg/persistenttree`, `pkg/blob` (the stdlib-only blob declaration and reference types), and standard library.
 
 ### Resource-Agnostic Functions (RULE #1)
 
@@ -237,6 +237,16 @@ decl["templateSnippets"] = (*[]string)(nil)           // Not &[]string{}
 | `extraContext` | `*map[string]any` | Custom template variables |
 | `http` | `*HTTPFetcher` | HTTP store for fetching remote content |
 | `runtimeEnvironment` | `*RuntimeEnvironment` | Runtime environment info |
+
+### `blob` package
+
+`blob` is an auto-imported native package, not a runtime variable. `blob.Fetch(url, options)`
+(`blob_fetch.go`) reads the render's own `http` value through the render context and calls
+`http.Fetch` with a `blob.Spec` under the reserved option `blob` (`HTTPOptionBlob`), so a blob
+source shares the HTTP store's refresh, acceptance (ADR-0030), and render tracking. It decodes the
+returned `blob.Ref` into a `BlobHandle`. Templates cannot build a `blob.Spec`, so only
+`blob.Fetch` declares blob sources. `blob` is not an incremental-component or exact-cycle-replay
+declaration yet; a template that calls it renders without exact-cycle replay.
 
 ### Typed Watched Resources
 

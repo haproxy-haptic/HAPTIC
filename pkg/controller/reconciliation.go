@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/restmapper"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
+	ctrlblobstore "github.com/haproxy-haptic/HAPTIC/pkg/controller/blobstore"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/configchange"
 	ctrlconfigpublisher "github.com/haproxy-haptic/HAPTIC/pkg/controller/configpublisher"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/deployer"
@@ -185,6 +186,7 @@ func createReconciliationComponents(
 	driftInterval := cfg.Dataplane.GetDriftPreventionInterval()
 	httpStoreEvictionMaxAge := 2 * driftInterval
 	httpStoreComponent := httpstore.New(setup.Bus, logger, httpStoreEvictionMaxAge)
+	allReplica := blobComponents(setup, httpStoreComponent, logger)
 
 	wiring, err := buildEngineWiring(setup.IterCtx, cfg, k8sClient, logger)
 	if err != nil {
@@ -354,7 +356,7 @@ func createReconciliationComponents(
 	// StatusUpdater is leader-only to avoid API conflicts from concurrent updates.
 	// ProposalValidator is all-replica because HTTPStore depends on it for HTTP content validation.
 	registerLifecycleComponents(setup.Registry,
-		[]lifecycle.Component{
+		append(allReplica,
 			reconcilerComponent,
 			warmerComponent,
 			discoveryComponent,
@@ -363,7 +365,7 @@ func createReconciliationComponents(
 			statusApplierComponent,
 			resourceApplierComponent,
 			eventEmitterComponent,
-		},
+		),
 		// DrainLeaderOnly follows this order: Scheduler, then Deployer, then ConfigPublisher.
 		[]lifecycle.Component{
 			coordinatorComponent,
@@ -384,6 +386,16 @@ func createReconciliationComponents(
 		warmer:                warmerComponent,
 		admissionChecks:       observeChecks(setup.MetricsComponent.Metrics(), "admission"),
 	}, nil
+}
+
+// blobComponents enables blob.Fetch sources when the controller has a blob store.
+func blobComponents(setup *componentSetup, sources ctrlblobstore.Sources, logger *slog.Logger) []lifecycle.Component {
+	if setup.Blobs == nil {
+		return nil
+	}
+	component := ctrlblobstore.New(logger, setup.Blobs, sources)
+	setup.AddCleanup(component.Close)
+	return []lifecycle.Component{component}
 }
 
 // registerLifecycleComponents registers the all-replica components first, then

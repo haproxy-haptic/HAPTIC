@@ -537,6 +537,12 @@ func (c *Component) RevokeAcceptances(sequence uint64) int {
 	revoked := c.store.RevokeAcceptances(sequence)
 	for _, content := range revoked {
 		c.ReconcileURL(content.URL)
+		if content.BlobDigest != "" {
+			c.eventBus.Publish(events.NewBlobContentRevokedEvent(
+				httpstore.RedactURL(content.URL), content.BlobDigest, content.Restored,
+			))
+			continue
+		}
 		c.eventBus.Publish(events.NewHTTPContentRevokedEvent(
 			httpstore.RedactURL(content.URL), content.Checksum, content.Restored, content.Critical,
 		))
@@ -545,6 +551,19 @@ func (c *Component) RevokeAcceptances(sequence uint64) int {
 		c.eventBus.Publish(events.NewReconciliationTriggeredEvent("http_content_revoked", true, events.WithNewCorrelation()))
 	}
 	return len(revoked)
+}
+
+// EnableBlobs lets blob.Fetch sources stream into sink (ADR-0041). Call it
+// before the component fetches anything.
+func (c *Component) EnableBlobs(sink httpstore.BlobSink) {
+	c.store.SetBlobSink(sink, func(url string, err error) {
+		c.eventBus.Publish(events.NewBlobFetchFailedEvent(httpstore.RedactURL(url), err.Error()))
+	})
+}
+
+// BlobSources lists the digests each blob source holds.
+func (c *Component) BlobSources() []httpstore.BlobSource {
+	return c.store.BlobSources()
 }
 
 // RegisterURL reconciles a URL's timer with its current source policy.

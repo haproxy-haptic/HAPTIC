@@ -145,6 +145,10 @@ const (
 	EventTypeHTTPContentRevoked             = "http.content.revoked"
 	EventTypeHTTPContentRejected            = "http.content.rejected"
 
+	// Blob source event types.
+	EventTypeBlobContentRevoked = "blob.content.revoked"
+	EventTypeBlobFetchFailed    = "blob.fetch.failed"
+
 	// Proposal validation event types.
 	// Used for validating hypothetical configuration changes before committing them.
 	// See proposal.go for event definitions.

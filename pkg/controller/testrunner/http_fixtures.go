@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 	ctrlhttpstore "github.com/haproxy-haptic/HAPTIC/pkg/controller/httpstore"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/config"
 	"github.com/haproxy-haptic/HAPTIC/pkg/httpstore"
@@ -96,7 +97,23 @@ func (w *FixtureHTTPStoreWrapper) Fetch(args ...any) (any, error) {
 		"url", httpstore.RedactURL(url),
 		"size", len(content))
 
+	if opts.Blob.Declared() {
+		return fixtureBlob(content, opts.Blob)
+	}
 	return content, nil
+}
+
+// fixtureBlob treats the fixture as the stored blob, after any unpacking.
+func fixtureBlob(content string, key blob.Key) (string, error) {
+	spec, err := key.Spec()
+	if err != nil {
+		return "", err
+	}
+	ref := blob.Describe([]byte(content))
+	if spec.SHA256 != "" && ref.Digest != spec.SHA256 {
+		return "", nil
+	}
+	return ref.Encode(), nil
 }
 
 // CreateHTTPStoreFromFixtures creates an HTTPStore pre-populated with fixture content.
