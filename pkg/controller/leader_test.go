@@ -469,3 +469,53 @@ type failedLifecycleComponent struct {
 func (*failedLifecycleComponent) Name() string { return "failed-component" }
 
 func (c *failedLifecycleComponent) Start(context.Context) error { return c.failure }
+
+// A superseded iteration never starts a term: it would deploy the previous
+// config. A term already running keeps serving until the successor takes over.
+func TestLeaderCallbacksSupersededIterationStartsNoTerm(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry := lifecycle.NewRegistry().WithLogger(logger)
+	component := newRestartableLeaderComponent()
+	registry.Register(component, true)
+	iterCtx, cancelCause := context.WithCancelCause(t.Context())
+	defer cancelCause(nil)
+	group, _ := errgroup.WithContext(iterCtx)
+	var left atomic.Int32
+	callbacks, state := makeLeaderCallbacks(iterCtx, leaderCallbackDeps{
+		registry:      registry,
+		logger:        logger,
+		cancelCause:   cancelCause,
+		errGroup:      group,
+		leaveElection: func() { left.Add(1) },
+	})
+
+	require.False(t, state.supersede(), "a follower runs no term")
+	callbacks.OnStartedLeading(iterCtx)
+	assert.False(t, state.isLeading())
+	assert.Zero(t, component.starts.Load())
+	assert.Equal(t, int32(1), left.Load(), "a won Lease is released")
+	require.NoError(t, group.Wait())
+}
+
+func TestLeaderCallbacksSupersedeKeepsTheRunningTerm(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry := lifecycle.NewRegistry().WithLogger(logger)
+	registry.Register(newRestartableLeaderComponent(), true)
+	iterCtx, cancelCause := context.WithCancelCause(t.Context())
+	defer cancelCause(nil)
+	group, _ := errgroup.WithContext(iterCtx)
+	callbacks, state := makeLeaderCallbacks(iterCtx, leaderCallbackDeps{
+		registry:      registry,
+		logger:        logger,
+		cancelCause:   cancelCause,
+		errGroup:      group,
+		leaveElection: func() { t.Error("a running term must not leave the election") },
+	})
+
+	callbacks.OnStartedLeading(iterCtx)
+	require.True(t, state.supersede())
+	assert.True(t, state.isLeading())
+	state.retire()
+	callbacks.OnStoppedLeading()
+	require.NoError(t, group.Wait())
+}

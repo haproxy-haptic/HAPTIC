@@ -136,6 +136,8 @@ type leaderCallbackDeps struct {
 	cancelCause context.CancelCauseFunc
 	podName     string
 	errGroup    *errgroup.Group
+	// leaveElection ends the election loop, releasing a Lease this replica holds.
+	leaveElection func()
 }
 
 // leaderCallbackState holds mutable state shared across leader callbacks.
@@ -145,6 +147,9 @@ type leaderCallbackState struct {
 	components *leaderOnlyComponents
 	stopped    bool
 	retiring   bool
+	// superseded is set once a successor iteration is being prepared: this
+	// iteration's config is stale, so it must not start another term.
+	superseded bool
 	// leading is readable without mu, which OnStartedLeading holds for as
 	// long as the leader-only components take to start.
 	leading atomic.Bool
@@ -162,6 +167,15 @@ func (s *leaderCallbackState) retire() {
 // isLeading reports whether this iteration's leadership term is running.
 func (s *leaderCallbackState) isLeading() bool {
 	return s != nil && s.leading.Load()
+}
+
+// supersede stops this iteration from starting another term. It reports
+// whether a term is running; that term serves until the successor takes over.
+func (s *leaderCallbackState) supersede() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.superseded = true
+	return s.leading.Load()
 }
 
 func (s *leaderCallbackState) isRetiring() bool {
@@ -233,6 +247,14 @@ func makeLeaderCallbacks(ctx context.Context, deps leaderCallbackDeps) (k8sleade
 			state.mu.Lock()
 			defer state.mu.Unlock()
 			if state.stopped || ctx.Err() != nil {
+				return
+			}
+			if state.superseded {
+				// Leading with the superseded config would roll the fleet back.
+				deps.logger.Info("Leaving leader election: a successor iteration is starting with newer configuration")
+				if deps.leaveElection != nil {
+					deps.leaveElection()
+				}
 				return
 			}
 			components, err := startLeaderOnlyComponents(
@@ -416,25 +438,28 @@ func setupLeaderElection(
 			ReleaseOnCancel: true,
 		}
 
+		// The loop runs on its own child context so a hand-over can end this
+		// term without cancelling the iteration; the errgroup still owns it.
+		electionCtx, cancelElection := context.WithCancel(setup.IterCtx)
+
 		// Create callbacks with explicit dependencies
 		callbacks, state := makeLeaderCallbacks(setup.IterCtx, leaderCallbackDeps{
-			registry:    setup.Registry,
-			logger:      logger,
-			cancelCause: setup.CancelCause,
-			podName:     podName,
-			errGroup:    setup.ErrGroup,
+			registry:      setup.Registry,
+			logger:        logger,
+			cancelCause:   setup.CancelCause,
+			podName:       podName,
+			errGroup:      setup.ErrGroup,
+			leaveElection: cancelElection,
 		})
 
 		// Create leader election component (event adapter). It claims the
 		// fencing epoch the deployer stamps on every apply.
 		elector, err := leaderelectionctrl.New(leConfig, k8sClient.Clientset(), setup.Bus, callbacks, setup.LeaderEpoch, logger)
 		if err != nil {
+			cancelElection()
 			return nil, fmt.Errorf("creating leader elector: %w", err)
 		}
 
-		// The loop runs on its own child context so a hand-over can end this
-		// term without cancelling the iteration; the errgroup still owns it.
-		electionCtx, cancelElection := context.WithCancel(setup.IterCtx)
 		run := &electionRun{elector: elector, cancel: cancelElection, done: make(chan struct{})}
 		setup.Election = run
 		setup.ErrGroup.Go(func() error {

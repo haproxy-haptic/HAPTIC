@@ -115,10 +115,24 @@ func (it *liveIteration) awaitReload() (*configchange.ReloadRequest, error) {
 		reload := it.authority.Latest()
 		it.logger.Info("Configuration change detected, preparing the successor iteration",
 			"new_config_version", reload.Snapshot.ConfigVersion)
+		it.leaveElectionUnlessLeading()
 		return reload, nil
 	case <-it.setup.IterCtx.Done():
 		return waitForIterationExit(it.setup, it.authority, it.logger)
 	}
+}
+
+// leaveElectionUnlessLeading keeps a superseded follower from winning the
+// Lease while its successor starts: it would deploy the previous config.
+// A leader keeps serving until the successor retires it.
+func (it *liveIteration) leaveElectionUnlessLeading() {
+	state, run := it.setup.LeaderState, it.setup.Election
+	if state == nil || run == nil || state.supersede() {
+		return
+	}
+	run.cancel()
+	<-run.done
+	it.logger.Info("Left leader election for the successor iteration")
 }
 
 // startupInterruptedError reports a startup that a reload cut short; the
