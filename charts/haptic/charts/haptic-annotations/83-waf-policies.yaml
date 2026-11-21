@@ -87,6 +87,7 @@ templateSnippets:
           var trustedBrokenPolicy = to_str_map(catalog["trustedBrokenPolicy"])
           var selfServiceBrokenCatalog = to_str_map(catalog["selfServiceBrokenCatalog"])
           var selfServiceBrokenPolicy = to_str_map(catalog["selfServiceBrokenPolicy"])
+          var selfServiceAdmittedBrokenPolicy = to_str_map(catalog["selfServiceAdmittedBrokenPolicy"])
 
           // Preserve apps produced by vendor compatibility libraries. New app
           // entries use appName directly; legacy entries derive ns/name.
@@ -139,6 +140,7 @@ templateSnippets:
               } else if trustedBrokenPolicy[requestedPolicy] != "" {
                 rejectRoute("WafPolicyUnavailable", trustedBrokenPolicy[requestedPolicy])
               } else if selfServiceBrokenPolicy[ssStoreKey] != "" {
+                if selfServiceAdmittedBrokenPolicy[ssStoreKey] != "" { fail(selfServiceAdmittedBrokenPolicy[ssStoreKey]) }
                 rejectRoute("WafPolicyUnavailable", "Ingress " + resourceID + " selects WAF policy '" + requestedPolicy + "', which failed validation: " + selfServiceBrokenPolicy[ssStoreKey])
               } else if policySource[requestedPolicy] != "" {
                 policy = requestedPolicy

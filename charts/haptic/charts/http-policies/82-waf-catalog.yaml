@@ -153,6 +153,7 @@ templateSnippets:
           var trustedCatalogUnavailable = false
           var selfServiceBrokenCatalog = map[string]string{}
           var selfServiceBrokenPolicy = map[string]string{}
+          var selfServiceAdmittedBrokenPolicy = map[string]string{}
           var trustedRawPolicy = map[string]any{}
           if policyCatalogConfigured || selfServiceEnabled {
             var allowedPolicyFields = map[string]bool{
@@ -788,7 +789,7 @@ templateSnippets:
                 }
                 if catalogError != "" {
                     selfServiceBrokenCatalog[scope] = catalogError
-                  diagnostics = append(diagnostics, map[string]any{"resource": cm, "scope": scope, "reason": "WafPolicyCatalogInvalid", "message": catalogError})
+                  diagnostics = append(diagnostics, map[string]any{"resource": cm, "scope": scope, "reason": "WafPolicyCatalogInvalid", "message": catalogError, "failsAdmission": catalog["underAdmission"] == true})
                   continue
                 }
                 for _, policyName := range keys(parsedPolicies) {
@@ -818,6 +819,7 @@ templateSnippets:
                     ssPolicy = merged
                     policyError = extendError
                   }
+                  var enforcementMismatch = false
                   if policyError == "" && !allowEnforcementOverride {
                     var requestedEnforcement = ssPolicy | dig("enforcement") | scalarText()
                     if (requestedEnforcement == "deny" || requestedEnforcement == "detect") && requestedEnforcement != dispatchDefaultEnforcement {
@@ -828,6 +830,7 @@ templateSnippets:
                         enforcementOrigin = "inherits enforcement '" + requestedEnforcement + "' from '" + ssBase + "'"
                         enforcementFix = "Set enforcement: " + dispatchDefaultEnforcement + " on the policy."
                       }
+                      enforcementMismatch = true
                       policyError = "Self-service WAF policy '" + policyName + "' from " + sourceID + " " + enforcementOrigin + ", but the administrator fixed enforcement to '" + dispatchDefaultEnforcement + "'. Routes selecting it fail with 503. " + enforcementFix
                     }
                   }
@@ -845,8 +848,13 @@ templateSnippets:
                     }
                   }
                   if policyError != "" {
-                      selfServiceBrokenPolicy[storeKey] = policyError
-                    diagnostics = append(diagnostics, map[string]any{"resource": cm, "scope": scope, "reason": "WafPolicyInvalid", "message": policyError})
+                    selfServiceBrokenPolicy[storeKey] = policyError
+                    // A mismatch only breaks routes that select it; another release may serve it (#749).
+                    if !enforcementMismatch {
+                      diagnostics = append(diagnostics, map[string]any{"resource": cm, "scope": scope, "reason": "WafPolicyInvalid", "message": policyError, "failsAdmission": catalog["underAdmission"] == true})
+                    } else if catalog["underAdmission"] == true {
+                      selfServiceAdmittedBrokenPolicy[storeKey] = policyError
+                    }
                   }
                 }
               }
@@ -879,6 +887,7 @@ templateSnippets:
           result["trustedCatalogUnavailable"] = trustedCatalogUnavailable
           result["selfServiceBrokenCatalog"] = selfServiceBrokenCatalog
           result["selfServiceBrokenPolicy"] = selfServiceBrokenPolicy
+          result["selfServiceAdmittedBrokenPolicy"] = selfServiceAdmittedBrokenPolicy
           result["diagnostics"] = diagnostics
           result["dependencies"] = dependencies
           result["gov"] = gov

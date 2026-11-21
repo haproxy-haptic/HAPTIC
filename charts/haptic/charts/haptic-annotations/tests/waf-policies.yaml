@@ -2171,9 +2171,139 @@ validationTests:
           spec: *specRulesHost
     assertions:
       - type: haproxy_valid
-      - { type: contains, target: events, pattern: "Warning WafPolicyInvalid v1 ConfigMap team-a/waf-policies:.*sets enforcement 'deny', but the administrator fixed enforcement to 'detect'" }
+      - { type: contains, target: events, pattern: "Warning WafPolicyUnavailable networking.k8s.io/v1 Ingress team-a/app:.*sets enforcement 'deny', but the administrator fixed enforcement to 'detect'" }
+      - { type: not_contains, target: events, pattern: "WafPolicyInvalid" }
       - { type: not_contains, target: "map:coraza-app.map", pattern: "policy:team-a/app" }
       - { type: contains, target: haproxy.cfg, pattern: "http-request deny deny_status 503 if \\{ var\\(txn.resource_key\\) -m str team-a/app \\}" }
+
+  test-haptic-waf-selfservice-enforcement-mismatch-unselected:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: a catalog policy whose enforcement differs from this release's but that no route of this release selects raises no Warning (another release may serve it)
+    extraContext:
+      renderMode: reconcile
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: deny}
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs: &detectCatalogTeamB
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-b, name: waf-policies }
+          data:
+            policies.yaml: |
+              ingest:
+                enforcement: detect
+                requestBody:
+                  mode: none
+    assertions:
+      - type: haproxy_valid
+      - { type: not_contains, target: events, pattern: "WafPolicyInvalid|WafPolicyUnavailable" }
+
+  test-haptic-waf-selfservice-enforcement-mismatch-unselected-catalog-admitted:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: admission accepts a catalog policy whose enforcement differs from this release's while no route of this release selects it
+    extraContext:
+      renderMode: admission
+      admissionSubject: { store: waf_selfservice_catalogs, namespace: team-b, name: waf-policies }
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: deny}
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs: *detectCatalogTeamB
+    assertions:
+      - type: haproxy_valid
+
+  test-haptic-waf-selfservice-enforcement-mismatch-selected-catalog-rejected:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: admission rejects a catalog change whose enforcement would break an Ingress of this release that selects the policy
+    extraContext:
+      renderMode: admission
+      admissionSubject: { store: waf_selfservice_catalogs, namespace: team-b, name: waf-policies }
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: deny}
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs: *detectCatalogTeamB
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-b, name: ingest, annotations: { haproxy-haptic.org/waf-policy: ingest } }
+          spec: *specRulesHost
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "'ingest' from self-service WAF ConfigMap team-b/waf-policies .*sets enforcement 'detect', but the administrator fixed enforcement to 'deny'" }
+
+  test-haptic-waf-selfservice-broken-catalog-unrelated-ingress-admitted:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: another namespace's invalid self-service catalog does not block admission of an unrelated Ingress
+    extraContext:
+      renderMode: admission
+      admissionSubject: { store: ingresses, namespace: team-a, name: app }
+      waf:
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs: &brokenCatalogTeamB
+        - apiVersion: v1
+          kind: ConfigMap
+          metadata: { namespace: team-b, name: waf-policies }
+          data:
+            policies.yaml: "ingest: [unclosed"
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-a, name: app, annotations: {} }
+          spec: *specRulesHost
+    assertions:
+      - type: haproxy_valid
+
+  test-haptic-waf-selfservice-broken-catalog-own-admission-rejected:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: admission rejects an invalid self-service catalog
+    extraContext:
+      renderMode: admission
+      admissionSubject: { store: waf_selfservice_catalogs, namespace: team-b, name: waf-policies }
+      waf:
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs: *brokenCatalogTeamB
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "self-service WAF ConfigMap team-b/waf-policies key policies.yaml is invalid YAML" }
+
+  test-haptic-waf-selfservice-broken-catalog-selecting-ingress-rejected:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: admission rejects an Ingress that selects a policy from its namespace's invalid catalog
+    extraContext:
+      renderMode: admission
+      admissionSubject: { store: ingresses, namespace: team-b, name: ingest }
+      waf:
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs: *brokenCatalogTeamB
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-b, name: ingest, annotations: { haproxy-haptic.org/waf-policy: ingest } }
+          spec: *specRulesHost
+    assertions:
+      - { type: contains, target: rendering_error, pattern: "Ingress team-b/ingest selects WAF policy 'ingest' but its namespace's self-service catalog is broken" }
+
+  test-haptic-waf-selfservice-enforcement-mismatch-unrelated-ingress-admitted:
+    _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'
+    description: another namespace's catalog policy with a different enforcement does not block admission of an unrelated Ingress
+    extraContext:
+      renderMode: admission
+      admissionSubject: { store: ingresses, namespace: team-a, name: app }
+      waf:
+        dispatch: {mode: default-on, defaultEnforcement: deny}
+        policies: {defaultPolicy: "", configMapRefs: { __replace__: true }, selfService: {enabled: true}}
+    fixtures:
+      waf_selfservice_catalogs: *detectCatalogTeamB
+      ingresses:
+        - apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata: { namespace: team-a, name: app, annotations: {} }
+          spec: *specRulesHost
+    assertions:
+      - type: haproxy_valid
 
   test-haptic-waf-selfservice-enforcement-override-allowed:
     _helm_skip_test: '{{ if or (include "haptic.spoaHub.disabled" .) (not (include "haptic.spoaHub.pluginEnabled" (dict "plugin" .Values.spoaHub.plugins.coraza "root" . "name" "coraza"))) }}true{{ end }}'

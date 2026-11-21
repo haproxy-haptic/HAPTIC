@@ -189,10 +189,10 @@ if [[ -n "${HAPROXY_VERSION:-}" ]]; then
 fi
 # Render with operator values the bundled validationTests have broken on real
 # deployments: a custom default-cert name, governance on with a global rule,
-# session tickets on, non-default ports, overrides of keys that tests assert the
-# chart default of, and a password-hash policy every hash fails. Assertions must
-# not see any of them (they render with testExtraContext); the deployment-values
-# pass must still render them.
+# session tickets on, a GeoIP database, non-default ports, overrides of keys
+# that tests assert the chart default of, and a password-hash policy every hash
+# fails. Assertions must not see any of them (they render with
+# testExtraContext); the deployment-values pass must still render them.
 TEMPLATE_VALUES_ARGS=()
 if [[ -n "${HAPTIC_TEMPLATE_VALUES:-}" ]]; then
     if [[ ! -f "$HAPTIC_TEMPLATE_VALUES" ]]; then
@@ -231,6 +231,7 @@ if ! helm template "$CHART_DIR" \
     --set controller.config.templatingSettings.extraContext.sslRedirectDefault=true \
     --set controller.config.templatingSettings.extraContext.ingressDefaultSSLRedirect=true \
     --set 'controller.config.templatingSettings.extraContext.annotationCompatibility.basicAuth.passwordHashValidation.regex=^NOMATCH$' \
+    --set-json 'controller.config.templatingSettings.extraContext.maxmind={"databases":{"regression":{"url":"https://geo.example.test/regression.mmdb"}},"lookups":[{"name":"country","database":"regression","path":["country","iso_code"],"outputVar":"regression_country"}]}' \
     | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
     > "$TEMP_CONFIG"; then
     echo -e "${RED}Error: Failed to render Helm chart${NC}" >&2
