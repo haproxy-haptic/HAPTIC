@@ -12,6 +12,8 @@ package e2e
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -31,9 +33,10 @@ import (
 	"github.com/haproxy-haptic/HAPTIC/tests/e2e/grpcclient"
 )
 
+const wafGRPCHost = "waf-grpc-streaming.localdev.me"
+
 func TestHapticWAFGRPCStreaming(t *testing.T) {
 	t.Parallel()
-	const host = "waf-grpc-streaming.localdev.me"
 	feature := features.New("gRPC streams through a metadata-inspecting WAF").
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			t.Helper()
@@ -51,9 +54,9 @@ func TestHapticWAFGRPCStreaming(t *testing.T) {
 				container.ReadinessProbe.ProbeHandler = corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(backend.Port)}}
 			}))
 			require.NoError(t, waitForServiceEndpointReady(ctx, client, ns, backend.Service))
-			NewTLSSecret(ctx, t, client, ns, "grpc-cert", []string{host})
+			NewTLSSecret(ctx, t, client, ns, "grpc-cert", []string{wafGRPCHost})
 			NewIngress(ctx, t, client, ns, &IngressSpec{
-				Name: "grpc", Host: host, BackendService: backend.Service, BackendPort: backend.Port, TLSSecretName: "grpc-cert",
+				Name: "grpc", Host: wafGRPCHost, BackendService: backend.Service, BackendPort: backend.Port, TLSSecretName: "grpc-cert",
 				Annotations: map[string]string{
 					"haproxy-haptic.org/backend-protocol":  "grpc",
 					"haproxy-haptic.org/waf-policy":        "grpc-api",
@@ -67,57 +70,33 @@ func TestHapticWAFGRPCStreaming(t *testing.T) {
 			t.Helper()
 			rpcCtx, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
-			conn, err := grpcclient.New(t).Dial(rpcCtx, host)
+			conn, err := grpcclient.New(t).Dial(rpcCtx, wafGRPCHost)
 			require.NoError(t, err)
 			defer conn.Close()
 			client := grpcbin.NewGRPCBinClient(conn)
 			msg := &grpcbin.DummyMessage{FString: "first"}
-			reply, err := client.DummyUnary(rpcCtx, msg)
-			require.NoError(t, err)
-			require.Equal(t, msg.FString, reply.FString)
 
-			server, err := client.DummyServerStream(rpcCtx, msg)
-			require.NoError(t, err)
-			for range 10 {
-				reply, err := server.Recv()
-				require.NoError(t, err)
-				require.Equal(t, msg.FString, reply.FString)
-			}
-			_, err = server.Recv()
-			require.ErrorIs(t, err, io.EOF)
-
-			upload, err := client.DummyClientStream(rpcCtx)
-			require.NoError(t, err)
-			for i := range int32(10) {
-				require.NoError(t, upload.Send(&grpcbin.DummyMessage{FInt32: i}))
-			}
-			// grpcbin replies to message ten. Reading before CloseSend proves the
-			// backend processed the upload while the request body was still open.
-			var last grpcbin.DummyMessage
-			require.NoError(t, upload.RecvMsg(&last))
-			require.EqualValues(t, 9, last.FInt32)
-			require.NoError(t, upload.CloseSend())
-
-			chat, err := client.DummyBidirectionalStreamStream(rpcCtx)
-			require.NoError(t, err)
-			for _, value := range []string{"first", "second"} {
-				require.NoError(t, chat.Send(&grpcbin.DummyMessage{FString: value}))
-				reply, err := chat.Recv()
-				require.NoError(t, err)
-				require.Equal(t, value, reply.FString)
-			}
-			require.NoError(t, chat.CloseSend())
-			_, err = chat.Recv()
-			require.ErrorIs(t, err, io.EOF)
+			requireGRPCCallThroughWAF(ctx, t, "/grpcbin.GRPCBin/DummyUnary", func() error {
+				return grpcUnary(rpcCtx, t, client, msg)
+			})
+			requireGRPCCallThroughWAF(ctx, t, "/grpcbin.GRPCBin/DummyServerStream", func() error {
+				return grpcServerStream(rpcCtx, t, client, msg)
+			})
+			requireGRPCCallThroughWAF(ctx, t, "/grpcbin.GRPCBin/DummyClientStream", func() error {
+				return grpcClientStream(rpcCtx, t, client)
+			})
+			requireGRPCCallThroughWAF(ctx, t, "/grpcbin.GRPCBin/DummyBidirectionalStreamStream", func() error {
+				return grpcBidirectionalStream(rpcCtx, t, client)
+			})
 
 			denied := metadata.AppendToOutgoingContext(rpcCtx, "x-waf-probe", "reject")
-			requireGRPCWAFRuleDenial(ctx, t, host, "/grpcbin.GRPCBin/DummyUnary", func() error {
+			requireGRPCWAFRuleDenial(ctx, t, "/grpcbin.GRPCBin/DummyUnary", func() error {
 				_, err := client.DummyUnary(denied, msg)
 				return err
 			})
 
 			// The policy extends the CRS media-type list only for application/grpc.
-			requireGRPCWAFRuleDenial(ctx, t, host, "/grpcbin.GRPCBin/Empty", func() error {
+			requireGRPCWAFRuleDenial(ctx, t, "/grpcbin.GRPCBin/Empty", func() error {
 				_, err := client.Empty(rpcCtx, &grpcbin.EmptyMessage{}, grpc.CallContentSubtype("proto"))
 				return err
 			})
@@ -126,27 +105,131 @@ func TestHapticWAFGRPCStreaming(t *testing.T) {
 	testEnv.Test(t, feature.Feature())
 }
 
-// An unavailable verdict has its own proxy response. Verify that refusal before
-// sending one fresh probe that must exercise the actual metadata rule.
-func requireGRPCWAFRuleDenial(ctx context.Context, t *testing.T, host, path string, call func() error) {
+// The RPC shapes below return a transport or status error so the caller can
+// tell a proxy refusal from a wrong reply, which they assert directly.
+
+func grpcUnary(ctx context.Context, t *testing.T, client grpcbin.GRPCBinClient, msg *grpcbin.DummyMessage) error {
+	t.Helper()
+	reply, err := client.DummyUnary(ctx, msg)
+	if err != nil {
+		return err
+	}
+	require.Equal(t, msg.FString, reply.FString)
+	return nil
+}
+
+func grpcServerStream(ctx context.Context, t *testing.T, client grpcbin.GRPCBinClient, msg *grpcbin.DummyMessage) error {
+	t.Helper()
+	server, err := client.DummyServerStream(ctx, msg)
+	if err != nil {
+		return err
+	}
+	for range 10 {
+		reply, err := server.Recv()
+		if err != nil {
+			return err
+		}
+		require.Equal(t, msg.FString, reply.FString)
+	}
+	_, err = server.Recv()
+	require.ErrorIs(t, err, io.EOF)
+	return nil
+}
+
+func grpcClientStream(ctx context.Context, t *testing.T, client grpcbin.GRPCBinClient) error {
+	t.Helper()
+	upload, err := client.DummyClientStream(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range int32(10) {
+		if err := upload.Send(&grpcbin.DummyMessage{FInt32: i}); err != nil {
+			return streamStatus(err, upload.RecvMsg)
+		}
+	}
+	// grpcbin replies to message ten. Reading before CloseSend proves the
+	// backend processed the upload while the request body was still open.
+	var last grpcbin.DummyMessage
+	if err := upload.RecvMsg(&last); err != nil {
+		return err
+	}
+	require.EqualValues(t, 9, last.FInt32)
+	require.NoError(t, upload.CloseSend())
+	return nil
+}
+
+func grpcBidirectionalStream(ctx context.Context, t *testing.T, client grpcbin.GRPCBinClient) error {
+	t.Helper()
+	chat, err := client.DummyBidirectionalStreamStream(ctx)
+	if err != nil {
+		return err
+	}
+	for _, value := range []string{"first", "second"} {
+		if err := chat.Send(&grpcbin.DummyMessage{FString: value}); err != nil {
+			return streamStatus(err, chat.RecvMsg)
+		}
+		reply, err := chat.Recv()
+		if err != nil {
+			return err
+		}
+		require.Equal(t, value, reply.FString)
+	}
+	require.NoError(t, chat.CloseSend())
+	_, err = chat.Recv()
+	require.ErrorIs(t, err, io.EOF)
+	return nil
+}
+
+// streamStatus returns the status behind a failed Send. gRPC reports a stream
+// the server ended as io.EOF on Send and leaves the status to RecvMsg.
+func streamStatus(sendErr error, recvMsg func(any) error) error {
+	if !errors.Is(sendErr, io.EOF) {
+		return sendErr
+	}
+	var discard grpcbin.DummyMessage
+	return recvMsg(&discard)
+}
+
+// requireGRPCCallThroughWAF requires an allowed call to reach the backend.
+func requireGRPCCallThroughWAF(ctx context.Context, t *testing.T, path string, call func() error) {
+	t.Helper()
+	_, err := callGRPCThroughWAF(ctx, t, path, call)
+	require.NoError(t, err, path)
+}
+
+// requireGRPCWAFRuleDenial requires a call to be refused by the WAF rules.
+func requireGRPCWAFRuleDenial(ctx context.Context, t *testing.T, path string, call func() error) {
+	t.Helper()
+	since, err := callGRPCThroughWAF(ctx, t, path, call)
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%s: %v", path, err)
+	record := grpcAccessLogRecord(ctx, t, since, path, 403)
+	require.Equal(t, "waf", record["denied_by"])
+	require.Equal(t, "<NOSRV>", record["server_pod"])
+}
+
+// callGRPCThroughWAF returns the error of call and the time its final attempt
+// started. A deny-mode route refuses a request at the proxy when the WAF verdict
+// misses the plugin deadline, which a busy node can cause for any request. Such
+// a refusal must be logged as waf_unavailable without a server; the call is
+// then made once more and that attempt has to show the actual outcome.
+func callGRPCThroughWAF(ctx context.Context, t *testing.T, path string, call func() error) (time.Time, error) {
 	t.Helper()
 	since := time.Now()
 	err := call()
-	recordFor := func(httpStatus float64) map[string]any {
-		return findAccessLogRecordWhere(ctx, t, since, "gRPC WAF refusal on "+path, func(r map[string]any) bool {
-			return r["host"] == host && r["path"] == path && r["status"] == httpStatus
-		})
+	if status.Code(err) != codes.Unavailable {
+		return since, err
 	}
-	if status.Code(err) == codes.Unavailable {
-		record := recordFor(503)
-		require.Equal(t, "waf_unavailable", record["denied_by"])
-		require.Equal(t, "<NOSRV>", record["server_pod"])
-		t.Logf("WAF verdict unavailable for %s, request %v refused at proxy", path, record["req_id"])
-		since = time.Now()
-		err = call()
-	}
-	require.Equal(t, codes.PermissionDenied, status.Code(err), "%s: %v", path, err)
-	record := recordFor(403)
-	require.Equal(t, "waf", record["denied_by"])
+	record := grpcAccessLogRecord(ctx, t, since, path, 503)
+	require.Equal(t, "waf_unavailable", record["denied_by"], "%s: %v", path, err)
 	require.Equal(t, "<NOSRV>", record["server_pod"])
+	t.Logf("WAF verdict unavailable for %s, request %v refused at proxy", path, record["req_id"])
+	since = time.Now()
+	return since, call()
+}
+
+func grpcAccessLogRecord(ctx context.Context, t *testing.T, since time.Time, path string, httpStatus float64) map[string]any {
+	t.Helper()
+	return findAccessLogRecordWhere(ctx, t, since, fmt.Sprintf("HTTP %v for gRPC call %s", httpStatus, path), func(r map[string]any) bool {
+		return r["host"] == wafGRPCHost && r["path"] == path && r["status"] == httpStatus
+	})
 }
