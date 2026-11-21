@@ -1,0 +1,16 @@
+# HAPTIC — HAProxy Template Ingress Controller
+
+> HAPTIC is an open-source Kubernetes controller that renders HAProxy configuration from templates. The Helm chart supports Kubernetes Ingress and Gateway API.
+
+## Released documentation
+
+- [Install with Helm](https://haproxy-haptic.org/docs/latest/getting-started/index.md)
+- [Route a Kubernetes Service with Gateway API](https://haproxy-haptic.org/docs/latest/gateway-api/index.md)
+- [Migrate an existing ingress controller](https://haproxy-haptic.org/docs/latest/migrating/index.md)
+- [Documentation index for the latest release](https://haproxy-haptic.org/docs/latest/llms.txt)
+- [Available versions and aliases](https://haproxy-haptic.org/docs/versions.json)
+
+## Development
+
+- [Unreleased documentation index](https://haproxy-haptic.org/docs/dev/llms.txt)
+- [Source repository](https://github.com/haproxy-haptic/HAPTIC)

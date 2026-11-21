@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 
 {% block extrahead %}
+  <script type="application/ld+json">
+    {{ {"@context": "https://schema.org", "@type": "WebSite", "url": config.site_url,
+        "name": "HAPTIC", "alternateName": "HAProxy Template Ingress Controller"} | tojson }}
+  </script>
+  <meta property="og:site_name" content="HAPTIC">
   <meta property="og:type" content="website">
   <meta property="og:title" content="{{ config.site_name }}">
   <meta property="og:description" content="{{ config.site_description }}">
@@ -18,14 +23,14 @@
   <section class="hero">
     <div class="hero-copy">
       <h1 class="hero-title">
-        Control HAProxy routing<br>
-        with <span class="hl">your own templates</span>.
+        Template-driven HAProxy routing<br>
+        for <span class="hl">Kubernetes</span>
       </h1>
       <p class="hero-sub">
-        <strong>HAPTIC</strong> is an open-source
+        The <strong>HAProxy Template Ingress Controller (HAPTIC)</strong> is an open-source
         <a href="https://www.haproxy.org/">HAProxy</a> ingress controller for Kubernetes.
-        Start with <a href="./docs/latest/libraries/ingress/">Ingress</a> and
-        <a href="./docs/latest/libraries/gateway/">Gateway API</a> support.
+        Route traffic with <a href="./docs/latest/libraries/ingress/">Kubernetes Ingress</a> or
+        <a href="./docs/latest/gateway-api/">Gateway API and HTTPRoute</a>.
         Use templates to add your own annotations, routing rules, or
         <a href="./docs/latest/watching-resources/">custom resource types</a>.
       </p>
@@ -236,7 +241,7 @@
        <a href="./docs/latest/libraries/nginx-ingress/">ingress-nginx</a>,
        <a href="./docs/latest/libraries/haproxytech/">HAProxy Technologies</a>, or
        <a href="./docs/latest/libraries/haproxy-ingress/">haproxy-ingress</a>.
-       Check its supported annotations before switching traffic.</p>
+       Follow the <a href="./docs/latest/migrating/">migration guide</a> to check annotation compatibility before switching traffic.</p>
   </section>
 
   <section class="extend">

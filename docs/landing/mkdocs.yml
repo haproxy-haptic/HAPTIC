@@ -1,6 +1,6 @@
-site_name: "HAPTIC - Template-Driven HAProxy Ingress Controller for Kubernetes"
+site_name: "HAPTIC – HAProxy Ingress and Gateway API Controller for Kubernetes"
 site_url: https://haproxy-haptic.org/
-site_description: "Customize Kubernetes routing with templates. Start with Ingress and Gateway API, then add your own annotations, routing rules, and resource types."
+site_description: "Route Kubernetes traffic through HAProxy with HAPTIC. Install with Helm, use Ingress or Gateway API, and extend routing with templates for your own resources."
 
 repo_name: haproxy-haptic/HAPTIC
 repo_url: https://github.com/haproxy-haptic/HAPTIC
