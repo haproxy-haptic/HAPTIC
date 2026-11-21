@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The managed shared rate-limit store's Valkey and Sentinel pods meet Pod Security Admission's restricted level: they run as the image's valkey user with no privilege escalation, no capabilities, the default seccomp profile and a read-only root filesystem. A namespace that enforces restricted refused them before, so the store never started and every SPOA sidecar fell back to its emergency limiter.
 - Live config validation resumes the unfinished fixture tests after a suite timeout. Each replica keeps its own progress for the same candidate, effective configuration, schemas and HAProxy version ([#732](https://github.com/haproxy-haptic/HAPTIC/issues/732)).
 
 - Pre-rollout preparation updates the controller and its existing validators sidecar together, preventing mixed-version admission checks and a second rollout for image-only upgrades ([#724](https://github.com/haproxy-haptic/HAPTIC/issues/724)).

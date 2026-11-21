@@ -169,10 +169,25 @@ k8sResources:
                   matchLabels:
                     app.kubernetes.io/name: haptic-rate-limit-store
                     app.kubernetes.io/instance: {{ base }}
+            {# Pod Security Admission "restricted": the official valkey images run as
+               root and drop to their valkey user (999:1000) in docker-entrypoint.sh;
+               the commands below bypass that entrypoint, so run as that user directly. -#}
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 999
+              runAsGroup: 1000
+              fsGroup: 1000
+              seccompProfile:
+                type: RuntimeDefault
             containers:
               - name: valkey
                 image: {{ img }}
                 imagePullPolicy: {{ imagePullPolicy }}
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  capabilities:
+                    drop: ["ALL"]
                 command: ["/bin/sh", "-ec"]
                 args:
                   - |
@@ -289,9 +304,19 @@ k8sResources:
                     command: ["valkey-cli", "-e", "-p", "{{ port }}", "ping"]
                   initialDelaySeconds: 5
                   periodSeconds: 10
+                {# The working directory: nothing is persisted (--save "", no AOF), but a
+                   replica writes the RDB of a full sync here before loading it. -#}
+                volumeMounts:
+                  - name: data
+                    mountPath: /data
               - name: sentinel
                 image: {{ img }}
                 imagePullPolicy: {{ imagePullPolicy }}
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  capabilities:
+                    drop: ["ALL"]
                 command: ["/bin/sh", "-ec"]
                 args:
                   - |
@@ -347,6 +372,8 @@ k8sResources:
                   - name: sentinel
                     mountPath: /sentinel
             volumes:
+              - name: data
+                emptyDir: {}
               - name: sentinel
                 emptyDir: {}
       {%- if pdbEnabled == "true" %}
