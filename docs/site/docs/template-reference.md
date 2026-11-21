@@ -13,7 +13,7 @@ All templates have access to the following top-level variables:
 | `controller` | map of stores | Controller-managed stores; currently only `controller.haproxy_pods` for the discovered HAProxy pod set |
 | `pathResolver` | object | Resolves filenames to HAProxy paths — see [`pathResolver`](#pathresolver) |
 | `capabilities` | map (bool values) | Feature flags for the lowest HAProxy version in the fleet. See [version checks](#check-haproxy-features). |
-| `currentConfig` | server index (or nil) | The servers the running configuration has: `currentConfig.ServerIndex["<backend>"]["<server>"].Address` and `.Port` (a pointer — check it for nil before you read it). **Nil on first deployment** — guard with `{% if !isNil(currentConfig) %}`. |
+| `currentConfig` | server index (or nil) | The servers the running configuration has: `currentConfig.ServerIndex["<backend>"]["<server>"].Address` and `.Port` (a pointer — check it for nil before you read it). A `server-template` has no entry: its slots get their names and addresses at runtime. **Nil on first deployment** — guard with `{% if !isNil(currentConfig) %}`. |
 | `currentFiles` | `map[string]string` | Last validated map, general-file, and crt-list contents, keyed by base filename. Empty on first deployment; excludes Secret data. See [previous output](#read-previous-output). |
 | `currentSensitiveFiles` | `map[string]string` | Last validated content of files registered as `"sensitive-file"`, keyed by base filename. Empty on first deployment. See [previous output](#read-previous-output). |
 | `dataplane` | `config.Dataplane` block | The CRD's `spec.dataplane` block — the agent port, timeouts, and the auxiliary paths |

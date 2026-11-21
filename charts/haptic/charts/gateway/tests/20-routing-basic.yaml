@@ -713,4 +713,4 @@ validationTests:
       - type: haproxy_valid
       - type: contains
         target: haproxy.cfg
-        pattern: 'server s3 files\.s3\.example\.net:443[^\n]*resolvers dns init-addr last,libc,none'
+        pattern: 'server-template s3 8 files\.s3\.example\.net:443[^\n]*resolvers dns-pool init-addr last,libc,none'

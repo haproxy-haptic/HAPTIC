@@ -39,7 +39,7 @@ import (
 )
 
 const backendServersExpected = `[{"address":"10.0.0.1","comment":"Pod: pod-a","disabled":true,"guid":"srv:be-main:svc-pod-a","name":"svc-pod-a","port":8080,"weight":25},{"address":"10.0.0.2","comment":"Pod: pod-b","guid":"srv:be-main:svc-pod-b","name":"svc-pod-b","port":8080,"weight":25}]`
-const backendServersExternalNameExpected = `[{"address":"files.s3.example.net","comment":"ExternalName: files.s3.example.net","extra":[{"args":["dns"],"name":"resolvers"},{"args":["last,libc,none"],"name":"init-addr"}],"guid":"srv:be-main:svc-echo","name":"svc-echo","port":443,"weight":25}]`
+const backendServersExternalNameExpected = `[{"address":"files.s3.example.net","comment":"ExternalName: files.s3.example.net","extra":[{"args":["dns-pool"],"name":"resolvers"},{"args":["last,libc,none"],"name":"init-addr"}],"name":"svc-echo","port":443,"template":8,"weight":25}]`
 
 const backendServersTestTemplate = `{%- import "util-backend-servers" for BackendServers -%}
 {%- import "util-backend-servers-result" for BackendServersResult -%}
@@ -48,6 +48,7 @@ const backendServersTestTemplate = `{%- import "util-backend-servers" for Backen
 {%- var port = toint(extraContext | dig("port")) -%}
 {%- var portName = extraContext | dig("portName") -%}
 {%- var serverOpts = map[string]any{"namePrefix": "svc-", "weight": 25} -%}
+{%- if slots := extraContext | dig("externalNameSlots"); slots != nil -%}{%- serverOpts["externalNameSlots"] = slots -%}{%- end -%}
 {%- var marker = "degradedBackendRef:" + namespace + "/" + serviceName + "/http" -%}
 {%- var result = BackendServersResult(serviceName, 0, port, serverOpts, portName, "be-main", namespace) -%}
 pure={{ toJSON(result["servers"]) }}
@@ -126,6 +127,7 @@ func TestBackendServersResultPreservesLegacyBytesWithoutSharedMutation(t *testin
 	tests := map[string]struct {
 		port             int
 		portName         any
+		slots            any
 		serviceResource  map[string]any
 		withEndpoint     bool
 		wantServers      string
@@ -148,6 +150,15 @@ func TestBackendServersResultPreservesLegacyBytesWithoutSharedMutation(t *testin
 		"missing Service and endpoints is degraded": {
 			portName: "http", wantServers: "[]", wantPortName: "http", wantDegraded: true, wantLegacyMarker: true,
 		},
+		// Headless Services resolve through their EndpointSlices like ClusterIP ones, never through DNS.
+		"headless Service with a selector": {
+			port: 80, serviceResource: backendServersHeadlessServiceResource(true), withEndpoint: true,
+			wantServers: backendServersExpected, wantPortName: "http",
+		},
+		"headless Service without a selector": {
+			port: 80, serviceResource: backendServersHeadlessServiceResource(false), withEndpoint: true,
+			wantServers: backendServersExpected, wantPortName: "http",
+		},
 		"ExternalName Service with numeric port": {
 			port: 443, serviceResource: backendServersExternalNameServiceResource("files.s3.example.net", true),
 			wantServers: backendServersExternalNameExpected, wantPortName: "http",
@@ -160,6 +171,10 @@ func TestBackendServersResultPreservesLegacyBytesWithoutSharedMutation(t *testin
 			port: 443, serviceResource: backendServersExternalNameServiceResource("files.s3.example.net", false),
 			wantServers: backendServersExternalNameExpected,
 		},
+		"ExternalName Service with a slot count": {
+			port: 443, slots: 16, serviceResource: backendServersExternalNameServiceResource("files.s3.example.net", true),
+			wantServers: strings.Replace(backendServersExternalNameExpected, `"template":8`, `"template":16`, 1), wantPortName: "http",
+		},
 		"ExternalName Service with invalid hostname is skipped": {
 			port: 443, serviceResource: backendServersExternalNameServiceResource("bad host\ninjected", true),
 			wantServers: "[]", wantPortName: "http",
@@ -168,7 +183,7 @@ func TestBackendServersResultPreservesLegacyBytesWithoutSharedMutation(t *testin
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			observation := renderBackendServersChart(t, test.port, test.portName, test.serviceResource, test.withEndpoint)
+			observation := renderBackendServersChart(t, test.port, test.portName, test.slots, test.serviceResource, test.withEndpoint)
 
 			assert.Equal(t, test.wantServers, observation.pure)
 			assert.Equal(t, observation.pure, observation.legacy)
@@ -184,6 +199,7 @@ func renderBackendServersChart(
 	t *testing.T,
 	port int,
 	portName any,
+	slots any,
 	serviceResource map[string]any,
 	withEndpoint bool,
 ) backendServersObservation {
@@ -201,8 +217,9 @@ func renderBackendServersChart(
 	cfg := &config.Config{
 		Dataplane: testDataplaneConfig(),
 		TemplatingSettings: config.TemplatingSettings{ExtraContext: map[string]any{
-			"port":     port,
-			"portName": portName,
+			"port":              port,
+			"portName":          portName,
+			"externalNameSlots": slots,
 		}},
 		WatchedResources: map[string]config.WatchedResource{
 			"services": {
@@ -280,6 +297,22 @@ func backendServersServiceResource() map[string]any {
 		"apiVersion": "v1", "kind": "Service",
 		"metadata": map[string]any{"namespace": "default", "name": "echo"},
 		"spec":     map[string]any{"ports": []any{map[string]any{"name": "http", "port": int64(80)}}},
+	}
+}
+
+func backendServersHeadlessServiceResource(withSelector bool) map[string]any {
+	spec := map[string]any{
+		"type":      "ClusterIP",
+		"clusterIP": "None",
+		"ports":     []any{map[string]any{"name": "http", "port": int64(80)}},
+	}
+	if withSelector {
+		spec["selector"] = map[string]any{"app": "echo"}
+	}
+	return map[string]any{
+		"apiVersion": "v1", "kind": "Service",
+		"metadata": map[string]any{"namespace": "default", "name": "echo"},
+		"spec":     spec,
 	}
 }
 

@@ -123,7 +123,7 @@ validationTests:
       - {type: contains, target: haproxy.cfg, pattern: "ssl verify required ca-file @system-ca"}
       - {type: contains, target: haproxy.cfg, pattern: "sni str\\(files\\.s3\\.example\\.net\\)"}
       - {type: contains, target: haproxy.cfg, pattern: "verifyhost files\\.s3\\.example\\.net"}
-      - {type: contains, target: haproxy.cfg, pattern: 'server [^\n]*files\.s3\.example\.net:443[^\n]*resolvers dns init-addr last,libc,none'}
+      - {type: contains, target: haproxy.cfg, pattern: 'server-template [^\n]*files\.s3\.example\.net:443[^\n]*resolvers dns-pool init-addr last,libc,none'}
       - {type: contains, target: "map:reqhdr-host.map", pattern: '(?m)^default_assets_svc_s3_https files\.s3\.example\.net$'}
       - {type: not_contains, target: "map:haptic-route-unavailable.map", pattern: 'default/assets'}
 

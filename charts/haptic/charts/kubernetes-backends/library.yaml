@@ -300,6 +300,12 @@ templateSnippets:
           if v := serverOpts | dig("maxconn"); v != nil {
             maxconn = []any{map[string]any{"name": "maxconn", "args": []any{tostring(toint(v))}}}
           }
+          // An ExternalName backend's server-template slots; a resource library
+          // validates its own setting (haproxy-haptic.org/externalname-slots).
+          var externalNameSlots = 8
+          if v := serverOpts | dig("externalNameSlots"); v != nil && toint(v) > 0 {
+            externalNameSlots = toint(v)
+          }
           var bkName = ""
           if backendName != nil {
             bkName = tostring(backendName)
@@ -377,8 +383,8 @@ templateSnippets:
           }
 
           var servers = []any{}
-          // Kubernetes creates no EndpointSlice for ExternalName Services; emit a
-          // DNS-resolved server directly from spec.externalName.
+          // Kubernetes creates no EndpointSlice for ExternalName Services; emit DNS-resolved
+          // slots from spec.externalName. No guid: one guid would name every slot.
           if len(allSlices) == 0 && svc != nil && svc.Spec.Type == "ExternalName" {
             var externalName = trimSpace(svc.Spec.ExternalName)
             var resolvedPort = port
@@ -394,16 +400,14 @@ templateSnippets:
               var srvName = ServerName(namePrefix + serviceName)
               var extra = append([]any{}, maxconn...)
               extra = append(extra,
-                map[string]any{"name": "resolvers", "args": []any{"dns"}},
+                map[string]any{"name": "resolvers", "args": []any{"dns-pool"}},
                 map[string]any{"name": "init-addr", "args": []any{"last,libc,none"}},
               )
               var record = map[string]any{
                 "name": srvName, "address": externalName, "port": resolvedPort,
                 "comment": "ExternalName: " + externalName,
                 "extra": extra,
-              }
-              if bkName != "" {
-                record["guid"] = make_guid("srv", bkName, srvName)
+                "template": externalNameSlots,
               }
               if weight != nil {
                 record["weight"] = weight

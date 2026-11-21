@@ -176,6 +176,22 @@ func TestSnapshotExactEqualAcrossAuthorities(t *testing.T) {
 	assert.False(t, equal)
 }
 
+// TestSnapshotExactEqualSeesServerTemplate pins that a server's slot count is
+// part of exact equality, so a snapshot never treats a resized template as reusable.
+func TestSnapshotExactEqualSeesServerTemplate(t *testing.T) {
+	plan := snapshotPlanFixture(1)
+	resized := plan.Clone()
+	backend := resized.Backends["backend-000000"]
+	servers := append([]Server(nil), backend.Servers...)
+	servers[0].Template = 6
+	backend.Servers = servers
+	resized.Backends["backend-000000"] = backend
+
+	equal, err := mustPlanSnapshot(t, NewAuthority(), plan, nil).ExactEqual(mustPlanSnapshot(t, NewAuthority(), resized, nil))
+	require.NoError(t, err)
+	assert.False(t, equal)
+}
+
 func TestSnapshotPreservesNilAndEmptyCollections(t *testing.T) {
 	nilPlan := exactEmptyPlan()
 	emptyPlan := exactEmptyPlan()
@@ -379,7 +395,8 @@ func snapshotPlanFixture(count int) *Plan {
 			Servers: []Server{{
 				Name: fmt.Sprintf("server-%06d", index), Address: fmt.Sprintf("10.0.%d.%d", index/255, index%255),
 				Port: 8080, Weight: &weight, GUID: fmt.Sprintf("server-guid-%06d", index), Comment: "ready",
-				Extra: []KeywordArg{{Name: "check"}, {Name: "inter", Args: []string{"1s"}}},
+				Extra:    []KeywordArg{{Name: "check"}, {Name: "inter", Args: []string{"1s"}}},
+				Template: 4,
 			}},
 			DefaultServer:  []KeywordArg{{Name: "init-addr", Args: []string{"last", "libc", "none"}}},
 			BodyDigest:     DigestString(body[0]),

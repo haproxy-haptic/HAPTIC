@@ -122,6 +122,15 @@ type Server struct {
 	GUID     string       `json:"guid,omitempty"`
 	Comment  string       `json:"comment,omitempty"`
 	Extra    []KeywordArg `json:"extra,omitempty"`
+	// Template is the slot count of a `server-template` line, whose servers are Name1..NameN; 0 is a plain server.
+	Template int `json:"template,omitempty"`
+}
+
+// InCurrentConfig reports whether templates find the server in `currentConfig`.
+// A server-template's slots get their names and addresses at runtime, so the
+// running configuration has no server of the template's name to list.
+func (s *Server) InCurrentConfig() bool {
+	return s.Template == 0
 }
 
 // KeywordArg is a server or default-server keyword with its arguments,
@@ -345,15 +354,18 @@ func (p *Plan) CurrentConfig() CurrentConfig {
 	index := make(map[string]map[string]ServerAddr, len(p.Backends))
 	for name := range p.Backends {
 		declared := p.Backends[name].Servers
-		if len(declared) == 0 {
-			continue
-		}
 		servers := make(map[string]ServerAddr, len(declared))
-		for _, server := range declared {
+		for i := range declared {
+			server := &declared[i]
+			if !server.InCurrentConfig() {
+				continue
+			}
 			port := int64(server.Port)
 			servers[server.Name] = ServerAddr{Address: server.Address, Port: &port}
 		}
-		index[name] = servers
+		if len(servers) > 0 {
+			index[name] = servers
+		}
 	}
 	return CurrentConfig{ServerIndex: index}
 }

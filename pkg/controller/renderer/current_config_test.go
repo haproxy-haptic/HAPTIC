@@ -393,3 +393,37 @@ func (*planTestTransaction) HasCandidates() bool { return false }
 func (t *planTestTransaction) Commit(context.Context) error { return t.commitErr }
 
 func (t *planTestTransaction) Abort() { t.aborted = true }
+
+// TestCurrentConfigProjectionLeavesOutServerTemplates holds the projection to
+// Plan.CurrentConfig for server-templates, built at once and incrementally,
+// including a backend whose plain server becomes a template.
+func TestCurrentConfigProjectionLeavesOutServerTemplates(t *testing.T) {
+	plain := renderplan.Server{Name: "files", Address: "files.example.net", Port: 443}
+	template := renderplan.Server{Name: "files", Address: "files.example.net", Port: 443, Template: 4}
+	member := renderplan.Server{Name: "SRV_1", Address: "192.0.2.1", Port: 80}
+	before := map[string]renderplan.Backend{
+		"be_files": {Name: "be_files", Servers: []renderplan.Server{plain}},
+		"be_mixed": {Name: "be_mixed", Servers: []renderplan.Server{member}},
+	}
+	after := map[string]renderplan.Backend{
+		"be_files": {Name: "be_files", Servers: []renderplan.Server{template}},
+		"be_mixed": {Name: "be_mixed", Servers: []renderplan.Server{member, template}},
+	}
+	want := (&renderplan.Plan{Backends: after}).CurrentConfig()
+	require.NotContains(t, want.ServerIndex, "be_files")
+	require.Len(t, want.ServerIndex["be_mixed"], 1)
+
+	materialize := func(projection *exactCycleCurrentConfigProjection) renderplan.CurrentConfig {
+		current, err := sealCurrentConfigRoot(projection, nil).materialize()
+		require.NoError(t, err)
+		return current
+	}
+	assert.Equal(t, want, materialize(currentConfigProjection(after)))
+
+	changes := make([]renderplan.NamedChange[renderplan.Backend], 0, len(after))
+	for _, name := range []string{"be_files", "be_mixed"} {
+		previous, next := before[name], after[name]
+		changes = append(changes, renderplan.NamedChange[renderplan.Backend]{Name: name, Before: &previous, After: &next})
+	}
+	assert.Equal(t, want, materialize(applyCurrentConfigBackendChanges(currentConfigProjection(before), changes)))
+}
