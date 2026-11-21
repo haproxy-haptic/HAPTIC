@@ -179,7 +179,7 @@ Template-side routing, policy catalogs, and Ingress-author permissions live in t
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `controller.config.templatingSettings.extraContext.waf.failClosed` | bool | `false` | Deny requests when the WAF can't return a verdict. The default allows these requests and records `waf_degraded` in access logs and `haptic_degraded_waf_total` in metrics. Requests the WAF inspects and rejects receive `403` with either setting. |
+| `controller.config.templatingSettings.extraContext.waf.failClosed` | bool | `false` | Require a WAF verdict on every active route, including detect mode. Deny-mode routes always return `503` when inspection is unavailable. An unavailable verdict sets `waf_degraded` in the access log and increments `haptic_degraded_waf_total`. |
 | `controller.config.templatingSettings.extraContext.waf.clientPenalty.mode` | string | `off` | Throttles clients that keep triggering WAF rules, across all HAProxy pods: `detect` records the `waf_client_penalty` access-log field, `deny` also answers `429` before the WAF runs. Requires `rateLimit.shared.enabled`. See [throttle repeat offenders](operations/waf-tuning.md#repeat-offenders) |
 | `controller.config.templatingSettings.extraContext.waf.clientPenalty.scoreLimit` | int | `50` | Outstanding anomaly score per client IP and WAF policy at which the client is penalised. One critical Core Rule Set (CRS) rule match scores 5 |
 | `controller.config.templatingSettings.extraContext.waf.clientPenalty.window` | duration | `1m` | Period over which `scoreLimit` points drain, and the longest a penalty lasts after the last scored request |

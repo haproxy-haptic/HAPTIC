@@ -17,6 +17,14 @@ metadata:
 The following sections cover catalog setup, policy tuning, and permissions.
 For individual route settings, see the [WAF annotations](../libraries/haptic-annotations.md#authentication-mtls-and-waf).
 
+A policy with `enforcement: deny` returns HTTP 503 when the WAF times out or
+can't provide a verdict. HAProxy records `denied_by=waf_unavailable` and keeps
+the request out of the application backend. A completed rule denial returns
+HTTP 403. The same protection applies to an active compatibility WAF application
+that omits its mode. Detection-only routes continue on an unavailable verdict by default.
+Set `controller.config.templatingSettings.extraContext.waf.failClosed` to
+`true` to require a verdict on all active WAF routes.
+
 ## Configure a trusted catalog
 
 Add this reference to your [complete Helm values file](../deploying-with-helm.md#change-settings).

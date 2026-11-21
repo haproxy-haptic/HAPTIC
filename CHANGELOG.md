@@ -68,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Fixed
 
+- WAF routes with deny enforcement return HTTP 503 when inspection is unavailable, including when Coraza times out.
+
 - Fetched OWASP Core Rule Sets load their matching setup file before rule evaluation and honor per-policy CRS tuning and path-scoped exclusions.
 - An Ingress can now be applied alongside its self-service WAF policy. Admission warns if the policy is still missing, and the reconciled route returns `503` until the policy is available ([#703](https://github.com/haproxy-haptic/HAPTIC/issues/703)).
 - HAProxy sends access-log records to the Vector sidecar over UDP on `127.0.0.1:9514` instead of a Unix datagram socket, whose 10-record queue dropped records on every reload ([#677](https://github.com/haproxy-haptic/HAPTIC/issues/677)).
