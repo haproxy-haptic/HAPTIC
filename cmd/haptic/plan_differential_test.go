@@ -39,6 +39,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -83,6 +84,8 @@ type parsedServer struct {
 	// keyword such as `disabled`.
 	Options map[string]string
 	Comment string
+	// Template is a `server-template` line's slot count, 0 for a `server` line.
+	Template int
 }
 
 // parsedBackend is one backend section as client-native read it back.
@@ -122,6 +125,25 @@ func parseBackendServers(t *testing.T, config string) map[string]parsedBackend {
 					Address: lines[i].Address,
 					Options: keywordOptions(lines[i].Params),
 					Comment: strings.TrimSpace(lines[i].Comment),
+				})
+			}
+		}
+		if data, err := p.Get(cnparser.Backends, name, "server-template"); err == nil {
+			lines, ok := data.([]cntypes.ServerTemplate)
+			require.Truef(t, ok, "backend %q: server-template data is %T", name, data)
+			for i := range lines {
+				slots, err := strconv.Atoi(lines[i].NumOrRange)
+				require.NoErrorf(t, err, "backend %q: server-template %q slot count", name, lines[i].Prefix)
+				address := lines[i].Fqdn
+				if lines[i].Port != 0 {
+					address = fmt.Sprintf("%s:%d", address, lines[i].Port)
+				}
+				backend.Servers = append(backend.Servers, parsedServer{
+					Name:     lines[i].Prefix,
+					Address:  address,
+					Options:  keywordOptions(lines[i].Params),
+					Comment:  strings.TrimSpace(lines[i].Comment),
+					Template: slots,
 				})
 			}
 		}
@@ -267,6 +289,10 @@ func serverMismatches(backend string, declared *renderplan.Server, emitted *pars
 	where := fmt.Sprintf("backend %q server %q", backend, declared.Name)
 	if declared.Name != emitted.Name {
 		return []string{fmt.Sprintf("%s: the config has %q in that position", where, emitted.Name)}
+	}
+	if declared.Template != emitted.Template {
+		mismatches = append(mismatches, fmt.Sprintf("%s: declared template %d, the config has %d",
+			where, declared.Template, emitted.Template))
 	}
 	if address := declaredAddress(declared); address != emitted.Address {
 		mismatches = append(mismatches, fmt.Sprintf("%s: declared address %q, the config has %q",
@@ -456,6 +482,19 @@ const twoServerRecord = `map[string]any{
 	},
 }`
 
+const templateText = `backend be_files\n    server-template s3 4 files.example.net:443 init-addr none  # ExternalName: files.example.net\n`
+
+// templateRecord describes templateText with the given slot count.
+func templateRecord(slots int) string {
+	return fmt.Sprintf(`map[string]any{
+	"name": "be_files", "shape": "structural",
+	"servers": []any{
+		map[string]any{"name": "s3", "address": "files.example.net", "port": 443, "template": %d,
+			"comment": "ExternalName: files.example.net", "extra": []any{map[string]any{"name": "init-addr", "args": []any{"none"}}}},
+	},
+}`, slots)
+}
+
 // twoServerRecordWith returns twoServerRecord with the SRV_1 record replaced.
 func twoServerRecordWith(srv1 string) string {
 	return `map[string]any{
@@ -488,6 +527,17 @@ func TestPlanDifferentialSynthetic(t *testing.T) {
 			maps: map[string]string{
 				"host.map": "# a comment\nexample.com be_api\n\nother.example.com be_other\n",
 			},
+		},
+		{
+			name:   "a server-template record that describes its line exactly",
+			record: templateRecord(4),
+			text:   templateText,
+		},
+		{
+			name:        "a server-template record with a wrong slot count",
+			record:      templateRecord(6),
+			text:        templateText,
+			wantMissing: `backend "be_files" server "s3": declared template 6, the config has 4`,
 		},
 		{
 			name: "a record with one server fewer than its text",
