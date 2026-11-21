@@ -1177,6 +1177,7 @@ For detailed development context on specific packages, see:
 - `pkg/templating/CLAUDE.md` - Template engine
 - `pkg/core/CLAUDE.md` - Core functionality
 - `pkg/httpstore/CLAUDE.md` - Pure HTTP resource store
+- `pkg/blobstore/CLAUDE.md` - Pure on-disk blob store and its event adapter
 - `pkg/introspection/CLAUDE.md` - Debug HTTP server infrastructure (`/debug/vars`)
 - `pkg/lifecycle/CLAUDE.md` - Component lifecycle registry and leader gating
 - `pkg/metrics/CLAUDE.md` - Prometheus registry and server primitives

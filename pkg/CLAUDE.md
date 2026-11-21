@@ -73,6 +73,8 @@ For the canonical layout (with sub-packages), see [`docs/site/docs/development/d
 
 **pkg/persistenttree/** — Immutable ordered map with structural sharing. Domain-free container; stdlib only.
 
+**pkg/blob/** — Blob declarations (`Spec`), references (`Ref`), and the data-plane path prefix (ADR-0041). Stdlib only; shared by the template engine, the stores, and the agent.
+
 **pkg/rendercontent/** — Value types for rendered output (`Output`, `TextFragment`, `Document`) and their deltas. Shared by the renderer and the dataplane; no HAProxy vocabulary.
 
 **pkg/incremental/** — Generic incremental computation graph: opaque input/query keys, revisions, exact dependency journals, transactional commit. Knows nothing about templating or Kubernetes; depends only on `pkg/persistenttree`. See [ADR-0023](../docs/adr/0023-incremental-render-graph.md).
@@ -109,7 +111,12 @@ For the canonical layout (with sub-packages), see [`docs/site/docs/development/d
 **pkg/httpstore/**
 
 - Pure HTTP resource store (two-version pending/accepted)
-- Depends on: standard library
+- Depends on: standard library, `pkg/blob`
+
+**pkg/blobstore/**
+
+- Pure on-disk store of content-addressed blobs (ADR-0041)
+- Depends on: standard library, `pkg/blob`
 - Imported by: controller package
 
 **pkg/webhook/**

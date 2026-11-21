@@ -22,6 +22,7 @@ All templates have access to the following top-level variables:
 | `runtimeEnvironment` | object | Runtime info exposed by the controller (for example `runtimeEnvironment.GOMAXPROCS`) |
 | `fileRegistry` | object | Register generated files and get their deployed paths. See [file registration](#register-generated-files). |
 | `http` | object | HTTP fetcher for `http.Fetch("https://example.com/...")` — see [Watching Resources — HTTP Resources](./watching-resources.md#http-resources) for the auto-registration and refresh mechanism |
+| `blob` | package | `blob.Fetch(url, options)` downloads a binary file to the controller and returns a handle with its `digest`, `size`, and data-plane `path` — see [Watching Resources — Binary blobs](./watching-resources.md#binary-blobs) |
 | `extraContext` | map | The full `templatingSettings.extraContext` map. Read a key with `extraContext.key` or `extraContext["key"]` — see [Custom Template Variables](./templating.md#custom-template-variables). |
 | `renderMode` | string | `"admission"` for a proposed resource change; `"reconcile"` for live state, config loading, and `haptic validate`. See [admission checks](#limit-a-check-to-the-admitted-resource). |
 | `admissionSubject` | map | Identifies watched-resource or HTTP content changes under admission review. See [admission checks](#limit-a-check-to-the-admitted-resource). |

@@ -717,6 +717,27 @@ func TestStatusUpdaterEmitsHTTPContentRevocationEffects(t *testing.T) {
 	}
 }
 
+func TestStatusUpdaterEmitsBlobRevocationEffects(t *testing.T) {
+	for name, test := range map[string]struct {
+		restored bool
+		message  string
+	}{
+		"first version": {message: "empty handle"},
+		"restored":      {restored: true, message: "previously accepted blob is served"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			updater, _ := newStatusUpdaterFixture(t)
+			recorder := record.NewFakeRecorder(1)
+			updater.recorder = recorder
+			updater.adoptVerdict(1, true, []events.ConfigSourceRef{{Namespace: testNamespace, Name: testName}})
+
+			updater.HandleEvent(events.NewBlobContentRevokedEvent("https://example.test/db", "digest", test.restored))
+
+			assertNextEvent(t, recorder, "Warning", eventReasonBlobRevoked, test.message)
+		})
+	}
+}
+
 func TestStatusUpdaterHTTPRejectionIdentifiesConfig(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))

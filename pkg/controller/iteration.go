@@ -205,6 +205,7 @@ func startIteration(
 	setup := setupComponents(ctx, infra.IntrospectionRegistry, infra.eventDropMetrics, infra.lastMetrics, typeBootstrapper, crdName, logger)
 	infra.lastMetrics = setup.MetricsComponent.Metrics()
 	setup.AgentTLS = infra.AgentTLS
+	setup.Blobs = infra.Blobs
 	reloadAuthority := newIterationReloadAuthority()
 	startIterationReloadObserver(setup, reloadAuthority)
 	defer func() {

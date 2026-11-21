@@ -91,13 +91,21 @@ func (s *HTTPStore) fetchWithRetry(
 		}
 
 		lastErr = err
+		if permanentFetchError(err) {
+			s.reportBlobFetchFailure(url, &opts, err)
+			return "", "", "", err
+		}
 		s.logger.Log(context.Background(), levelTrace, "HTTP fetch attempt failed",
 			"url", RedactURL(url),
 			"attempt", attempt+1,
 			"error", err)
 	}
 
-	return "", "", "", fmt.Errorf("all %d retry attempts failed: %w", opts.Retries+1, lastErr)
+	err = fmt.Errorf("all %d retry attempts failed: %w", opts.Retries+1, lastErr)
+	if ctx.Err() == nil {
+		s.reportBlobFetchFailure(url, &opts, err)
+	}
+	return "", "", "", err
 }
 
 // doFetch performs a single HTTP GET request and returns the response content
@@ -110,6 +118,10 @@ func (s *HTTPStore) doFetch(
 	etag string,
 	lastModified string,
 ) (content, etagResult, lastModifiedResult string, err error) {
+	if err := s.requireBlobSink(&opts); err != nil {
+		return "", "", "", err
+	}
+
 	// Create request with timeout
 	reqCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
@@ -149,7 +161,7 @@ func (s *HTTPStore) doFetch(
 	lastModifiedResult = resp.Header.Get("Last-Modified")
 
 	if resp.StatusCode == http.StatusOK || opts.AcceptStatus.Contains(resp.StatusCode) {
-		content, err = readContent(resp.Body)
+		content, err = s.readBody(reqCtx, resp.Body, &opts)
 		if err != nil {
 			return "", "", "", err
 		}

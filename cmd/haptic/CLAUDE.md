@@ -319,6 +319,8 @@ Authoritative source: `cmd/haptic/run.go` (`init()` registers flags) and `cmd/ha
 | `--debug-port` | `DEBUG_PORT` | `0` (disabled) | Port for the introspection HTTP server (`/healthz` + `/debug/vars` + `/debug/pprof`). The Helm chart sets this to `8080` by default. |
 | `--kube-client-qps` | `KUBE_CLIENT_QPS` | `-1` (APF) | Client-side apiserver QPS. `<= 0` disables client-side throttling so the controller relies on apiserver Priority & Fairness; a positive value installs one shared client-side rate limiter across all the controller's clients. Chart value `controller.kubeClient.qps`. |
 | `--kube-client-burst` | `KUBE_CLIENT_BURST` | `0` | Client-side apiserver burst; used only when `--kube-client-qps > 0` (`0` means `2*qps`). Chart value `controller.kubeClient.burst`. |
+| `--blob-dir` | `BLOB_DIR` | `""` (disabled) | Directory where `blob.Fetch` downloads are kept, named by their SHA-256 digest (ADR-0041). Empty disables blob sources: `blob.Fetch` returns an empty handle. |
+| `--blob-max-size` | `BLOB_MAX_SIZE` | `256Mi` | Largest blob a source may hold, as a Kubernetes quantity. Caps every `maxSize` option. |
 | `--kubeconfig` | — | (in-cluster) | Out-of-cluster development. |
 | — | `MUTEX_PROFILE_FRACTION` | `0` (off) | Samples 1 in N mutex contentions into `/debug/pprof/mutex`. |
 | — | `BLOCK_PROFILE_RATE` | `0` (off) | Samples blocking events into `/debug/pprof/block`, about one per this many nanoseconds blocked. |

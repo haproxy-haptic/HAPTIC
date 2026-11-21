@@ -117,6 +117,18 @@ revoked := store.RevokeAcceptances(seq) // the gate refused one: restore the pre
 
 A revocation records a semantic change and clears ETag/Last-Modified, so renders see it and the next refresh fetches unconditionally.
 
+### Blob sources (ADR-0041)
+
+A source whose `FetchOptions.Blob` is declared streams its body into the store's `BlobSink`
+(`SetBlobSink`, the pure `pkg/blobstore`) instead of reading it into memory, so the 10 MiB
+`MaxContentSize` does not apply. Its content is the encoded `blob.Ref` (`"<sha256> <size>"`),
+which moves through pending, accepted, and revocation like any text content. A store without a
+sink refuses blob sources before sending a request (`ErrBlobsDisabled`). Refused blobs
+(`blob.ErrRefused`) are not retried. `BlobSources()` lists the accepted, pending, and replaced
+digests for retention; `RevokedContent.BlobDigest` names a revoked blob. `Blob` is a `blob.Key`,
+the spec in one string like `StatusSet`, so `FetchOptions` stays small and comparable; it is
+tagged `omitempty`, so text sources keep their source identity.
+
 ### Test Fixtures
 
 ```go

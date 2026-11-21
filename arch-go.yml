@@ -9,6 +9,8 @@ dependenciesRules:
   - package: "**.pkg.controller.**"
     shouldOnlyDependsOn:
       internal:
+        - "**.pkg.blob.**"         # Blob declarations and references (ADR-0041)
+        - "**.pkg.blobstore.**"    # Pure on-disk blob store
         - "**.pkg.buildinfo.**"    # Immutable build identity values
         - "**.pkg.compression.**"  # Decompression for CRD content
         - "**.pkg.controller.**"
@@ -341,6 +343,19 @@ dependenciesRules:
     shouldOnlyDependsOn:
       internal:
         - "**.pkg.transportsecurity.**"
+
+  # Blob declarations and references: a stdlib-only leaf shared by the
+  # template engine, the stores, and the agent (ADR-0041)
+  - package: "**.pkg.blob.**"
+    shouldOnlyDependsOn:
+      internal:
+        - "**.pkg.blob.**"
+
+  - package: "**.pkg.blobstore.**"
+    shouldOnlyDependsOn:
+      internal:
+        - "**.pkg.blob.**"
+        - "**.pkg.blobstore.**"
 
   - package: "**.pkg.buildinfo.**"
     shouldOnlyDependsOn:

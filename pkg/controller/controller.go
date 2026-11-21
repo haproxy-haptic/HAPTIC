@@ -40,6 +40,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/haproxy-haptic/HAPTIC/pkg/apis/haproxytemplate/v1alpha1"
+	"github.com/haproxy-haptic/HAPTIC/pkg/blobstore"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/commentator"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/configchange"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller/configloader"
@@ -211,6 +212,7 @@ func (s *configState) Message() string {
 // during rapid reinitializations.
 type persistentInfra struct {
 	AgentTLS              *transportsecurity.Source
+	Blobs                 *blobstore.Store
 	IntrospectionRegistry *introspection.Registry
 	IntrospectionServer   *introspection.Server
 	MetricsServer         *pkgmetrics.Server
@@ -614,8 +616,16 @@ func Run(
 	webhookAdmissionTimeouts WebhookAdmissionTimeouts,
 	debugPort int,
 	agentTLS *transportsecurity.Source,
+	blobOptions BlobStoreOptions,
 ) error {
 	logger := slog.Default()
+	var blobs *blobstore.Store
+	if blobOptions.Directory != "" {
+		var err error
+		if blobs, err = blobstore.New(blobOptions.Directory, blobOptions.MaxSize, logger); err != nil {
+			return err
+		}
+	}
 
 	logger.Debug("HAProxy Template Ingress Controller starting",
 		"crd_name", crdName,
@@ -641,6 +651,7 @@ func Run(
 	defer procCancel()
 	infra := &persistentInfra{
 		AgentTLS:              agentTLS,
+		Blobs:                 blobs,
 		IntrospectionRegistry: introspection.NewRegistry(),
 		eventDropMetrics:      &persistentEventDropMetrics{},
 		processCancel:         procCancel,
@@ -689,6 +700,13 @@ func Run(
 		return errors.Join(err, serverErr)
 	}
 	return serverErr
+}
+
+// BlobStoreOptions configures the controller's blob store (ADR-0041). An empty
+// Directory disables blob sources.
+type BlobStoreOptions struct {
+	Directory string
+	MaxSize   int64
 }
 
 // iterationSequence hands leadership from one iteration to the next on the
@@ -830,6 +848,7 @@ func loadGateTimeoutFromEnv() (time.Duration, error) {
 // componentSetup contains all resources created during component initialization.
 type componentSetup struct {
 	AgentTLS              *transportsecurity.Source
+	Blobs                 *blobstore.Store // nil when blob sources are disabled
 	Bus                   *busevents.EventBus
 	Registry              *lifecycle.Registry // Component lifecycle registry
 	MetricsComponent      *metrics.Component

@@ -109,6 +109,8 @@ func New(metrics *Metrics, eventBus *busevents.EventBus) *Component {
 		events.EventTypeConfigValidationInconclusive,
 		events.EventTypeHTTPContentRevoked,
 		events.EventTypeHTTPContentRejected,
+		events.EventTypeBlobContentRevoked,
+		events.EventTypeBlobFetchFailed,
 	)
 
 	return &Component{
@@ -159,6 +161,15 @@ func (c *Component) Metrics() *Metrics {
 	return c.metrics
 }
 
+func (c *Component) recordBlobEvent(event busevents.Event) {
+	switch event.(type) {
+	case *events.BlobContentRevokedEvent:
+		c.metrics.RecordBlobContentRevoked()
+	case *events.BlobFetchFailedEvent:
+		c.metrics.RecordBlobFetchError()
+	}
+}
+
 // handleEvent processes individual events and updates corresponding metrics.
 func (c *Component) handleEvent(event busevents.Event) {
 	// Record every event for total events metric
@@ -207,6 +218,8 @@ func (c *Component) handleEvent(event busevents.Event) {
 		c.metrics.RecordHTTPContentRejected()
 	case *events.HTTPContentRevokedEvent:
 		c.metrics.RecordHTTPContentRevoked()
+	case *events.BlobContentRevokedEvent, *events.BlobFetchFailedEvent:
+		c.recordBlobEvent(e)
 	default:
 		c.handleConfigEvent(event)
 	}

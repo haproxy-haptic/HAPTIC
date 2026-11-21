@@ -217,6 +217,8 @@ Published events (defined in `pkg/controller/events/`):
 | `HTTPResourceAcceptedEvent` | After a matching `ProposalValidationCompletedEvent` with `Valid == true` | Observability that pending → accepted promotion happened |
 | `ReconciliationTriggeredEvent("http_content_validated", true)` | After a successful promotion (in `handleValidationSuccess`) | Coalescible reconciliation request so HAProxy picks up the new content |
 | `HTTPContentAcceptanceRequestedEvent` | A deploying render (`WithCandidatesWithheld`) left out an unaccepted source | The leader's coordinator runs one acceptance attempt beside the reconcile loop (ADR-0030) |
+| `BlobContentRevokedEvent` | `RevokeAcceptances` took back a blob source's version (instead of `HTTPContentRevokedEvent`) | `BlobContentRevoked` Warning Event and `haptic_blob_content_revoked_total` |
+| `BlobFetchFailedEvent` | A blob source's fetch failed after its retries (`EnableBlobs` hook) | `haptic_blob_fetch_errors_total` |
 | `HTTPContentRevokedEvent` + `ReconciliationTriggeredEvent("http_content_revoked", true)` | `RevokeAcceptances` took back content after the render gate refused a render that read it | Warning Event, metric, and the render without the content |
 | `ReconciliationTriggeredEvent("critical_http_content_available", true)` | The refetch of an unavailable critical source succeeded | Resumes held renders; the next accepting render adopts the refetched candidate |
 | `ReconciliationTriggeredEvent("critical_http_content_recheck", true)` | The refetch failed after held renders were skipped | One render re-checks whether the skipped inputs still need the source |

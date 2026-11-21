@@ -29,8 +29,10 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
 
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 	"github.com/haproxy-haptic/HAPTIC/pkg/controller"
 	controllerwebhook "github.com/haproxy-haptic/HAPTIC/pkg/controller/webhook"
 	"github.com/haproxy-haptic/HAPTIC/pkg/core/logging"
@@ -49,6 +51,8 @@ var (
 	runKubeClientBurst                 int
 	runAgentTLSDirectory               string
 	runAgentTLSServerName              string
+	runBlobDir                         string
+	runBlobMaxSize                     string
 )
 
 // runCmd represents the run command (controller main loop).
@@ -103,6 +107,40 @@ func init() {
 		"Client-side apiserver QPS. <=0 disables client-side throttling and relies on apiserver Priority & Fairness (env: KUBE_CLIENT_QPS)")
 	runCmd.Flags().IntVar(&runKubeClientBurst, "kube-client-burst", 0,
 		"Client-side apiserver burst; used only when --kube-client-qps > 0, 0 means 2*qps (env: KUBE_CLIENT_BURST)")
+	runCmd.Flags().StringVar(&runBlobDir, "blob-dir", "",
+		"Directory where blob.Fetch downloads are kept. Empty disables blob sources (env: BLOB_DIR)")
+	runCmd.Flags().StringVar(&runBlobMaxSize, "blob-max-size", "",
+		"Largest blob a blob.Fetch source may hold, as a Kubernetes quantity (env: BLOB_MAX_SIZE, default: 256Mi)")
+}
+
+// resolveBlobStore applies flag > env > default.
+func resolveBlobStore() (controller.BlobStoreOptions, error) {
+	options := controller.BlobStoreOptions{
+		Directory: cmp.Or(runBlobDir, os.Getenv("BLOB_DIR")),
+		MaxSize:   blob.DefaultMaxSize,
+	}
+	if raw := cmp.Or(runBlobMaxSize, os.Getenv("BLOB_MAX_SIZE")); raw != "" {
+		quantity, err := resource.ParseQuantity(raw)
+		if err != nil {
+			return options, fmt.Errorf("parsing blob max size %q: %w", raw, err)
+		}
+		options.MaxSize = quantity.Value()
+	}
+	return options, nil
+}
+
+// resolveDebugPort applies flag > env > default.
+func resolveDebugPort() {
+	if runDebugPort == 0 {
+		if envDebugPort := os.Getenv("DEBUG_PORT"); envDebugPort != "" {
+			if port, err := strconv.Atoi(envDebugPort); err == nil {
+				runDebugPort = port
+			}
+		}
+	}
+	if runDebugPort == 0 {
+		runDebugPort = defaultDebugPort
+	}
 }
 
 // resolveFloat32Option applies flag > env > flag-default. The flag's zero value
@@ -179,16 +217,7 @@ func runController(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if runDebugPort == 0 {
-		if envDebugPort := os.Getenv("DEBUG_PORT"); envDebugPort != "" {
-			if port, err := strconv.Atoi(envDebugPort); err == nil {
-				runDebugPort = port
-			}
-		}
-	}
-	if runDebugPort == 0 {
-		runDebugPort = defaultDebugPort
-	}
+	resolveDebugPort()
 
 	// Set up structured logging with dynamic level support
 	// LOG_LEVEL env var: TRACE, DEBUG, INFO (default), WARN, ERROR (case-insensitive)
@@ -248,6 +277,11 @@ func runController(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	blobStore, err := resolveBlobStore()
+	if err != nil {
+		return err
+	}
+
 	k8sClient, err := controllerKubernetesClient(cmd)
 	if err != nil {
 		return fmt.Errorf("creating Kubernetes client: %w", err)
@@ -268,6 +302,7 @@ func runController(cmd *cobra.Command, _ []string) error {
 		},
 		runDebugPort,
 		agentTLS,
+		blobStore,
 	); err != nil && ctx.Err() == nil {
 		return fmt.Errorf("controller failed: %w", err)
 	}

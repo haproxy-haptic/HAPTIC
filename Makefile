@@ -48,7 +48,7 @@ SOURCE_HASH := $(shell ./scripts/source-hash.sh 2>/dev/null || echo "unknown")
 CHART_VERSION := $(shell grep '^version:' charts/haptic/Chart.yaml 2>/dev/null | awk '{print $$2}' || echo "dev")
 
 # Coverage packages (excludes generated code)
-COVERAGE_PACKAGES := ./cmd/...,./pkg/compression/...,./pkg/controller/...,./pkg/core/...,./pkg/dataplane/...,./pkg/events/...,./pkg/httpstore/...,./pkg/incremental/...,./pkg/introspection/...,./pkg/k8s/...,./pkg/lifecycle/...,./pkg/metrics/...,./pkg/persistenttree/...,./pkg/rendercontent/...,./pkg/stores/...,./pkg/templating/...,./pkg/webhook/...
+COVERAGE_PACKAGES := ./cmd/...,./pkg/blob/...,./pkg/blobstore/...,./pkg/compression/...,./pkg/controller/...,./pkg/core/...,./pkg/dataplane/...,./pkg/events/...,./pkg/httpstore/...,./pkg/incremental/...,./pkg/introspection/...,./pkg/k8s/...,./pkg/lifecycle/...,./pkg/metrics/...,./pkg/persistenttree/...,./pkg/rendercontent/...,./pkg/stores/...,./pkg/templating/...,./pkg/webhook/...
 
 # Default target
 help: ## Show this help message

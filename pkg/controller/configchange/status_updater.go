@@ -65,6 +65,7 @@ const (
 	eventReasonRenderAccepted  = "RenderAcceptedByHAProxy"
 	eventReasonContentRevoked  = "HTTPContentRevoked"
 	eventReasonContentRejected = "HTTPContentRejected"
+	eventReasonBlobRevoked     = "BlobContentRevoked"
 
 	// conditionValidated is the status condition type reporting whether the
 	// controller accepted (validated) the observed config generation. Its
@@ -197,6 +198,7 @@ func NewStatusUpdater(
 			events.EventTypeRenderGateCompleted,
 			events.EventTypeHTTPContentRevoked,
 			events.EventTypeHTTPContentRejected,
+			events.EventTypeBlobContentRevoked,
 		},
 		EventFilter: func(busevents.Event) bool { return u.leading.Load() },
 	})
@@ -257,6 +259,8 @@ func (u *StatusUpdater) HandleEvent(event busevents.Event) {
 		u.handleHTTPContentRevoked(e)
 	case *events.HTTPContentRejectedEvent:
 		u.handleHTTPContentRejected(e)
+	case *events.BlobContentRevokedEvent:
+		u.warnAllConfigs(eventReasonBlobRevoked, blobContentRevokedMessage(e))
 	}
 }
 
@@ -339,19 +343,7 @@ func (u *StatusUpdater) handleRenderGateCompleted(event *events.RenderGateComple
 // handleHTTPContentRevoked emits a Warning Event for content taken back after
 // HAProxy refused a render containing it.
 func (u *StatusUpdater) handleHTTPContentRevoked(event *events.HTTPContentRevokedEvent) {
-	u.mu.RLock()
-	refs := slices.Clone(u.configRefs)
-	u.mu.RUnlock()
-	if u.recorder == nil {
-		return
-	}
-	for _, ref := range refs {
-		object := &v1alpha1.HAProxyTemplateConfig{
-			ObjectMeta: metav1.ObjectMeta{Name: ref.Name, Namespace: ref.Namespace},
-		}
-		u.recorder.Event(object, corev1.EventTypeWarning, eventReasonContentRevoked,
-			httpContentRevokedMessage(event))
-	}
+	u.warnAllConfigs(eventReasonContentRevoked, httpContentRevokedMessage(event))
 }
 
 func (u *StatusUpdater) handleHTTPContentRejected(event *events.HTTPContentRejectedEvent) {
@@ -370,6 +362,31 @@ func (u *StatusUpdater) handleHTTPContentRejected(event *events.HTTPContentRejec
 		u.recorder.Eventf(object, corev1.EventTypeWarning, eventReasonContentRejected,
 			"New content from %s failed configuration validation. It was not applied; any previously accepted content remains active. Fix the fetched content or its template.", event.URL)
 	}
+}
+
+// warnAllConfigs records one Warning Event on every watched config.
+func (u *StatusUpdater) warnAllConfigs(reason, message string) {
+	if u.recorder == nil {
+		return
+	}
+	u.mu.RLock()
+	refs := slices.Clone(u.configRefs)
+	u.mu.RUnlock()
+	for _, ref := range refs {
+		object := &v1alpha1.HAProxyTemplateConfig{
+			ObjectMeta: metav1.ObjectMeta{Name: ref.Name, Namespace: ref.Namespace},
+		}
+		u.recorder.Event(object, corev1.EventTypeWarning, reason, message)
+	}
+}
+
+func blobContentRevokedMessage(event *events.BlobContentRevokedEvent) string {
+	effect := "Templates render an empty handle for it until a blob is accepted again."
+	if event.Restored {
+		effect = "Its previously accepted blob is served instead."
+	}
+	return fmt.Sprintf("HAProxy refused a configuration while blob %s from %s awaited confirmation, so the blob was taken back. "+
+		"%s Check the RenderRefusedByHAProxy Event and fix the configuration it names.", event.Digest, event.URL, effect)
 }
 
 func httpContentRevokedMessage(event *events.HTTPContentRevokedEvent) string {

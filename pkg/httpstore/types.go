@@ -24,6 +24,8 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"time"
+
+	"github.com/haproxy-haptic/HAPTIC/pkg/blob"
 )
 
 // levelTrace is a log level below Debug, used for very verbose diagnostic output.
@@ -81,6 +83,11 @@ type FetchOptions struct {
 	// for servers that answer with the status they describe (an error-page
 	// service serving its 404 page as a 404).
 	AcceptStatus StatusSet
+
+	// Blob makes this a blob source: the body goes to the store's BlobSink,
+	// and the content is the blob's encoded reference (ADR-0041). omitempty
+	// keeps the identity of every other source unchanged.
+	Blob blob.Key `json:",omitempty"`
 }
 
 // WithDefaults returns a copy of the options with default values applied.
