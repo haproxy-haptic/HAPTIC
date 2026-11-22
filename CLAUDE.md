@@ -161,6 +161,21 @@ coverage; they are not permission to build a feature on Lua. Generic upstream
 schemas and operator-file transport remain generic. Do not expand exemptions or
 disable the check to introduce Lua.
 
+## No local stick-table abuse protection (RULE #6)
+
+**Never build abuse protection on per-pod stick tables.** HAPTIC almost always
+runs more than one HAProxy replica, so a per-pod counter enforces N times the
+configured budget and resets whenever a pod restarts. This covers rate limits,
+connection caps, scoring and banning keyed on a client.
+
+Fleet-wide state belongs in the SPOA hub's shared rate-limit plugin (Valkey) or
+another plugin with shared state, with its runtime failure posture following
+"Runtime dependency failure" in `charts/CLAUDE.md`. Where HAProxy can't consult
+that state at the point the protection needs (for example before the TLS
+handshake), report the capability gap; don't fall back to a stick table. Stick
+tables that serve routing or persistence rather than abuse protection, such as
+session affinity, are unaffected.
+
 ## Gateway API feature coverage
 
 **Implement all Gateway API features that HAProxy configuration alone can
