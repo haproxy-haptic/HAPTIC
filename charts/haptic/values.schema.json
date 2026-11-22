@@ -2476,16 +2476,20 @@
               "type": "boolean"
             },
             "maxReplicas": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             },
             "minReplicas": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             },
             "scaleDownStabilizationSeconds": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 0
             },
             "targetCPUUtilizationPercentage": {
-              "type": "integer"
+              "type": "integer",
+              "minimum": 1
             }
           },
           "additionalProperties": false

@@ -84,3 +84,11 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "haproxy.resources.requests.cpu is unset"
+
+  - it: refuses minReplicas below 1
+    template: haproxy-hpa.yaml
+    set:
+      haproxy.autoscaling.minReplicas: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "minReplicas"

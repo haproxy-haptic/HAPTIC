@@ -1930,11 +1930,11 @@ haproxy:
   # Excludes haproxy.keda; either one leaves replicas off the Deployment.
   autoscaling:
     enabled: false
-    minReplicas: 2
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
+    minReplicas: 2  # @schema minimum: 1
+    maxReplicas: 10  # @schema minimum: 1
+    targetCPUUtilizationPercentage: 70  # @schema minimum: 1
     # Seconds the HPA waits before acting on a scale-down.
-    scaleDownStabilizationSeconds: 300
+    scaleDownStabilizationSeconds: 300  # @schema minimum: 0
   # KEDA autoscaling for HAProxy loadbalancer
   # Enables event-driven scaling based on traffic metrics
   keda:
