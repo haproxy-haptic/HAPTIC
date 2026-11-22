@@ -724,6 +724,10 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
         "WAF Helm guard: reject a client penalty without the shared rate-limit store" \
         "Set rateLimit.shared.enabled=true." \
         --set controller.config.templatingSettings.extraContext.waf.clientPenalty.mode=deny
+    run_helm_failure_guard \
+        "Client connection Helm guard: reject limits without the shared rate-limit store" \
+        "Set rateLimit.shared.enabled=true." \
+        --set controller.config.templatingSettings.extraContext.clientConnections.mode=deny
     run_helm_success_guard \
         "Access-log Helm guard: accept the full accessLog values surface" \
         --set-json 'controller.config.templatingSettings.extraContext.accessLog={"maxLineBytes":32768,"fields":{"tenant":"req.hdr(X-Tenant)","region":"str(prod-eu)"}}'
@@ -1050,7 +1054,8 @@ fi
 # WAF default-policy profile: the policy applies to every test's fixture
 # Ingresses in the deployment render, so each test's spoaHub context must keep
 # the coraza plugin it brings (#554).
-# waf.clientPenalty rides along as the opt-in that applies to those same routes.
+# waf.clientPenalty rides along as the opt-in that applies to those same routes,
+# and clientConnections as the other opt-in on the shared rate-limit store.
 if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
     WAF_DEFAULT_CONFIG=$(mktemp /tmp/haptic-waf-default-config-XXXXXX.yaml)
     trap 'rm -f "$TEMP_CONFIG" "$RATE_LIMIT_CONFIG" "$PROXY_PROTOCOL_CONFIG" "$WAF_DEFAULT_CONFIG"' EXIT
@@ -1062,6 +1067,7 @@ if [[ $FULL_RC -eq 0 ]] && ! single_test_requested "$@"; then
         --set controller.config.templatingSettings.extraContext.waf.policies.defaultPolicy=baseline \
         --set controller.config.templatingSettings.extraContext.waf.policies.inline.baseline.requestBody.mode=none \
         --set controller.config.templatingSettings.extraContext.waf.clientPenalty.mode=deny \
+        --set controller.config.templatingSettings.extraContext.clientConnections.mode=deny \
         --set rateLimit.shared.enabled=true \
         | yq 'select(.kind == "HAProxyTemplateConfig" or .kind == "HAProxyTemplateLibrary")' \
         > "$WAF_DEFAULT_CONFIG"; then

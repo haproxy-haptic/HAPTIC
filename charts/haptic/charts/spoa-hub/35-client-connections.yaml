@@ -1,0 +1,187 @@
+# SPOA hub library — client connection limits (extraContext.clientConnections).
+# See docs/site/docs/operations/security.md#client-connection-limits.
+
+templateSnippets:
+  # Parses the settings once per render into gf["clientConnections"]. Guarded on
+  # the shared key: shared.ComputeIfAbsent recovers panics and would swallow fail().
+  # "off" without the rate-limit plugin, so a test bringing its own plugins renders.
+  util-client-connections:
+    template: |
+      {%- import "util-register-map" for RegisterMap -%}
+      {%- var _, _ = shared.ComputeIfAbsent("globalFeatures", func() any { return map[string]any{} }) -%}
+      {%- var gf = shared.Get("globalFeatures").(map[string]any) -%}
+      {%- if gf["clientConnections"] == nil -%}
+        {%%
+          var where = "extraContext.clientConnections"
+          var settings = extraContext | dig("clientConnections") | fallback(map[string]any{})
+          var mode = settings | dig_string("off", "mode")
+          if mode != "off" && mode != "detect" && mode != "deny" {
+            fail(where + ".mode must be one of: off, detect, deny.")
+          }
+          var messages = toStringSlice(extraContext | dig("spoaHub", "haproxy", "messages") | fallback([]any{}))
+          if !(messages contains "check-ratelimit") {
+            mode = "off"
+          }
+          var state = map[string]any{"mode": mode}
+          if mode != "off" {
+            var limit = settings | dig_string("100", "limit")
+            if !regex_search(limit, "^[1-9][0-9]{0,5}$") {
+              fail(where + ".limit must be an integer between 1 and 999999.")
+            }
+            var secondsPerUnit = map[string]int{"s": 1, "m": 60, "h": 3600}
+            var durationSeconds = func(key string, defaultValue string) int {
+              var value = settings | dig_string(defaultValue, key)
+              if !regex_search(value, "^[1-9][0-9]{0,4}(s|m|h)$") {
+                fail(where + "." + key + " must be a duration such as 30s, 1m, or 1h.")
+              }
+              return toint(value[:len(value)-1]) * secondsPerUnit[value[len(value)-1:]]
+            }
+            var periodSeconds = durationSeconds("period", "10s")
+            if periodSeconds > 3600 {
+              fail(where + ".period is above 1h, which the shared rate-limit store can't retain. Set a period of 1h or less.")
+            }
+            var octet = `(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])`
+            var ipv4 = octet + `(?:\.` + octet + `){3}(?:/(?:3[0-2]|[12]?[0-9]))?`
+            var ipv6 = `[0-9a-f]*:[0-9a-f]*:[0-9a-f:.]*(?:/(?:12[0-8]|1[01][0-9]|[1-9]?[0-9]))?`
+            var singleAddress = regexp(`^(?:` + ipv4 + `|` + ipv6 + `)$`)
+            var exempted = []any{}
+            var configured = settings | dig("exempt") | fallback(map[string]any{})
+            var exemptions, isMap = configured.(map[string]any)
+            if !isMap {
+              fail(where + ".exempt must be a map keyed by entry name.")
+            }
+            for _, name := range keys(exemptions) {
+              var entry, entryIsMap = exemptions[name].(map[string]any)
+              var enabled, enabledIsBool = dig(exemptions[name], "enabled").(bool)
+              if !entryIsMap || !enabledIsBool {
+                fail(where + ".exempt." + name + " must be a map with enabled set to true or false.")
+              }
+              if !enabled {
+                continue
+              }
+              var cidr = toLower(strip(dig_string(entry, "", "cidr")))
+              if !singleAddress.Match(cidr) {
+                fail(where + ".exempt." + name + ".cidr '" + cidr + "' is not an IP address or CIDR. Use a value such as 10.0.0.0/8.")
+              }
+              exempted = append(exempted, cidr + " 1")
+            }
+            var exemptPath = ""
+            if len(exempted) > 0 {
+              exemptPath = RegisterMap("client-connections-exempt.map", toStringSlice(sort_strings(unique(exempted))), map[string]any{"ordered": false})
+            }
+            state["limit"] = limit
+            state["periodSeconds"] = periodSeconds
+            state["denySeconds"] = durationSeconds("denyFor", "1m")
+            state["denyFor"] = settings | dig_string("1m", "denyFor")
+            state["exempt"] = exemptPath
+          }
+          gf["clientConnections"] = state
+        %%}
+      {%- end -%}
+
+  # Its own var-prefix keeps the verdict apart from the routes' shared rate limit.
+  spoe-engine-client-connections:
+    template: |-
+      {%- var _ = render "util-client-connections" %}
+      {%- var state = shared.Get("globalFeatures").(map[string]any)["clientConnections"].(map[string]any) %}
+      {%- if state["mode"] != "off" %}
+
+      [spoa-hub-client-connections]
+
+      spoe-agent spoa-hub-client-connections-agent
+          groups client-connections-group
+          option var-prefix       hubcc
+          option pipelining
+          option async
+          timeout hello      {{ extraContext | dig("spoaHub", "haproxy", "timeoutHello") | fallback("2s") }}
+          timeout idle       {{ extraContext | dig("spoaHub", "haproxy", "timeoutIdle") | fallback("5m") }}
+          timeout processing {{ extraContext | dig("spoaHub", "haproxy", "messageTimeouts", "check-ratelimit") | fallback(extraContext | dig("spoaHub", "haproxy", "timeoutProcessing") | fallback("500ms")) }}
+          use-backend spoa-hub
+
+      spoe-message check-ratelimit
+          args key=var(txn.cc_key) limit=str({{ state["limit"] }}) period=str({{ state["periodSeconds"] }}) req_id=unique-id
+
+      spoe-group client-connections-group
+          messages check-ratelimit
+      {%- end %}
+
+  # Before the SPOA hub band (100), so a refused client costs no WAF or auth call.
+  # Session variables charge a connection once: these rules run for every request
+  # on a kept-alive or HTTP/2 connection. A missing verdict follows
+  # rateLimit.shared.failClosed (charts/CLAUDE.md, "Runtime dependency failure").
+  frontend-filters-098-client-connections:
+    template: |-
+      {%- import "util-refusal" for Refusal -%}
+      {%- if (render "util-spoa-hub-enabled") == "true" %}
+      {%- var _ = render "util-client-connections" %}
+      {%- var state = shared.Get("globalFeatures").(map[string]any)["clientConnections"].(map[string]any) %}
+      {%- if state["mode"] != "off" %}
+      {%- var exempt = "" %}
+      {%- if state["exempt"] != "" %}{%- exempt = " !{ src -m ip -M -f " + tostring(state["exempt"]) + " }" %}{%- end %}
+      {%- var failClosed = tostring(extraContext | dig("rateLimit", "shared", "failClosed") | fallback(false)) == "true" %}
+      # spoa-hub/client-connections (extraContext.clientConnections)
+      http-request set-var-fmt(txn.cc_key) client-connections|%[src] if !{ var(sess.cc_checked) -m bool }{{ exempt }}
+      http-request set-var(sess.cc_checked) bool(true) if { var(txn.cc_key) -m found }
+      http-request send-spoe-group spoa-hub-client-connections client-connections-group if { var(txn.cc_key) -m found }
+      http-request set-var(txn.rate_limit_degraded) str(1) if { var(txn.cc_key) -m found } !{ var(txn.hubcc.rate_limit.allowed) -m found }
+      http-request set-var(txn.rate_limit_degraded) str(1) if { var(txn.cc_key) -m found } { var(txn.hubcc.rate_limit.degraded) -m bool }
+      http-request set-var(sess.cc_verdict) str(detect) if { var(txn.hubcc.rate_limit.allowed) -m found } !{ var(txn.hubcc.rate_limit.allowed) -m bool }
+      {%- if state["mode"] == "deny" %}
+      http-request set-var(sess.cc_verdict) str(deny) if { var(sess.cc_verdict) -m str detect }
+      {%- if failClosed %}
+      http-request set-var(sess.cc_verdict) str(unavailable) if { var(txn.cc_key) -m found } !{ var(txn.hubcc.rate_limit.allowed) -m found }
+      {%- end %}
+      {%- end %}
+      http-request set-var(txn.client_connections) var(sess.cc_verdict) if { var(sess.cc_verdict) -m found }
+      {%- if state["mode"] == "deny" %}
+      {#- Only the shared store's refusal is copied; an unavailable verdict is not a decision about the client. #}
+      http-request track-sc2 src table haptic_client_conn_deny if { var(txn.hubcc.rate_limit.allowed) -m found } !{ var(txn.hubcc.rate_limit.allowed) -m bool }
+      http-request set-var(txn.denied_by) str(client_connections) if { var(sess.cc_verdict) -m str deny }
+      {{- Refusal(`deny deny_status 429 hdr Retry-After ` + tostring(state["denySeconds"]), `{ var(sess.cc_verdict) -m str deny }`) }}
+      {%- if failClosed %}
+      http-request set-var(txn.denied_by) str(client_connections_unavailable) if { var(sess.cc_verdict) -m str unavailable }
+      {{- Refusal(`deny deny_status 429 hdr Retry-After 1`, `{ var(sess.cc_verdict) -m str unavailable }`) }}
+      {%- end %}
+      {%- end %}
+      {%- end %}
+      {%- end %}
+
+  # The session rule repeats the check behind PROXY protocol, where the
+  # connection rule still sees the load balancer's address.
+  client-connection-110-client-connections:
+    template: |-
+      {%- if (render "util-spoa-hub-enabled") == "true" %}
+      {%- var _ = render "util-client-connections" %}
+      {%- var state = shared.Get("globalFeatures").(map[string]any)["clientConnections"].(map[string]any) %}
+      {%- if state["mode"] == "deny" %}
+      # spoa-hub/client-connections (extraContext.clientConnections)
+      tcp-request connection reject if { src,in_table(haptic_client_conn_deny) }
+      tcp-request session reject if { src,in_table(haptic_client_conn_deny) }
+      {%- end %}
+      {%- end %}
+
+  # A copy of the shared store's refusals, never a count (RULE #6).
+  backends-815-client-connections-deny:
+    template: |-
+      {%- import "util-backend" for Backend -%}
+      {%- if (render "util-spoa-hub-enabled") == "true" %}
+      {%- var _ = render "util-client-connections" %}
+      {%- var state = shared.Get("globalFeatures").(map[string]any)["clientConnections"].(map[string]any) %}
+      {%- if state["mode"] == "deny" %}
+      {{ "\n" }}{{ Backend(map[string]any{
+           "name": "haptic_client_conn_deny",
+           "comments": []any{"# spoa-hub/client-connections: clients the shared store refused"},
+           "body": []any{"stick-table type ipv6 size 100k expire " + tostring(state["denyFor"]) + " peers localinstance"},
+         }) }}
+      {%- end %}
+      {%- end %}
+
+  log-fields-310-client-connections:
+    template: |-
+      {%- if (render "util-spoa-hub-enabled") == "true" %}
+      {%- var _ = render "util-client-connections" %}
+      {%- var state = shared.Get("globalFeatures").(map[string]any)["clientConnections"].(map[string]any) %}
+      {%- if state["mode"] != "off" %}
+      %(client_connections)[var(txn.client_connections)]
+      {%- end %}
+      {%- end %}

@@ -206,6 +206,10 @@ templateSnippets:
       filter spoe engine spoa-hub-waf-penalty-read config {{ pathResolver.GetPath("spoe.conf", "file") }}
       filter spoe engine spoa-hub-waf-penalty-charge config {{ pathResolver.GetPath("spoe.conf", "file") }}
       {%- end %}
+      {%- var _ = render "util-client-connections" %}
+      {%- if shared.Get("globalFeatures").(map[string]any)["clientConnections"].(map[string]any)["mode"] != "off" %}
+      filter spoe engine spoa-hub-client-connections config {{ pathResolver.GetPath("spoe.conf", "file") }}
+      {%- end %}
       {{- on_own_lines(render_glob "frontend-spoe-filters-*") }}
       {%- end %}
 

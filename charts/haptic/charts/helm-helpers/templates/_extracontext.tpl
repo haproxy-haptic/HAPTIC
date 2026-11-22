@@ -106,6 +106,9 @@
 {{- if and (ne (dig "clientPenalty" "mode" "off" $wafSettings | toString) "off") (not .Values.rateLimit.shared.enabled) }}
   {{- fail "controller.config.templatingSettings.extraContext.waf.clientPenalty keeps its scores in the shared rate-limit store, which is disabled, so no client would be penalised. Set rateLimit.shared.enabled=true." }}
 {{- end }}
+{{- if and (ne (dig "clientConnections" "mode" "off" $configuredExtraContext | toString) "off") (not .Values.rateLimit.shared.enabled) }}
+  {{- fail "controller.config.templatingSettings.extraContext.clientConnections counts connections in the shared rate-limit store, which is disabled, so no client would be limited. Set rateLimit.shared.enabled=true." }}
+{{- end }}
 {{- if hasKey $wafSettings "crs" }}
   {{- $crs := $wafSettings.crs }}
   {{- $crsURL := $crs.url | default "" }}

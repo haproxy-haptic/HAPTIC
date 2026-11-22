@@ -1,0 +1,119 @@
+# SPOA hub library — client connection limit validation tests
+
+_fx:
+  clientConnectionsHub: &clientConnectionsHub
+    enabled: true
+    haproxy: {socketPath: /run/spoa/hub.sock, modeSpop: true, messages: ["check-ratelimit"], timeoutHello: 2s, timeoutIdle: 5m, timeoutProcessing: 500ms, poolMaxConn: 100, poolPurgeDelay: 30s}
+    hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
+    plugins:
+      - {name: rate-limit, library: librate_limit_plugin.so, messages: ["check-ratelimit"], timeoutMs: 50, dependsOn: [], params: ""}
+
+validationTests:
+  test-spoa-hub-client-connections-off-by-default:
+    description: Without clientConnections the config has no connection-limit engine, rule or table.
+    extraContext:
+      spoaHub: *clientConnectionsHub
+      clientConnections: {mode: "off"}
+    fixtures: {}
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: haproxy.cfg, pattern: 'client-connections|client_conn|cc_key'}
+      - {type: not_contains, target: file:spoe.conf, pattern: 'client-connections'}
+
+  test-spoa-hub-client-connections-deny:
+    description: deny mode charges each connection's first request to the shared store, refuses an over-budget client with 429, copies the refusal into the deny table, and refuses that client before the handshake.
+    extraContext:
+      spoaHub: *clientConnectionsHub
+      clientConnections:
+        mode: deny
+        limit: 20
+        period: 5s
+        denyFor: 2m
+        exempt:
+          office: {enabled: true, cidr: 203.0.113.0/24}
+          retired: {enabled: false, cidr: 198.51.100.0/24}
+    fixtures: {}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: file:spoe.conf, pattern: '\[spoa-hub-client-connections\](?s:.*?)option var-prefix +hubcc(?s:.*?)args key=var\(txn\.cc_key\) limit=str\(20\) period=str\(5\) req_id=unique-id'}
+      - {type: contains, target: haproxy.cfg, pattern: 'filter spoe engine spoa-hub-client-connections config'}
+      - {type: contains, target: haproxy.cfg, pattern: 'http-request set-var-fmt\(txn\.cc_key\) client-connections\|%\[src\] if !\{ var\(sess\.cc_checked\) -m bool \} !\{ src -m ip -M -f \S*/client-connections-exempt\.map \}'}
+      - {type: contains, target: "map:client-connections-exempt.map", pattern: '(?m)^203\.0\.113\.0/24 1$'}
+      - {type: not_contains, target: "map:client-connections-exempt.map", pattern: '198\.51\.100'}
+      - type: contains
+        target: haproxy.cfg
+        description: The copy is written only for the shared store's refusal, and the refusal follows it.
+        pattern: '(?s)send-spoe-group spoa-hub-client-connections client-connections-group if \{ var\(txn\.cc_key\) -m found \}.*http-request track-sc2 src table haptic_client_conn_deny if \{ var\(txn\.hubcc\.rate_limit\.allowed\) -m found \} !\{ var\(txn\.hubcc\.rate_limit\.allowed\) -m bool \}.*deny deny_status 429 hdr Retry-After 120 if \{ var\(sess\.cc_verdict\) -m str deny \}'
+      - {type: contains, target: haproxy.cfg, pattern: 'set-var\(txn\.denied_by\) str\(client_connections\) if \{ var\(sess\.cc_verdict\) -m str deny \}'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^backend haptic_client_conn_deny\b[^\n]*(?:\n[ \t][^\n]*)*?\n[ \t]+stick-table type ipv6 size 100k expire 2m peers localinstance$'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend http-tcp\n(?:[ \t][^\n]*\n|\n)*?[ \t]+tcp-request connection reject if \{ src,in_table\(haptic_client_conn_deny\) \}\n[ \t]+tcp-request session reject if \{ src,in_table\(haptic_client_conn_deny\) \}\n'}
+      - {type: contains, target: haproxy.cfg, pattern: '(?m)^frontend https\n(?:[ \t][^\n]*\n|\n)*?[ \t]+tcp-request connection reject if \{ src,in_table\(haptic_client_conn_deny\) \}\n'}
+      - {type: contains, target: haproxy.cfg, pattern: '%\(client_connections\)\[var\(txn\.client_connections\)\]'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'client_connections_unavailable'}
+
+  test-spoa-hub-client-connections-detect:
+    description: detect mode records an over-budget connection in the access log but never refuses, copies, or checks before the handshake.
+    extraContext:
+      spoaHub: *clientConnectionsHub
+      clientConnections: {mode: detect}
+    fixtures: {}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: file:spoe.conf, pattern: 'args key=var\(txn\.cc_key\) limit=str\(100\) period=str\(10\) req_id=unique-id'}
+      - {type: contains, target: haproxy.cfg, pattern: 'set-var\(sess\.cc_verdict\) str\(detect\) if \{ var\(txn\.hubcc\.rate_limit\.allowed\) -m found \} !\{ var\(txn\.hubcc\.rate_limit\.allowed\) -m bool \}'}
+      - {type: not_contains, target: haproxy.cfg, pattern: 'haptic_client_conn_deny|cc_verdict\) -m str deny'}
+
+  test-spoa-hub-client-connections-fail-closed:
+    description: With rateLimit.shared.failClosed a connection without a verdict is refused with Retry-After 1 and is not copied into the deny table.
+    extraContext:
+      spoaHub: *clientConnectionsHub
+      rateLimit: {shared: {failClosed: true}}
+      clientConnections: {mode: deny}
+    fixtures: {}
+    assertions:
+      - type: haproxy_valid
+      - {type: contains, target: haproxy.cfg, pattern: 'set-var\(sess\.cc_verdict\) str\(unavailable\) if \{ var\(txn\.cc_key\) -m found \} !\{ var\(txn\.hubcc\.rate_limit\.allowed\) -m found \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'deny deny_status 429 hdr Retry-After 1 if \{ var\(sess\.cc_verdict\) -m str unavailable \}'}
+      - {type: contains, target: haproxy.cfg, pattern: 'set-var\(txn\.denied_by\) str\(client_connections_unavailable\)'}
+
+  test-spoa-hub-client-connections-inert-without-rate-limit-plugin:
+    description: Without the rate-limit plugin's message the limit renders nothing, so a test bringing its own plugin list still renders under an operator's enabled limit.
+    extraContext:
+      spoaHub:
+        enabled: true
+        haproxy: {socketPath: /run/spoa/hub.sock, modeSpop: true, messages: ["mirror"], timeoutHello: 2s, timeoutIdle: 5m, timeoutProcessing: 500ms, poolMaxConn: 100, poolPurgeDelay: 30s}
+        hub: {logLevel: info, maxConnections: 1000, blockingThreadKeepAliveSecs: 30}
+        plugins:
+          - {name: mirror, library: libmirror_plugin.so, messages: ["mirror"], timeoutMs: 50, dependsOn: [], params: ""}
+      clientConnections: {mode: deny}
+    fixtures: {}
+    assertions:
+      - type: haproxy_valid
+      - {type: not_contains, target: haproxy.cfg, pattern: 'client-connections|client_conn|cc_key'}
+
+  test-spoa-hub-client-connections-invalid-mode-rejected:
+    description: An unknown mode fails the render.
+    extraContext:
+      spoaHub: *clientConnectionsHub
+      clientConnections: {mode: block}
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'extraContext.clientConnections.mode must be one of: off, detect, deny.'}
+
+  test-spoa-hub-client-connections-period-above-an-hour-rejected:
+    description: A period the shared store can't retain fails the render.
+    extraContext:
+      spoaHub: *clientConnectionsHub
+      clientConnections: {mode: deny, period: 2h}
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'extraContext.clientConnections.period is above 1h'}
+
+  test-spoa-hub-client-connections-exempt-without-enabled-rejected:
+    description: An exempt entry without enabled fails the render instead of being ignored.
+    extraContext:
+      spoaHub: *clientConnectionsHub
+      clientConnections: {mode: deny, exempt: {office: {cidr: 203.0.113.0/24}}}
+    fixtures: {}
+    assertions:
+      - {type: contains, target: rendering_error, pattern: 'extraContext.clientConnections.exempt.office must be a map with enabled set to true or false.'}
