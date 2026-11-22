@@ -61,11 +61,11 @@ that feature is in use: `waf_action`, `waf_rule_id` and `waf_score`;
 `rate_limit_allowed` and `rate_limit_remaining`; `cache` (`HIT`/`MISS`/`STALE`) and
 `app_backend`; `auth_status` and `consumer`; `schema_outcome`; `tls_version`,
 `tls_sni` and `tls_resumed`; `mtls_verify` and `mtls_cn`; `gw_route`;
-`captured_headers`; `client_ip_peer`.
+`captured_headers`; `client_ip_peer`; `client_connections` (`detect` or `deny`).
 
 Use `denied_by` to identify why HAPTIC rejected a request. Values include
 `rate_limit_local`, `rate_limit_shared`, `rate_limit_shared_unavailable`, `waf`,
-`waf_client_penalty`,
+`waf_client_penalty`, `client_connections`,
 `jwt_missing`, `jwt_signature`, `jwt_expired`, `api_key`, `hmac`, `basic_auth`,
 `consumer_groups`, `body_too_large`, `ip_blocklist`, `schema_invalid` and the `*_unavailable`
 fail-closed variants.

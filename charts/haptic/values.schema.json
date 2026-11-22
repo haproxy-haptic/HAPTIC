@@ -545,6 +545,48 @@
                       },
                       "additionalProperties": false
                     },
+                    "clientConnections": {
+                      "type": "object",
+                      "properties": {
+                        "denyFor": {
+                          "type": "string",
+                          "pattern": "^[1-9][0-9]{0,4}(s|m|h)$"
+                        },
+                        "exempt": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "properties": {
+                              "cidr": {
+                                "type": "string"
+                              },
+                              "enabled": {
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "maximum": 999999,
+                          "minimum": 1
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "off",
+                            "detect",
+                            "deny"
+                          ]
+                        },
+                        "period": {
+                          "type": "string",
+                          "pattern": "^[1-9][0-9]{0,4}(s|m|h)$"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "customResponses": {
                       "type": "object",
                       "properties": {

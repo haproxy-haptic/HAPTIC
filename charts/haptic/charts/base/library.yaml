@@ -1706,6 +1706,10 @@ templateSnippets:
       timeout server {{ extraContext | dig("timeoutServer") | fallback("50000") }}
       {%- var tHttpReq = extraContext | dig_string("", "timeoutHttpRequest") -%}
       {%- var tKeepAlive = extraContext | dig_string("", "timeoutHttpKeepAlive") -%}
+      {%- var tClientHandshake = extraContext | dig_string("", "timeoutClientHandshake") -%}
+      {%- if tClientHandshake != "" %}
+      timeout client-hs {{ tClientHandshake }}
+      {%- end -%}
       {%- if tHttpReq != "" %}
       timeout http-request {{ tHttpReq }}
       {%- end -%}
@@ -3566,11 +3570,12 @@ validationTests:
 
   test-defaults-timeout-overrides:
     fixtures: {}
-    extraContext: {timeoutConnect: "5000", timeoutClient: "60000", timeoutServer: "70000", timeoutHttpRequest: "10s", timeoutHttpKeepAlive: "2s"}
+    extraContext: {timeoutConnect: "5000", timeoutClient: "60000", timeoutClientHandshake: "5s", timeoutServer: "70000", timeoutHttpRequest: "10s", timeoutHttpKeepAlive: "2s"}
     assertions:
       - type: haproxy_valid
       - {type: contains, target: haproxy.cfg, pattern: 'timeout connect 5000\n'}
       - {type: contains, target: haproxy.cfg, pattern: 'timeout client 60000\n'}
+      - {type: contains, target: haproxy.cfg, pattern: 'timeout client-hs 5s\n'}
       - {type: contains, target: haproxy.cfg, pattern: 'timeout server 70000\n'}
       - {type: contains, target: haproxy.cfg, pattern: 'timeout http-request 10s\n'}
       - {type: contains, target: haproxy.cfg, pattern: 'timeout http-keep-alive 2s\n'}

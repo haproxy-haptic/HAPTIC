@@ -452,6 +452,115 @@ These requests receive `403`, and the access log reports
 Each list has its own map file, `ip-blocklist-<list-name>.map`. To find the list
 that names an address, search these map files for it.
 
+## Client connection limits
+
+HAPTIC can limit how many new connections one client address opens across all
+HAProxy pods. It counts each connection once, in the shared rate-limit store, so
+the budget holds no matter which pod a connection reaches. A client over its
+budget gets `429`, and every pod then closes its new connections before the TLS
+handshake until `denyFor` has passed.
+
+Limits are off by default. They need the [shared rate limiter](spoa-hub.md) and
+the real client address. Start with `detect`, which refuses nothing:
+
+```yaml
+rateLimit:
+  shared:
+    enabled: true
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        clientConnections:
+          mode: detect
+          limit: 100
+          period: 10s
+          denyFor: 1m
+```
+
+In `detect` mode the access log sets `client_connections: detect` on the first
+request of each connection over the budget. Raise `limit` until legitimate
+traffic doesn't appear there, then set `mode: deny`. Refused requests log
+`denied_by: client_connections`.
+
+### How a refusal reaches every pod
+
+The shared store decides; a pod only copies the decision:
+
+1. On a connection's first request, the pod asks the shared store whether the
+   address is within `limit` new connections per `period`. Later requests on
+   the same connection, including HTTP/2 streams, aren't counted.
+2. When the store refuses, the pod answers `429` and records the address in a
+   local table that expires after `denyFor`. The table holds no counts.
+3. A pod with the address in its table closes the client's new connections
+   before the TLS handshake.
+
+Each pod learns about a refused client from that client's next connection to
+it, so a flooding address costs each pod at most one handshake per `denyFor`.
+Closed connections don't appear in the access log. HAProxy counts them in
+`haproxy_frontend_denied_connections_total`, or
+`haproxy_frontend_denied_sessions_total` behind PROXY protocol.
+
+If the shared store or the SPOA hub can't answer, the connection is allowed and
+the access log sets `rate_limit_degraded`. Set `rateLimit.shared.failClosed:
+true` to refuse instead, with `denied_by: client_connections_unavailable`.
+
+### Real client addresses
+
+The limit is keyed on the connection's source address, so HAProxy must see the
+client's address:
+
+- With [PROXY protocol](../haproxy-deployment.md#proxy-protocol), HAProxy
+  checks the address the load balancer reports. A refused client is then closed
+  after the TLS handshake instead of before it, because the PROXY header is read
+  first.
+- With `externalTrafficPolicy: Local` on the HAProxy Service, the source
+  address is the client's.
+- Otherwise, clients arrive from a node's address. The default `exempt` entries
+  cover the private ranges, so these connections aren't limited.
+
+Behind an L7 load balancer or content delivery network, every connection comes
+from the proxy. Add the proxy's ranges to `exempt`, or the proxy's own
+connections share one budget.
+
+### Exempt client addresses
+
+`exempt` lists addresses that are never counted or refused, keyed by a name of
+your choice. Each entry needs `enabled` and `cidr`. The defaults exempt
+loopback and private IPv4 ranges:
+
+```yaml
+clientConnections:
+  exempt:
+    office: {enabled: true, cidr: 203.0.113.0/24}
+    private-10: {enabled: false, cidr: 10.0.0.0/8}
+```
+
+### Clients that stall the handshake
+
+A client that opens connections and never finishes the TLS handshake holds a
+connection slot until `timeout client` expires, 50 seconds by default. Set
+`timeoutClientHandshake` to free those slots sooner:
+
+```yaml
+controller:
+  config:
+    templatingSettings:
+      extraContext:
+        timeoutClientHandshake: 5s
+```
+
+### Limits
+
+- HAPTIC can't cap how many connections one client holds open at once across
+  pods: HAProxy doesn't tell the shared store when a connection closes. The
+  rate limit and the timeouts bound it.
+- Connections are counted on HTTP and HTTPS listeners. TLS passthrough and
+  Gateway TCP and TLS listeners refuse addresses that were refused on HTTP or
+  HTTPS, but don't count connections themselves.
+- An IPv6 client can use many addresses from its prefix, and each address has
+  its own budget.
+
 ## Secrets in templates
 
 Templates can read Secrets included in your watches. Decode `.data` values with

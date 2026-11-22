@@ -420,6 +420,7 @@ templateSnippets:
           messages check-ratelimit
       {%- end %}
       {%- end %}
+      {{- render "spoe-engine-client-connections" }}
 
   # Canonical spoe-message check-auth body. Rendered by name from
   # spoe-conf-content's per-message dispatch when "check-auth" is in
