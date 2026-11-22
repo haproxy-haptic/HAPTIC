@@ -16,8 +16,7 @@
   {{- fail "haproxy.keda.minReplicaCount must be a non-negative integer." -}}
 {{- end -}}
 
-{{- $minimumFleet := int $replicaCount -}}
-{{- if $keda.enabled -}}{{- $minimumFleet = int $kedaMinReplicaCount -}}{{- end -}}
+{{- $minimumFleet := include "haptic.haproxy.minimumFleet" . | int -}}
 {{- $effectiveMaxUnavailable := 0 -}}
 {{- if ne $maxUnavailable nil -}}
   {{- $effectiveMaxUnavailable = int $maxUnavailable -}}
@@ -34,8 +33,15 @@
 {{- if ne $configured nil -}}
 {{- int $configured -}}
 {{- else -}}
-  {{- $minimumFleet := int .Values.haproxy.replicaCount -}}
-  {{- if .Values.haproxy.keda.enabled -}}{{- $minimumFleet = int .Values.haproxy.keda.minReplicaCount -}}{{- end -}}
+  {{- $minimumFleet := include "haptic.haproxy.minimumFleet" . | int -}}
   {{- if gt $minimumFleet 1 -}}1{{- else -}}0{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "haptic.haproxy.minimumFleet" -}}
+{{- $haproxy := .Values.haproxy -}}
+{{- if $haproxy.autoscaling.enabled -}}{{- int $haproxy.autoscaling.minReplicas -}}
+{{- else if $haproxy.keda.enabled -}}{{- int $haproxy.keda.minReplicaCount -}}
+{{- else -}}{{- int $haproxy.replicaCount -}}
 {{- end -}}
 {{- end -}}

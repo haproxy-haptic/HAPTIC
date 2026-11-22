@@ -163,7 +163,7 @@ controller:
 Adding controller replicas increases admission capacity and maintains more warm
 standbys. Each replica renders, but only the leader deploys; replicas don't divide
 one rendering workload between them. To increase traffic capacity, scale HAProxy
-with `haproxy.keda` or `haproxy.replicaCount`.
+with `haproxy.autoscaling`, `haproxy.keda`, or `haproxy.replicaCount`.
 
 <a id="rbac-requirements"></a>
 

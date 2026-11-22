@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/helm-unittest/helm-unittest/main/schema/helm-testsuite.json
+suite: haproxy horizontal pod autoscaler
+templates:
+  - haproxy-hpa.yaml
+  - haproxy-deployment.yaml
+  - haproxy-poddisruptionbudget.yaml
+set:
+  haproxy.enabled: true
+  haproxy.autoscaling.enabled: true
+tests:
+  - it: renders nothing while disabled
+    template: haproxy-hpa.yaml
+    set:
+      haproxy.autoscaling.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: scales the HAProxy Deployment on the haproxy container's CPU
+    template: haproxy-hpa.yaml
+    asserts:
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - matchRegex:
+          path: spec.scaleTargetRef.name
+          pattern: ".*-haproxy$"
+      - equal:
+          path: spec.minReplicas
+          value: 2
+      - equal:
+          path: spec.maxReplicas
+          value: 10
+      - equal:
+          path: spec.metrics[0]
+          value:
+            type: ContainerResource
+            containerResource:
+              name: cpu
+              container: haproxy
+              target:
+                type: Utilization
+                averageUtilization: 70
+      - equal:
+          path: spec.behavior.scaleDown.stabilizationWindowSeconds
+          value: 300
+
+  - it: leaves replicas off the Deployment
+    template: haproxy-deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  - it: sizes the PodDisruptionBudget from minReplicas
+    template: haproxy-poddisruptionbudget.yaml
+    set:
+      haproxy.replicaCount: 5
+      haproxy.autoscaling.minReplicas: 1
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 0
+
+  - it: refuses KEDA at the same time
+    template: haproxy-hpa.yaml
+    set:
+      haproxy.keda.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "haproxy.autoscaling and haproxy.keda both scale"
+
+  - it: refuses minReplicas above maxReplicas
+    template: haproxy-hpa.yaml
+    set:
+      haproxy.autoscaling.minReplicas: 5
+      haproxy.autoscaling.maxReplicas: 3
+    asserts:
+      - failedTemplate:
+          errorPattern: "minReplicas \\(5\\) is above maxReplicas \\(3\\)"
+
+  - it: refuses a missing CPU request
+    template: haproxy-hpa.yaml
+    set:
+      haproxy.resources.requests.cpu: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "haproxy.resources.requests.cpu is unset"

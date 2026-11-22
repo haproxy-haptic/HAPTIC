@@ -2469,6 +2469,27 @@
           },
           "additionalProperties": false
         },
+        "autoscaling": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "maxReplicas": {
+              "type": "integer"
+            },
+            "minReplicas": {
+              "type": "integer"
+            },
+            "scaleDownStabilizationSeconds": {
+              "type": "integer"
+            },
+            "targetCPUUtilizationPercentage": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
         "dataplane": {
           "description": "The Dataplane API sidecar is now the HAPTIC agent, configured under haproxy.agent.",
           "anyOf": [

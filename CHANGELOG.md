@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Added
 
+- `haproxy.autoscaling` scales the HAProxy Deployment with a plain HorizontalPodAutoscaler on the `haproxy` container's CPU, without KEDA, and leaves `replicas` off the Deployment while on ([#761](https://github.com/haproxy-haptic/HAPTIC/issues/761)).
 - `haproxy-haptic.org/externalname-slots` sets the slot count of an Ingress's `ExternalName` backends, from 1 to 64 (default 8). A slot keeps its address while it stays in the answer or within the 5-minute hold, even when its health check fails, so a name whose addresses can fail together needs more slots to keep the backend up. An out-of-range value is rejected at admission; at reconcile the backend keeps the default and the Ingress gets a warning Event.
 - `extraContext.waf.clientPenalty` throttles clients that keep triggering WAF rules: anomaly scores add up per client IP and WAF policy in the shared rate-limit store, and a client at `scoreLimit` gets `429` from every HAProxy pod before the WAF runs. `detect` mode only records the `waf_client_penalty` access-log field. Requires `rateLimit.shared.enabled`.
 - `extraContext.ipBlocklists` refuses clients whose address is on a public blocklist. It's off by default; when enabled, the Spamhaus DROP lists apply, and further bundled or custom lists are opt-in.

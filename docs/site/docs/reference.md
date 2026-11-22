@@ -819,6 +819,11 @@ mounted read-write in the agent and read-only in the spoa-hub, all at
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `haproxy.autoscaling.enabled` | bool | `false` | Create a HorizontalPodAutoscaler that scales HAProxy on the `haproxy` container's CPU, and leave `replicas` off the Deployment. Excludes `haproxy.keda` |
+| `haproxy.autoscaling.minReplicas` | int | `2` | Minimum HAProxy replica count |
+| `haproxy.autoscaling.maxReplicas` | int | `10` | Maximum HAProxy replica count |
+| `haproxy.autoscaling.targetCPUUtilizationPercentage` | int | `70` | Target CPU utilization of `haproxy.resources.requests.cpu` |
+| `haproxy.autoscaling.scaleDownStabilizationSeconds` | int | `300` | Seconds the HPA waits before acting on a scale-down |
 | `haproxy.keda.enabled` | bool | `false` | Enable KEDA `ScaledObject` for HAProxy pods (event-driven autoscaling) |
 | `haproxy.keda.minReplicaCount` | int | `2` | Minimum HAProxy replica count |
 | `haproxy.keda.maxReplicaCount` | int | `10` | Maximum HAProxy replica count |
