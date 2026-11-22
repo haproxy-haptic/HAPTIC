@@ -256,6 +256,19 @@ haproxy:
   replicaCount: 3
 ```
 
+To scale on CPU without installing anything else, enable `haproxy.autoscaling`. The chart creates a HorizontalPodAutoscaler that scales on the `haproxy` container's CPU against `haproxy.resources.requests.cpu`, and stops writing a fixed `replicas` onto the Deployment, so a GitOps sync doesn't reset the HPA's count:
+
+```yaml
+haproxy:
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+```
+
+The HPA needs the cluster's metrics API, which [metrics-server](https://github.com/kubernetes-sigs/metrics-server) provides. `haproxy.autoscaling` and `haproxy.keda` can't both be enabled.
+
 For traffic-driven autoscaling, enable [KEDA](https://keda.sh/) under `haproxy.keda`. When `haproxy.keda.enabled` is true, the chart creates a `ScaledObject` and stops writing a fixed `replicas` onto the Deployment (KEDA owns it), scaling between `minReplicaCount` and `maxReplicaCount` from the triggers you define:
 
 ```yaml

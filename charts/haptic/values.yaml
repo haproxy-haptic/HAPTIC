@@ -1925,6 +1925,16 @@ haproxy:
   minReadySeconds: 0
   # Number of old ReplicaSets to retain
   revisionHistoryLimit: 10
+  # CPU-based HorizontalPodAutoscaler for the HAProxy Deployment, without KEDA.
+  # It scales on the haproxy container's CPU against haproxy.resources.requests.cpu.
+  # Excludes haproxy.keda; either one leaves replicas off the Deployment.
+  autoscaling:
+    enabled: false
+    minReplicas: 2  # @schema minimum: 1
+    maxReplicas: 10  # @schema minimum: 1
+    targetCPUUtilizationPercentage: 70  # @schema minimum: 1
+    # Seconds the HPA waits before acting on a scale-down.
+    scaleDownStabilizationSeconds: 300  # @schema minimum: 0
   # KEDA autoscaling for HAProxy loadbalancer
   # Enables event-driven scaling based on traffic metrics
   keda:

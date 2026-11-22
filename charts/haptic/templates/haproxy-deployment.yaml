@@ -59,7 +59,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  {{- if not $haproxy.keda.enabled }}
+  {{- if not (or $haproxy.keda.enabled $haproxy.autoscaling.enabled) }}
   replicas: {{ $haproxy.replicaCount }}
   {{- end }}
   {{- with $haproxy.updateStrategy }}

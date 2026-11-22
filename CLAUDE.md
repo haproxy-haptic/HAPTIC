@@ -161,6 +161,23 @@ coverage; they are not permission to build a feature on Lua. Generic upstream
 schemas and operator-file transport remain generic. Do not expand exemptions or
 disable the check to introduce Lua.
 
+## Stick tables are never the fleet's source of truth (RULE #6)
+
+**A per-pod stick table must not decide on budgets or state that span
+instances.** HAPTIC almost always runs more than one HAProxy replica, so a
+counter kept only in one pod's table enforces N times the configured budget and
+resets whenever the pod restarts. This covers rate limits, connection caps,
+scoring and banning keyed on a client.
+
+The shared state lives in the SPOA hub's rate-limit plugin (Valkey) or another
+plugin with shared state, with its runtime failure posture following "Runtime
+dependency failure" in `charts/CLAUDE.md`. A local stick table may hold a copy
+of a decision that shared state made, for example a client the shared limiter
+refused, so HAProxy can act on it where it can't consult the hub (before the TLS
+handshake). Such a copy must expire on its own and must never count anything
+toward the shared budget. Stick tables that serve routing or persistence, such
+as session affinity, are unaffected.
+
 ## Gateway API feature coverage
 
 **Implement all Gateway API features that HAProxy configuration alone can

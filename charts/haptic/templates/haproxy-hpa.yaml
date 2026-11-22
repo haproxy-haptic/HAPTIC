@@ -1,0 +1,45 @@
+{{- $haproxy := .Values.haproxy }}
+{{- $as := $haproxy.autoscaling }}
+{{- if and $haproxy.enabled $as.enabled }}
+{{- if $haproxy.keda.enabled }}
+{{- fail "haproxy.autoscaling and haproxy.keda both scale the HAProxy Deployment, so they would fight over its replica count. Enable only one." }}
+{{- end }}
+{{- if gt (int $as.minReplicas) (int $as.maxReplicas) }}
+{{- fail (printf "haproxy.autoscaling.minReplicas (%v) is above maxReplicas (%v), so the HPA can't be created. Lower minReplicas or raise maxReplicas." $as.minReplicas $as.maxReplicas) }}
+{{- end }}
+{{- if not (dig "requests" "cpu" "" ($haproxy.resources | default dict)) }}
+{{- fail "haproxy.autoscaling scales on CPU utilization, but haproxy.resources.requests.cpu is unset, so the HPA has nothing to measure against. Set haproxy.resources.requests.cpu." }}
+{{- end }}
+{{- $haproxyFullname := include "haptic.haproxyFullname" . }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $haproxyFullname }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "haptic.labels.withCommon" . | nindent 4 }}
+    app.kubernetes.io/component: loadbalancer
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $haproxyFullname }}
+  minReplicas: {{ $as.minReplicas }}
+  maxReplicas: {{ $as.maxReplicas }}
+  metrics:
+    {{- /* The haproxy container only: a sidecar without a CPU request breaks a pod-level Resource metric. */}}
+    - type: ContainerResource
+      containerResource:
+        name: cpu
+        container: haproxy
+        target:
+          type: Utilization
+          averageUtilization: {{ $as.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ $as.scaleDownStabilizationSeconds }}
+{{- end }}
