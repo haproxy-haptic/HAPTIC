@@ -27,13 +27,13 @@ haproxyVersion: "3.4"  # @schema enum: ["3.0", "3.2", "3.3", "3.4"]
 # renovate.json, so adding or removing a series needs no config change).
 haproxyPatchVersions:  # @schema skipProperties; additionalProperties: {type: string}
   # renovate: datasource=docker depName=haproxytech/haproxy-debian
-  "3.0": "3.0.30"
+  "3.0": "3.0.31"
   # renovate: datasource=docker depName=haproxytech/haproxy-debian
-  "3.2": "3.2.26"
+  "3.2": "3.2.27"
   # renovate: datasource=docker depName=haproxytech/haproxy-debian
-  "3.3": "3.3.17"
+  "3.3": "3.3.18"
   # renovate: datasource=docker depName=haproxytech/haproxy-debian
-  "3.4": "3.4.7"
+  "3.4": "3.4.8"
 
 # Latest tested revision tags for each supported HAProxy Enterprise major.minor.
 # Enterprise uses HAProxy's revision scheme (e.g. 3.2r1, 3.2r2).
