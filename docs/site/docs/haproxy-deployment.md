@@ -286,6 +286,28 @@ haproxy:
 
 KEDA must be installed in the cluster, and `haproxy.keda.triggers` must list at least one trigger — it's empty by default. Any [KEDA scaler](https://keda.sh/docs/latest/scalers/) works; the block above uses CPU utilization.
 
+To move a running release from `haproxy.autoscaling` to KEDA, let KEDA adopt the existing HPA in the same upgrade. Name the HPA, which is the HAProxy Deployment's name (`<fullname>-haproxy`), and ask for the transfer:
+
+```yaml
+haproxy:
+  autoscaling:
+    enabled: false
+  keda:
+    enabled: true
+    annotations:
+      scaledobject.keda.sh/transfer-hpa-ownership: "true"
+    advanced:
+      horizontalPodAutoscalerConfig:
+        name: haptic-haproxy
+    triggers:
+      - type: cpu
+        metricType: Utilization
+        metadata:
+          value: "70"
+```
+
+KEDA's admission webhook rejects a ScaledObject whose Deployment already has an HPA unless both settings are present. Switching in two upgrades instead (autoscaling off, then KEDA on) writes `replicas` onto the Deployment with the first upgrade and removes it with the second. Under server-side apply, removing a field that only your apply set resets it to the default, so the Deployment drops to one replica until KEDA scales it up again.
+
 ## Initial bootstrap config
 
 New HAProxy pods start with a minimal configuration from `haproxy.initialConfig`,

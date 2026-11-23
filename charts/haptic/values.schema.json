@@ -2626,6 +2626,10 @@
               "type": "object",
               "additionalProperties": true
             },
+            "annotations": {
+              "type": "object",
+              "additionalProperties": true
+            },
             "cooldownPeriod": {
               "type": "integer"
             },

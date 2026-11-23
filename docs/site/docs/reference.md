@@ -830,6 +830,7 @@ mounted read-write in the agent and read-only in the spoa-hub, all at
 | `haproxy.autoscaling.targetCPUUtilizationPercentage` | int | `70` | Target CPU utilization of `haproxy.resources.requests.cpu` |
 | `haproxy.autoscaling.scaleDownStabilizationSeconds` | int | `300` | Seconds the HPA waits before acting on a scale-down |
 | `haproxy.keda.enabled` | bool | `false` | Enable KEDA `ScaledObject` for HAProxy pods (event-driven autoscaling) |
+| `haproxy.keda.annotations` | map | `{}` | `ScaledObject` annotations, merged over `commonAnnotations`; `scaledobject.keda.sh/transfer-hpa-ownership: "true"` adopts the HPA named in `advanced.horizontalPodAutoscalerConfig.name` |
 | `haproxy.keda.minReplicaCount` | int | `2` | Minimum HAProxy replica count |
 | `haproxy.keda.maxReplicaCount` | int | `10` | Maximum HAProxy replica count |
 | `haproxy.keda.pollingInterval` | int | `30` | KEDA trigger polling interval in seconds |

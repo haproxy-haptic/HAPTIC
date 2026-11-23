@@ -9,7 +9,7 @@ metadata:
   labels:
     {{- include "haptic.labels.withCommon" . | nindent 4 }}
     app.kubernetes.io/component: loadbalancer
-  {{- with .Values.commonAnnotations }}
+  {{- with merge (deepCopy ($keda.annotations | default dict)) (.Values.commonAnnotations | default dict) }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
