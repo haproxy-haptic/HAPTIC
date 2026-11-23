@@ -22,7 +22,7 @@ GOVULNCHECK := $(GO) run golang.org/x/vuln/cmd/govulncheck
 ACTIONLINT_VERSION := v1.7.12
 ACTIONLINT := $(GO) run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
 # renovate: datasource=github-releases depName=losisin/helm-values-schema-json
-HELM_VALUES_SCHEMA_JSON_VERSION := v2.6.0
+HELM_VALUES_SCHEMA_JSON_VERSION := v2.6.1
 HELM_VALUES_SCHEMA_JSON := $(GO) run github.com/losisin/helm-values-schema-json/v2@$(HELM_VALUES_SCHEMA_JSON_VERSION)
 CHART_SCHEMA_FLAGS := --values charts/haptic/values.yaml --values charts/haptic/values.schema.extras.yaml \
 	--draft 7 --indent 2 --no-additional-properties
