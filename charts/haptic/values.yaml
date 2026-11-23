@@ -1962,6 +1962,9 @@ haproxy:
   # Enables event-driven scaling based on traffic metrics
   keda:
     enabled: false
+    # ScaledObject annotations, merged over commonAnnotations; e.g.
+    # scaledobject.keda.sh/transfer-hpa-ownership: "true" to adopt an existing HPA
+    annotations: {}  # @schema skipProperties; additionalProperties: true
     # Scaling limits
     minReplicaCount: 2
     maxReplicaCount: 10

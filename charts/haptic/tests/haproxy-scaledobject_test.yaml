@@ -37,6 +37,47 @@ tests:
       - isKind:
           of: ScaledObject
 
+  - it: should render no annotations by default
+    asserts:
+      - notExists:
+          path: metadata.annotations
+
+  - it: should render keda annotations
+    set:
+      haproxy.keda.annotations:
+        scaledobject.keda.sh/transfer-hpa-ownership: "true"
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            scaledobject.keda.sh/transfer-hpa-ownership: "true"
+
+  - it: should merge keda annotations over commonAnnotations
+    set:
+      commonAnnotations:
+        team: edge
+        owner: platform
+      haproxy.keda.annotations:
+        owner: ingress
+        scaledobject.keda.sh/transfer-hpa-ownership: "true"
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            team: edge
+            owner: ingress
+            scaledobject.keda.sh/transfer-hpa-ownership: "true"
+
+  - it: should keep commonAnnotations alone when keda annotations are empty
+    set:
+      commonAnnotations:
+        team: edge
+    asserts:
+      - equal:
+          path: metadata.annotations
+          value:
+            team: edge
+
   - it: should set correct apiVersion
     asserts:
       - isAPIVersion:
