@@ -306,7 +306,7 @@ haproxy:
           value: "70"
 ```
 
-KEDA's admission webhook rejects a ScaledObject whose Deployment already has an HPA unless both settings are present. Switching in two upgrades instead (autoscaling off, then KEDA on) writes `replicas` onto the Deployment in between and removes it again. Under server-side apply, removing a field that only your apply set resets it to the default, so the Deployment drops to one replica until KEDA scales it up again.
+KEDA's admission webhook rejects a ScaledObject whose Deployment already has an HPA unless both settings are present. Switching in two upgrades instead (autoscaling off, then KEDA on) writes `replicas` onto the Deployment with the first upgrade and removes it with the second. Under server-side apply, removing a field that only your apply set resets it to the default, so the Deployment drops to one replica until KEDA scales it up again.
 
 ## Initial bootstrap config
 
