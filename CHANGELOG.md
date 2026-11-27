@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The bundled SPOA hub and its eight plugins use release builds optimized with request profiles on AMD64, ARM64 and ARMv7.
+
 - The bundled maxmind plugin is v0.5.0, which indexes arrays in lookup paths, such as `[subdivisions, "0", iso_code]`.
 - The bundled rate-limit plugin is v0.6.0. The WAF client penalty's per-request read no longer waits for the shared store when a pod's cached verdict has just expired: the pod answers from it while it refreshes the verdict in the background, for up to `meter_stale_ms` (30 s by default), and never serves a penalty past the moment the score drains.
 - The bundled hub reuses registered plugin metric handles. The Rust WAF reuses repeated transformations across rules and reduces rule-ID and keyword lookup costs.

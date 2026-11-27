@@ -52,15 +52,15 @@ The image is published at `ghcr.io/haproxy-haptic/haptic/spoa-hub:<HAPTIC versio
 
 | Component       | Pinned version                          |
 | --------------- | --------------------------------------- |
-| Hub               | `v0.13.1-rc.5`                     |
-| `api-gateway`    | `v0.1.0`      |
-| `coraza`          | `v0.12.0-rc.8`           |
-| `external-auth`   | `v0.6.0`    |
-| `fingerprinting`  | `v0.3.0`   |
-| `maxmind`         | `v0.5.0`          |
-| `mirror`          | `v0.6.0`           |
-| `rate-limit`      | `v0.6.0`       |
-| `sso-auth`        | `v0.4.1`         |
+| Hub               | `v0.13.1-rc.6`                     |
+| `api-gateway`    | `v0.1.1`      |
+| `coraza`          | `v0.12.0-rc.9`           |
+| `external-auth`   | `v0.6.1`    |
+| `fingerprinting`  | `v0.3.1`   |
+| `maxmind`         | `v0.5.1`          |
+| `mirror`          | `v0.6.1`           |
+| `rate-limit`      | `v0.6.1`       |
+| `sso-auth`        | `v0.4.2`         |
 
 Plugin `.so` files target glibc `2.36` (Debian bookworm).
 
