@@ -1704,6 +1704,9 @@ func (s *sharedRateLimitScenario) sharedBudgets(ctx context.Context, t *testing.
 	if !failoverResult.hasExhaustedHeaders() {
 		t.Fatalf("expected exhausted post-failover probe to return 429 with rate-limit headers; got %s", failoverResult.String())
 	}
+
+	rollManagedRateLimitStore(ctx, t, client)
+	waitForStoreBackedSharedRateLimitOnPods(ctx, t, client, ns, s.warmupHost, podIPs[:2])
 	return ctx
 }
 

@@ -199,9 +199,17 @@ k8sResources:
                       master_info="$(timeout 1 valkey-cli -h "{{ sentinelSvc }}" -p "{{ sentinelPort }}" sentinel get-master-addr-by-name "{{ sentinelMaster }}" 2>/dev/null || true)"
                       master_host="$(printf '%s\n' "$master_info" | sed -n '1p')"
                       master_port="$(printf '%s\n' "$master_info" | sed -n '2p')"
-                      if [ -n "$master_host" ] && [ -n "$master_port" ]; then
+                      if [ "$master_host" = "$self" ]; then
                         break
                       fi
+                      # A replaced pod's Sentinel may still name a replica; following it can make two replicas replicate from each other (#773).
+                      if [ -n "$master_host" ] && [ -n "$master_port" ] \
+                         && timeout 1 valkey-cli -h "$master_host" -p "$master_port" info replication 2>/dev/null \
+                              | tr -d '\r' | grep -qx "role:master"; then
+                        break
+                      fi
+                      master_host=""
+                      master_port=""
                       sleep 1
                     done
                     # A Sentinel that has just (re)started replays the bootstrap config
@@ -294,6 +302,42 @@ k8sResources:
                 ports:
                   - name: valkey
                     containerPort: {{ port }}
+                {# Not Ready before it is the primary or an in-sync replica, so a rollout never replaces the next pod, possibly the primary, too early (#773). -#}
+                startupProbe:
+                  exec:
+                    command:
+                      - /bin/sh
+                      - -c
+                      - valkey-cli -p {{ port }} info replication | tr -d '\r' | grep -qxE 'role:master|master_link_status:up'
+                  periodSeconds: 1
+                  failureThreshold: 120
+                {# A primary hands its role to a replica through a Sentinel that agrees it is the primary, so writes pause for a failover, not for down-after detection (#773). -#}
+                lifecycle:
+                  preStop:
+                    exec:
+                      command:
+                        - /bin/sh
+                        - -c
+                        - |
+                          self="${POD_NAME}.{{ base }}.${POD_NAMESPACE}.svc.cluster.local"
+                          role() { valkey-cli -p {{ port }} info replication | tr -d '\r' | sed -n 's/^role://p'; }
+                          [ "$(role)" = master ] || exit 0
+                          end=$(( $(date +%s) + 15 ))
+                          while [ "$(date +%s)" -lt "$end" ]; do
+                            i=0
+                            while [ "$i" -lt "{{ replicas }}" ]; do
+                              peer="{{ base }}-${i}.{{ base }}.${POD_NAMESPACE}.svc.cluster.local"
+                              i=$((i + 1))
+                              if [ "$peer" = "$self" ]; then continue; fi
+                              named="$(timeout 1 valkey-cli -h "$peer" -p "{{ sentinelPort }}" sentinel get-master-addr-by-name "{{ sentinelMaster }}" 2>/dev/null | head -n 1)"
+                              if [ "$named" = "$self" ] \
+                                 && timeout 1 valkey-cli -h "$peer" -p "{{ sentinelPort }}" sentinel failover "{{ sentinelMaster }}" 2>/dev/null | grep -qx OK; then
+                                break 2
+                              fi
+                            done
+                            sleep 1
+                          done
+                          while [ "$(date +%s)" -lt "$end" ] && [ "$(role)" = master ]; do sleep 0.2; done
                 readinessProbe:
                   exec:
                     command: ["valkey-cli", "-e", "-p", "{{ port }}", "ping"]

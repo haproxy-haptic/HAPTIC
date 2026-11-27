@@ -243,6 +243,8 @@ HAPTIC renders a fixed-size HA Valkey topology:
 - a PodDisruptionBudget with `maxUnavailable: 1`;
 - a NetworkPolicy that admits HAProxy/SPOA traffic plus store-internal Valkey/Sentinel traffic.
 
+A rolling update, such as an image change, replaces one pod at a time and moves on only once the new pod is the primary or an in-sync replica. Before the primary exits, it asks Sentinel to promote a replica, so writes pause for the switch rather than for Sentinel's `downAfterMilliseconds`.
+
 The managed store provides failover at a fixed size. Use your own Redis or
 Valkey infrastructure if you need horizontal store scaling.
 
