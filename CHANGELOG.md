@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A rolling update of the managed shared rate-limit store, such as a Valkey image bump, keeps a writable primary. A pod is Ready only once it is the primary or an in-sync replica, a primary hands its role to a replica through Sentinel before it exits, and a starting pod follows only a master that reports itself as one. Before, a roll could leave two replicas replicating from each other, and the store had no primary for about 45 seconds ([#773](https://github.com/haproxy-haptic/HAPTIC/issues/773)).
 - The bundled SPOA hub keeps a lightly loaded plugin’s adaptive concurrency limit when an occasional call runs slowly, preserving capacity for the next burst.
 
 - A standby controller no longer takes over leadership with its previous configuration while it is loading a configuration change. Taking over in that window rolled the fleet back to the previous configuration for a few seconds and, with session tickets enabled, replaced the TLS session-ticket keys, so existing sessions could not resume.

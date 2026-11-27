@@ -452,6 +452,14 @@ validationTests:
       # same pod under both an IP and a hostname, and a failover tells the freshly
       # promoted node to replicate from itself — leaving the tier with no primary.
       - {type: contains, target: "k8s:rate-limit-store", pattern: 'replica-announce-ip "\$self"'}
+      # A rolling update keeps a writable primary (#773): a pod is Ready only once in sync,
+      # a primary hands its role over before it exits, and a pod follows only a master that
+      # reports itself as one.
+      - {type: contains, target: "k8s:rate-limit-store", pattern: "grep -qxE 'role:master\\|master_link_status:up'"}
+      - {type: contains, target: "k8s:rate-limit-store", pattern: 'sentinel failover "haptic-rate-limit"'}
+      - type: contains
+        target: "k8s:rate-limit-store"
+        pattern: 'valkey-cli -h "\$master_host" -p "\$master_port" info replication'
 
   test-haptic-rate-limit-store-pod-security-restricted:
     description: >-
