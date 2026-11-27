@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The bundled SPOA hub keeps a lightly loaded plugin’s adaptive concurrency limit when an occasional call runs slowly, preserving capacity for the next burst.
+
 - A standby controller no longer takes over leadership with its previous configuration while it is loading a configuration change. Taking over in that window rolled the fleet back to the previous configuration for a few seconds and, with session tickets enabled, replaced the TLS session-ticket keys, so existing sessions could not resume.
 - The managed shared rate-limit store's Valkey and Sentinel pods meet Pod Security Admission's restricted level: they run as the image's valkey user with no privilege escalation, no capabilities, the default seccomp profile and a read-only root filesystem. A namespace that enforces restricted refused them before, so the store never started and every SPOA sidecar fell back to its emergency limiter.
 - Live config validation resumes the unfinished fixture tests after a suite timeout. Each replica keeps its own progress for the same candidate, effective configuration, schemas and HAProxy version ([#732](https://github.com/haproxy-haptic/HAPTIC/issues/732)).
